@@ -52,20 +52,27 @@ export default function NewOrderPage() {
     }
 
     try {
+      console.log('Sending order data:', orderData)
+
       const res = await fetch('/api/ops/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(orderData),
       })
 
+      console.log('Response status:', res.status)
+
       if (!res.ok) {
         const data = await res.json()
+        console.error('Server error:', data)
         throw new Error(data.error || 'Failed to create order')
       }
 
       const order = await res.json()
+      console.log('Order created:', order)
       router.push(`/orders/${order.id}`)
     } catch (err: any) {
+      console.error('Create order error:', err)
       setError(err.message)
       setLoading(false)
     }
