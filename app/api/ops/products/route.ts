@@ -13,6 +13,8 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const search = searchParams.get('search') || ''
+    const missingCost = searchParams.get('missingCost') === 'true'
+    const category = searchParams.get('category')
 
     let query = `
       SELECT
@@ -31,18 +33,32 @@ export async function GET(request: NextRequest) {
     `
 
     const params: any[] = []
+    let paramIndex = 1
+
+    // Filter: Missing cost price
+    if (missingCost) {
+      query += ` AND ("costPrice" IS NULL OR "costPrice" = 0)`
+    }
+
+    // Filter: Category
+    if (category) {
+      query += ` AND category = $${paramIndex}`
+      params.push(category)
+      paramIndex++
+    }
 
     // Search by name, brand, or SKU
     if (search) {
       query += ` AND (
-        LOWER(name) LIKE LOWER($1)
-        OR LOWER(brand) LIKE LOWER($1)
-        OR LOWER(sku) LIKE LOWER($1)
+        LOWER(name) LIKE LOWER($${paramIndex})
+        OR LOWER(brand) LIKE LOWER($${paramIndex})
+        OR LOWER(sku) LIKE LOWER($${paramIndex})
       )`
       params.push(`%${search}%`)
+      paramIndex++
     }
 
-    query += ` ORDER BY name ASC LIMIT 50`
+    query += ` ORDER BY name ASC LIMIT 100`
 
     const result = await pool.query(query, params)
 
