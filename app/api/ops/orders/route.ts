@@ -52,6 +52,16 @@ export async function GET(request: NextRequest) {
 
     const result = await pool.query(query, params)
 
+    // Debug: Check first order
+    if (result.rows.length > 0) {
+      console.log('First order:', {
+        id: result.rows[0].id,
+        orderNumber: result.rows[0].orderNumber,
+        hasId: 'id' in result.rows[0],
+        keys: Object.keys(result.rows[0])
+      })
+    }
+
     return NextResponse.json(result.rows)
   } catch (error) {
     console.error('Orders list error:', error)
