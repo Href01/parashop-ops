@@ -70,10 +70,14 @@ export async function GET(
     order.senditShipment = senditResult.rows[0] || null
 
     return NextResponse.json(order)
-  } catch (error) {
+  } catch (error: any) {
     console.error('Get order error:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch order' },
+      {
+        error: 'Failed to fetch order',
+        details: error.message,
+        orderId: await params.then(p => p.id)
+      },
       { status: 500 }
     )
   }
