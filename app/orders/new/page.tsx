@@ -46,7 +46,7 @@ export default function NewOrderPage() {
       items: selectedProducts.map(p => ({
         productId: p.id,
         quantity: p.quantity,
-        price: p.price,
+        unitPrice: p.price,
       })),
       confirmImmediately: formData.get('confirmImmediately') === 'on',
     }
