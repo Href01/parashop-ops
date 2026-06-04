@@ -6,7 +6,7 @@ import pool from '@/lib/db'
 // GET /api/ops/orders/[id] - Get order detail
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -14,7 +14,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const orderId = params.id
+    const { id: orderId } = await params
 
     // Get order with items and products
     const result = await pool.query(
@@ -82,7 +82,7 @@ export async function GET(
 // PUT /api/ops/orders/[id] - Update order
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -90,7 +90,7 @@ export async function PUT(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const orderId = params.id
+    const { id: orderId } = await params
     const body = await request.json()
 
     const {
