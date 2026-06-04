@@ -15,6 +15,12 @@ export default function OrdersPage() {
     try {
       const res = await fetch('/api/ops/orders')
       const data = await res.json()
+      console.log('Orders from API:', data)
+      if (data.length > 0) {
+        console.log('First order:', data[0])
+        console.log('First order keys:', Object.keys(data[0]))
+        console.log('First order id:', data[0].id)
+      }
       setOrders(data)
     } catch (error) {
       console.error('Failed to fetch orders:', error)
