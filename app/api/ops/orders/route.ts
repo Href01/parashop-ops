@@ -207,12 +207,6 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      // Update order profit (trigger will calculate)
-      await client.query(
-        `UPDATE "Order" SET "updatedAt" = NOW() WHERE id = $1`,
-        [order.id]
-      )
-
       // Add status history
       await client.query(
         `INSERT INTO "OrderStatusHistory" (
