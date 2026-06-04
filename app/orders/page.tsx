@@ -84,6 +84,8 @@ export default function OrdersPage() {
 }
 
 function OrderCard({ order }: { order: any }) {
+  console.log('OrderCard received order:', { id: order.id, hasId: 'id' in order })
+
   const getSourceColor = (source: string) => {
     switch (source) {
       case 'WhatsApp': return 'bg-green-100 text-green-700'
