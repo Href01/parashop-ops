@@ -12,7 +12,7 @@ export async function requireOpsAccess() {
   const session = await getServerSession(authOptions)
 
   if (!session?.user?.email) {
-    redirect('/api/auth/signin?callbackUrl=/ops')
+    redirect('/api/auth/signin?callbackUrl=/')
   }
 
   if (!ALLOWED_EMAILS.includes(session.user.email)) {
