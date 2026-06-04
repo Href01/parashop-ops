@@ -14,7 +14,7 @@ export default async function OpsLayout({
           <div className="flex items-center gap-6">
             <h1 className="text-xl font-bold text-purple-600">Shine BOS</h1>
 
-            <nav className="hidden md:flex gap-1">
+            <nav className="flex gap-1 flex-wrap">
               <NavLink href="/ops">Dashboard</NavLink>
               <NavLink href="/ops/orders">Orders</NavLink>
               <NavLink href="/ops/products">Products</NavLink>
