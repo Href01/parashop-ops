@@ -258,10 +258,14 @@ export async function POST(request: NextRequest) {
     } finally {
       client.release()
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('Create order error:', error)
     return NextResponse.json(
-      { error: 'Failed to create order' },
+      {
+        error: 'Failed to create order',
+        details: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      },
       { status: 500 }
     )
   }
