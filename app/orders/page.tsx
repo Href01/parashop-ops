@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 
 export default function OrdersPage() {
   const [orders, setOrders] = useState<any[]>([])
@@ -15,12 +19,6 @@ export default function OrdersPage() {
     try {
       const res = await fetch('/api/ops/orders')
       const data = await res.json()
-      console.log('Orders from API:', data)
-      if (data.length > 0) {
-        console.log('First order:', data[0])
-        console.log('First order keys:', Object.keys(data[0]))
-        console.log('First order id:', data[0].id)
-      }
       setOrders(data)
     } catch (error) {
       console.error('Failed to fetch orders:', error)
@@ -31,140 +29,160 @@ export default function OrdersPage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto p-6">
-        <div className="text-center py-12">
-          <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading orders...</p>
+      <div className="container mx-auto p-6 max-w-7xl">
+        <div className="flex items-center justify-between mb-6">
+          <Skeleton className="h-10 w-48" />
+          <Skeleton className="h-10 w-32" />
+        </div>
+        <div className="space-y-3">
+          {[1, 2, 3, 4].map(i => (
+            <Skeleton key={i} className="h-32 w-full" />
+          ))}
         </div>
       </div>
     )
   }
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="flex items-center justify-between mb-6">
+    <div className="container mx-auto p-6 max-w-7xl">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">Orders</h2>
-          <p className="text-gray-600 text-sm">Manage all your orders</p>
+          <h2 className="text-3xl font-bold tracking-tight">Orders</h2>
+          <p className="text-muted-foreground">Manage all your orders from all channels</p>
         </div>
-
-        <Link
-          href="/orders/new"
-          className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition font-medium"
-        >
-          + Create Order
+        <Link href="/orders/new">
+          <Button>+ Create Order</Button>
         </Link>
       </div>
 
       {orders.length === 0 ? (
-        <div className="bg-white rounded-lg border p-12 text-center">
-          <div className="text-6xl mb-4">📦</div>
-          <h3 className="text-xl font-semibold text-gray-900 mb-2">
-            No orders yet
-          </h3>
-          <p className="text-gray-600 mb-6">
-            Create your first order from WhatsApp, Instagram, or TikTok
-          </p>
-          <Link
-            href="/orders/new"
-            className="inline-block px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition font-medium"
-          >
-            + Create First Order
-          </Link>
-        </div>
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <div className="text-7xl mb-4">📦</div>
+            <h3 className="text-2xl font-semibold mb-2">No orders yet</h3>
+            <p className="text-muted-foreground mb-6 text-center max-w-md">
+              Create your first order from WhatsApp, Instagram, or TikTok
+            </p>
+            <Link href="/orders/new">
+              <Button size="lg">+ Create First Order</Button>
+            </Link>
+          </CardContent>
+        </Card>
       ) : (
-        <div className="grid gap-4">
-          {orders.map((order) => (
-            <OrderCard key={order.id} order={order} />
-          ))}
-        </div>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-sm text-muted-foreground mb-1">Total Orders</div>
+                <div className="text-3xl font-bold">{orders.length}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-sm text-muted-foreground mb-1">Active</div>
+                <div className="text-3xl font-bold text-green-600">
+                  {orders.filter(o => o.status === 'CONFIRMED' || o.status === 'PENDING').length}
+                </div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-sm text-muted-foreground mb-1">Delivered</div>
+                <div className="text-3xl font-bold text-emerald-600">
+                  {orders.filter(o => o.status === 'DELIVERED').length}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          <div className="space-y-3">
+            {orders.map((order) => (
+              <OrderCard key={order.id} order={order} />
+            ))}
+          </div>
+        </>
       )}
     </div>
   )
 }
 
 function OrderCard({ order }: { order: any }) {
-  console.log('OrderCard received order:', { id: order.id, hasId: 'id' in order })
-
-  const getSourceColor = (source: string) => {
-    switch (source) {
-      case 'WhatsApp': return 'bg-green-100 text-green-700'
-      case 'Instagram': return 'bg-pink-100 text-pink-700'
-      case 'TikTok': return 'bg-purple-100 text-purple-700'
-      case 'Website': return 'bg-blue-100 text-blue-700'
-      default: return 'bg-gray-100 text-gray-700'
+  const getStatusVariant = (status: string): "default" | "secondary" | "destructive" | "outline" => {
+    switch (status) {
+      case 'DELIVERED': return 'default'
+      case 'CONFIRMED': return 'secondary'
+      case 'CANCELLED': return 'destructive'
+      default: return 'outline'
     }
   }
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'CONFIRMED': return 'bg-yellow-100 text-yellow-700'
-      case 'DELIVERED': return 'bg-green-100 text-green-700'
-      case 'PENDING': return 'bg-gray-100 text-gray-700'
-      case 'CANCELLED': return 'bg-red-100 text-red-700'
-      default: return 'bg-gray-100 text-gray-700'
-    }
+  const getSourceVariant = (source: string): "default" | "secondary" | "destructive" | "outline" => {
+    return 'outline'
   }
 
   return (
     <Link href={`/orders/${order.id}`}>
-      <div className="bg-white rounded-lg border p-4 hover:shadow-md transition cursor-pointer">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-2">
-              {order.sourceChannel && (
-                <span className={`px-2 py-1 rounded text-xs font-medium ${getSourceColor(order.sourceChannel)}`}>
-                  {order.sourceChannel}
-                </span>
-              )}
-              <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(order.status)}`}>
-                {order.status}
-              </span>
-              {order.orderNumber && (
-                <span className="text-xs text-gray-500">
-                  {order.orderNumber}
-                </span>
-              )}
-            </div>
-
-            <div className="mb-2">
-              <div className="font-semibold text-gray-900">
-                {order.deliveryName || 'No name'}
+      <Card className="hover:shadow-lg transition-all cursor-pointer">
+        <CardContent className="pt-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex-1 space-y-3">
+              <div className="flex items-center gap-2 flex-wrap">
+                {order.sourceChannel && (
+                  <Badge variant={getSourceVariant(order.sourceChannel)}>
+                    {order.sourceChannel}
+                  </Badge>
+                )}
+                <Badge variant={getStatusVariant(order.status)}>
+                  {order.status}
+                </Badge>
+                {order.orderNumber && (
+                  <span className="text-xs text-muted-foreground font-mono">
+                    {order.orderNumber}
+                  </span>
+                )}
               </div>
-              <div className="text-sm text-gray-600">
-                {order.deliveryPhone || 'No phone'} • {order.deliveryCity || 'No city'}
-              </div>
-            </div>
 
-            <div className="flex gap-4 text-sm">
               <div>
-                <span className="text-gray-500">Revenue:</span>
-                <span className="ml-1 font-semibold">{order.revenue || order.total || 0} MAD</span>
+                <div className="font-semibold text-lg">{order.deliveryName || 'No name'}</div>
+                <div className="text-sm text-muted-foreground">
+                  {order.deliveryPhone || 'No phone'} • {order.deliveryCity || 'No city'}
+                </div>
               </div>
-              {order.estimatedProfit !== null && order.estimatedProfit !== undefined && (
+
+              <div className="flex gap-6 text-sm">
                 <div>
-                  <span className="text-gray-500">Profit:</span>
-                  <span className="ml-1 font-semibold text-green-600">
-                    {order.estimatedProfit} MAD
-                  </span>
+                  <span className="text-muted-foreground">Revenue:</span>
+                  <span className="ml-2 font-semibold">{order.revenue || 0} MAD</span>
                 </div>
-              )}
-              {order.marginPercent !== null && order.marginPercent !== undefined && (
-                <div>
-                  <span className="text-gray-500">Margin:</span>
-                  <span className="ml-1 font-semibold">
-                    {order.marginPercent.toFixed(1)}%
-                  </span>
-                </div>
-              )}
+                {order.estimatedProfit !== null && order.estimatedProfit !== undefined && (
+                  <div>
+                    <span className="text-muted-foreground">Profit:</span>
+                    <span className="ml-2 font-semibold text-green-600">
+                      +{order.estimatedProfit} MAD
+                    </span>
+                  </div>
+                )}
+                {order.marginPercent !== null && order.marginPercent !== undefined && (
+                  <div>
+                    <span className="text-muted-foreground">Margin:</span>
+                    <span className="ml-2 font-semibold">
+                      {order.marginPercent.toFixed(1)}%
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="text-sm text-muted-foreground">
+              {new Date(order.createdAt).toLocaleDateString('fr-FR', {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric'
+              })}
             </div>
           </div>
-
-          <div className="text-sm text-gray-500">
-            {new Date(order.createdAt).toLocaleDateString('fr-FR')}
-          </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </Link>
   )
 }
