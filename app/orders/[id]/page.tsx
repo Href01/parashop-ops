@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 
 interface Order {
   id: number
@@ -21,19 +21,24 @@ interface Order {
   senditShipment: any
 }
 
-export default function OrderDetailPage({ params }: { params: { id: string } }) {
+export default function OrderDetailPage() {
   const router = useRouter()
+  const params = useParams()
+  const orderId = params.id as string
+
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    fetchOrder()
-  }, [params.id])
+    if (orderId) {
+      fetchOrder()
+    }
+  }, [orderId])
 
   const fetchOrder = async () => {
     try {
-      const res = await fetch(`/api/ops/orders/${params.id}`)
+      const res = await fetch(`/api/ops/orders/${orderId}`)
       if (!res.ok) throw new Error('Failed to fetch order')
       const data = await res.json()
       setOrder(data)
