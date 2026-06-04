@@ -1,7 +1,84 @@
-import type { Order, OrderItem, Product } from '@/lib/types'
+/**
+ * Order utility functions for BOS
+ */
 
 /**
- * Check if order has all required data for profit calculation
+ * Generate unique order number in format: ORD-YYMMDD-XXXX
+ */
+export function generateOrderNumber(): string {
+  const now = new Date()
+  const year = now.getFullYear().toString().slice(-2)
+  const month = (now.getMonth() + 1).toString().padStart(2, '0')
+  const day = now.getDate().toString().padStart(2, '0')
+
+  // Random 4-digit number
+  const random = Math.floor(1000 + Math.random() * 9000)
+
+  return `ORD-${year}${month}${day}-${random}`
+}
+
+/**
+ * Estimate delivery cost based on city
+ */
+export function estimateDeliveryCost(city: string): number {
+  const cityLower = city.toLowerCase()
+
+  // Casablanca
+  if (cityLower.includes('casa')) return 25
+
+  // Major cities
+  const majorCities = ['rabat', 'marrakech', 'tanger', 'fes', 'agadir', 'tangier', 'fez']
+  if (majorCities.some(c => cityLower.includes(c))) return 35
+
+  // Remote/other cities
+  return 45
+}
+
+/**
+ * Calculate order totals and profit
+ */
+export interface OrderTotals {
+  subtotal: number
+  total: number
+  revenue: number
+  estimatedCost: number
+  estimatedProfit: number
+  marginPercent: number
+}
+
+export function calculateOrderTotals(
+  items: Array<{ quantity: number; price: number; costPrice?: number }>,
+  deliveryFee: number,
+  discount: number = 0
+): OrderTotals {
+  const subtotal = items.reduce(
+    (sum, item) => sum + item.price * item.quantity,
+    0
+  )
+
+  const revenue = subtotal - discount
+  const total = revenue + deliveryFee
+
+  const estimatedCost = items.reduce(
+    (sum, item) => sum + (item.costPrice || 0) * item.quantity,
+    0
+  )
+
+  const estimatedProfit = revenue - estimatedCost - deliveryFee
+  const marginPercent = revenue > 0 ? (estimatedProfit / revenue) * 100 : 0
+
+  return {
+    subtotal,
+    total,
+    revenue,
+    estimatedCost,
+    estimatedProfit,
+    marginPercent,
+  }
+}
+
+/**
+ * Check order completeness for data quality
  */
 export interface OrderCompleteness {
   isComplete: boolean
@@ -11,9 +88,9 @@ export interface OrderCompleteness {
 }
 
 export function checkOrderCompleteness(
-  order: Order,
-  items: OrderItem[],
-  products: Product[]
+  order: any,
+  items: any[],
+  products: any[]
 ): OrderCompleteness {
   const missing: string[] = []
   let completedFields = 0
@@ -29,59 +106,45 @@ export function checkOrderCompleteness(
   if (!order.deliveryCity) missing.push('Customer city')
   else completedFields++
 
-  if (!order.deliveryAddress) missing.push('Customer address')
+  if (!order.deliveryAddress) missing.push('Delivery address')
   else completedFields++
 
   // Products (1 field)
-  if (!items || items.length === 0) {
-    missing.push('Products')
+  if (!items || items.length === 0) missing.push('Order items')
+  else completedFields++
+
+  // Product cost prices (1 field)
+  const itemsWithCost = items.filter(item => {
+    const product = products.find(p => p.id === item.productId)
+    return product && product.costPrice && product.costPrice > 0
+  })
+
+  if (itemsWithCost.length !== items.length) {
+    missing.push('Product cost prices')
   } else {
     completedFields++
   }
 
-  // Product costs (1 field)
-  const itemsWithoutCost = items.filter(item => !item.unitCost || item.unitCost === 0)
-  if (itemsWithoutCost.length > 0) {
-    missing.push(`Product cost prices (${itemsWithoutCost.length} items)`)
-  } else if (items.length > 0) {
-    completedFields++
-  }
-
-  // Delivery fees (2 fields)
+  // Delivery info (2 fields)
   if (!order.deliveryFeeCharged && order.deliveryFeeCharged !== 0) {
-    missing.push('Delivery fee charged to customer')
+    missing.push('Delivery fee charged')
   } else {
     completedFields++
   }
 
-  if (!order.estimatedDeliveryCost && order.estimatedDeliveryCost !== 0) {
-    missing.push('Estimated delivery cost')
-  } else {
-    completedFields++
-  }
+  if (!order.estimatedDeliveryCost) missing.push('Estimated delivery cost')
+  else completedFields++
 
-  // Payment method (1 field)
-  if (!order.paymentMethod) {
-    missing.push('Payment method')
-  } else {
-    completedFields++
-  }
+  // Payment & source (2 fields)
+  if (!order.paymentMethod) missing.push('Payment method')
+  else completedFields++
 
-  // Source channel (1 field)
-  if (!order.sourceChannel) {
-    missing.push('Source channel')
-  } else {
-    completedFields++
-  }
+  if (!order.sourceChannel) missing.push('Source channel')
+  else completedFields++
 
-  const score = Math.round((completedFields / totalFields) * 100)
+  const score = (completedFields / totalFields) * 100
   const isComplete = missing.length === 0
-
-  // Can calculate profit if we have product costs and delivery estimates
-  const canCalculateProfit =
-    items.length > 0 &&
-    items.every(item => item.unitCost && item.unitCost > 0) &&
-    (order.estimatedDeliveryCost !== null && order.estimatedDeliveryCost !== undefined)
+  const canCalculateProfit = itemsWithCost.length === items.length
 
   return {
     isComplete,
@@ -89,105 +152,4 @@ export function checkOrderCompleteness(
     missing,
     canCalculateProfit,
   }
-}
-
-/**
- * Calculate order totals and profit
- */
-export interface OrderTotals {
-  productsTotal: number
-  revenue: number
-  totalCost: number
-  estimatedProfit: number
-  finalProfit?: number
-  marginPercent: number
-}
-
-export function calculateOrderTotals(
-  order: Order,
-  items: OrderItem[]
-): OrderTotals | null {
-  if (items.length === 0) return null
-
-  // Products total
-  const productsTotal = items.reduce((sum, item) => {
-    return sum + (item.unitPrice * item.quantity)
-  }, 0)
-
-  // Revenue (after discount)
-  const revenue = productsTotal - (order.discountTotal || 0)
-
-  // Total product cost
-  const totalCost = items.reduce((sum, item) => {
-    const unitCost = item.unitCost || 0
-    return sum + (unitCost * item.quantity)
-  }, 0)
-
-  // Estimated profit
-  const estimatedDeliveryCost = order.estimatedDeliveryCost || 0
-  const estimatedProfit = revenue - totalCost - estimatedDeliveryCost
-
-  // Final profit (if Sendit data available)
-  let finalProfit: number | undefined
-  if (order.actualDeliveryCost !== null && order.actualDeliveryCost !== undefined) {
-    const codAmount = order.codAmount || revenue
-    const actualDeliveryCost = order.actualDeliveryCost
-    const returnFees = order.returnOrFailedFees || 0
-    finalProfit = codAmount - totalCost - actualDeliveryCost - returnFees
-  }
-
-  // Margin %
-  const profit = finalProfit !== undefined ? finalProfit : estimatedProfit
-  const marginPercent = revenue > 0 ? (profit / revenue) * 100 : 0
-
-  return {
-    productsTotal,
-    revenue,
-    totalCost,
-    estimatedProfit,
-    finalProfit,
-    marginPercent,
-  }
-}
-
-/**
- * Generate unique order number
- */
-export function generateOrderNumber(): string {
-  const date = new Date()
-  const year = date.getFullYear().toString().slice(2)
-  const month = (date.getMonth() + 1).toString().padStart(2, '0')
-  const day = date.getDate().toString().padStart(2, '0')
-  const random = Math.random().toString(36).substring(2, 6).toUpperCase()
-
-  return `ORD-${year}${month}${day}-${random}`
-}
-
-/**
- * Get products that need cost prices
- */
-export function getProductsNeedingCosts(products: Product[]): Product[] {
-  return products.filter(p => !p.costPrice || p.costPrice === 0)
-}
-
-/**
- * Estimate delivery cost based on city (Morocco)
- */
-export function estimateDeliveryCost(city: string): number {
-  const cityLower = city.toLowerCase()
-
-  // Major cities (cheaper)
-  const majorCities = ['casablanca', 'rabat', 'salé', 'kenitra', 'mohammedia']
-  if (majorCities.some(c => cityLower.includes(c))) {
-    return 25
-  }
-
-  // Medium cities
-  const mediumCities = ['marrakech', 'fes', 'tanger', 'agadir', 'oujda', 'meknes']
-  if (mediumCities.some(c => cityLower.includes(c))) {
-    return 35
-  }
-
-  // Default (remote areas)
-  return 45
 }
