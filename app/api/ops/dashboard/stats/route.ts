@@ -81,6 +81,10 @@ interface RecentOrderRow {
   sourceChannel: string | null
 }
 
+interface ColumnRow {
+  column_name: string
+}
+
 function toNumber(value: unknown): number {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0
   if (typeof value === 'string') {
@@ -159,6 +163,30 @@ async function safeQuery<T extends QueryResultRow>(label: string, query: string)
   }
 }
 
+async function getTableColumns(tableName: string): Promise<Set<string>> {
+  const result = await pool.query<ColumnRow>(
+    `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = $1
+    `,
+    [tableName]
+  )
+
+  return new Set(result.rows.map((row) => row.column_name))
+}
+
+function buildNumericExpression(alias: string, columns: Set<string>, candidates: string[]): string {
+  const availableCandidates = candidates.filter((candidate) => columns.has(candidate))
+
+  if (availableCandidates.length === 0) {
+    return '0'
+  }
+
+  return `COALESCE(${availableCandidates.map((candidate) => `${alias}."${candidate}"`).join(', ')}, 0)`
+}
+
 export async function GET() {
   try {
     const session = await getServerSession(authOptions)
@@ -170,6 +198,29 @@ export async function GET() {
     if (!isFounder(session.user.email)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
+
+    const orderColumns = await getTableColumns('Order')
+    const revenueExpression = buildNumericExpression('o', orderColumns, ['revenue', 'total'])
+    const estimatedProfitExpression = buildNumericExpression('o', orderColumns, ['estimatedProfit'])
+    const hasConfirmationStatus = orderColumns.has('confirmationStatus')
+    const hasDeliveryStatus = orderColumns.has('deliveryStatus')
+    const hasDeliveryCity = orderColumns.has('deliveryCity')
+    const missingOrderColumns = [
+      'revenue',
+      'total',
+      'estimatedProfit',
+      'confirmationStatus',
+      'deliveryStatus',
+      'deliveryCity',
+    ].filter((column) => !orderColumns.has(column))
+
+    if (missingOrderColumns.length > 0) {
+      console.warn('Dashboard stats using schema fallbacks for missing Order columns:', missingOrderColumns)
+    }
+
+    const deliveryCityExpression = hasDeliveryCity
+      ? `COALESCE(NULLIF(TRIM(o."deliveryCity"), ''), 'Unknown')`
+      : `'Unknown'`
 
     const [
       summaryResult,
@@ -185,11 +236,11 @@ export async function GET() {
     ] = await Promise.all([
       pool.query<SummaryRow>(`
         SELECT
-          COALESCE(SUM(CASE WHEN o."createdAt" >= CURRENT_DATE THEN COALESCE(o.revenue, o.total, 0) ELSE 0 END), 0)::double precision AS "revenueToday",
-          COALESCE(SUM(CASE WHEN o."createdAt" >= CURRENT_DATE - INTERVAL '6 days' THEN COALESCE(o.revenue, o.total, 0) ELSE 0 END), 0)::double precision AS "revenueWeek",
-          COALESCE(SUM(CASE WHEN o."createdAt" >= CURRENT_DATE - INTERVAL '13 days' AND o."createdAt" < CURRENT_DATE - INTERVAL '6 days' THEN COALESCE(o.revenue, o.total, 0) ELSE 0 END), 0)::double precision AS "previousRevenueWeek",
-          COALESCE(SUM(CASE WHEN o."createdAt" >= CURRENT_DATE - INTERVAL '6 days' THEN COALESCE(o."estimatedProfit", 0) ELSE 0 END), 0)::double precision AS "estimatedProfitWeek",
-          COALESCE(SUM(CASE WHEN o."createdAt" >= CURRENT_DATE - INTERVAL '13 days' AND o."createdAt" < CURRENT_DATE - INTERVAL '6 days' THEN COALESCE(o."estimatedProfit", 0) ELSE 0 END), 0)::double precision AS "previousProfitWeek",
+          COALESCE(SUM(CASE WHEN o."createdAt" >= CURRENT_DATE THEN ${revenueExpression} ELSE 0 END), 0)::double precision AS "revenueToday",
+          COALESCE(SUM(CASE WHEN o."createdAt" >= CURRENT_DATE - INTERVAL '6 days' THEN ${revenueExpression} ELSE 0 END), 0)::double precision AS "revenueWeek",
+          COALESCE(SUM(CASE WHEN o."createdAt" >= CURRENT_DATE - INTERVAL '13 days' AND o."createdAt" < CURRENT_DATE - INTERVAL '6 days' THEN ${revenueExpression} ELSE 0 END), 0)::double precision AS "previousRevenueWeek",
+          COALESCE(SUM(CASE WHEN o."createdAt" >= CURRENT_DATE - INTERVAL '6 days' THEN ${estimatedProfitExpression} ELSE 0 END), 0)::double precision AS "estimatedProfitWeek",
+          COALESCE(SUM(CASE WHEN o."createdAt" >= CURRENT_DATE - INTERVAL '13 days' AND o."createdAt" < CURRENT_DATE - INTERVAL '6 days' THEN ${estimatedProfitExpression} ELSE 0 END), 0)::double precision AS "previousProfitWeek",
           COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE)::int AS "ordersToday",
           COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '6 days')::int AS "ordersWeek",
           COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '13 days' AND o."createdAt" < CURRENT_DATE - INTERVAL '6 days')::int AS "previousOrdersWeek",
@@ -200,8 +251,8 @@ export async function GET() {
       pool.query<SeriesRow>(`
         SELECT
           day_bucket::date AS "day",
-          COALESCE(SUM(COALESCE(o.revenue, o.total, 0)), 0)::double precision AS "revenue",
-          COALESCE(SUM(COALESCE(o."estimatedProfit", 0)), 0)::double precision AS "profit"
+          COALESCE(SUM(${revenueExpression}), 0)::double precision AS "revenue",
+          COALESCE(SUM(${estimatedProfitExpression}), 0)::double precision AS "profit"
         FROM generate_series(
           CURRENT_DATE - INTERVAL '29 days',
           CURRENT_DATE,
@@ -217,7 +268,9 @@ export async function GET() {
         SELECT
           COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND o.status = 'PENDING')::int AS pending,
           COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND o.status = 'CONFIRMED')::int AS confirmed,
-          COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND COALESCE(o."deliveryStatus", 'NOT_CREATED') IN ('SENDIT_CREATED', 'IN_DELIVERY'))::int AS shipped,
+          ${hasDeliveryStatus
+            ? `COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND COALESCE(o."deliveryStatus", 'NOT_CREATED') IN ('SENDIT_CREATED', 'IN_DELIVERY'))::int`
+            : '0::int'} AS shipped,
           COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND o.status = 'DELIVERED')::int AS delivered,
           COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND o.status = 'RETURNED')::int AS returned
         FROM "Order" o
@@ -237,18 +290,20 @@ export async function GET() {
       `),
       pool.query<CityRow>(`
         SELECT
-          COALESCE(NULLIF(TRIM(o."deliveryCity"), ''), 'Unknown') AS "name",
+          ${deliveryCityExpression} AS "name",
           COUNT(*)::int AS "orders"
         FROM "Order" o
         WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '6 days'
-        GROUP BY COALESCE(NULLIF(TRIM(o."deliveryCity"), ''), 'Unknown')
+        GROUP BY ${deliveryCityExpression}
         ORDER BY "orders" DESC, "name" ASC
         LIMIT 5
       `),
       pool.query<AlertCountsRow>(`
         SELECT
-          COUNT(*) FILTER (WHERE o."confirmationStatus" = 'NEEDS_CONFIRMATION')::int AS "needsConfirmation",
-          COUNT(*) FILTER (WHERE o.status = 'CONFIRMED' AND COALESCE(o."deliveryStatus", 'NOT_CREATED') = 'NOT_CREATED')::int AS "unshippedConfirmed",
+          ${hasConfirmationStatus ? `COUNT(*) FILTER (WHERE o."confirmationStatus" = 'NEEDS_CONFIRMATION')::int` : '0::int'} AS "needsConfirmation",
+          ${hasDeliveryStatus
+            ? `COUNT(*) FILTER (WHERE o.status = 'CONFIRMED' AND COALESCE(o."deliveryStatus", 'NOT_CREATED') = 'NOT_CREATED')::int`
+            : '0::int'} AS "unshippedConfirmed",
           COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND o.status IN ('FAILED', 'RETURNED'))::int AS "deliveryIssues"
         FROM "Order" o
       `),
