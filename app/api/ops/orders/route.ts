@@ -245,7 +245,15 @@ export async function POST(request: NextRequest) {
         [order.id]
       )
 
-      return NextResponse.json(completeOrder.rows[0], { status: 201 })
+      const createdOrder = completeOrder.rows[0]
+      console.log('Created order:', {
+        id: createdOrder?.id,
+        orderNumber: createdOrder?.orderNumber,
+        hasItems: createdOrder?.items?.length,
+        fullOrder: createdOrder
+      })
+
+      return NextResponse.json(createdOrder, { status: 201 })
     } catch (error) {
       await client.query('ROLLBACK')
       throw error
