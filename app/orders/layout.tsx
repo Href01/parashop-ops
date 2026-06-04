@@ -1,6 +1,6 @@
 import { requireOpsAccess } from '@/lib/auth'
 
-export default async function OpsLayout({
+export default async function OrdersLayout({
   children,
 }: {
   children: React.ReactNode
@@ -17,12 +17,12 @@ export default async function OpsLayout({
           </div>
 
           <nav className="flex gap-2 flex-wrap border-t pt-3">
-            <NavLink href="/ops">📊 Dashboard</NavLink>
-            <NavLink href="/ops/orders">📦 Orders</NavLink>
-            <NavLink href="/ops/products">🛍️ Products</NavLink>
-            <NavLink href="/ops/campaigns">📢 Campaigns</NavLink>
-            <NavLink href="/ops/content">✍️ Content</NavLink>
-            <NavLink href="/ops/work-hub">⚡ Work Hub</NavLink>
+            <NavLink href="/">📊 Dashboard</NavLink>
+            <NavLink href="/orders">📦 Orders</NavLink>
+            <NavLink href="/products">🛍️ Products</NavLink>
+            <NavLink href="/campaigns">📢 Campaigns</NavLink>
+            <NavLink href="/content">✍️ Content</NavLink>
+            <NavLink href="/work-hub">⚡ Work Hub</NavLink>
           </nav>
         </div>
       </header>

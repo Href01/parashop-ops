@@ -43,7 +43,7 @@ export default function OrdersPage() {
         </div>
 
         <Link
-          href="/ops/orders/new"
+          href="/orders/new"
           className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition font-medium"
         >
           + Create Order
@@ -60,7 +60,7 @@ export default function OrdersPage() {
             Create your first order from WhatsApp, Instagram, or TikTok
           </p>
           <Link
-            href="/ops/orders/new"
+            href="/orders/new"
             className="inline-block px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition font-medium"
           >
             + Create First Order
@@ -99,7 +99,7 @@ function OrderCard({ order }: { order: any }) {
   }
 
   return (
-    <Link href={`/ops/orders/${order.id}`}>
+    <Link href={`/orders/${order.id}`}>
       <div className="bg-white rounded-lg border p-4 hover:shadow-md transition cursor-pointer">
         <div className="flex items-start justify-between">
           <div className="flex-1">

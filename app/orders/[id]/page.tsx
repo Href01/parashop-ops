@@ -62,7 +62,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
           <h3 className="text-lg font-semibold text-red-700 mb-2">Error</h3>
           <p className="text-red-600">{error || 'Order not found'}</p>
           <button
-            onClick={() => router.push('/ops/orders')}
+            onClick={() => router.push('/orders')}
             className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
           >
             ← Back to Orders
@@ -98,7 +98,7 @@ export default function OrderDetailPage({ params }: { params: { id: string } }) 
       <div className="flex items-center justify-between mb-6">
         <div>
           <button
-            onClick={() => router.push('/ops/orders')}
+            onClick={() => router.push('/orders')}
             className="text-sm text-gray-600 hover:text-gray-900 mb-2"
           >
             ← Back to Orders

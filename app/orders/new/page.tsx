@@ -43,7 +43,7 @@ export default function NewOrderPage() {
       }
 
       const order = await res.json()
-      router.push(`/ops/orders/${order.id}`)
+      router.push(`/orders/${order.id}`)
     } catch (err: any) {
       setError(err.message)
       setLoading(false)
