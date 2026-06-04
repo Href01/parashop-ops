@@ -2,11 +2,21 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import ProductPicker from './ProductPicker'
+
+interface SelectedProduct {
+  id: number
+  name: string
+  price: number
+  costPrice?: number
+  quantity: number
+}
 
 export default function NewOrderPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [selectedProducts, setSelectedProducts] = useState<SelectedProduct[]>([])
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
@@ -14,6 +24,13 @@ export default function NewOrderPage() {
     setError('')
 
     const formData = new FormData(e.currentTarget)
+
+    // Validate products
+    if (selectedProducts.length === 0) {
+      setError('Please add at least one product to the order')
+      setLoading(false)
+      return
+    }
 
     const orderData = {
       sourceChannel: formData.get('sourceChannel'),
@@ -26,7 +43,11 @@ export default function NewOrderPage() {
       deliveryFeeCharged: parseFloat(formData.get('deliveryFeeCharged') as string) || 0,
       estimatedDeliveryCost: parseFloat(formData.get('estimatedDeliveryCost') as string) || 30,
       notes: formData.get('notes'),
-      items: [],
+      items: selectedProducts.map(p => ({
+        productId: p.id,
+        quantity: p.quantity,
+        price: p.price,
+      })),
       confirmImmediately: formData.get('confirmImmediately') === 'on',
     }
 
@@ -80,6 +101,12 @@ export default function NewOrderPage() {
             <option value="TikTok">TikTok</option>
             <option value="Manual">Manual / Phone</option>
           </select>
+        </div>
+
+        {/* Products */}
+        <div className="border-t pt-6">
+          <h3 className="font-semibold text-gray-900 mb-4">Products *</h3>
+          <ProductPicker onProductsChange={setSelectedProducts} />
         </div>
 
         {/* Customer Info */}
@@ -226,19 +253,12 @@ export default function NewOrderPage() {
             </button>
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || selectedProducts.length === 0}
               className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50"
             >
               {loading ? 'Creating...' : 'Create Order'}
             </button>
           </div>
-        </div>
-
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <p className="text-sm text-yellow-800">
-            <strong>⚠️ Note:</strong> Product picker and cost price management coming in next update!
-            For now, orders are created without items. This form validates the order flow.
-          </p>
         </div>
       </form>
     </div>
