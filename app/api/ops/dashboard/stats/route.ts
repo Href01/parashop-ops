@@ -223,18 +223,18 @@ export async function GET() {
       : `'Unknown'`
 
     const [
-      summaryResult,
-      seriesResult,
-      pipelineResult,
-      topProductsResult,
-      topCitiesResult,
-      alertsResult,
+      summaryRows,
+      seriesRows,
+      pipelineRows,
+      topProductRows,
+      topCityRows,
+      alertRows,
       lowStockRows,
       roasRows,
       activityHistoryRows,
       recentOrdersRows,
     ] = await Promise.all([
-      pool.query<SummaryRow>(`
+      safeQuery<SummaryRow>('summary', `
         SELECT
           COALESCE(SUM(CASE WHEN o."createdAt" >= CURRENT_DATE THEN ${revenueExpression} ELSE 0 END), 0)::double precision AS "revenueToday",
           COALESCE(SUM(CASE WHEN o."createdAt" >= CURRENT_DATE - INTERVAL '6 days' THEN ${revenueExpression} ELSE 0 END), 0)::double precision AS "revenueWeek",
@@ -248,7 +248,7 @@ export async function GET() {
           COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND o.status IN ('DELIVERED', 'FAILED', 'RETURNED'))::int AS "completedDelivery30d"
         FROM "Order" o
       `),
-      pool.query<SeriesRow>(`
+      safeQuery<SeriesRow>('series', `
         SELECT
           day_bucket::date AS "day",
           COALESCE(SUM(${revenueExpression}), 0)::double precision AS "revenue",
@@ -264,7 +264,7 @@ export async function GET() {
         GROUP BY day_bucket
         ORDER BY day_bucket ASC
       `),
-      pool.query<PipelineRow>(`
+      safeQuery<PipelineRow>('pipeline', `
         SELECT
           COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND o.status = 'PENDING')::int AS pending,
           COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND o.status = 'CONFIRMED')::int AS confirmed,
@@ -275,7 +275,7 @@ export async function GET() {
           COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND o.status = 'RETURNED')::int AS returned
         FROM "Order" o
       `),
-      pool.query<ProductRow>(`
+      safeQuery<ProductRow>('top-products', `
         SELECT
           COALESCE(NULLIF(TRIM(p.name), ''), CONCAT('Product #', COALESCE(oi."productId"::text, '—'))) AS "name",
           COALESCE(SUM(oi.quantity), 0)::int AS "units",
@@ -288,7 +288,7 @@ export async function GET() {
         ORDER BY "units" DESC, "revenue" DESC
         LIMIT 4
       `),
-      pool.query<CityRow>(`
+      safeQuery<CityRow>('top-cities', `
         SELECT
           ${deliveryCityExpression} AS "name",
           COUNT(*)::int AS "orders"
@@ -298,7 +298,7 @@ export async function GET() {
         ORDER BY "orders" DESC, "name" ASC
         LIMIT 5
       `),
-      pool.query<AlertCountsRow>(`
+      safeQuery<AlertCountsRow>('alerts', `
         SELECT
           ${hasConfirmationStatus ? `COUNT(*) FILTER (WHERE o."confirmationStatus" = 'NEEDS_CONFIRMATION')::int` : '0::int'} AS "needsConfirmation",
           ${hasDeliveryStatus
@@ -363,9 +363,9 @@ export async function GET() {
       ),
     ])
 
-    const summary = summaryResult.rows[0]
-    const pipeline = pipelineResult.rows[0]
-    const alertCounts = alertsResult.rows[0]
+    const summary = summaryRows[0]
+    const pipeline = pipelineRows[0]
+    const alertCounts = alertRows[0]
 
     const revenueToday = toNumber(summary?.revenueToday)
     const revenueWeek = toNumber(summary?.revenueWeek)
@@ -384,7 +384,7 @@ export async function GET() {
     const ordersDelta = percentageChange(ordersWeek, previousOrdersWeek)
     const averageOrderValue = ordersWeek > 0 ? revenueWeek / ordersWeek : 0
 
-    const revenueSeries = seriesResult.rows.map((row) => {
+    const revenueSeries = seriesRows.map((row) => {
       const date = new Date(row.day)
 
       return {
@@ -398,13 +398,13 @@ export async function GET() {
     const streakDays = buildStreak(revenueSeries)
     const goalProgress = revenueToday > 0 ? Math.min((revenueToday / DAILY_REVENUE_GOAL) * 100, 100) : 0
 
-    const topProducts = topProductsResult.rows.map((row) => ({
+    const topProducts = topProductRows.map((row) => ({
       name: row.name || 'Unknown product',
       units: toNumber(row.units),
       revenue: toNumber(row.revenue),
     }))
 
-    const topCities = topCitiesResult.rows.map((row) => ({
+    const topCities = topCityRows.map((row) => ({
       name: row.name || 'Unknown',
       orders: toNumber(row.orders),
     }))
