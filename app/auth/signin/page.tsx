@@ -1,7 +1,8 @@
 'use client'
 
+import { Shield } from 'lucide-react'
 import { signIn } from 'next-auth/react'
-import { useState, Suspense } from 'react'
+import { Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 function SignInForm() {
@@ -13,8 +14,8 @@ function SignInForm() {
   const searchParams = useSearchParams()
   const callbackUrl = searchParams.get('callbackUrl') || '/'
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
     setError('')
     setLoading(true)
 
@@ -30,84 +31,107 @@ function SignInForm() {
         setError('Invalid email or password')
         setLoading(false)
       }
-    } catch (err) {
+    } catch {
       setError('Something went wrong')
       setLoading(false)
     }
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-white flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-purple-600 mb-2">
-              Shine BOS
-            </h1>
-            <p className="text-gray-600">
-              Business Operating System
-            </p>
-            <p className="text-sm text-gray-500 mt-1">
-              Founders Only
-            </p>
-          </div>
-
-          {/* Error Message */}
-          {error && (
-            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-              {error}
+    <div className="auth">
+      <div className="auth-brand">
+        <div className="auth-logo">
+          <div className="sb-logo">S</div>
+          <div>
+            <div className="auth-logo-title">
+              Shine <b>BOS</b>
             </div>
-          )}
+            <div className="sb-brand-sub">Business Operating System</div>
+          </div>
+        </div>
 
-          {/* Sign In Form */}
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="auth-hero">
+          <h1>
+            Run all of <span className="g">Shine Cosmetics</span> from one screen.
+          </h1>
+          <p>Orders, inventory, profit, ads and content - the founders&apos; command center. No more WhatsApp chaos or scattered spreadsheets.</p>
+          <div className="auth-stats">
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
-                Email
-              </label>
+              <div className="as-v pos">142</div>
+              <div className="as-l">orders this week</div>
+            </div>
+            <div>
+              <div className="as-v">34.3%</div>
+              <div className="as-l">avg margin</div>
+            </div>
+            <div>
+              <div className="as-v">3.8x</div>
+              <div className="as-l">blended ROAS</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="auth-foot">ops.shinecosmetics.ma - © 2026 Shine Cosmetics</div>
+      </div>
+
+      <div className="auth-form">
+        <div className="auth-card">
+          <h2>Welcome back</h2>
+          <div className="sub">Sign in to access the operations platform.</div>
+
+          {error ? <div className="auth-error">{error}</div> : null}
+
+          <form onSubmit={handleSubmit} className="auth-fields">
+            <div className="field">
+              <label htmlFor="email">Email</label>
               <input
                 id="email"
+                className="inp"
                 type="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(event) => setEmail(event.target.value)}
                 required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 placeholder="mekouar01@gmail.com"
               />
             </div>
-
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-                Password
-              </label>
+            <div className="field">
+              <label htmlFor="password">Password</label>
               <input
                 id="password"
+                className="inp"
                 type="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(event) => setPassword(event.target.value)}
                 required
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 placeholder="••••••••"
               />
             </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-purple-600 text-white py-2 rounded-lg font-medium hover:bg-purple-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Signing in...' : 'Sign In'}
+            <button type="submit" className="gbtn" disabled={loading}>
+              {loading ? 'Signing in...' : 'Sign in'}
             </button>
           </form>
 
-          {/* Footer */}
-          <div className="mt-6 text-center text-sm text-gray-500">
-            <p>Use your Shine Cosmetics account</p>
-            <p className="mt-1">
-              mekouar01@gmail.com or marjanhajar20@gmail.com
-            </p>
+          <div className="founder-note">
+            <Shield />
+            <div>
+              <div className="fn-t">Founders only</div>
+              <div className="fn-s">Access is restricted to whitelisted Shine Cosmetics founder accounts. Other accounts will be denied.</div>
+            </div>
           </div>
+
+          <div className="auth-emails">
+            <div className="label auth-label">Authorized accounts</div>
+            <div className="ae-row">
+              <div className="avatar a small">AM</div>
+              <span className="mono">mekouar01@gmail.com</span>
+            </div>
+            <div className="ae-row">
+              <div className="avatar b small">MH</div>
+              <span className="mono">marjanhajar20@gmail.com</span>
+            </div>
+          </div>
+
+          <div className="auth-legal">Secured with credentials auth - HTTPS enforced<br />Need access? Contact the other founder.</div>
         </div>
       </div>
     </div>
@@ -116,13 +140,7 @@ function SignInForm() {
 
 export default function SignInPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-        </div>
-      </div>
-    }>
+    <Suspense fallback={<div className="auth-loading">Loading...</div>}>
       <SignInForm />
     </Suspense>
   )

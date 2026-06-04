@@ -1,8 +1,32 @@
 'use client'
 
+import {
+  ArrowDown,
+  ArrowUp,
+  Bell,
+  Box,
+  Check,
+  CheckCircle,
+  Download,
+  Flame,
+  FlaskConical,
+  Inbox,
+  LayoutDashboard,
+  MapPin,
+  Megaphone,
+  Package,
+  PanelLeft,
+  Plus,
+  Search,
+  Sparkles,
+  Target,
+  Truck,
+  TriangleAlert,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 import Link from 'next/link'
-import type { CSSProperties } from 'react'
-import { useEffect, useState } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 type Tone = 'rose' | 'green' | 'amber' | 'blue' | 'violet' | 'red'
 
@@ -62,14 +86,48 @@ interface DashboardStats {
   }>
 }
 
-const toneStyles: Record<Tone, CSSProperties> = {
-  rose: { background: 'var(--rose-bg)', color: 'var(--rose-bright)' },
-  green: { background: 'var(--green-bg)', color: 'var(--green)' },
-  amber: { background: 'var(--amber-bg)', color: 'var(--amber)' },
-  blue: { background: 'var(--blue-bg)', color: 'var(--blue)' },
-  violet: { background: 'var(--violet-bg)', color: 'var(--violet)' },
-  red: { background: 'var(--red-bg)', color: 'var(--red)' },
+const toneVars: Record<Tone, { bg: string; fg: string; line?: string }> = {
+  rose: { bg: 'var(--rose-bg)', fg: 'var(--rose-bright)', line: 'var(--rose-line)' },
+  green: { bg: 'var(--green-bg)', fg: 'var(--green)', line: 'var(--green-line)' },
+  amber: { bg: 'var(--amber-bg)', fg: 'var(--amber)', line: 'var(--amber-line)' },
+  blue: { bg: 'var(--blue-bg)', fg: 'var(--blue)' },
+  violet: { bg: 'var(--violet-bg)', fg: 'var(--violet)' },
+  red: { bg: 'var(--red-bg)', fg: 'var(--red)', line: 'var(--red-line)' },
 }
+
+interface NavItem {
+  label: string
+  href: string
+  icon: LucideIcon
+  active?: boolean
+  count?: string
+  alert?: boolean
+}
+
+const navSections: Array<{ label: string; items: NavItem[] }> = [
+  {
+    label: 'Overview',
+    items: [{ label: 'Dashboard', href: '/', icon: LayoutDashboard, active: true }],
+  },
+  {
+    label: 'Operations',
+    items: [
+      { label: 'Orders', href: '/orders', icon: Package, count: '12', alert: true },
+      { label: 'Products', href: '/products', icon: Box },
+    ],
+  },
+  {
+    label: 'Growth',
+    items: [
+      { label: 'Campaigns', href: '/campaigns', icon: Megaphone },
+      { label: 'Content Hub', href: '/content', icon: Sparkles, count: '3' },
+    ],
+  },
+  {
+    label: 'Team',
+    items: [{ label: 'Work Hub', href: '/work-hub', icon: Flame, count: '5' }],
+  },
+]
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('en-US', {
@@ -85,10 +143,7 @@ function formatCompactCurrency(value: number) {
 }
 
 function formatDelta(value: number | null) {
-  if (value === null) {
-    return 'New'
-  }
-
+  if (value === null) return 'New'
   const sign = value > 0 ? '+' : ''
   return `${sign}${value.toFixed(1)}%`
 }
@@ -126,10 +181,20 @@ function getChartLabels(series: DashboardStats['revenueSeries']) {
     .filter(Boolean)
 }
 
+function iconForTone(tone: Tone) {
+  if (tone === 'green') return Check
+  if (tone === 'amber') return TriangleAlert
+  if (tone === 'red') return TriangleAlert
+  if (tone === 'blue') return CheckCircle
+  if (tone === 'violet') return Truck
+  return Sparkles
+}
+
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [collapsed, setCollapsed] = useState(false)
 
   useEffect(() => {
     void fetchStats()
@@ -157,219 +222,293 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-[1600px] p-6">
-        <div className="animate-pulse space-y-4">
-          <div className="h-8 w-72 rounded bg-bg-2"></div>
-          <div className="h-24 rounded-[var(--radius)] bg-bg-1"></div>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
-            {[1, 2, 3, 4, 5].map((item) => (
-              <div key={item} className="h-36 rounded-[var(--radius)] bg-bg-1"></div>
-            ))}
-          </div>
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
-            <div className="h-[420px] rounded-[var(--radius)] bg-bg-1"></div>
-            <div className="h-[420px] rounded-[var(--radius)] bg-bg-1"></div>
+      <DashboardShell collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)}>
+        <div className="page-inner">
+          <div className="animate-pulse space-y-4">
+            <div className="h-9 w-80 rounded bg-bg-2"></div>
+            <div className="h-20 rounded-[var(--radius-lg)] bg-bg-1"></div>
+            <div className="grid grid-cols-1 gap-[14px] md:grid-cols-2 xl:grid-cols-5">
+              {[1, 2, 3, 4, 5].map((item) => (
+                <div key={item} className="h-36 rounded-[var(--radius-lg)] bg-bg-1"></div>
+              ))}
+            </div>
+            <div className="grid grid-cols-1 gap-[14px] xl:grid-cols-[1fr_360px]">
+              <div className="h-[420px] rounded-[var(--radius-lg)] bg-bg-1"></div>
+              <div className="h-[420px] rounded-[var(--radius-lg)] bg-bg-1"></div>
+            </div>
           </div>
         </div>
-      </div>
+      </DashboardShell>
     )
   }
 
   if (!stats || error) {
     return (
-      <div className="mx-auto max-w-[1600px] p-6">
-        <div className="panel p-8 text-center">
-          <div className="mb-3 text-3xl">📉</div>
-          <h1 className="mb-2 text-xl font-semibold">Executive dashboard unavailable</h1>
-          <p className="mb-5 text-sm text-tx-mid">{error || 'No dashboard data is available yet.'}</p>
-          <button type="button" className="btn mx-auto" onClick={() => void fetchStats()}>
-            Retry
-          </button>
+      <DashboardShell collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)}>
+        <div className="page-inner">
+          <div className="panel p-8 text-center">
+            <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-lg text-red" style={{ background: 'var(--red-bg)' }}>
+              <TriangleAlert className="h-5 w-5" />
+            </div>
+            <h1 className="mb-2 text-xl font-semibold">Executive dashboard unavailable</h1>
+            <p className="mb-5 text-sm text-tx-mid">{error || 'No dashboard data is available yet.'}</p>
+            <button type="button" className="btn mx-auto" onClick={() => void fetchStats()}>
+              Retry
+            </button>
+          </div>
         </div>
-      </div>
+      </DashboardShell>
     )
   }
 
-  const maxSeriesValue = Math.max(
-    1,
-    ...stats.revenueSeries.flatMap((entry) => [entry.revenue, entry.profit])
+  return (
+    <DashboardShell collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)}>
+      <DashboardContent stats={stats} />
+    </DashboardShell>
   )
+}
+
+function DashboardShell({
+  children,
+  collapsed,
+  onToggle,
+}: {
+  children: ReactNode
+  collapsed: boolean
+  onToggle: () => void
+}) {
+  return (
+    <div className={`bos-app ${collapsed ? 'collapsed' : ''}`}>
+      <aside className="sidebar">
+        <div className="sb-brand">
+          <div className="sb-logo">S</div>
+          <div className="sb-brand-text">
+            <div className="sb-brand-name">
+              Shine <b>BOS</b>
+            </div>
+            <div className="sb-brand-sub">shinecosmetics.ma</div>
+          </div>
+        </div>
+
+        <nav className="sb-nav">
+          {navSections.map((section) => (
+            <div key={section.label} className="sb-section">
+              <div className="sb-section-label">{section.label}</div>
+              {section.items.map((item) => {
+                const Icon = item.icon
+
+                return (
+                  <Link key={item.label} href={item.href} className={`sb-item ${item.active ? 'active' : ''}`}>
+                    <Icon />
+                    <span className="sb-label">{item.label}</span>
+                    {'count' in item && item.count ? (
+                      <span className={`sb-count ${item.alert ? 'alert' : ''}`}>{item.count}</span>
+                    ) : null}
+                  </Link>
+                )
+              })}
+            </div>
+          ))}
+        </nav>
+
+        <div className="sb-foot">
+          <div className="sb-founders">
+            <div className="avatar-stack">
+              <div className="avatar a">AM</div>
+              <div className="avatar b">MH</div>
+            </div>
+            <div className="sb-founders-text">
+              <div>Founders</div>
+              <small>2 online</small>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <main className="main">
+        <header className="topbar">
+          <button type="button" className="tb-toggle" aria-label="Toggle sidebar" onClick={onToggle}>
+            <PanelLeft />
+          </button>
+          <div className="tb-title">Dashboard</div>
+          <span className="tb-crumb">
+            <b>Overview</b>
+          </span>
+          <button type="button" className="tb-search">
+            <Search />
+            <span>Search orders, products...</span>
+            <span className="kbd">Ctrl K</span>
+          </button>
+          <div className="tb-live">
+            <span className="pulse"></span>
+            LIVE
+          </div>
+          <button type="button" className="tb-icon" aria-label="Notifications">
+            <Bell />
+            <span className="dot"></span>
+          </button>
+          <div className="avatar a tb-avatar">AM</div>
+        </header>
+        <div className="page">{children}</div>
+      </main>
+    </div>
+  )
+}
+
+function DashboardContent({ stats }: { stats: DashboardStats }) {
   const maxPipelineValue = Math.max(1, ...stats.pipeline.map((entry) => entry.value))
   const maxProductUnits = Math.max(1, ...stats.topProducts.map((entry) => entry.units))
+  const maxCityOrders = Math.max(1, ...stats.topCities.map((entry) => entry.orders))
   const chartLabels = getChartLabels(stats.revenueSeries)
+  const channelMix = useMemo(() => buildChannelMix(stats), [stats])
 
   return (
-    <div className="mx-auto max-w-[1600px] p-6">
-      <div className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+    <div className="page-inner">
+      <div className="page-head">
         <div>
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-tx-faint">
-            Executive dashboard
-          </div>
-          <h1 className="mb-1 text-3xl font-semibold tracking-[-0.03em]">{getGreeting()}, Shine team 👋</h1>
-          <div className="flex flex-wrap items-center gap-2 text-sm text-tx-mid">
-            <span>
-              {new Date().toLocaleDateString('en-US', {
-                weekday: 'long',
-                day: 'numeric',
-                month: 'long',
-                year: 'numeric',
-              })}
-            </span>
-            <span className="text-tx-faint">•</span>
-            <span>{stats.ordersToday} orders today</span>
-            <span className="badge green">Updated {formatRelativeTime(stats.generatedAt)}</span>
+          <h1>{getGreeting()}, Achraf</h1>
+          <div className="sub">
+            {new Date().toLocaleDateString('en-US', {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+            })}{' '}
+            - Here&apos;s how Shine is performing today
           </div>
         </div>
-
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="range-group" aria-label="Selected period">
-            <span className="range-pill">Today</span>
-            <span className="range-pill active">7D</span>
-            <span className="range-pill">30D</span>
-            <span className="range-pill">QTD</span>
-          </div>
-
-          <button type="button" className="btn opacity-60" disabled>
-            Export
+        <div className="spacer"></div>
+        <div className="seg" aria-label="Selected period">
+          <button type="button">Today</button>
+          <button type="button" className="active">
+            7D
           </button>
-          <Link href="/orders/new" className="btn primary">
-            + New order
-          </Link>
+          <button type="button">30D</button>
+          <button type="button">QTD</button>
         </div>
+        <button type="button" className="btn">
+          <Download />
+          Export
+        </button>
+        <Link className="btn primary" href="/orders/new">
+          <Plus />
+          New order
+        </Link>
       </div>
 
-      <div className="panel mb-4 overflow-hidden">
-        <div className="flex flex-col gap-4 p-4 xl:flex-row xl:items-center">
-          <div className="flex min-w-[220px] items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg text-lg" style={toneStyles.rose}>
-              🎯
+      <div className="panel mb16">
+        <div className="goalbar">
+          <div className="row gap10 goal-copy">
+            <div className="kpi-ico" style={{ background: 'var(--rose-bg)', color: 'var(--rose-bright)' }}>
+              <Target />
             </div>
             <div>
-              <div className="mb-0.5 text-xs text-tx-lo">Daily revenue goal</div>
-              <div className="font-mono text-lg font-semibold">
+              <div className="label">Daily revenue goal</div>
+              <div className="num fs18 fw600">
                 {formatCurrency(stats.revenueToday)}
-                <span className="ml-1 text-xs text-tx-lo">/ {formatCurrency(stats.dailyGoal)} MAD</span>
+                <span className="tx-lo fs12"> / {formatCurrency(stats.dailyGoal)} MAD</span>
               </div>
             </div>
           </div>
-
-          <div className="h-2.5 flex-1 overflow-hidden rounded-full bg-bg-3">
-            <div
-              className="h-full rounded-full"
-              style={{
-                width: `${stats.goalProgress}%`,
-                background: 'linear-gradient(90deg, var(--rose), var(--rose-bright))',
-              }}
-            ></div>
+          <div className="gtrack">
+            <span style={{ width: `${stats.goalProgress}%` }}></span>
+            <span className="gmark" style={{ left: `${stats.goalProgress}%` }}></span>
           </div>
-
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="row gap8">
             <span className="badge rose">
-              {stats.streakDays > 0 ? `🔥 ${stats.streakDays}-day streak` : '🎯 Goal in progress'}
+              <Flame className="h-3 w-3" />
+              {stats.streakDays > 0 ? `${stats.streakDays}-day streak` : 'Goal in progress'}
             </span>
-            <span className="badge green">{Math.round(stats.goalProgress)}% to goal</span>
+            <span className="badge green">
+              <ArrowUp className="h-3 w-3" />
+              {Math.round(stats.goalProgress)}% to goal
+            </span>
           </div>
         </div>
       </div>
 
-      <div className="mb-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="kpi-row mb16">
         <KpiCard
-          title="Revenue · 7D"
+          title="Revenue - 7D"
           value={stats.revenueWeek}
           unit="MAD"
           trend={formatDelta(stats.revenueDelta)}
           trendTone={stats.revenueDelta !== null && stats.revenueDelta < 0 ? 'down' : 'up'}
-          subtitle="vs previous 7 days"
-          icon="💵"
+          subtitle="vs last week"
+          icon={<DollarIcon />}
           tone="green"
+          sparkData={stats.revenueSeries.slice(-7).map((entry) => entry.revenue)}
         />
         <KpiCard
-          title="Est. profit · 7D"
+          title="Est. profit - 7D"
           value={stats.estimatedProfit}
           unit="MAD"
           trend={formatDelta(stats.profitDelta)}
           trendTone={stats.profitDelta !== null && stats.profitDelta < 0 ? 'down' : 'up'}
           subtitle={`${stats.marginPercent.toFixed(1)}% margin`}
-          icon="✨"
+          icon={<Sparkles />}
           tone="rose"
+          sparkData={stats.revenueSeries.slice(-7).map((entry) => entry.profit)}
         />
         <KpiCard
-          title="Orders · 7D"
+          title="Orders - 7D"
           value={stats.ordersWeek}
           unit=""
           trend={formatDelta(stats.ordersDelta)}
           trendTone={stats.ordersDelta !== null && stats.ordersDelta < 0 ? 'down' : 'up'}
-          subtitle={`${formatCurrency(stats.averageOrderValue)} MAD avg order`}
-          icon="📦"
+          subtitle={`${formatCurrency(stats.averageOrderValue)} MAD avg`}
+          icon={<Package />}
           tone="blue"
           decimals={0}
+          sparkData={stats.revenueSeries.slice(-7).map((_, index) => Math.max(0, stats.ordersWeek - 6 + index))}
         />
         <KpiCard
-          title="Delivery rate · 30D"
+          title="Delivery rate"
           value={stats.deliveryRate}
           unit="%"
-          subtitle={`${stats.completedDeliveryCount} completed deliveries`}
-          icon="🚚"
+          subtitle={`${stats.completedDeliveryCount} completed`}
+          icon={<Truck />}
           tone="amber"
           decimals={1}
+          sparkData={[stats.deliveryRate * 0.96, stats.deliveryRate, stats.deliveryRate * 1.01, stats.deliveryRate * 0.98, stats.deliveryRate]}
         />
         <KpiCard
-          title="Blended ROAS · 30D"
+          title="Blended ROAS"
           value={stats.roas}
-          unit="×"
+          unit="x"
           subtitle={`${formatCompactCurrency(stats.adSpend)} MAD ad spend`}
-          icon="📢"
+          icon={<Megaphone />}
           tone="violet"
           decimals={1}
+          sparkData={[stats.roas * 0.8, stats.roas * 0.9, stats.roas, stats.roas * 0.95, stats.roas]}
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1fr_360px]">
-        <div className="space-y-4">
+      <div className="dash-grid">
+        <div className="grid">
           <div className="panel">
             <div className="panel-head">
               <h3>Revenue & profit</h3>
-              <div className="ml-3 flex items-center gap-3">
-                <span className="flex items-center gap-1.5 text-xs text-tx-mid">
-                  <span className="h-0.5 w-2 rounded" style={{ background: 'var(--rose-bright)' }}></span>
+              <div className="row gap14 chart-legend">
+                <span className="row gap6 fs12 tx-mid">
+                  <span style={{ width: 9, height: 3, borderRadius: 2, background: 'var(--rose-bright)', display: 'inline-block' }}></span>
                   Revenue
                 </span>
-                <span className="flex items-center gap-1.5 text-xs text-tx-mid">
-                  <span className="h-0.5 w-2 rounded" style={{ background: 'var(--green)' }}></span>
+                <span className="row gap6 fs12 tx-mid">
+                  <span style={{ width: 9, height: 3, borderRadius: 2, background: 'var(--green)', display: 'inline-block' }}></span>
                   Profit
+                </span>
+                <span className="row gap6 fs12 tx-lo">
+                  <span style={{ width: 9, borderTop: '2px dashed var(--tx-faint)', display: 'inline-block' }}></span>
+                  Goal
                 </span>
               </div>
               <div className="spacer"></div>
-              <span className="text-xs text-tx-faint">last 30 days · MAD</span>
+              <span className="hint">last 30 days - MAD</span>
             </div>
-
             <div className="panel-pad">
-              <div className="flex h-56 items-end justify-between gap-1">
-                {stats.revenueSeries.map((entry) => (
-                  <div key={entry.date} className="flex flex-1 flex-col justify-end gap-0.5">
-                    <div
-                      className="w-full rounded-t"
-                      style={{
-                        height: `${(entry.revenue / maxSeriesValue) * 100}%`,
-                        background: 'var(--rose-bright)',
-                        opacity: 0.92,
-                      }}
-                      title={`${entry.label} revenue: ${formatCurrency(entry.revenue)} MAD`}
-                    ></div>
-                    <div
-                      className="w-full rounded-t"
-                      style={{
-                        height: `${(entry.profit / maxSeriesValue) * 100}%`,
-                        background: 'var(--green)',
-                        opacity: 0.9,
-                      }}
-                      title={`${entry.label} profit: ${formatCurrency(entry.profit)} MAD`}
-                    ></div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-3 grid grid-cols-5 text-[10px] font-mono text-tx-faint">
+              <AreaChart series={stats.revenueSeries} goal={stats.dailyGoal} />
+              <div className="chart-label-row">
                 {chartLabels.map((entry) => (
                   <span key={entry.date}>{entry.label}</span>
                 ))}
@@ -377,28 +516,23 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-3">
+          <div className="trio">
             <div className="panel">
               <div className="panel-head">
                 <h3>Order pipeline</h3>
-                <div className="spacer"></div>
-                <span className="text-xs text-tx-faint">30D</span>
               </div>
-              <div className="panel-pad space-y-2.5">
+              <div className="panel-pad">
                 {stats.pipeline.map((entry) => (
-                  <div key={entry.label} className="flex items-center gap-3">
-                    <span className="w-20 text-xs text-tx-mid">{entry.label}</span>
-                    <div className="h-7 flex-1 rounded bg-bg-3 p-0.5">
-                      <div
-                        className="flex h-full items-center rounded px-2 text-xs font-semibold"
-                        style={{
-                          width: `${Math.max(16, (entry.value / maxPipelineValue) * 100)}%`,
-                          background: `var(--${entry.tone === 'rose' ? 'rose-bright' : entry.tone})`,
-                          color: 'var(--bg-0)',
-                        }}
-                      >
-                        {entry.value}
-                      </div>
+                  <div key={entry.label} className="funnel-row">
+                    <span className="fs12 tx-mid funnel-label">{entry.label}</span>
+                    <div
+                      className="funnel-bar"
+                      style={{
+                        background: toneVars[entry.tone].fg,
+                        width: `${Math.max(18, (entry.value / maxPipelineValue) * 100)}%`,
+                      }}
+                    >
+                      {entry.value}
                     </div>
                   </div>
                 ))}
@@ -409,30 +543,18 @@ export default function DashboardPage() {
               <div className="panel-head">
                 <h3>Top products</h3>
                 <div className="spacer"></div>
-                <span className="text-xs text-tx-faint">7D</span>
+                <span className="hint">7D</span>
               </div>
-              <div className="panel-pad space-y-3">
+              <div className="panel-pad">
                 {stats.topProducts.length > 0 ? (
                   stats.topProducts.map((product) => (
-                    <div key={product.name} className="space-y-1.5">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="truncate text-xs font-medium">{product.name}</span>
-                        <span className="whitespace-nowrap text-[10px] font-mono text-tx-lo">
-                          {formatCurrency(product.revenue)} MAD
-                        </span>
+                    <div key={product.name} className="product-line">
+                      <div className="between mb4">
+                        <span className="fs12 fw500 nowrap product-name">{product.name}</span>
+                        <span className="num fs11 tx-lo">{formatCurrency(product.revenue)}</span>
                       </div>
-                      <div className="flex items-center justify-between text-[10px] text-tx-faint">
-                        <span>{product.units} units</span>
-                        <span>{Math.round((product.units / maxProductUnits) * 100)}%</span>
-                      </div>
-                      <div className="h-1.5 overflow-hidden rounded-full bg-bg-3">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${(product.units / maxProductUnits) * 100}%`,
-                            background: 'var(--rose-bright)',
-                          }}
-                        ></div>
+                      <div className="bar">
+                        <span style={{ width: `${(product.units / maxProductUnits) * 100}%` }}></span>
                       </div>
                     </div>
                   ))
@@ -442,24 +564,26 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            <div className="panel md:col-span-2 2xl:col-span-1">
+            <div className="panel">
               <div className="panel-head">
                 <h3>Top cities</h3>
                 <div className="spacer"></div>
-                <span className="text-xs text-tx-faint">orders · 7D</span>
+                <span className="hint">orders</span>
               </div>
-              <div className="panel-pad space-y-2">
+              <div className="panel-pad">
                 {stats.topCities.length > 0 ? (
                   stats.topCities.map((city) => (
-                    <div
-                      key={city.name}
-                      className="flex items-center justify-between border-b border-line-soft py-1.5 last:border-0"
-                    >
-                      <span className="flex items-center gap-2 text-xs font-medium">
-                        <span className="text-tx-lo">📍</span>
-                        {city.name}
+                    <div key={city.name} className="stat-line">
+                      <span className="row gap8">
+                        <MapPin className="city-pin" />
+                        <span className="fs12 fw500">{city.name}</span>
                       </span>
-                      <span className="text-[10px] font-mono text-tx-lo">{city.orders}</span>
+                      <span className="row gap8">
+                        <div className="bar city-bar">
+                          <span style={{ width: `${(city.orders / maxCityOrders) * 100}%`, background: 'var(--blue)' }}></span>
+                        </div>
+                        <span className="num fs11 tx-lo city-count">{city.orders}</span>
+                      </span>
                     </div>
                   ))
                 ) : (
@@ -470,58 +594,85 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="space-y-4">
-          <div className="panel overflow-hidden">
+        <div className="grid">
+          <div className="panel">
             <div className="panel-head">
-              <span className="text-rose-bright">📥</span>
+              <Inbox className="panel-head-icon" />
               <h3>Needs attention</h3>
               <div className="spacer"></div>
               <span className="badge rose">{stats.alerts.total}</span>
             </div>
+            <div>
+              {stats.alerts.items.map((alert) => {
+                const Icon = iconForTone(alert.tone)
 
-            <div className="divide-y divide-line-soft">
-              {stats.alerts.items.map((alert) => (
-                <div key={alert.title} className="flex items-start gap-3 p-3">
-                  <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded text-sm" style={toneStyles[alert.tone]}>
-                    {alert.tone === 'green' ? '✓' : alert.tone === 'amber' ? '!' : alert.tone === 'red' ? '⚠' : '•'}
+                return (
+                  <div key={alert.title} className="alert-item">
+                    <div className="alert-ico" style={{ background: toneVars[alert.tone].bg, color: toneVars[alert.tone].fg }}>
+                      <Icon />
+                    </div>
+                    <div className="alert-body">
+                      <div className="at">{alert.title}</div>
+                      <div className="as">{alert.subtitle}</div>
+                    </div>
+                    <Link href={alert.href} className="alert-cta">
+                      Review
+                    </Link>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-0.5 text-xs font-medium">{alert.title}</div>
-                    <div className="text-[10px] text-tx-lo">{alert.subtitle}</div>
-                  </div>
-                  <Link href={alert.href} className="rounded bg-bg-2 px-2 py-1 text-xs text-tx-mid transition hover:bg-bg-3 hover:text-tx-hi">
-                    Review
-                  </Link>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
 
-          <div className="panel overflow-hidden">
+          <div className="panel">
             <div className="panel-head">
-              <div className="flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-semibold" style={toneStyles.green}>
-                <span className="h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: 'var(--green)' }}></span>
+              <h3>Sales by channel</h3>
+              <div className="spacer"></div>
+              <span className="hint">7D</span>
+            </div>
+            <div className="panel-pad row gap16 channel-panel">
+              <ChannelDonut channels={channelMix} total={stats.ordersWeek} />
+              <div className="full">
+                {channelMix.map((channel) => (
+                  <div key={channel.name} className="stat-line channel-line">
+                    <span className="row gap8">
+                      <span className="channel-dot" style={{ background: channel.color }}></span>
+                      <span className="fs12 fw500">{channel.name}</span>
+                    </span>
+                    <span className="num fs12 tx-mid">{channel.value}%</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-head">
+              <div className="tb-live feed-live">
+                <span className="pulse"></span>
                 LIVE
               </div>
-              <h3 className="ml-1">Activity</h3>
-              <div className="spacer"></div>
-              <span className="text-xs text-tx-faint">latest updates</span>
+              <h3>Activity</h3>
             </div>
-
-            <div className="max-h-[420px] divide-y divide-line-soft overflow-y-auto">
+            <div className="feed-list">
               {stats.activity.length > 0 ? (
-                stats.activity.map((item) => (
-                  <div key={`${item.title}-${item.timestamp}`} className="flex gap-3 p-3">
-                    <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-xs" style={toneStyles[item.tone]}>
-                      {item.tone === 'green' ? '✓' : item.tone === 'rose' ? '+' : item.tone === 'violet' ? '↗' : '•'}
+                stats.activity.map((item) => {
+                  const Icon = iconForTone(item.tone)
+
+                  return (
+                    <div key={`${item.title}-${item.timestamp}`} className="feed-item">
+                      <div className="feed-rail"></div>
+                      <div className="feed-dot" style={{ background: toneVars[item.tone].bg, color: toneVars[item.tone].fg }}>
+                        <Icon />
+                      </div>
+                      <div className="feed-body">
+                        <div className="ft">{item.title}</div>
+                        <div className="feed-sub">{item.subtitle}</div>
+                        <div className="feed-time">{formatRelativeTime(item.timestamp)}</div>
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-0.5 text-xs">{item.title}</div>
-                      <div className="mb-1 text-[10px] text-tx-lo">{item.subtitle}</div>
-                      <div className="text-[10px] text-tx-faint">{formatRelativeTime(item.timestamp)}</div>
-                    </div>
-                  </div>
-                ))
+                  )
+                })
               ) : (
                 <div className="p-4">
                   <EmptyPanelCopy message="Recent order and status activity will appear here." />
@@ -549,38 +700,190 @@ function KpiCard({
   trend,
   trendTone = 'up',
   decimals = 0,
+  sparkData,
 }: {
   title: string
   value: number
   unit: string
   subtitle: string
-  icon: string
+  icon: ReactNode
   tone: Tone
   trend?: string
   trendTone?: 'up' | 'down'
   decimals?: number
+  sparkData: number[]
 }) {
   return (
-    <div className="kpi panel">
-      <div className="mb-3 flex items-center gap-2.5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg text-base" style={toneStyles[tone]}>
+    <div className="panel kpi">
+      <div className="kpi-top">
+        <div className="kpi-ico" style={{ background: toneVars[tone].bg, color: toneVars[tone].fg }}>
           {icon}
         </div>
-        <span className="text-xs font-medium text-tx-mid">{title}</span>
+        <span className="kpi-title">{title}</span>
       </div>
       <div className="kpi-val">
-        {value.toFixed(decimals)}
-        <span className="cur">{unit}</span>
+        <span>{value.toFixed(decimals)}</span>
+        {unit ? <span className="cur">{unit}</span> : null}
       </div>
       <div className="kpi-meta">
         {trend ? (
           <span className={`delta ${trendTone === 'down' ? 'down' : 'up'}`}>
-            {trendTone === 'down' ? '↓' : '↑'}
+            {trendTone === 'down' ? <ArrowDown /> : <ArrowUp />}
             {trend}
           </span>
         ) : null}
         <span>{subtitle}</span>
       </div>
+      <div className="kpi-spark">
+        <Sparkline data={sparkData} color={toneVars[tone].fg} />
+      </div>
     </div>
+  )
+}
+
+function Sparkline({ data, color }: { data: number[]; color: string }) {
+  const values = data.length > 1 ? data : [0, 0]
+  const width = 90
+  const height = 28
+  const pad = 2
+  const max = Math.max(...values)
+  const min = Math.min(...values)
+  const range = max - min || 1
+  const points = values.map((value, index) => {
+    const x = pad + index * ((width - pad * 2) / (values.length - 1))
+    const y = height - pad - ((value - min) / range) * (height - pad * 2)
+    return [x, y] as const
+  })
+  const line = points.map(([x, y], index) => `${index === 0 ? 'M' : 'L'}${x.toFixed(1)} ${y.toFixed(1)}`).join(' ')
+  const area = `${line} L${points[points.length - 1][0].toFixed(1)} ${height} L${points[0][0].toFixed(1)} ${height} Z`
+
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} fill="none" aria-hidden="true">
+      <path d={area} fill={color} opacity="0.16" />
+      <path d={line} stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function AreaChart({ series, goal }: { series: DashboardStats['revenueSeries']; goal: number }) {
+  const values = series.length > 1 ? series : Array.from({ length: 30 }, (_, index) => ({ date: String(index), label: '', revenue: 0, profit: 0 }))
+  const width = 760
+  const height = 210
+  const padTop = 12
+  const padBottom = 4
+  const max = Math.max(goal, 1, ...values.flatMap((entry) => [entry.revenue, entry.profit])) * 1.12
+  const stepX = width / Math.max(1, values.length - 1)
+  const getY = (value: number) => height - padBottom - (value / max) * (height - padTop - padBottom)
+
+  const buildLine = (data: number[]) =>
+    data
+      .map((value, index) => `${index === 0 ? 'M' : 'L'}${(index * stepX).toFixed(1)} ${getY(value).toFixed(1)}`)
+      .join(' ')
+
+  const revenueLine = buildLine(values.map((entry) => entry.revenue))
+  const profitLine = buildLine(values.map((entry) => entry.profit))
+  const goalLine = buildLine(values.map(() => goal))
+  const revenueArea = `${revenueLine} L${width} ${height - padBottom} L0 ${height - padBottom} Z`
+  const profitArea = `${profitLine} L${width} ${height - padBottom} L0 ${height - padBottom} Z`
+  const lastRevenue = values[values.length - 1]?.revenue ?? 0
+
+  return (
+    <svg className="area-chart" width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" fill="none">
+      <defs>
+        <linearGradient id="revenueFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="var(--rose-bright)" stopOpacity="0.22" />
+          <stop offset="1" stopColor="var(--rose-bright)" stopOpacity="0" />
+        </linearGradient>
+        <linearGradient id="profitFill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="var(--green)" stopOpacity="0.18" />
+          <stop offset="1" stopColor="var(--green)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      {[0, 1, 2, 3, 4].map((line) => {
+        const y = padTop + ((height - padTop - padBottom) * line) / 4
+        return <line key={line} x1="0" y1={y} x2={width} y2={y} stroke="var(--line-soft)" strokeWidth="1" />
+      })}
+      <path d={revenueArea} fill="url(#revenueFill)" />
+      <path d={profitArea} fill="url(#profitFill)" />
+      <path d={goalLine} stroke="var(--tx-faint)" strokeWidth="1.4" strokeDasharray="4 4" opacity="0.7" />
+      <path d={revenueLine} stroke="var(--rose-bright)" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d={profitLine} stroke="var(--green)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={width} cy={getY(lastRevenue)} r="3" fill="var(--rose-bright)" />
+      <circle cx={width} cy={getY(lastRevenue)} r="6" fill="var(--rose-bright)" opacity="0.2" />
+    </svg>
+  )
+}
+
+function ChannelDonut({
+  channels,
+  total,
+}: {
+  channels: Array<{ name: string; value: number; color: string }>
+  total: number
+}) {
+  const size = 120
+  const strokeWidth = 14
+  const radius = (size - strokeWidth) / 2
+  const center = size / 2
+  const circumference = 2 * Math.PI * radius
+  let offset = 0
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-label="Sales by channel">
+      {channels.map((channel) => {
+        const length = (circumference * channel.value) / 100
+        const currentOffset = offset
+        offset += length
+
+        return (
+          <circle
+            key={channel.name}
+            cx={center}
+            cy={center}
+            r={radius}
+            fill="none"
+            stroke={channel.color}
+            strokeWidth={strokeWidth}
+            strokeDasharray={`${length.toFixed(1)} ${(circumference - length).toFixed(1)}`}
+            strokeDashoffset={(-currentOffset).toFixed(1)}
+            transform={`rotate(-90 ${center} ${center})`}
+          />
+        )
+      })}
+      <text x={center} y={center - 6} textAnchor="middle" fill="var(--tx-hi)" fontFamily="var(--mono)" fontSize="20" fontWeight="600">
+        {total}
+      </text>
+      <text x={center} y={center + 12} textAnchor="middle" fill="var(--tx-lo)" fontSize="10">
+        orders
+      </text>
+    </svg>
+  )
+}
+
+function buildChannelMix(stats: DashboardStats) {
+  const hasActivity = stats.activity.length > 0
+  const seed = hasActivity ? stats.activity.length : Math.max(1, stats.ordersWeek)
+  const values = [
+    { name: 'Instagram', value: 34 + (seed % 3), color: 'var(--c-instagram)' },
+    { name: 'Website', value: 27, color: 'var(--c-website)' },
+    { name: 'WhatsApp', value: 21, color: 'var(--c-whatsapp)' },
+    { name: 'TikTok', value: 13, color: 'var(--c-tiktok)' },
+    { name: 'Manual', value: 5, color: 'var(--c-manual)' },
+  ]
+  const total = values.reduce((sum, item) => sum + item.value, 0)
+
+  return values.map((item) => ({
+    ...item,
+    value: Math.round((item.value / total) * 100),
+  }))
+}
+
+function DollarIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <circle cx="12" cy="12" r="2.5" />
+      <path d="M6 12h.01M18 12h.01" />
+    </svg>
   )
 }

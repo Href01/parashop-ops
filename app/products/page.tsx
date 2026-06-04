@@ -1,6 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
+import { Download, Edit3, MoreHorizontal, Package, Percent, Plus, Search, TriangleAlert, Wallet } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import BosShell from '@/components/BosShell'
 import EditCostPriceModal from './EditCostPriceModal'
 
 interface Product {
@@ -8,12 +11,28 @@ interface Product {
   name: string
   brand: string
   category: string
-  price: number
-  costPrice?: number
+  price: number | string
+  costPrice?: number | string | null
   sku?: string
   image?: string
   stock: number
   lowStockThreshold: number
+}
+
+function toNumber(value: unknown) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function margin(price: unknown, cost?: unknown) {
+  const p = toNumber(price)
+  const c = toNumber(cost)
+  if (!p || !c) return null
+  return ((p - c) / p) * 100
+}
+
+function formatMoney(value: unknown) {
+  return toNumber(value).toLocaleString('en-US', { maximumFractionDigits: 0 })
 }
 
 export default function ProductsPage() {
@@ -22,10 +41,9 @@ export default function ProductsPage() {
   const [search, setSearch] = useState('')
   const [filterMissingCost, setFilterMissingCost] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
-  const [selectedProducts, setSelectedProducts] = useState<number[]>([])
 
   useEffect(() => {
-    fetchProducts()
+    void fetchProducts()
   }, [search, filterMissingCost])
 
   const fetchProducts = async () => {
@@ -35,9 +53,9 @@ export default function ProductsPage() {
       if (search) params.append('search', search)
       if (filterMissingCost) params.append('missingCost', 'true')
 
-      const res = await fetch(`/api/ops/products?${params}`)
-      const data = await res.json()
-      setProducts(data)
+      const res = await fetch(`/api/ops/products?${params}`, { cache: 'no-store' })
+      const data = (await res.json()) as Product[]
+      setProducts(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('Failed to fetch products:', error)
     } finally {
@@ -55,7 +73,6 @@ export default function ProductsPage() {
 
       if (!res.ok) throw new Error('Failed to update')
 
-      // Refresh products list
       await fetchProducts()
       setSelectedProduct(null)
     } catch (error) {
@@ -64,200 +81,242 @@ export default function ProductsPage() {
     }
   }
 
-  const calculateMargin = (price: number, costPrice?: number) => {
-    if (!costPrice || costPrice === 0) return null
-    return ((price - costPrice) / price) * 100
-  }
+  const stats = useMemo(() => {
+    const activeSkus = products.length
+    const inventoryValue = products.reduce((sum, product) => sum + toNumber(product.costPrice) * toNumber(product.stock), 0)
+    const marginValues = products.map((product) => margin(product.price, product.costPrice)).filter((value): value is number => value !== null)
+    const avgMargin = marginValues.length ? marginValues.reduce((sum, value) => sum + value, 0) / marginValues.length : 0
+    const missingCost = products.filter((product) => !toNumber(product.costPrice)).length
+    const lowStock = products.filter((product) => product.stock > 0 && product.stock <= product.lowStockThreshold).length
 
-  const toggleSelectProduct = (productId: number) => {
-    if (selectedProducts.includes(productId)) {
-      setSelectedProducts(selectedProducts.filter(id => id !== productId))
-    } else {
-      setSelectedProducts([...selectedProducts, productId])
-    }
-  }
-
-  const missingCostCount = products.filter(p => !p.costPrice || p.costPrice === 0).length
-
-  if (loading) {
-    return (
-      <div className="container mx-auto p-6">
-        <div className="text-center py-12">
-          <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading products...</p>
-        </div>
-      </div>
-    )
-  }
+    return { activeSkus, inventoryValue, avgMargin, missingCost, lowStock }
+  }, [products])
 
   return (
-    <div className="container mx-auto p-6">
-      {/* Header */}
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">Products</h2>
-        <p className="text-gray-600 text-sm">Manage inventory and cost prices</p>
-      </div>
+    <BosShell active="products" title="Products" crumb="Operations">
+      <div className="page-inner page-wide">
+        <div className="page-head">
+          <div>
+            <h1>Products</h1>
+            <div className="sub">Inventory, cost prices & margins - synced with shinecosmetics.ma</div>
+          </div>
+          <div className="spacer"></div>
+          <button type="button" className="btn">
+            <Edit3 />
+            Bulk edit costs
+          </button>
+          <button type="button" className="btn">
+            <Download />
+            Export
+          </button>
+          <button type="button" className="btn primary">
+            <Plus />
+            Add product
+          </button>
+        </div>
 
-      {/* Filters */}
-      <div className="bg-white rounded-lg border p-4 mb-6">
-        <div className="flex items-center gap-4">
-          {/* Search */}
-          <div className="flex-1">
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, brand, or SKU..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-            />
+        <div className="pstat-row">
+          <ProductStat icon={<Package />} title="Active SKUs" value={stats.activeSkus} subtitle="Catalog products" tone="blue" />
+          <ProductStat icon={<Wallet />} title="Inventory value" value={stats.inventoryValue} unit="MAD" subtitle="at cost" tone="green" />
+          <ProductStat icon={<Percent />} title="Avg margin" value={stats.avgMargin} unit="%" subtitle="tracked products" tone="rose" decimals={1} />
+          <ProductStat icon={<TriangleAlert />} title="Need attention" value={stats.lowStock + stats.missingCost} subtitle={`${stats.lowStock} low - ${stats.missingCost} missing cost`} tone="amber" />
+        </div>
+
+        <div className="panel">
+          <div className="toolbar">
+            <div className="ord-search">
+              <Search />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search products, SKU..." />
+            </div>
+            <div className="vdiv"></div>
+            <button type="button" className={`chip ${!filterMissingCost ? 'active' : ''}`} onClick={() => setFilterMissingCost(false)}>
+              All <span className="ct">{products.length}</span>
+            </button>
+            <button type="button" className="chip">
+              Low stock <span className="ct">{stats.lowStock}</span>
+            </button>
+            <button type="button" className={`chip ${filterMissingCost ? 'active' : ''}`} onClick={() => setFilterMissingCost(true)}>
+              Missing cost <span className="ct">{stats.missingCost}</span>
+            </button>
           </div>
 
-          {/* Missing Cost Filter */}
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={filterMissingCost}
-              onChange={(e) => setFilterMissingCost(e.target.checked)}
-              className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
-            />
-            <span className="text-sm font-medium text-gray-700">
-              Missing cost price only
-              {missingCostCount > 0 && (
-                <span className="ml-1 px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded text-xs">
-                  {missingCostCount}
-                </span>
-              )}
-            </span>
-          </label>
+          <div className="table-scroll">
+            <table className="tbl">
+              <thead>
+                <tr>
+                  <th>Product</th>
+                  <th>Category</th>
+                  <th className="r">Retail</th>
+                  <th className="r">Cost</th>
+                  <th className="r">Margin</th>
+                  <th>Stock</th>
+                  <th className="r">Sold 30D</th>
+                  <th>Trend</th>
+                  <th className="r"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  [1, 2, 3, 4, 5].map((item) => (
+                    <tr key={item}>
+                      <td colSpan={9}>
+                        <div className="skeleton-line"></div>
+                      </td>
+                    </tr>
+                  ))
+                ) : products.length === 0 ? (
+                  <tr>
+                    <td colSpan={9}>
+                      <div className="empty-state">No products found. Products from the website will appear here.</div>
+                    </td>
+                  </tr>
+                ) : (
+                  products.map((product) => {
+                    const productMargin = margin(product.price, product.costPrice)
+                    const hasCost = toNumber(product.costPrice) > 0
+                    const lowStock = product.stock > 0 && product.stock <= product.lowStockThreshold
+                    const stockColor = product.stock <= 0 ? 'var(--red)' : lowStock ? 'var(--amber)' : 'var(--green)'
+                    const stockPct = Math.min(100, (product.stock / Math.max(40, product.lowStockThreshold * 4)) * 100)
+
+                    return (
+                      <tr key={product.id}>
+                        <td>
+                          <div className="row gap10">
+                            {product.image ? <img src={product.image} alt={product.name} className="thumb" /> : <div className="thumb"></div>}
+                            <div className="cellstack">
+                              <span className="t-strong">{product.name}</span>
+                              <span className="t-sub mono">{product.sku || product.brand || 'No SKU'}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="badge">{product.category || 'Uncategorized'}</span>
+                        </td>
+                        <td className="r num">{formatMoney(product.price)} <span className="tx-lo fs11">MAD</span></td>
+                        <td className="r">
+                          {hasCost ? (
+                            <button type="button" className="cost-edit num" onClick={() => setSelectedProduct(product)}>
+                              {formatMoney(product.costPrice)}
+                              <Edit3 />
+                            </button>
+                          ) : (
+                            <button type="button" className="badge red" onClick={() => setSelectedProduct(product)}>
+                              Set cost
+                            </button>
+                          )}
+                        </td>
+                        <td className="r">
+                          {productMargin === null ? (
+                            <span className="tx-faint fs12">-</span>
+                          ) : (
+                            <span
+                              className="margin-pill"
+                              style={{
+                                background: productMargin >= 40 ? 'var(--green-bg)' : productMargin >= 30 ? 'var(--amber-bg)' : 'var(--red-bg)',
+                                color: productMargin >= 40 ? 'var(--green)' : productMargin >= 30 ? 'var(--amber)' : 'var(--red)',
+                              }}
+                            >
+                              {productMargin.toFixed(0)}%
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <div className="stock-cell">
+                            <div className="between">
+                              <span className="num fs12" style={{ color: stockColor }}>{product.stock} units</span>
+                              {lowStock ? <span className="badge amber mini-badge">LOW</span> : null}
+                            </div>
+                            <div className="bar">
+                              <span style={{ width: `${stockPct}%`, background: stockColor }}></span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="r num t-strong">-</td>
+                        <td>
+                          <MiniBars color={stockColor} />
+                        </td>
+                        <td className="r">
+                          <button type="button" className="btn sm icon">
+                            <MoreHorizontal />
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+          <div className="between table-foot">
+            <span className="fs12 tx-lo">{products.length} products - {stats.missingCost} missing cost price hurt profit tracking</span>
+            <div className="row gap6">
+              <button type="button" className="btn sm">Prev</button>
+              <button type="button" className="btn sm active-page">1</button>
+              <button type="button" className="btn sm">Next</button>
+            </div>
+          </div>
         </div>
+
+        {selectedProduct && (
+          <EditCostPriceModal
+            product={{
+              ...selectedProduct,
+              price: toNumber(selectedProduct.price),
+              costPrice: selectedProduct.costPrice === null ? undefined : toNumber(selectedProduct.costPrice),
+            }}
+            onSave={handleUpdateCost}
+            onClose={() => setSelectedProduct(null)}
+          />
+        )}
       </div>
+    </BosShell>
+  )
+}
 
-      {/* Stats */}
-      {missingCostCount > 0 && !filterMissingCost && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
-          <p className="text-sm text-yellow-800">
-            ⚠️ <strong>{missingCostCount} products</strong> are missing cost prices.
-            Profit calculation won't work for orders with these products.{' '}
-            <button
-              onClick={() => setFilterMissingCost(true)}
-              className="underline font-semibold hover:text-yellow-900"
-            >
-              Show them
-            </button>
-          </p>
+function ProductStat({
+  icon,
+  title,
+  value,
+  unit,
+  subtitle,
+  tone,
+  decimals = 0,
+}: {
+  icon: ReactNode
+  title: string
+  value: number
+  unit?: string
+  subtitle: string
+  tone: 'blue' | 'green' | 'rose' | 'amber'
+  decimals?: number
+}) {
+  return (
+    <div className="panel kpi">
+      <div className="kpi-top">
+        <div className="kpi-ico" style={{ background: `var(--${tone}-bg)`, color: tone === 'rose' ? 'var(--rose-bright)' : `var(--${tone})` }}>
+          {icon}
         </div>
-      )}
-
-      {/* Products List */}
-      {products.length === 0 ? (
-        <div className="bg-white rounded-lg border p-12 text-center">
-          <div className="text-6xl mb-4">📦</div>
-          <h3 className="text-xl font-semibold text-gray-900 mb-2">
-            No products found
-          </h3>
-          <p className="text-gray-600">
-            {search || filterMissingCost
-              ? 'Try adjusting your filters'
-              : 'Products from the website will appear here'}
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {products.map((product) => {
-            const margin = calculateMargin(product.price, product.costPrice)
-            const hasCost = product.costPrice && product.costPrice > 0
-
-            return (
-              <div
-                key={product.id}
-                className="bg-white rounded-lg border p-4 hover:shadow-md transition"
-              >
-                <div className="flex items-start gap-4">
-                  {/* Product Image */}
-                  {product.image && (
-                    <img
-                      src={product.image}
-                      alt={product.name}
-                      className="w-20 h-20 object-cover rounded"
-                    />
-                  )}
-
-                  {/* Product Info */}
-                  <div className="flex-1">
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <h3 className="font-semibold text-gray-900">{product.name}</h3>
-                        <p className="text-sm text-gray-600">
-                          {product.brand}
-                          {product.sku && ` • SKU: ${product.sku}`}
-                          {product.category && ` • ${product.category}`}
-                        </p>
-                      </div>
-
-                      {!hasCost && (
-                        <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs font-medium rounded">
-                          ⚠️ Missing Cost
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Pricing */}
-                    <div className="flex items-center gap-6 mb-3">
-                      <div>
-                        <span className="text-xs text-gray-500">Retail Price</span>
-                        <p className="font-semibold text-gray-900">{product.price} MAD</p>
-                      </div>
-
-                      <div>
-                        <span className="text-xs text-gray-500">Cost Price</span>
-                        <p className="font-semibold text-gray-900">
-                          {hasCost ? `${product.costPrice} MAD` : '---'}
-                        </p>
-                      </div>
-
-                      {margin !== null && (
-                        <div>
-                          <span className="text-xs text-gray-500">Margin</span>
-                          <p className="font-semibold text-green-600">
-                            {margin.toFixed(1)}%
-                          </p>
-                        </div>
-                      )}
-
-                      <div>
-                        <span className="text-xs text-gray-500">Stock</span>
-                        <p className={`font-semibold ${product.stock < product.lowStockThreshold ? 'text-red-600' : 'text-gray-900'}`}>
-                          {product.stock}
-                          {product.stock < product.lowStockThreshold && ' ⚠️'}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => setSelectedProduct(product)}
-                        className="px-4 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition"
-                      >
-                        {hasCost ? 'Edit Cost' : 'Add Cost Price'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {/* Edit Cost Price Modal */}
-      {selectedProduct && (
-        <EditCostPriceModal
-          product={selectedProduct}
-          onSave={handleUpdateCost}
-          onClose={() => setSelectedProduct(null)}
-        />
-      )}
+        <span className="kpi-title">{title}</span>
+      </div>
+      <div className="kpi-val">
+        <span>{value.toLocaleString('en-US', { maximumFractionDigits: decimals, minimumFractionDigits: decimals })}</span>
+        {unit ? <span className="cur">{unit}</span> : null}
+      </div>
+      <div className="kpi-meta">
+        <span className="tx-lo">{subtitle}</span>
+      </div>
     </div>
+  )
+}
+
+function MiniBars({ color }: { color: string }) {
+  const values = [35, 58, 42, 70, 66, 82, 75]
+
+  return (
+    <svg width="70" height="24" viewBox="0 0 70 24" fill="none" aria-hidden="true">
+      {values.map((value, index) => (
+        <rect key={index} x={index * 10} y={24 - value / 4} width="6" height={value / 4} rx="2" fill={color} opacity={0.55 + index * 0.05} />
+      ))}
+    </svg>
   )
 }
