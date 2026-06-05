@@ -61,6 +61,7 @@ interface SenditShipment {
   recipient_phone: string
   recipient_city: string
   recipient_address: string
+  district_id?: number  // If provided, use this instead of guessing from city
   cod_amount?: number
   package_weight?: number
   package_description?: string
@@ -212,8 +213,13 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
     // Get auth token
     const token = await getAuthToken()
 
-    // Get district ID from city name
-    const districtId = getDistrictId(shipment.recipient_city)
+    // Use provided district_id if available, otherwise guess from city name
+    const districtId = shipment.district_id || getDistrictId(shipment.recipient_city)
+    console.log('📍 District:', {
+      provided: shipment.district_id,
+      guessed: shipment.district_id ? null : getDistrictId(shipment.recipient_city),
+      final: districtId,
+    })
 
     // Products description goes in products field (for Sendit UI "Produit" section)
     const productsDescription = shipment.package_description || ''

@@ -44,6 +44,7 @@ export const CreateOrderSchema = z.object({
   deliveryCity: z.string().min(2),
   deliveryAddress: z.string().optional(),
   deliveryNotes: z.string().optional(),
+  senditDistrictId: z.number().int().positive().optional(), // Sendit district chosen by customer
 
   // Payment
   paymentMethod: z.enum(['COD', 'Card', 'Transfer']),

@@ -22,9 +22,11 @@ export async function GET(request: NextRequest) {
     let query = `
       SELECT
         o.*,
-        COUNT(oi.id) as items_count
+        COUNT(oi.id) as items_count,
+        STRING_AGG(DISTINCT p.name, ', ') as product_names
       FROM "Order" o
       LEFT JOIN "OrderItem" oi ON oi."orderId" = o.id
+      LEFT JOIN "Product" p ON p.id = oi."productId"
       WHERE 1=1
     `
     const params: any[] = []
@@ -107,6 +109,7 @@ export async function POST(request: NextRequest) {
       deliveryCity,
       deliveryAddress,
       deliveryNotes,
+      senditDistrictId,
       paymentMethod,
       items,
       discountTotal,
@@ -148,6 +151,7 @@ export async function POST(request: NextRequest) {
           "deliveryCity",
           "deliveryAddress",
           "deliveryNotes",
+          "senditDistrictId",
           "paymentMethod",
           "productsTotal",
           "discountTotal",
@@ -162,7 +166,7 @@ export async function POST(request: NextRequest) {
           "deliveryStatus",
           "createdAt"
         ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, NOW()
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, NOW()
         ) RETURNING *`,
         [
           orderNumber,
@@ -172,6 +176,7 @@ export async function POST(request: NextRequest) {
           deliveryCity,
           deliveryAddress,
           deliveryNotes,
+          senditDistrictId || null,
           paymentMethod,
           productsTotal,
           discountTotal,
@@ -265,6 +270,7 @@ export async function POST(request: NextRequest) {
             recipient_phone: deliveryPhone,
             recipient_city: deliveryCity,
             recipient_address: deliveryAddress || '',
+            district_id: senditDistrictId,  // Use stored district if available
             cod_amount: paymentMethod === 'COD' ? total : 0,
             package_weight: 0.5,
             package_description: `Order ${orderNumber}`,

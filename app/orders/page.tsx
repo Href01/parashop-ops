@@ -22,6 +22,8 @@ interface OrderRow {
   marginPercent?: number | string | null
   completenessScore?: number | string | null
   createdAt: string
+  items_count?: number
+  product_names?: string | null
 }
 
 const statusLabels: Record<string, string> = {
@@ -239,6 +241,13 @@ export default function OrdersPage() {
                           <div className="cellstack">
                             <span className="num fs12 t-strong">#{order.id}</span>
                             <span className="t-sub mono">{order.orderNumber || 'Manual order'}</span>
+                            {order.product_names && (
+                              <span className="t-sub" style={{ fontSize: '11px', color: 'var(--tx-mid)' }}>
+                                {order.product_names.length > 50
+                                  ? order.product_names.substring(0, 50) + '...'
+                                  : order.product_names}
+                              </span>
+                            )}
                           </div>
                         </td>
                         <td>

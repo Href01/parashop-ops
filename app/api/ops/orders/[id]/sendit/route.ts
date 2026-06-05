@@ -67,6 +67,7 @@ export async function POST(
       recipient_phone: order.deliveryPhone,
       recipient_city: order.deliveryCity,
       recipient_address: order.deliveryAddress || '',
+      district_id: order.senditDistrictId,  // Use stored district if available
       cod_amount: order.paymentMethod === 'COD' ? order.total : 0,
       package_weight: packageWeight || 0.5,
       package_description: `Order ${order.orderNumber} - ${order.items?.length || 0} items`,
