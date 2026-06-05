@@ -76,8 +76,12 @@ export async function GET(request: NextRequest) {
 // POST /api/ops/orders - Create new order
 export async function POST(request: NextRequest) {
   try {
+    // Check auth: either logged-in user OR valid webhook secret
     const session = await getServerSession(authOptions)
-    if (!session?.user?.email) {
+    const webhookSecret = request.headers.get('x-webhook-secret')
+    const isWebhook = webhookSecret && webhookSecret === process.env.WEBHOOK_SECRET
+
+    if (!session?.user?.email && !isWebhook) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -241,7 +245,9 @@ export async function POST(request: NextRequest) {
         [
           order.id,
           confirmImmediately ? 'CONFIRMED' : 'PENDING',
-          `Order created via BOS by ${session.user.email}`,
+          isWebhook
+            ? 'Order synced from website'
+            : `Order created via BOS by ${session?.user?.email}`,
         ]
       )
 
