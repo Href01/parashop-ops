@@ -2,6 +2,9 @@
 // Docs: https://app.sendit.ma/api/documentation
 // API Base: https://app.sendit.ma/api/v1
 
+import { formatPhoneForSendit } from './utils/phone'
+import { toInteger } from './utils/numbers'
+
 const SENDIT_API_URL = 'https://app.sendit.ma/api/v1'
 const PUBLIC_KEY = process.env.SENDIT_PUBLIC_KEY || ''
 const PRIVATE_KEY = process.env.SENDIT_PRIVATE_KEY || ''
@@ -194,6 +197,18 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
   console.log('📦 Shipment:', shipment)
 
   try {
+    // Validate and format phone BEFORE sending to API
+    let formattedPhone: string
+    try {
+      formattedPhone = formatPhoneForSendit(shipment.recipient_phone)
+      console.log('📱 Phone formatted:', {
+        original: shipment.recipient_phone,
+        formatted: formattedPhone
+      })
+    } catch (error: any) {
+      throw new Error(`Invalid phone number: ${shipment.recipient_phone}. ${error.message}`)
+    }
+
     // Get auth token
     const token = await getAuthToken()
 
@@ -209,7 +224,7 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
     // Amount must be integer for Sendit - this should be the TOTAL (with shipping)
     // Sendit has a maximum limit of 5000 DH
     const totalAmount = shipment.cod_amount || 0
-    const roundedAmount = Math.round(Number(totalAmount))
+    const roundedAmount = toInteger(totalAmount)
 
     console.log('💰 Total Amount:', {
       original: totalAmount,
@@ -223,11 +238,19 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
       throw new Error(`Order amount (${roundedAmount} DH) exceeds Sendit maximum limit of 5000 DH. Please split the order or use alternative delivery method.`)
     }
 
+    // Validate minimum requirements
+    if (!shipment.recipient_name || shipment.recipient_name.length < 2) {
+      throw new Error('Recipient name is required (min 2 characters)')
+    }
+    if (!shipment.recipient_address || shipment.recipient_address.length < 5) {
+      throw new Error('Recipient address is required (min 5 characters)')
+    }
+
     const deliveryData: SenditDelivery = {
       pickup_district_id: PICKUP_DISTRICT_ID,
       district_id: districtId,
       name: shipment.recipient_name,
-      phone: shipment.recipient_phone,
+      phone: formattedPhone,  // Use formatted phone!
       address: shipment.recipient_address,
       amount: roundedAmount,
       reference: shipment.reference,

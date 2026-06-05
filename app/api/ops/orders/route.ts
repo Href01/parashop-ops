@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
 import { generateOrderNumber } from '@/lib/order-utils'
 import { createSenditShipment } from '@/lib/sendit'
+import { CreateOrderSchema } from '@/lib/validation/order'
 
 // GET /api/ops/orders - List all orders
 export async function GET(request: NextRequest) {
@@ -86,6 +87,19 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
+
+    // Validate with Zod schema (prevents ALL data quality bugs)
+    const validation = CreateOrderSchema.safeParse(body)
+
+    if (!validation.success) {
+      console.error('❌ Order validation failed:', validation.error.flatten())
+      return NextResponse.json({
+        error: 'Validation failed',
+        details: validation.error.flatten().fieldErrors,
+      }, { status: 400 })
+    }
+
+    // All data is now validated and type-safe!
     const {
       sourceChannel,
       deliveryName,
@@ -94,34 +108,17 @@ export async function POST(request: NextRequest) {
       deliveryAddress,
       deliveryNotes,
       paymentMethod,
-      items, // [{ productId, quantity, unitPrice }]
-      discountTotal: discountTotalRaw = 0,
-      deliveryFeeCharged: deliveryFeeChargedRaw = 0,
-      estimatedDeliveryCost: estimatedDeliveryCostRaw = 0,
+      items,
+      discountTotal,
+      deliveryFeeCharged,
+      estimatedDeliveryCost,
       promoCode,
       notes,
-      confirmImmediately = false,
-    } = body
-
-    // Convert numeric fields to numbers (prevent string concatenation)
-    const discountTotal = Number(discountTotalRaw) || 0
-    const deliveryFeeCharged = Number(deliveryFeeChargedRaw) || 0
-    const estimatedDeliveryCost = Number(estimatedDeliveryCostRaw) || 0
-
-    // Validation
-    if (!sourceChannel) {
-      return NextResponse.json(
-        { error: 'Source channel is required' },
-        { status: 400 }
-      )
-    }
-
-    if (!deliveryName || !deliveryPhone || !deliveryCity) {
-      return NextResponse.json(
-        { error: 'Customer name, phone, and city are required' },
-        { status: 400 }
-      )
-    }
+      confirmImmediately,
+      productsTotal,
+      revenue,
+      total,
+    } = validation.data
 
     // Generate order number
     const orderNumber = generateOrderNumber()
@@ -131,20 +128,13 @@ export async function POST(request: NextRequest) {
     try {
       await client.query('BEGIN')
 
-      // Calculate products total
-      const productsTotal = items.reduce((sum: number, item: any) => {
-        return sum + (item.unitPrice * item.quantity)
-      }, 0)
-
-      const revenue = productsTotal - discountTotal
-      const total = revenue + deliveryFeeCharged
-
-      console.log('💰 Order calculation:', {
-        productsTotal: { value: productsTotal, type: typeof productsTotal },
-        discountTotal: { value: discountTotal, type: typeof discountTotal },
-        revenue: { value: revenue, type: typeof revenue },
-        deliveryFeeCharged: { value: deliveryFeeCharged, type: typeof deliveryFeeCharged },
-        total: { value: total, type: typeof total },
+      // Total is already calculated and validated by Zod schema
+      console.log('💰 Order calculation (validated):', {
+        productsTotal,
+        discountTotal,
+        revenue,
+        deliveryFeeCharged,
+        total,
         calculation: `${productsTotal} - ${discountTotal} + ${deliveryFeeCharged} = ${total}`
       })
 
