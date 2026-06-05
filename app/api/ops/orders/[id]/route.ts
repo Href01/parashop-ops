@@ -180,6 +180,16 @@ export async function PUT(
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
     }
 
+    // Get old status BEFORE updating (if status is being changed)
+    let oldStatusValue = null
+    if (status !== undefined) {
+      const oldStatusResult = await pool.query(
+        'SELECT status FROM "Order" WHERE id = $1',
+        [orderId]
+      )
+      oldStatusValue = oldStatusResult.rows[0]?.status
+    }
+
     updates.push(`"updatedAt" = NOW()`)
     values.push(orderId)
 
@@ -197,11 +207,7 @@ export async function PUT(
     }
 
     // Add status history if status changed
-    if (status !== undefined) {
-      const oldStatus = await pool.query(
-        'SELECT status FROM "Order" WHERE id = $1',
-        [orderId]
-      )
+    if (status !== undefined && oldStatusValue !== null) {
 
       await pool.query(
         `INSERT INTO "OrderStatusHistory" (
@@ -214,7 +220,7 @@ export async function PUT(
         ) VALUES ($1, $2, $3, 'manual', $4, NOW())`,
         [
           orderId,
-          oldStatus.rows[0]?.status,
+          oldStatusValue,
           status,
           `Status updated by ${session.user.email}`,
         ]
@@ -299,10 +305,14 @@ export async function PUT(
     )
 
     return NextResponse.json(finalOrder.rows[0])
-  } catch (error) {
+  } catch (error: any) {
     console.error('Update order error:', error)
     return NextResponse.json(
-      { error: 'Failed to update order' },
+      {
+        error: 'Failed to update order',
+        details: error.message,
+        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+      },
       { status: 500 }
     )
   }
