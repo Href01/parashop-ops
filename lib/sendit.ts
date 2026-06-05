@@ -210,13 +210,20 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
     const comment = commentParts.length > 0 ? commentParts.join(' | ') : undefined
 
     // Create delivery (amount must be integer for Sendit)
+    const codAmount = shipment.cod_amount || 0
+    console.log('💰 COD Amount:', {
+      original: codAmount,
+      type: typeof codAmount,
+      rounded: Math.round(Number(codAmount))
+    })
+
     const deliveryData: SenditDelivery = {
       pickup_district_id: PICKUP_DISTRICT_ID,
       district_id: districtId,
       name: shipment.recipient_name,
       phone: shipment.recipient_phone,
       address: shipment.recipient_address,
-      amount: Math.round(shipment.cod_amount || 0),
+      amount: Math.round(Number(codAmount)),
       reference: shipment.reference,
       comment: comment,
       allow_open: 1,
@@ -225,7 +232,7 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
       products_from_stock: 0,
     }
 
-    console.log('📝 Delivery payload:', deliveryData)
+    console.log('📝 Delivery payload:', JSON.stringify(deliveryData, null, 2))
 
     const response = await fetch(`${SENDIT_API_URL}/deliveries`, {
       method: 'POST',
