@@ -50,6 +50,15 @@ interface SenditTrackingResponse {
  * Create a new Sendit shipment
  */
 export async function createSenditShipment(shipment: SenditShipment): Promise<SenditShipmentResponse> {
+  // Log mode status
+  console.log('🔍 Sendit createSenditShipment called')
+  console.log('📝 Environment check:', {
+    PUBLIC_KEY: PUBLIC_KEY ? `${PUBLIC_KEY.slice(0, 10)}...` : 'NOT SET',
+    PRIVATE_KEY: PRIVATE_KEY ? `${PRIVATE_KEY.slice(0, 10)}...` : 'NOT SET',
+    USE_MOCK,
+    SENDIT_MOCK_MODE: process.env.SENDIT_MOCK_MODE,
+  })
+
   // MOCK MODE: Return fake shipment data for development
   if (USE_MOCK) {
     console.log('🧪 MOCK: Creating Sendit shipment:', shipment)
@@ -68,6 +77,7 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
   }
 
   // REAL MODE: Call actual Sendit API
+  console.log('🌐 REAL MODE: Calling Sendit API at:', SENDIT_API_URL)
   try {
     const response = await fetch(`${SENDIT_API_URL}/shipments`, {
       method: 'POST',
