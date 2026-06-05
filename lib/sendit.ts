@@ -209,14 +209,14 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
     }
     const comment = commentParts.length > 0 ? commentParts.join(' | ') : undefined
 
-    // Create delivery
+    // Create delivery (amount must be integer for Sendit)
     const deliveryData: SenditDelivery = {
       pickup_district_id: PICKUP_DISTRICT_ID,
       district_id: districtId,
       name: shipment.recipient_name,
       phone: shipment.recipient_phone,
       address: shipment.recipient_address,
-      amount: shipment.cod_amount || 0,
+      amount: Math.round(shipment.cod_amount || 0),
       reference: shipment.reference,
       comment: comment,
       allow_open: 1,
