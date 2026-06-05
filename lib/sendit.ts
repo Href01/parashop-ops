@@ -26,6 +26,8 @@ interface SenditDelivery {
   comment?: string
   allow_open?: number
   allow_try?: number
+  products?: string
+  products_from_stock?: number
 }
 
 interface SenditDeliveryResponse {
@@ -197,6 +199,16 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
     // Get district ID from city name
     const districtId = getDistrictId(shipment.recipient_city)
 
+    // Build comment with product description and notes
+    const commentParts = []
+    if (shipment.package_description) {
+      commentParts.push(`Produits: ${shipment.package_description}`)
+    }
+    if (shipment.notes) {
+      commentParts.push(shipment.notes)
+    }
+    const comment = commentParts.length > 0 ? commentParts.join(' | ') : undefined
+
     // Create delivery
     const deliveryData: SenditDelivery = {
       pickup_district_id: PICKUP_DISTRICT_ID,
@@ -206,9 +218,11 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
       address: shipment.recipient_address,
       amount: shipment.cod_amount || 0,
       reference: shipment.reference,
-      comment: shipment.notes,
+      comment: comment,
       allow_open: 1,
       allow_try: 1,
+      products: '',
+      products_from_stock: 0,
     }
 
     console.log('📝 Delivery payload:', deliveryData)

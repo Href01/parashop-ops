@@ -251,9 +251,22 @@ export async function PUT(
       // Auto-create Sendit shipment when order is confirmed
       if (status === 'CONFIRMED') {
         try {
-          // Get order details with delivery info
+          // Get order details with items
           const orderDetails = await pool.query(
-            `SELECT * FROM "Order" WHERE id = $1`,
+            `SELECT o.*,
+              json_agg(
+                json_build_object(
+                  'productId', oi."productId",
+                  'productName', p.name,
+                  'quantity', oi.quantity,
+                  'price', oi.price
+                )
+              ) as items
+            FROM "Order" o
+            LEFT JOIN "OrderItem" oi ON oi."orderId" = o.id
+            LEFT JOIN "Product" p ON p.id = oi."productId"
+            WHERE o.id = $1
+            GROUP BY o.id`,
             [orderId]
           )
 
@@ -265,6 +278,11 @@ export async function PUT(
             if (order.deliveryName && order.deliveryPhone && order.deliveryCity) {
               console.log(`🚀 Auto-creating Sendit shipment for order ${orderId}...`)
 
+              // Build products description
+              const productsDesc = order.items && order.items.length > 0 && order.items[0].productName
+                ? order.items.map((item: any) => `${item.productName} x${item.quantity}`).join(', ')
+                : 'Products'
+
               // Create shipment with Sendit
               const shipment = await createSenditShipment({
                 reference: order.orderNumber || `ORD-${order.id}`,
@@ -274,7 +292,7 @@ export async function PUT(
                 recipient_address: order.deliveryAddress || '',
                 cod_amount: order.paymentMethod === 'COD' ? order.revenue : 0,
                 package_weight: 0.5,
-                package_description: `Order ${order.orderNumber}`,
+                package_description: productsDesc,
                 notes: order.notes || '',
               })
 
