@@ -1,11 +1,11 @@
 // Sendit API Integration
-// Docs: https://sendit.ma/api-docs
+// Docs: https://app.sendit.ma/api/documentation
 
-const SENDIT_API_URL = 'https://api.sendit.ma/v1'
+const SENDIT_API_URL = 'https://app.sendit.ma/api'
 const PUBLIC_KEY = process.env.SENDIT_PUBLIC_KEY || ''
 const PRIVATE_KEY = process.env.SENDIT_PRIVATE_KEY || ''
 // FORCE MOCK MODE: Set to true to always use mock mode regardless of API keys
-const FORCE_MOCK = false  // ← Changed to FALSE for REAL mode
+const FORCE_MOCK = false  // ← REAL mode
 const USE_MOCK = FORCE_MOCK || !PUBLIC_KEY || !PRIVATE_KEY || process.env.SENDIT_MOCK_MODE === 'true'
 
 if (USE_MOCK) {
