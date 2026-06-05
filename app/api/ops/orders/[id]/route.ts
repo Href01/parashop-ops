@@ -370,3 +370,39 @@ export async function PUT(
     )
   }
 }
+
+// DELETE /api/ops/orders/[id] - Delete order
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { id: orderId } = await params
+
+    // Delete order items first (foreign key constraint)
+    await pool.query('DELETE FROM "OrderItem" WHERE "orderId" = $1', [orderId])
+
+    // Delete status history
+    await pool.query('DELETE FROM "OrderStatusHistory" WHERE "orderId" = $1', [orderId])
+
+    // Delete order
+    const result = await pool.query('DELETE FROM "Order" WHERE id = $1 RETURNING id', [orderId])
+
+    if (result.rows.length === 0) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    }
+
+    return NextResponse.json({ success: true, message: 'Order deleted successfully' })
+  } catch (error: any) {
+    console.error('DELETE order error:', error)
+    return NextResponse.json(
+      { error: 'Failed to delete order', details: error.message },
+      { status: 500 }
+    )
+  }
+}

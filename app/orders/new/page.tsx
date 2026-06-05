@@ -430,12 +430,12 @@ export default function NewOrderPage() {
                       </div>
                       <div className="pricing-row">
                         <span>Delivery Fee</span>
-                        <span className="mono">{selectedDistrict ? selectedDistrict.price.toFixed(2) : '0.00'} MAD</span>
+                        <span className="mono">{selectedDistrict ? Number(selectedDistrict.price).toFixed(2) : '0.00'} MAD</span>
                       </div>
                       <div className="pricing-row total">
                         <span>Order Total</span>
                         <span className="mono">
-                          {(productsTotal - formData.discount + (selectedDistrict ? selectedDistrict.price : 0)).toFixed(2)} MAD
+                          {(productsTotal - formData.discount + (selectedDistrict ? Number(selectedDistrict.price) : 0)).toFixed(2)} MAD
                         </span>
                       </div>
                     </div>
