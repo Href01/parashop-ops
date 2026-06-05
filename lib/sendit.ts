@@ -4,10 +4,12 @@
 const SENDIT_API_URL = 'https://api.sendit.ma/v1'
 const PUBLIC_KEY = process.env.SENDIT_PUBLIC_KEY || ''
 const PRIVATE_KEY = process.env.SENDIT_PRIVATE_KEY || ''
-const USE_MOCK = !PUBLIC_KEY || !PRIVATE_KEY || process.env.SENDIT_MOCK_MODE === 'true'
+// FORCE MOCK MODE: Set to true to always use mock mode regardless of API keys
+const FORCE_MOCK = true
+const USE_MOCK = FORCE_MOCK || !PUBLIC_KEY || !PRIVATE_KEY || process.env.SENDIT_MOCK_MODE === 'true'
 
 if (USE_MOCK) {
-  console.warn('⚠️  Sendit API running in MOCK MODE - set SENDIT_PUBLIC_KEY and SENDIT_PRIVATE_KEY to use real API')
+  console.warn('⚠️  Sendit API running in MOCK MODE (FORCE_MOCK=true)')
 }
 
 interface SenditShipment {
