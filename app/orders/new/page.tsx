@@ -109,105 +109,158 @@ export default function NewOrderPage() {
 
   return (
     <BosShell title="New Order" active="orders" crumb="New Order">
-      <div className="page-header">
-        <Link href="/orders" className="btn"><ArrowLeft /> Back</Link>
-        <h1><Package /> Create New Order</h1>
-      </div>
+      <div className="page-inner">
+        <div className="row gap8 mb16 crumb-line">
+          <Link href="/orders" className="row gap6">
+            <ArrowLeft />
+            Orders
+          </Link>
+          <span>/</span>
+          <span>New Order</span>
+        </div>
 
-      <form onSubmit={handleSubmit}>
         {error && (
-          <div className="panel err-panel">
-            <p>{error}</p>
+          <div className="panel mb16" style={{ background: 'var(--red-bg)', border: '1px solid var(--red)', padding: '12px 16px' }}>
+            <p style={{ color: 'var(--red)', margin: 0 }}>{error}</p>
           </div>
         )}
 
-        <div className="panel">
-          <h3>Customer Information</h3>
-          <div className="form-row">
-            <div>
-              <label>Full Name *</label>
-              <input type="text" value={formData.deliveryName} onChange={(e) => setFormData({ ...formData, deliveryName: e.target.value })} placeholder="Customer name" required />
+        <form onSubmit={handleSubmit}>
+          <div className="panel mb16">
+            <h3 className="mb12">Customer Information</h3>
+            <div className="form-grid mb12">
+              <div>
+                <label className="form-label">Full Name *</label>
+                <input
+                  type="text"
+                  className="input"
+                  value={formData.deliveryName}
+                  onChange={(e) => setFormData({ ...formData, deliveryName: e.target.value })}
+                  placeholder="Customer name"
+                  required
+                />
+              </div>
+              <div>
+                <label className="form-label">Phone *</label>
+                <input
+                  type="tel"
+                  className="input"
+                  value={formData.deliveryPhone}
+                  onChange={(e) => setFormData({ ...formData, deliveryPhone: e.target.value })}
+                  placeholder="06XXXXXXXX"
+                  required
+                />
+              </div>
             </div>
-            <div>
-              <label>Phone *</label>
-              <input type="tel" value={formData.deliveryPhone} onChange={(e) => setFormData({ ...formData, deliveryPhone: e.target.value })} placeholder="06XXXXXXXX" required />
-            </div>
-          </div>
-          <div>
-            <label>City / District *</label>
-            <select value={formData.districtId} onChange={(e) => setFormData({ ...formData, districtId: e.target.value })} required disabled={loading}>
-              <option value="">{loading ? 'Loading cities...' : 'Select city / district'}</option>
-              {districts.map((d) => (
-                <option key={d.id} value={d.id}>{d.name} - {d.price} MAD ({d.delais})</option>
-              ))}
-            </select>
-            {selectedDistrict && <small>Fee: {selectedDistrict.price} MAD • {selectedDistrict.delais}</small>}
-          </div>
-          <div>
-            <label>Address</label>
-            <textarea value={formData.deliveryAddress} onChange={(e) => setFormData({ ...formData, deliveryAddress: e.target.value })} placeholder="Full delivery address" rows={2} />
-          </div>
-          <div>
-            <label>Delivery Notes</label>
-            <textarea value={formData.deliveryNotes} onChange={(e) => setFormData({ ...formData, deliveryNotes: e.target.value })} placeholder="Special instructions" rows={2} />
-          </div>
-        </div>
-
-        <div className="panel">
-          <h3>Order Settings</h3>
-          <div className="form-row">
-            <div>
-              <label>Source Channel</label>
-              <select value={formData.sourceChannel} onChange={(e) => setFormData({ ...formData, sourceChannel: e.target.value })}>
-                <option value="Manual">Manual</option>
-                <option value="WhatsApp">WhatsApp</option>
-                <option value="Instagram">Instagram</option>
-                <option value="TikTok">TikTok</option>
-                <option value="Phone">Phone</option>
+            <div className="mb12">
+              <label className="form-label">City / District *</label>
+              <select
+                className="input"
+                value={formData.districtId}
+                onChange={(e) => setFormData({ ...formData, districtId: e.target.value })}
+                required
+                disabled={loading}
+              >
+                <option value="">{loading ? 'Loading cities...' : 'Select city / district'}</option>
+                {districts.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} - {d.price} MAD ({d.delais})
+                  </option>
+                ))}
               </select>
+              {selectedDistrict && (
+                <small className="text-tx-mid mt4">
+                  Delivery fee: {selectedDistrict.price} MAD • Délai: {selectedDistrict.delais}
+                </small>
+              )}
+            </div>
+            <div className="mb12">
+              <label className="form-label">Address</label>
+              <textarea
+                className="input"
+                value={formData.deliveryAddress}
+                onChange={(e) => setFormData({ ...formData, deliveryAddress: e.target.value })}
+                placeholder="Full delivery address"
+                rows={2}
+              />
             </div>
             <div>
-              <label>Payment Method</label>
-              <select value={formData.paymentMethod} onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value })}>
-                <option value="COD">Cash on Delivery</option>
-                <option value="Card">Card</option>
-                <option value="Transfer">Bank Transfer</option>
-              </select>
+              <label className="form-label">Delivery Notes</label>
+              <textarea
+                className="input"
+                value={formData.deliveryNotes}
+                onChange={(e) => setFormData({ ...formData, deliveryNotes: e.target.value })}
+                placeholder="Special instructions for delivery"
+                rows={2}
+              />
             </div>
           </div>
-          <div>
-            <label>Internal Notes</label>
-            <textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} placeholder="Internal notes" rows={2} />
-          </div>
-          <div>
-            <label className="chk-label">
-              <input type="checkbox" checked={formData.confirmImmediately} onChange={(e) => setFormData({ ...formData, confirmImmediately: e.target.checked })} />
-              Auto-confirm and create Sendit shipment
-            </label>
-          </div>
-        </div>
 
-        <div className="panel actions">
-          <Link href="/orders" className="btn">Cancel</Link>
-          <button type="submit" className="btn primary" disabled={saving || loading}>
-            <Save /> {saving ? 'Creating...' : 'Create Order'}
-          </button>
-        </div>
-      </form>
+          <div className="panel mb16">
+            <h3 className="mb12">Order Settings</h3>
+            <div className="form-grid mb12">
+              <div>
+                <label className="form-label">Source Channel</label>
+                <select
+                  className="input"
+                  value={formData.sourceChannel}
+                  onChange={(e) => setFormData({ ...formData, sourceChannel: e.target.value })}
+                >
+                  <option value="Manual">Manual</option>
+                  <option value="WhatsApp">WhatsApp</option>
+                  <option value="Instagram">Instagram</option>
+                  <option value="TikTok">TikTok</option>
+                  <option value="Phone">Phone</option>
+                </select>
+              </div>
+              <div>
+                <label className="form-label">Payment Method</label>
+                <select
+                  className="input"
+                  value={formData.paymentMethod}
+                  onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value })}
+                >
+                  <option value="COD">Cash on Delivery</option>
+                  <option value="Card">Card</option>
+                  <option value="Transfer">Bank Transfer</option>
+                </select>
+              </div>
+            </div>
+            <div className="mb12">
+              <label className="form-label">Internal Notes</label>
+              <textarea
+                className="input"
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                placeholder="Internal notes (not visible to customer)"
+                rows={2}
+              />
+            </div>
+            <div>
+              <label className="row gap8" style={{ cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={formData.confirmImmediately}
+                  onChange={(e) => setFormData({ ...formData, confirmImmediately: e.target.checked })}
+                />
+                <span>Auto-confirm and create Sendit shipment immediately</span>
+              </label>
+            </div>
+          </div>
 
-      <style jsx>{`
-        form { display: flex; flex-direction: column; gap: 1.5rem; }
-        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-        label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.5rem; }
-        input, select, textarea { width: 100%; padding: 0.625rem; border: 1px solid var(--bd); border-radius: 0.375rem; font-size: 0.875rem; }
-        small { display: block; color: var(--tx-mid); margin-top: 0.5rem; font-size: 0.8rem; }
-        h3 { font-size: 1rem; margin-bottom: 1rem; }
-        .actions { display: flex; gap: 1rem; justify-content: flex-end; }
-        .err-panel { background: var(--red-bg); border-color: var(--red); }
-        .err-panel p { color: var(--red); margin: 0; }
-        .chk-label { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
-        .chk-label input { width: auto; }
-      `}</style>
+          <div className="panel">
+            <div className="row gap10" style={{ justifyContent: 'flex-end' }}>
+              <Link href="/orders" className="btn">
+                Cancel
+              </Link>
+              <button type="submit" className="btn primary" disabled={saving || loading}>
+                <Save />
+                {saving ? 'Creating...' : 'Create Order'}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
     </BosShell>
   )
 }
