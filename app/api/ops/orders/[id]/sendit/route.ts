@@ -19,7 +19,7 @@ export async function POST(
             'productId', oi."productId",
             'productName', p.name,
             'quantity', oi.quantity,
-            'unitPrice', oi."unitPrice"
+            'price', oi.price
           )
         ) as items
       FROM "Order" o
