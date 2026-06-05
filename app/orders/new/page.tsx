@@ -15,9 +15,27 @@ interface District {
   delais: string
 }
 
+interface Product {
+  id: number
+  name: string
+  price: number
+  costPrice: number
+  brand?: string
+  sku?: string
+}
+
+interface OrderItem {
+  productId: number
+  productName: string
+  quantity: number
+  unitPrice: number
+}
+
 export default function NewOrderPage() {
   const router = useRouter()
   const [districts, setDistricts] = useState<District[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [selectedItems, setSelectedItems] = useState<OrderItem[]>([])
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -36,6 +54,7 @@ export default function NewOrderPage() {
 
   useEffect(() => {
     fetchDistricts()
+    fetchProducts()
   }, [])
 
   const fetchDistricts = async () => {
@@ -52,6 +71,58 @@ export default function NewOrderPage() {
       setLoading(false)
     }
   }
+
+  const fetchProducts = async () => {
+    try {
+      const res = await fetch('/api/products?limit=1000')
+      if (res.ok) {
+        const data = await res.json()
+        setProducts(data)
+      }
+    } catch (err) {
+      console.error('Failed to fetch products:', err)
+    }
+  }
+
+  const addProduct = (product: Product) => {
+    const existing = selectedItems.find(item => item.productId === product.id)
+    if (existing) {
+      setSelectedItems(selectedItems.map(item =>
+        item.productId === product.id
+          ? { ...item, quantity: item.quantity + 1 }
+          : item
+      ))
+    } else {
+      setSelectedItems([...selectedItems, {
+        productId: product.id,
+        productName: product.name,
+        quantity: 1,
+        unitPrice: product.price,
+      }])
+    }
+  }
+
+  const updateItemQuantity = (productId: number, quantity: number) => {
+    if (quantity <= 0) {
+      setSelectedItems(selectedItems.filter(item => item.productId !== productId))
+    } else {
+      setSelectedItems(selectedItems.map(item =>
+        item.productId === productId ? { ...item, quantity } : item
+      ))
+    }
+  }
+
+  const updateItemPrice = (productId: number, unitPrice: number) => {
+    setSelectedItems(selectedItems.map(item =>
+      item.productId === productId ? { ...item, unitPrice } : item
+    ))
+  }
+
+  const removeItem = (productId: number) => {
+    setSelectedItems(selectedItems.filter(item => item.productId !== productId))
+  }
+
+  const productsTotal = selectedItems.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -78,7 +149,7 @@ export default function NewOrderPage() {
         paymentMethod: formData.paymentMethod,
         notes: formData.notes,
         confirmImmediately: formData.confirmImmediately,
-        items: [],
+        items: selectedItems,
         discountTotal: 0,
         deliveryFeeCharged: selectedDistrict.price,
         estimatedDeliveryCost: selectedDistrict.price,
@@ -232,6 +303,112 @@ export default function NewOrderPage() {
                   style={{ resize: 'vertical', minHeight: 60 }}
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Products */}
+          <div className="panel mb16">
+            <div className="panel-head">
+              <Package size={16} style={{ color: 'var(--tx-mid)' }} />
+              <h3>Products</h3>
+              {selectedItems.length > 0 && (
+                <div className="spacer"></div>
+              )}
+              {selectedItems.length > 0 && (
+                <div className="product-total">
+                  Total: <span className="mono">{productsTotal.toFixed(2)} MAD</span>
+                </div>
+              )}
+            </div>
+            <div className="panel-pad" style={{ padding: '20px 18px' }}>
+              {/* Product Search */}
+              <div className="form-field mb16">
+                <label className="form-label">Add Products</label>
+                <select
+                  className="form-input"
+                  onChange={(e) => {
+                    const product = products.find(p => p.id === parseInt(e.target.value))
+                    if (product) {
+                      addProduct(product)
+                      e.target.value = ''
+                    }
+                  }}
+                  value=""
+                >
+                  <option value="">Select a product to add...</option>
+                  {products.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.name} {product.brand ? `- ${product.brand}` : ''} ({product.price} MAD)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Selected Products */}
+              {selectedItems.length === 0 ? (
+                <div className="empty-products">
+                  <Package size={32} style={{ color: 'var(--tx-faint)', opacity: 0.5 }} />
+                  <p>No products added yet</p>
+                  <small>Select products from the dropdown above</small>
+                </div>
+              ) : (
+                <div className="products-list">
+                  {selectedItems.map((item) => (
+                    <div key={item.productId} className="product-item">
+                      <div className="product-info">
+                        <div className="product-name">{item.productName}</div>
+                        <button
+                          type="button"
+                          onClick={() => removeItem(item.productId)}
+                          className="product-remove"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <div className="product-controls">
+                        <div className="product-qty">
+                          <button
+                            type="button"
+                            onClick={() => updateItemQuantity(item.productId, item.quantity - 1)}
+                            className="qty-btn"
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            value={item.quantity}
+                            onChange={(e) => updateItemQuantity(item.productId, parseInt(e.target.value) || 1)}
+                            className="qty-input"
+                            min="1"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => updateItemQuantity(item.productId, item.quantity + 1)}
+                            className="qty-btn"
+                          >
+                            +
+                          </button>
+                        </div>
+                        <div className="product-price">
+                          <span className="price-label">×</span>
+                          <input
+                            type="number"
+                            value={item.unitPrice}
+                            onChange={(e) => updateItemPrice(item.productId, parseFloat(e.target.value) || 0)}
+                            className="price-input"
+                            step="0.01"
+                            min="0"
+                          />
+                          <span className="price-label">MAD</span>
+                        </div>
+                        <div className="product-subtotal">
+                          = <span className="mono">{(item.quantity * item.unitPrice).toFixed(2)}</span> MAD
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -509,9 +686,186 @@ export default function NewOrderPage() {
           cursor: not-allowed;
         }
 
+        .product-total {
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--tx-mid);
+        }
+
+        .product-total .mono {
+          color: var(--rose-bright);
+          font-size: 15px;
+          margin-left: 6px;
+        }
+
+        .empty-products {
+          text-align: center;
+          padding: 48px 24px;
+          color: var(--tx-faint);
+        }
+
+        .empty-products p {
+          margin: 12px 0 4px;
+          font-size: 13px;
+          font-weight: 500;
+        }
+
+        .empty-products small {
+          font-size: 11.5px;
+          color: var(--tx-lo);
+        }
+
+        .products-list {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .product-item {
+          background: var(--bg-inset);
+          border: 1px solid var(--line-soft);
+          border-radius: var(--radius-sm);
+          padding: 14px;
+        }
+
+        .product-info {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 12px;
+        }
+
+        .product-name {
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--tx-hi);
+        }
+
+        .product-remove {
+          background: none;
+          border: none;
+          color: var(--tx-faint);
+          cursor: pointer;
+          padding: 4px 8px;
+          border-radius: var(--radius-sm);
+          transition: all 0.15s ease;
+        }
+
+        .product-remove:hover {
+          background: var(--red-bg);
+          color: var(--red);
+        }
+
+        .product-controls {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+
+        .product-qty {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          background: var(--bg-2);
+          border: 1px solid var(--line-soft);
+          border-radius: var(--radius-sm);
+          padding: 2px;
+        }
+
+        .qty-btn {
+          width: 28px;
+          height: 28px;
+          border: none;
+          background: transparent;
+          color: var(--tx-mid);
+          cursor: pointer;
+          border-radius: var(--radius-sm);
+          font-size: 16px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          transition: all 0.15s ease;
+        }
+
+        .qty-btn:hover {
+          background: var(--bg-3);
+          color: var(--tx-hi);
+        }
+
+        .qty-input {
+          width: 50px;
+          text-align: center;
+          background: transparent;
+          border: none;
+          color: var(--tx-hi);
+          font-size: 13px;
+          font-weight: 600;
+          font-family: var(--mono);
+        }
+
+        .qty-input:focus {
+          outline: none;
+        }
+
+        .product-price {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .price-label {
+          font-size: 12px;
+          color: var(--tx-mid);
+          font-weight: 500;
+        }
+
+        .price-input {
+          width: 80px;
+          background: var(--bg-2);
+          border: 1px solid var(--line-soft);
+          border-radius: var(--radius-sm);
+          padding: 6px 8px;
+          font-size: 13px;
+          color: var(--tx-hi);
+          font-family: var(--mono);
+          text-align: right;
+        }
+
+        .price-input:focus {
+          outline: none;
+          border-color: var(--rose);
+        }
+
+        .product-subtotal {
+          margin-left: auto;
+          font-size: 13px;
+          font-weight: 600;
+          color: var(--tx-mid);
+        }
+
+        .product-subtotal .mono {
+          color: var(--tx-hi);
+          font-size: 14px;
+        }
+
+        .spacer {
+          flex: 1;
+        }
+
         @media (max-width: 768px) {
           .form-grid-2 {
             grid-template-columns: 1fr;
+          }
+
+          .product-controls {
+            flex-direction: column;
+            align-items: stretch;
+          }
+
+          .product-subtotal {
+            margin-left: 0;
+            text-align: right;
           }
         }
       `}</style>
