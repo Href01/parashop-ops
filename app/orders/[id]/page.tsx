@@ -456,6 +456,95 @@ export default function OrderDetailPage() {
           </div>
         </div>
 
+        {/* Quick Actions Panel */}
+        <div className="panel mb16" style={{ padding: '16px 20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+            <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600 }}>Quick Actions:</h3>
+
+            {order.status === 'PENDING' && (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => handleStatusChange('CONFIRMED')}
+                disabled={actionLoading}
+                style={{ background: 'var(--blue-bg)', color: 'var(--blue)', border: '1px solid var(--blue)' }}
+              >
+                <Check />
+                {actionLoading ? 'Confirming...' : 'Confirm Order'}
+              </button>
+            )}
+
+            {order.status === 'CONFIRMED' && !order.senditTrackingId && (
+              <button
+                type="button"
+                className="btn"
+                onClick={handleCreateShipment}
+                disabled={actionLoading}
+                style={{ background: 'var(--violet-bg)', color: 'var(--violet)', border: '1px solid var(--violet)' }}
+              >
+                <Package />
+                {actionLoading ? 'Creating...' : 'Create Sendit Shipment'}
+              </button>
+            )}
+
+            {order.status === 'CONFIRMED' && order.senditTrackingId && (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => handleStatusChange('SHIPPED')}
+                disabled={actionLoading}
+                style={{ background: 'var(--violet-bg)', color: 'var(--violet)', border: '1px solid var(--violet)' }}
+              >
+                <Truck />
+                {actionLoading ? 'Updating...' : 'Mark as Shipped'}
+              </button>
+            )}
+
+            {order.status === 'SHIPPED' && (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => handleStatusChange('DELIVERED')}
+                disabled={actionLoading}
+                style={{ background: 'var(--green-bg)', color: 'var(--green)', border: '1px solid var(--green)' }}
+              >
+                <Check />
+                {actionLoading ? 'Updating...' : 'Mark as Delivered'}
+              </button>
+            )}
+
+            {order.senditTrackingId && (
+              <button
+                type="button"
+                className="btn"
+                onClick={handleSyncTracking}
+                disabled={actionLoading}
+              >
+                <RefreshCw className={actionLoading ? 'spin' : ''} />
+                {actionLoading ? 'Syncing...' : 'Sync Tracking'}
+              </button>
+            )}
+
+            {order.status !== 'CANCELLED' && order.status !== 'DELIVERED' && (
+              <button
+                type="button"
+                className="btn"
+                onClick={() => handleStatusChange('CANCELLED')}
+                disabled={actionLoading}
+                style={{ background: 'var(--red-bg)', color: 'var(--red)', border: '1px solid var(--red)' }}
+              >
+                <XCircle />
+                Cancel Order
+              </button>
+            )}
+
+            <div style={{ marginLeft: 'auto', fontSize: '12px', color: 'var(--tx-mid)' }}>
+              Current status: <strong>{order.status}</strong>
+              {order.senditTrackingId && <> • Tracking: <span className="mono">{order.senditTrackingId}</span></>}
+            </div>
+          </div>
+        </div>
+
         <div className="od-grid">
           <div className="grid">
             <div className="panel">
