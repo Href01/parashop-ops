@@ -2,8 +2,13 @@
 // Docs: https://sendit.ma/api-docs
 
 const SENDIT_API_URL = 'https://api.sendit.ma/v1'
-const PUBLIC_KEY = process.env.SENDIT_PUBLIC_KEY!
-const PRIVATE_KEY = process.env.SENDIT_PRIVATE_KEY!
+const PUBLIC_KEY = process.env.SENDIT_PUBLIC_KEY || ''
+const PRIVATE_KEY = process.env.SENDIT_PRIVATE_KEY || ''
+const USE_MOCK = !PUBLIC_KEY || !PRIVATE_KEY || process.env.SENDIT_MOCK_MODE === 'true'
+
+if (USE_MOCK) {
+  console.warn('⚠️  Sendit API running in MOCK MODE - set SENDIT_PUBLIC_KEY and SENDIT_PRIVATE_KEY to use real API')
+}
 
 interface SenditShipment {
   reference: string // Your internal order number
@@ -45,6 +50,24 @@ interface SenditTrackingResponse {
  * Create a new Sendit shipment
  */
 export async function createSenditShipment(shipment: SenditShipment): Promise<SenditShipmentResponse> {
+  // MOCK MODE: Return fake shipment data for development
+  if (USE_MOCK) {
+    console.log('🧪 MOCK: Creating Sendit shipment:', shipment)
+    const mockTrackingId = `MOCK-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`
+    const mockBarcode = Math.floor(100000000000 + Math.random() * 900000000000).toString()
+
+    return {
+      success: true,
+      tracking_id: mockTrackingId,
+      barcode: mockBarcode,
+      status: 'PENDING_PICKUP',
+      estimated_delivery_date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      shipping_cost: estimateDeliveryCostManual(shipment.recipient_city),
+      message: 'Mock shipment created (DEVELOPMENT MODE)',
+    }
+  }
+
+  // REAL MODE: Call actual Sendit API
   try {
     const response = await fetch(`${SENDIT_API_URL}/shipments`, {
       method: 'POST',
@@ -76,6 +99,38 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
  * Get shipment tracking info
  */
 export async function getShipmentTracking(trackingId: string): Promise<SenditTrackingResponse> {
+  // MOCK MODE: Return fake tracking data
+  if (USE_MOCK || trackingId.startsWith('MOCK-')) {
+    console.log('🧪 MOCK: Getting tracking for:', trackingId)
+    return {
+      tracking_id: trackingId,
+      status: 'IN_TRANSIT',
+      status_history: [
+        {
+          status: 'PENDING_PICKUP',
+          location: 'Casablanca Hub',
+          timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+          note: 'Shipment created',
+        },
+        {
+          status: 'PICKED_UP',
+          location: 'Casablanca Hub',
+          timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
+          note: 'Package collected',
+        },
+        {
+          status: 'IN_TRANSIT',
+          location: 'En route',
+          timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
+          note: 'In transit to destination',
+        },
+      ],
+      estimated_delivery: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      actual_delivery: undefined,
+    }
+  }
+
+  // REAL MODE: Call actual Sendit API
   try {
     const response = await fetch(`${SENDIT_API_URL}/shipments/${trackingId}`, {
       headers: {

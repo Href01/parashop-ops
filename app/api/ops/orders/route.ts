@@ -238,9 +238,19 @@ export async function POST(request: NextRequest) {
       await client.query('COMMIT')
 
       // Auto-create Sendit shipment if order was confirmed immediately
+      let senditWarning = null
       if (confirmImmediately) {
         try {
           console.log(`🚀 Auto-creating Sendit shipment for new order ${order.id}...`)
+          console.log(`Order data:`, {
+            orderNumber,
+            deliveryName,
+            deliveryPhone,
+            deliveryCity,
+            deliveryAddress,
+            paymentMethod,
+            total,
+          })
 
           // Create shipment with Sendit
           const shipment = await createSenditShipment({
@@ -286,7 +296,13 @@ export async function POST(request: NextRequest) {
           console.log(`✅ Sendit shipment created: ${shipment.tracking_id}`)
         } catch (senditError: any) {
           // Log error but don't fail the order creation
-          console.error(`❌ Failed to auto-create Sendit shipment for order ${order.id}:`, senditError.message)
+          console.error(`❌ Failed to auto-create Sendit shipment for order ${order.id}:`, senditError)
+          console.error(`Error details:`, {
+            message: senditError.message,
+            stack: senditError.stack,
+            response: senditError.response,
+          })
+          senditWarning = `Order created but Sendit shipment failed: ${senditError.message}`
           // Order stays CONFIRMED, user can manually create shipment later
         }
       }
@@ -317,9 +333,13 @@ export async function POST(request: NextRequest) {
         hasItems: createdOrder?.items?.length,
         status: createdOrder?.status,
         senditTrackingId: createdOrder?.senditTrackingId,
+        senditWarning,
       })
 
-      return NextResponse.json(createdOrder, { status: 201 })
+      return NextResponse.json({
+        ...createdOrder,
+        _warning: senditWarning,
+      }, { status: 201 })
     } catch (error) {
       await client.query('ROLLBACK')
       throw error
