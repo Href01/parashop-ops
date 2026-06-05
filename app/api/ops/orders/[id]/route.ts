@@ -384,18 +384,56 @@ export async function DELETE(
 
     const { id: orderId } = await params
 
-    // Delete order items first (foreign key constraint)
-    await pool.query('DELETE FROM "OrderItem" WHERE "orderId" = $1', [orderId])
+    // Get COMPLETE order data before deletion (for audit log)
+    const orderResult = await pool.query(
+      `SELECT o.* FROM "Order" o WHERE o.id = $1`,
+      [orderId]
+    )
 
-    // Delete status history
-    await pool.query('DELETE FROM "OrderStatusHistory" WHERE "orderId" = $1', [orderId])
-
-    // Delete order
-    const result = await pool.query('DELETE FROM "Order" WHERE id = $1 RETURNING id', [orderId])
-
-    if (result.rows.length === 0) {
+    if (orderResult.rows.length === 0) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 })
     }
+
+    const order = orderResult.rows[0]
+
+    // Get order items (for audit log)
+    const itemsResult = await pool.query(
+      `SELECT oi.* FROM "OrderItem" oi WHERE oi."orderId" = $1`,
+      [orderId]
+    )
+
+    // Get status history (for audit log)
+    const historyResult = await pool.query(
+      `SELECT * FROM "OrderStatusHistory" WHERE "orderId" = $1`,
+      [orderId]
+    )
+
+    // Log to audit table BEFORE deletion
+    const auditData = {
+      ...order,
+      items: itemsResult.rows,
+      statusHistory: historyResult.rows,
+      deletedReason: 'Manual deletion via BOS',
+    }
+
+    await pool.query(
+      `INSERT INTO "OrderAuditLog" (
+        "orderId", "orderData", "deletedBy", "source", "ipAddress", "userAgent"
+      ) VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        orderId,
+        JSON.stringify(auditData),
+        session.user.email,
+        'bos',
+        request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip') || 'unknown',
+        request.headers.get('user-agent') || 'unknown',
+      ]
+    )
+
+    // Now delete (order preserved in audit log)
+    await pool.query('DELETE FROM "OrderItem" WHERE "orderId" = $1', [orderId])
+    await pool.query('DELETE FROM "OrderStatusHistory" WHERE "orderId" = $1', [orderId])
+    await pool.query('DELETE FROM "Order" WHERE id = $1', [orderId])
 
     return NextResponse.json({ success: true, message: 'Order deleted successfully' })
   } catch (error: any) {
