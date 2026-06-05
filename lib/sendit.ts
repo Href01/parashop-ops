@@ -1,29 +1,60 @@
 // Sendit API Integration
 // Docs: https://app.sendit.ma/api/documentation
 
-const SENDIT_API_URL = 'https://app.sendit.ma/api'
+const SENDIT_API_URL = 'https://app.sendit.ma/api/v1'
 const PUBLIC_KEY = process.env.SENDIT_PUBLIC_KEY || ''
 const PRIVATE_KEY = process.env.SENDIT_PRIVATE_KEY || ''
-// FORCE MOCK MODE: Set to true to always use mock mode regardless of API keys
-const FORCE_MOCK = false  // ← REAL mode
-const USE_MOCK = FORCE_MOCK || !PUBLIC_KEY || !PRIVATE_KEY || process.env.SENDIT_MOCK_MODE === 'true'
 
-if (USE_MOCK) {
-  console.warn('⚠️  Sendit API running in MOCK MODE')
-} else {
-  console.log('✅ Sendit API running in REAL MODE - will call actual API')
-  console.log(`📡 API URL: ${SENDIT_API_URL}`)
+interface SenditLoginResponse {
+  success: boolean
+  message: string
+  data: {
+    token: string
+    name: string
+  }
+}
+
+interface SenditDelivery {
+  district_id: number
+  name: string
+  phone: string
+  address: string
+  amount: number
+  reference?: string
+  comment?: string
+  allow_open?: number
+  allow_try?: number
+}
+
+interface SenditDeliveryResponse {
+  success: boolean
+  message: string
+  data: {
+    code: string
+    status: string
+    fee: number
+    name: string
+    phone: string
+    address: string
+    amount: number
+    labelUrl: string
+    district: {
+      id: number
+      ville: string
+      name: string
+      price: number
+    }
+  }
 }
 
 interface SenditShipment {
-  reference: string // Your internal order number
+  reference: string
   recipient_name: string
   recipient_phone: string
   recipient_city: string
   recipient_address: string
-  recipient_zip_code?: string
-  cod_amount?: number // Cash on delivery amount
-  package_weight?: number // In kg
+  cod_amount?: number
+  package_weight?: number
   package_description?: string
   notes?: string
 }
@@ -51,105 +82,155 @@ interface SenditTrackingResponse {
   actual_delivery?: string
 }
 
+// Cache token for 1 hour
+let cachedToken: string | null = null
+let tokenExpiry: number = 0
+
+/**
+ * Login to Sendit API and get Bearer token
+ */
+async function getAuthToken(): Promise<string> {
+  // Return cached token if still valid
+  if (cachedToken && Date.now() < tokenExpiry) {
+    return cachedToken
+  }
+
+  console.log('🔐 Logging in to Sendit API...')
+
+  try {
+    const response = await fetch(`${SENDIT_API_URL}/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        public_key: PUBLIC_KEY,
+        secret_key: PRIVATE_KEY,
+      }),
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error('❌ Sendit login failed:', errorText)
+      throw new Error(`Login failed: ${response.status} ${errorText}`)
+    }
+
+    const data: SenditLoginResponse = await response.json()
+
+    if (!data.success || !data.data.token) {
+      throw new Error('Login response invalid')
+    }
+
+    cachedToken = data.data.token
+    tokenExpiry = Date.now() + 3600000 // 1 hour
+    console.log('✅ Sendit login successful')
+
+    return cachedToken
+  } catch (error: any) {
+    console.error('❌ Sendit login error:', error)
+    throw new Error(`Failed to authenticate with Sendit: ${error.message}`)
+  }
+}
+
+/**
+ * Get district ID from city name
+ */
+function getDistrictId(city: string): number {
+  const cityLower = city.toLowerCase()
+
+  // Map common city names to district IDs
+  // TODO: Fetch from API /districts endpoint for complete list
+  if (cityLower.includes('casa')) return 1
+  if (cityLower.includes('rabat')) return 2
+  if (cityLower.includes('marrakech')) return 3
+  if (cityLower.includes('tanger')) return 4
+  if (cityLower.includes('fes')) return 5
+
+  // Default to Casablanca if unknown
+  return 1
+}
+
+/**
+ * Estimate delivery cost based on city
+ */
+function estimateDeliveryCost(city: string): number {
+  const cityLower = city.toLowerCase()
+
+  if (cityLower.includes('casa')) return 25
+  if (['rabat', 'marrakech', 'tanger', 'fes', 'agadir'].some(c => cityLower.includes(c))) return 35
+  return 45
+}
+
 /**
  * Create a new Sendit shipment
  */
 export async function createSenditShipment(shipment: SenditShipment): Promise<SenditShipmentResponse> {
-  // Log mode status
-  console.log('🔍 Sendit createSenditShipment called')
-  console.log('📝 Environment check:', {
-    PUBLIC_KEY: PUBLIC_KEY ? `${PUBLIC_KEY.slice(0, 10)}...` : 'NOT SET',
-    PRIVATE_KEY: PRIVATE_KEY ? `${PRIVATE_KEY.slice(0, 10)}...` : 'NOT SET',
-    PUBLIC_KEY_LENGTH: PUBLIC_KEY?.length || 0,
-    PRIVATE_KEY_LENGTH: PRIVATE_KEY?.length || 0,
-    USE_MOCK,
-    FORCE_MOCK,
-    SENDIT_MOCK_MODE: process.env.SENDIT_MOCK_MODE,
-    API_URL: SENDIT_API_URL,
-  })
-
-  // Warn if keys missing in REAL mode
-  if (!USE_MOCK && (!PUBLIC_KEY || !PRIVATE_KEY)) {
-    console.warn('⚠️  WARNING: REAL mode but API keys not configured!')
-    console.warn('Set SENDIT_PUBLIC_KEY and SENDIT_PRIVATE_KEY in Vercel environment variables')
-  }
-
-  // MOCK MODE: Return fake shipment data for development
-  if (USE_MOCK) {
-    console.log('🧪 MOCK: Creating Sendit shipment:', shipment)
-    const mockTrackingId = `MOCK-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`
-    const mockBarcode = Math.floor(100000000000 + Math.random() * 900000000000).toString()
-
-    return {
-      success: true,
-      tracking_id: mockTrackingId,
-      barcode: mockBarcode,
-      status: 'PENDING_PICKUP',
-      estimated_delivery_date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      shipping_cost: estimateDeliveryCostManual(shipment.recipient_city),
-      message: 'Mock shipment created (DEVELOPMENT MODE)',
-    }
-  }
-
-  // REAL MODE: Call actual Sendit API
-  console.log('🌐 REAL MODE: Calling Sendit API at:', SENDIT_API_URL)
-  console.log('📦 Shipment payload:', JSON.stringify({
-    ...shipment,
-    package_weight: shipment.package_weight || 0.5,
-  }, null, 2))
+  console.log('🚀 Creating Sendit delivery...')
+  console.log('📦 Shipment:', shipment)
 
   try {
-    const response = await fetch(`${SENDIT_API_URL}/shipments`, {
+    // Get auth token
+    const token = await getAuthToken()
+
+    // Get district ID from city name
+    const districtId = getDistrictId(shipment.recipient_city)
+
+    // Create delivery
+    const deliveryData: SenditDelivery = {
+      district_id: districtId,
+      name: shipment.recipient_name,
+      phone: shipment.recipient_phone,
+      address: shipment.recipient_address,
+      amount: shipment.cod_amount || 0,
+      reference: shipment.reference,
+      comment: shipment.notes,
+      allow_open: 1,
+      allow_try: 1,
+    }
+
+    console.log('📝 Delivery payload:', deliveryData)
+
+    const response = await fetch(`${SENDIT_API_URL}/deliveries`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Public-Key': PUBLIC_KEY,
-        'X-Private-Key': PRIVATE_KEY,
+        'Authorization': `Bearer ${token}`,
       },
-      body: JSON.stringify({
-        ...shipment,
-        package_weight: shipment.package_weight || 0.5, // Default 500g
-      }),
+      body: JSON.stringify(deliveryData),
     })
 
-    console.log('📡 Sendit API response status:', response.status)
+    console.log('📡 Response status:', response.status)
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error('❌ Sendit API error response:', errorText)
-      let errorMessage = 'Failed to create shipment'
-      try {
-        const errorJson = JSON.parse(errorText)
-        errorMessage = errorJson.message || errorMessage
-      } catch {
-        errorMessage = errorText || errorMessage
-      }
-      throw new Error(errorMessage)
+      console.error('❌ Sendit API error:', errorText)
+      throw new Error(`API error ${response.status}: ${errorText}`)
     }
 
-    const data = await response.json()
-    console.log('✅ Sendit API success response:', data)
-    return data
+    const data: SenditDeliveryResponse = await response.json()
+
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to create delivery')
+    }
+
+    console.log('✅ Delivery created:', data.data.code)
+
+    // Map to our response format
+    return {
+      success: true,
+      tracking_id: data.data.code,
+      barcode: data.data.code,
+      status: data.data.status,
+      shipping_cost: data.data.fee,
+      message: data.message,
+    }
+
   } catch (error: any) {
-    console.error('❌ Sendit API error:', {
+    console.error('❌ Create shipment error:', {
       name: error.name,
       message: error.message,
-      code: error.code,
       cause: error.cause,
-      stack: error.stack,
     })
-
-    // Add helpful error context
-    if (error.cause?.code === 'ENOTFOUND') {
-      throw new Error(`Cannot reach Sendit API at ${SENDIT_API_URL} - DNS lookup failed`)
-    }
-    if (error.cause?.code === 'ECONNREFUSED') {
-      throw new Error(`Sendit API refused connection at ${SENDIT_API_URL}`)
-    }
-    if (error.message.includes('fetch failed')) {
-      throw new Error(`Network error connecting to Sendit API (${SENDIT_API_URL}): ${error.cause?.message || error.message}`)
-    }
-
     throw new Error(`Sendit shipment creation failed: ${error.message}`)
   }
 }
@@ -158,55 +239,37 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
  * Get shipment tracking info
  */
 export async function getShipmentTracking(trackingId: string): Promise<SenditTrackingResponse> {
-  // MOCK MODE: Return fake tracking data
-  if (USE_MOCK || trackingId.startsWith('MOCK-')) {
-    console.log('🧪 MOCK: Getting tracking for:', trackingId)
-    return {
-      tracking_id: trackingId,
-      status: 'IN_TRANSIT',
-      status_history: [
-        {
-          status: 'PENDING_PICKUP',
-          location: 'Casablanca Hub',
-          timestamp: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-          note: 'Shipment created',
-        },
-        {
-          status: 'PICKED_UP',
-          location: 'Casablanca Hub',
-          timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000).toISOString(),
-          note: 'Package collected',
-        },
-        {
-          status: 'IN_TRANSIT',
-          location: 'En route',
-          timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-          note: 'In transit to destination',
-        },
-      ],
-      estimated_delivery: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      actual_delivery: undefined,
-    }
-  }
+  console.log('🔍 Getting tracking for:', trackingId)
 
-  // REAL MODE: Call actual Sendit API
   try {
-    const response = await fetch(`${SENDIT_API_URL}/shipments/${trackingId}`, {
+    const token = await getAuthToken()
+
+    const response = await fetch(`${SENDIT_API_URL}/deliveries/${trackingId}`, {
       headers: {
-        'X-Public-Key': PUBLIC_KEY,
-        'X-Private-Key': PRIVATE_KEY,
+        'Authorization': `Bearer ${token}`,
       },
     })
 
     if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.message || 'Failed to get tracking info')
+      const errorText = await response.text()
+      throw new Error(`Failed to get tracking: ${response.status} ${errorText}`)
     }
 
-    const data = await response.json()
-    return data
+    const data: SenditDeliveryResponse = await response.json()
+
+    if (!data.success) {
+      throw new Error(data.message || 'Failed to get tracking')
+    }
+
+    // Map to our tracking format
+    return {
+      tracking_id: data.data.code,
+      status: data.data.status,
+      status_history: [], // TODO: Parse from audits if available
+    }
+
   } catch (error: any) {
-    console.error('Sendit tracking error:', error)
+    console.error('❌ Get tracking error:', error)
     throw new Error(`Failed to get tracking: ${error.message}`)
   }
 }
@@ -216,22 +279,25 @@ export async function getShipmentTracking(trackingId: string): Promise<SenditTra
  */
 export async function cancelShipment(trackingId: string): Promise<{ success: boolean; message: string }> {
   try {
-    const response = await fetch(`${SENDIT_API_URL}/shipments/${trackingId}/cancel`, {
-      method: 'POST',
+    const token = await getAuthToken()
+
+    const response = await fetch(`${SENDIT_API_URL}/deliveries/${trackingId}`, {
+      method: 'DELETE',
       headers: {
-        'X-Public-Key': PUBLIC_KEY,
-        'X-Private-Key': PRIVATE_KEY,
+        'Authorization': `Bearer ${token}`,
       },
     })
 
     if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.message || 'Failed to cancel shipment')
+      const errorText = await response.text()
+      throw new Error(`Failed to cancel: ${response.status} ${errorText}`)
     }
 
-    return await response.json()
+    const data = await response.json()
+    return data
+
   } catch (error: any) {
-    console.error('Sendit cancel error:', error)
+    console.error('❌ Cancel shipment error:', error)
     throw new Error(`Failed to cancel shipment: ${error.message}`)
   }
 }
@@ -240,42 +306,6 @@ export async function cancelShipment(trackingId: string): Promise<{ success: boo
  * Get delivery cost estimate
  */
 export async function getDeliveryCostEstimate(city: string, weight: number = 0.5): Promise<number> {
-  try {
-    const response = await fetch(`${SENDIT_API_URL}/estimate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Public-Key': PUBLIC_KEY,
-      },
-      body: JSON.stringify({ city, weight }),
-    })
-
-    if (!response.ok) {
-      // Fallback to manual estimation if API fails
-      return estimateDeliveryCostManual(city)
-    }
-
-    const data = await response.json()
-    return data.cost || estimateDeliveryCostManual(city)
-  } catch (error) {
-    // Fallback to manual estimation
-    return estimateDeliveryCostManual(city)
-  }
-}
-
-/**
- * Manual delivery cost estimation (fallback)
- */
-function estimateDeliveryCostManual(city: string): number {
-  const cityLower = city.toLowerCase()
-
-  // Casablanca - cheapest
-  if (cityLower.includes('casa')) return 25
-
-  // Major cities
-  const majorCities = ['rabat', 'marrakech', 'tanger', 'fes', 'agadir', 'meknes', 'oujda', 'kenitra', 'tetouan', 'sale']
-  if (majorCities.some(c => cityLower.includes(c))) return 35
-
-  // Remote cities
-  return 45
+  // Use manual estimation for now
+  return estimateDeliveryCost(city)
 }
