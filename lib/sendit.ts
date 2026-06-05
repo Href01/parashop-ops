@@ -84,6 +84,26 @@ interface SenditTrackingResponse {
   actual_delivery?: string
 }
 
+interface SenditDistrict {
+  id: number
+  ville: string
+  name: string
+  arabic_name: string
+  price: number
+  delais: string
+  pickup_district: number
+}
+
+interface SenditDistrictsResponse {
+  success: boolean
+  message: string
+  data: SenditDistrict[]
+  total: number
+  per_page: number
+  current_page: number
+  last_page: number
+}
+
 // Cache token for 1 hour
 let cachedToken: string | null = null
 let tokenExpiry: number = 0
@@ -311,4 +331,52 @@ export async function cancelShipment(trackingId: string): Promise<{ success: boo
 export async function getDeliveryCostEstimate(city: string, weight: number = 0.5): Promise<number> {
   // Use manual estimation for now
   return estimateDeliveryCost(city)
+}
+
+/**
+ * Get all districts (cities/neighborhoods) from Sendit
+ */
+export async function getAllDistricts(): Promise<SenditDistrict[]> {
+  console.log('🏙️  Fetching Sendit districts...')
+
+  try {
+    const token = await getAuthToken()
+    const allDistricts: SenditDistrict[] = []
+    let currentPage = 1
+    let lastPage = 1
+
+    // Fetch all pages
+    do {
+      const response = await fetch(`${SENDIT_API_URL}/districts?page=${currentPage}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Failed to fetch districts: ${response.status} ${errorText}`)
+      }
+
+      const data: SenditDistrictsResponse = await response.json()
+
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to fetch districts')
+      }
+
+      allDistricts.push(...data.data)
+      lastPage = data.last_page
+      currentPage++
+
+      console.log(`📄 Fetched page ${currentPage - 1}/${lastPage} (${data.data.length} districts)`)
+
+    } while (currentPage <= lastPage)
+
+    console.log(`✅ Total districts fetched: ${allDistricts.length}`)
+    return allDistricts
+
+  } catch (error: any) {
+    console.error('❌ Get districts error:', error)
+    throw new Error(`Failed to get districts: ${error.message}`)
+  }
 }
