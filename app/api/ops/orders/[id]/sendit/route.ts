@@ -90,21 +90,13 @@ export async function POST(
       ]
     )
 
-    // Update order status to SHIPPED if it was CONFIRMED
-    if (order.status === 'CONFIRMED') {
-      await pool.query(
-        `UPDATE "Order" SET status = 'SHIPPED' WHERE id = $1`,
-        [orderId]
-      )
-
-      // Add status history
-      await pool.query(
-        `INSERT INTO "OrderStatusHistory" (
-          "orderId", "oldStatus", "newStatus", note, "createdAt"
-        ) VALUES ($1, $2, $3, $4, NOW())`,
-        [orderId, 'CONFIRMED', 'SHIPPED', `Sendit shipment created: ${shipment.tracking_id}`]
-      )
-    }
+    // Add status history note (status stays CONFIRMED)
+    await pool.query(
+      `INSERT INTO "OrderStatusHistory" (
+        "orderId", "oldStatus", "newStatus", note, "createdAt"
+      ) VALUES ($1, $2, $3, $4, NOW())`,
+      [orderId, order.status, order.status, `Sendit shipment created: ${shipment.tracking_id}`]
+    )
 
     console.log(`✅ Sendit shipment created for order ${orderId}: ${shipment.tracking_id}`)
 

@@ -278,14 +278,13 @@ export async function PUT(
                 notes: order.notes || '',
               })
 
-              // Update order with Sendit tracking info and change status to SHIPPED
+              // Update order with Sendit tracking info (keep status as CONFIRMED)
               await pool.query(
                 `UPDATE "Order"
                  SET "senditTrackingId" = $1,
                      "senditBarcode" = $2,
                      "senditStatus" = $3,
-                     "actualDeliveryCost" = $4,
-                     "status" = 'SHIPPED'
+                     "actualDeliveryCost" = $4
                  WHERE id = $5`,
                 [
                   shipment.tracking_id,
@@ -296,12 +295,12 @@ export async function PUT(
                 ]
               )
 
-              // Add status history for SHIPPED
+              // Add status history note (status stays CONFIRMED)
               await pool.query(
                 `INSERT INTO "OrderStatusHistory" (
                   "orderId", "oldStatus", "newStatus", "source", "note", "createdAt"
                 ) VALUES ($1, $2, $3, 'auto', $4, NOW())`,
-                [orderId, 'CONFIRMED', 'SHIPPED', `Auto-created Sendit shipment: ${shipment.tracking_id}`]
+                [orderId, 'CONFIRMED', 'CONFIRMED', `Sendit shipment created: ${shipment.tracking_id}`]
               )
 
               console.log(`✅ Sendit shipment created: ${shipment.tracking_id}`)
