@@ -60,9 +60,19 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
   console.log('📝 Environment check:', {
     PUBLIC_KEY: PUBLIC_KEY ? `${PUBLIC_KEY.slice(0, 10)}...` : 'NOT SET',
     PRIVATE_KEY: PRIVATE_KEY ? `${PRIVATE_KEY.slice(0, 10)}...` : 'NOT SET',
+    PUBLIC_KEY_LENGTH: PUBLIC_KEY?.length || 0,
+    PRIVATE_KEY_LENGTH: PRIVATE_KEY?.length || 0,
     USE_MOCK,
+    FORCE_MOCK,
     SENDIT_MOCK_MODE: process.env.SENDIT_MOCK_MODE,
+    API_URL: SENDIT_API_URL,
   })
+
+  // Warn if keys missing in REAL mode
+  if (!USE_MOCK && (!PUBLIC_KEY || !PRIVATE_KEY)) {
+    console.warn('⚠️  WARNING: REAL mode but API keys not configured!')
+    console.warn('Set SENDIT_PUBLIC_KEY and SENDIT_PRIVATE_KEY in Vercel environment variables')
+  }
 
   // MOCK MODE: Return fake shipment data for development
   if (USE_MOCK) {
@@ -83,6 +93,11 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
 
   // REAL MODE: Call actual Sendit API
   console.log('🌐 REAL MODE: Calling Sendit API at:', SENDIT_API_URL)
+  console.log('📦 Shipment payload:', JSON.stringify({
+    ...shipment,
+    package_weight: shipment.package_weight || 0.5,
+  }, null, 2))
+
   try {
     const response = await fetch(`${SENDIT_API_URL}/shipments`, {
       method: 'POST',
@@ -97,15 +112,44 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
       }),
     })
 
+    console.log('📡 Sendit API response status:', response.status)
+
     if (!response.ok) {
-      const error = await response.json()
-      throw new Error(error.message || 'Failed to create shipment')
+      const errorText = await response.text()
+      console.error('❌ Sendit API error response:', errorText)
+      let errorMessage = 'Failed to create shipment'
+      try {
+        const errorJson = JSON.parse(errorText)
+        errorMessage = errorJson.message || errorMessage
+      } catch {
+        errorMessage = errorText || errorMessage
+      }
+      throw new Error(errorMessage)
     }
 
     const data = await response.json()
+    console.log('✅ Sendit API success response:', data)
     return data
   } catch (error: any) {
-    console.error('Sendit API error:', error)
+    console.error('❌ Sendit API error:', {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      cause: error.cause,
+      stack: error.stack,
+    })
+
+    // Add helpful error context
+    if (error.cause?.code === 'ENOTFOUND') {
+      throw new Error(`Cannot reach Sendit API at ${SENDIT_API_URL} - DNS lookup failed`)
+    }
+    if (error.cause?.code === 'ECONNREFUSED') {
+      throw new Error(`Sendit API refused connection at ${SENDIT_API_URL}`)
+    }
+    if (error.message.includes('fetch failed')) {
+      throw new Error(`Network error connecting to Sendit API (${SENDIT_API_URL}): ${error.cause?.message || error.message}`)
+    }
+
     throw new Error(`Sendit shipment creation failed: ${error.message}`)
   }
 }
