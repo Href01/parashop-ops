@@ -104,13 +104,15 @@ export default function OrderDetailPage() {
 
       if (!res.ok) {
         const errorData = await res.json()
-        throw new Error(errorData.error || 'Failed to create shipment')
+        console.error('Create shipment error:', errorData)
+        throw new Error(errorData.details || errorData.error || 'Failed to create shipment')
       }
 
       const data = await res.json()
       setActionSuccess(`Shipment created! Tracking ID: ${data.trackingId}`)
       await fetchOrder() // Refresh order data
     } catch (err: any) {
+      console.error('handleCreateShipment error:', err)
       setActionError(err.message)
     } finally {
       setActionLoading(false)

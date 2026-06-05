@@ -119,10 +119,16 @@ export async function POST(
 
   } catch (error: any) {
     console.error('Create Sendit shipment error:', error)
+    console.error('Error name:', error?.name)
+    console.error('Error message:', error?.message)
+    console.error('Error stack:', error?.stack)
+
     return NextResponse.json(
       {
         error: 'Failed to create shipment',
-        details: error.message,
+        details: error?.message || String(error),
+        errorName: error?.name,
+        stack: error?.stack,
       },
       { status: 500 }
     )
