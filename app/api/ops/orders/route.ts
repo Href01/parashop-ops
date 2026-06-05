@@ -114,13 +114,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (!items || items.length === 0) {
-      return NextResponse.json(
-        { error: 'At least one product is required' },
-        { status: 400 }
-      )
-    }
-
     // Generate order number
     const orderNumber = generateOrderNumber()
 
@@ -188,19 +181,21 @@ export async function POST(request: NextRequest) {
 
       const order = orderResult.rows[0]
 
-      // Get product cost prices
-      const productIds = items.map((item: any) => item.productId)
-      const productsResult = await client.query(
-        `SELECT id, "costPrice" FROM "Product" WHERE id = ANY($1)`,
-        [productIds]
-      )
+      // Create order items (if any)
+      if (items && items.length > 0) {
+        // Get product cost prices
+        const productIds = items.map((item: any) => item.productId)
+        const productsResult = await client.query(
+          `SELECT id, "costPrice" FROM "Product" WHERE id = ANY($1)`,
+          [productIds]
+        )
 
-      const productCosts = new Map(
-        productsResult.rows.map(p => [p.id, p.costPrice || 0])
-      )
+        const productCosts = new Map(
+          productsResult.rows.map(p => [p.id, p.costPrice || 0])
+        )
 
-      // Create order items
-      for (const item of items) {
+        // Create order items
+        for (const item of items) {
         const unitCost = productCosts.get(item.productId) || 0
         const totalPrice = item.unitPrice * item.quantity
         const totalCost = unitCost * item.quantity
@@ -216,6 +211,7 @@ export async function POST(request: NextRequest) {
           ) VALUES ($1, $2, $3, $4, $5, $6)`,
           [order.id, item.productId, item.quantity, item.unitPrice, unitCost, totalCost]
         )
+        }
       }
 
       // Add status history
