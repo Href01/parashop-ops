@@ -89,14 +89,21 @@ export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  console.log('PUT /api/ops/orders/[id] - START')
+
   try {
+    console.log('PUT /api/ops/orders/[id] - Getting session...')
     const session = await getServerSession(authOptions)
+
     if (!session?.user?.email) {
       console.error('PUT /api/ops/orders/[id] - Unauthorized: No session')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    console.log('PUT /api/ops/orders/[id] - Session OK, getting params...')
     const { id: orderId } = await params
+
+    console.log('PUT /api/ops/orders/[id] - Params OK, parsing body...')
     const body = await request.json()
 
     console.log('PUT /api/ops/orders/[id] - Request:', {
@@ -104,6 +111,11 @@ export async function PUT(
       body,
       user: session.user.email,
     })
+
+    if (!pool) {
+      console.error('PUT /api/ops/orders/[id] - Database pool is undefined!')
+      return NextResponse.json({ error: 'Database connection failed', details: 'Pool is undefined' }, { status: 500 })
+    }
 
     const {
       deliveryName,
@@ -313,12 +325,17 @@ export async function PUT(
 
     return NextResponse.json(finalOrder.rows[0])
   } catch (error: any) {
-    console.error('Update order error:', error)
+    console.error('PUT /api/ops/orders/[id] - ERROR:', error)
+    console.error('Error name:', error?.name)
+    console.error('Error message:', error?.message)
+    console.error('Error stack:', error?.stack)
+
     return NextResponse.json(
       {
         error: 'Failed to update order',
-        details: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        details: error?.message || String(error),
+        errorName: error?.name,
+        stack: error?.stack
       },
       { status: 500 }
     )
