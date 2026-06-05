@@ -15,10 +15,14 @@ export async function GET() {
   try {
     // Return cached if still valid
     if (cachedDistricts && Date.now() < cacheExpiry) {
-      return NextResponse.json({
+      const response = NextResponse.json({
         districts: cachedDistricts,
         cached: true,
       })
+      // Add CORS headers for main site
+      response.headers.set('Access-Control-Allow-Origin', '*')
+      response.headers.set('Access-Control-Allow-Methods', 'GET')
+      return response
     }
 
     // Fetch from Sendit
@@ -45,11 +49,17 @@ export async function GET() {
     cachedDistricts = simplified
     cacheExpiry = Date.now() + 3600000
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       districts: simplified,
       cached: false,
       count: simplified.length,
     })
+
+    // Add CORS headers for main site
+    response.headers.set('Access-Control-Allow-Origin', '*')
+    response.headers.set('Access-Control-Allow-Methods', 'GET')
+
+    return response
 
   } catch (error: any) {
     console.error('❌ Failed to fetch districts:', error)
