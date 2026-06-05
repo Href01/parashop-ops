@@ -91,13 +91,18 @@ export async function POST(request: NextRequest) {
       deliveryNotes,
       paymentMethod,
       items, // [{ productId, quantity, unitPrice }]
-      discountTotal = 0,
-      deliveryFeeCharged = 0,
-      estimatedDeliveryCost = 0,
+      discountTotal: discountTotalRaw = 0,
+      deliveryFeeCharged: deliveryFeeChargedRaw = 0,
+      estimatedDeliveryCost: estimatedDeliveryCostRaw = 0,
       promoCode,
       notes,
       confirmImmediately = false,
     } = body
+
+    // Convert numeric fields to numbers (prevent string concatenation)
+    const discountTotal = Number(discountTotalRaw) || 0
+    const deliveryFeeCharged = Number(deliveryFeeChargedRaw) || 0
+    const estimatedDeliveryCost = Number(estimatedDeliveryCostRaw) || 0
 
     // Validation
     if (!sourceChannel) {
@@ -129,6 +134,15 @@ export async function POST(request: NextRequest) {
 
       const revenue = productsTotal - discountTotal
       const total = revenue + deliveryFeeCharged
+
+      console.log('💰 Order calculation:', {
+        productsTotal: { value: productsTotal, type: typeof productsTotal },
+        discountTotal: { value: discountTotal, type: typeof discountTotal },
+        revenue: { value: revenue, type: typeof revenue },
+        deliveryFeeCharged: { value: deliveryFeeCharged, type: typeof deliveryFeeCharged },
+        total: { value: total, type: typeof total },
+        calculation: `${productsTotal} - ${discountTotal} + ${deliveryFeeCharged} = ${total}`
+      })
 
       // Create order
       const orderResult = await client.query(
