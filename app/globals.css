@@ -1461,6 +1461,15 @@ textarea {
 
 .tbl-row-link {
   cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.tbl-row-link:hover {
+  background: var(--bg-1) !important;
+}
+
+.tbl-row-link:active {
+  background: var(--bg-2) !important;
 }
 
 .cellstack {

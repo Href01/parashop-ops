@@ -3,6 +3,7 @@
 import { ChevronDown, Download, Filter, Plus, RefreshCw, Search } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import BosShell from '@/components/BosShell'
 
 type OrderStatus = 'PENDING' | 'CONFIRMED' | 'SHIPPED' | 'DELIVERED' | 'RETURNED' | 'CANCELLED' | 'FAILED'
@@ -67,6 +68,7 @@ function completenessColor(value: number) {
 }
 
 export default function OrdersPage() {
+  const router = useRouter()
   const [orders, setOrders] = useState<OrderRow[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -207,15 +209,20 @@ export default function OrdersPage() {
                     const margin = order.marginPercent === null || order.marginPercent === undefined ? null : toNumber(order.marginPercent)
 
                     return (
-                      <tr key={order.id} className="tbl-row-link">
-                        <td>
+                      <tr
+                        key={order.id}
+                        className="tbl-row-link"
+                        onClick={() => router.push(`/orders/${order.id}`)}
+                        style={{ cursor: 'pointer' }}
+                      >
+                        <td onClick={(e) => e.stopPropagation()}>
                           <span className="selbox"></span>
                         </td>
                         <td>
-                          <Link href={`/orders/${order.id}`} className="cellstack">
+                          <div className="cellstack">
                             <span className="num fs12 t-strong">#{order.id}</span>
                             <span className="t-sub mono">{order.orderNumber || 'Manual order'}</span>
-                          </Link>
+                          </div>
                         </td>
                         <td>
                           <div className="cellstack">
