@@ -1,9 +1,9 @@
 'use client'
 
-import { ArrowLeft, Check, Clock, Edit3, MoreHorizontal, Truck, Wallet } from 'lucide-react'
+import { ArrowLeft, Check, Clock, Edit3, MoreHorizontal, Truck, Wallet, X, ChevronDown, RefreshCw, Package, XCircle, AlertCircle } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import BosShell from '@/components/BosShell'
 
 interface Order {
@@ -23,6 +23,10 @@ interface Order {
   marginPercent?: number | string
   deliveryFeeCharged?: number | string
   estimatedDeliveryCost?: number | string
+  senditTrackingId?: string
+  senditBarcode?: string
+  senditStatus?: string
+  actualDeliveryCost?: number | string
   createdAt: string
   items: any[]
   statusHistory: any[]
@@ -40,33 +44,161 @@ function formatMoney(value: unknown) {
 
 export default function OrderDetailPage() {
   const params = useParams()
+  const router = useRouter()
   const orderId = params.id as string
   const [order, setOrder] = useState<Order | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [isEditing, setIsEditing] = useState(false)
+  const [showMore, setShowMore] = useState(false)
+  const [actionLoading, setActionLoading] = useState(false)
+  const [actionError, setActionError] = useState('')
+  const [actionSuccess, setActionSuccess] = useState('')
+
+  // Edit form state
+  const [editForm, setEditForm] = useState({
+    deliveryName: '',
+    deliveryPhone: '',
+    deliveryCity: '',
+    deliveryAddress: '',
+    deliveryNotes: '',
+  })
 
   useEffect(() => {
-    async function fetchOrder() {
-      try {
-        const res = await fetch(`/api/ops/orders/${orderId}`, { cache: 'no-store' })
-        if (!res.ok) throw new Error('Failed to fetch order')
-        const data = (await res.json()) as Order
-        setOrder(data)
-      } catch (fetchError: any) {
-        setError(fetchError.message)
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    if (orderId) void fetchOrder()
+    void fetchOrder()
   }, [orderId])
+
+  async function fetchOrder() {
+    try {
+      setLoading(true)
+      const res = await fetch(`/api/ops/orders/${orderId}`, { cache: 'no-store' })
+      if (!res.ok) throw new Error('Failed to fetch order')
+      const data = (await res.json()) as Order
+      setOrder(data)
+      setEditForm({
+        deliveryName: data.deliveryName || '',
+        deliveryPhone: data.deliveryPhone || '',
+        deliveryCity: data.deliveryCity || '',
+        deliveryAddress: data.deliveryAddress || '',
+        deliveryNotes: data.deliveryNotes || '',
+      })
+    } catch (fetchError: any) {
+      setError(fetchError.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleCreateShipment() {
+    if (!order) return
+
+    setActionLoading(true)
+    setActionError('')
+    setActionSuccess('')
+
+    try {
+      const res = await fetch(`/api/ops/orders/${orderId}/sendit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.error || 'Failed to create shipment')
+      }
+
+      const data = await res.json()
+      setActionSuccess(`Shipment created! Tracking ID: ${data.trackingId}`)
+      await fetchOrder() // Refresh order data
+    } catch (err: any) {
+      setActionError(err.message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  async function handleSyncTracking() {
+    if (!order) return
+
+    setActionLoading(true)
+    setActionError('')
+    setActionSuccess('')
+
+    try {
+      const res = await fetch(`/api/ops/orders/${orderId}/sendit`)
+
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.error || 'Failed to sync tracking')
+      }
+
+      const data = await res.json()
+      setActionSuccess(`Tracking synced! Status: ${data.status}`)
+      await fetchOrder()
+    } catch (err: any) {
+      setActionError(err.message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  async function handleStatusChange(newStatus: string) {
+    if (!order) return
+
+    setActionLoading(true)
+    setActionError('')
+    setActionSuccess('')
+
+    try {
+      const res = await fetch(`/api/ops/orders/${orderId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      })
+
+      if (!res.ok) throw new Error('Failed to update status')
+
+      setActionSuccess(`Status updated to ${newStatus}`)
+      await fetchOrder()
+    } catch (err: any) {
+      setActionError(err.message)
+    } finally {
+      setActionLoading(false)
+      setShowMore(false)
+    }
+  }
+
+  async function handleSaveEdit() {
+    if (!order) return
+
+    setActionLoading(true)
+    setActionError('')
+    setActionSuccess('')
+
+    try {
+      const res = await fetch(`/api/ops/orders/${orderId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editForm),
+      })
+
+      if (!res.ok) throw new Error('Failed to update order')
+
+      setActionSuccess('Order updated successfully')
+      setIsEditing(false)
+      await fetchOrder()
+    } catch (err: any) {
+      setActionError(err.message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
 
   const totals = useMemo(() => {
     const productRevenue = order?.items?.reduce((sum, item) => sum + toNumber(item.price) * toNumber(item.quantity), 0) ?? 0
     const productCost = order?.items?.reduce((sum, item) => sum + toNumber(item.unitCost) * toNumber(item.quantity), 0) ?? 0
     const deliveryCharged = toNumber(order?.deliveryFeeCharged)
-    const deliveryCost = toNumber(order?.estimatedDeliveryCost || 30)
+    const deliveryCost = toNumber(order?.actualDeliveryCost || order?.estimatedDeliveryCost || 30)
     const profit = toNumber(order?.estimatedProfit) || productRevenue - productCost - deliveryCost
     const margin = toNumber(order?.marginPercent) || (productRevenue > 0 ? (profit / productRevenue) * 100 : 0)
 
@@ -110,6 +242,31 @@ export default function OrderDetailPage() {
           <span className="mono">{order.orderNumber || `Order ${order.id}`}</span>
         </div>
 
+        {/* Action feedback */}
+        {actionSuccess && (
+          <div className="panel mb16" style={{ background: 'var(--green-bg)', border: '1px solid var(--green)', padding: '12px 16px' }}>
+            <div className="row gap10">
+              <Check style={{ color: 'var(--green)' }} />
+              <span style={{ color: 'var(--green)' }}>{actionSuccess}</span>
+              <button type="button" onClick={() => setActionSuccess('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer' }}>
+                <X size={16} style={{ color: 'var(--green)' }} />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {actionError && (
+          <div className="panel mb16" style={{ background: 'var(--red-bg)', border: '1px solid var(--red)', padding: '12px 16px' }}>
+            <div className="row gap10">
+              <AlertCircle style={{ color: 'var(--red)' }} />
+              <span style={{ color: 'var(--red)' }}>{actionError}</span>
+              <button type="button" onClick={() => setActionError('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer' }}>
+                <X size={16} style={{ color: 'var(--red)' }} />
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="page-head detail-head">
           <div className="row gap12">
             <h1 className="num">#{order.id}</h1>
@@ -120,9 +277,168 @@ export default function OrderDetailPage() {
             <span className="badge rose">{order.sourceChannel || 'Manual'}</span>
           </div>
           <div className="spacer"></div>
-          <button type="button" className="btn"><Edit3 />Edit</button>
-          <button type="button" className="btn"><Truck />Track shipment</button>
-          <button type="button" className="btn icon"><MoreHorizontal /></button>
+
+          {!isEditing ? (
+            <>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => setIsEditing(true)}
+              >
+                <Edit3 />Edit
+              </button>
+
+              {order.senditTrackingId ? (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={handleSyncTracking}
+                  disabled={actionLoading}
+                >
+                  <RefreshCw className={actionLoading ? 'spin' : ''} />
+                  {actionLoading ? 'Syncing...' : 'Sync tracking'}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={handleCreateShipment}
+                  disabled={actionLoading}
+                >
+                  <Package />
+                  {actionLoading ? 'Creating...' : 'Create shipment'}
+                </button>
+              )}
+
+              <div style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  className="btn icon"
+                  onClick={() => setShowMore(!showMore)}
+                >
+                  <MoreHorizontal />
+                </button>
+
+                {showMore && (
+                  <div style={{
+                    position: 'absolute',
+                    right: 0,
+                    top: 'calc(100% + 4px)',
+                    background: 'var(--bg-1)',
+                    border: '1px solid var(--bg-3)',
+                    borderRadius: 'var(--radius-lg)',
+                    padding: '8px',
+                    minWidth: '200px',
+                    zIndex: 10,
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                  }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleStatusChange('CONFIRMED')}
+                        disabled={order.status === 'CONFIRMED'}
+                        style={{
+                          padding: '8px 12px',
+                          textAlign: 'left',
+                          background: 'none',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: order.status === 'CONFIRMED' ? 'not-allowed' : 'pointer',
+                          opacity: order.status === 'CONFIRMED' ? 0.5 : 1,
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-2)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                      >
+                        Mark as Confirmed
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleStatusChange('SHIPPED')}
+                        disabled={order.status === 'SHIPPED'}
+                        style={{
+                          padding: '8px 12px',
+                          textAlign: 'left',
+                          background: 'none',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: order.status === 'SHIPPED' ? 'not-allowed' : 'pointer',
+                          opacity: order.status === 'SHIPPED' ? 0.5 : 1,
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-2)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                      >
+                        Mark as Shipped
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleStatusChange('DELIVERED')}
+                        disabled={order.status === 'DELIVERED'}
+                        style={{
+                          padding: '8px 12px',
+                          textAlign: 'left',
+                          background: 'none',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: order.status === 'DELIVERED' ? 'not-allowed' : 'pointer',
+                          opacity: order.status === 'DELIVERED' ? 0.5 : 1,
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-2)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                      >
+                        Mark as Delivered
+                      </button>
+                      <div style={{ height: '1px', background: 'var(--bg-3)', margin: '4px 0' }} />
+                      <button
+                        type="button"
+                        onClick={() => handleStatusChange('CANCELLED')}
+                        style={{
+                          padding: '8px 12px',
+                          textAlign: 'left',
+                          background: 'none',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          color: 'var(--red)',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--red-bg)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                      >
+                        Cancel Order
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="btn"
+                onClick={handleSaveEdit}
+                disabled={actionLoading}
+              >
+                <Check />
+                {actionLoading ? 'Saving...' : 'Save changes'}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => {
+                  setIsEditing(false)
+                  setEditForm({
+                    deliveryName: order.deliveryName || '',
+                    deliveryPhone: order.deliveryPhone || '',
+                    deliveryCity: order.deliveryCity || '',
+                    deliveryAddress: order.deliveryAddress || '',
+                    deliveryNotes: order.deliveryNotes || '',
+                  })
+                }}
+              >
+                <X />Cancel
+              </button>
+            </>
+          )}
         </div>
 
         <div className="panel mb16">
@@ -184,12 +500,73 @@ export default function OrderDetailPage() {
             <div className="panel">
               <div className="panel-head"><h3>Customer & delivery</h3></div>
               <div className="panel-pad info-grid">
-                <Info label="Name" value={order.deliveryName || 'N/A'} />
-                <Info label="Phone" value={order.deliveryPhone || 'N/A'} mono />
-                <Info label="City" value={order.deliveryCity || 'N/A'} />
-                <Info label="Payment" value={order.paymentMethod || 'COD'} />
-                <Info label="Address" value={order.deliveryAddress || 'N/A'} wide />
-                <Info label="Delivery notes" value={order.deliveryNotes || 'No delivery notes'} wide muted />
+                {!isEditing ? (
+                  <>
+                    <Info label="Name" value={order.deliveryName || 'N/A'} />
+                    <Info label="Phone" value={order.deliveryPhone || 'N/A'} mono />
+                    <Info label="City" value={order.deliveryCity || 'N/A'} />
+                    <Info label="Payment" value={order.paymentMethod || 'COD'} />
+                    <Info label="Address" value={order.deliveryAddress || 'N/A'} wide />
+                    <Info label="Delivery notes" value={order.deliveryNotes || 'No delivery notes'} wide muted />
+                  </>
+                ) : (
+                  <>
+                    <div className="info-item">
+                      <div className="il">Name</div>
+                      <input
+                        type="text"
+                        value={editForm.deliveryName}
+                        onChange={(e) => setEditForm({ ...editForm, deliveryName: e.target.value })}
+                        className="iv"
+                        style={{ border: '1px solid var(--bg-3)', borderRadius: '6px', padding: '4px 8px', background: 'var(--bg-0)' }}
+                      />
+                    </div>
+                    <div className="info-item">
+                      <div className="il">Phone</div>
+                      <input
+                        type="text"
+                        value={editForm.deliveryPhone}
+                        onChange={(e) => setEditForm({ ...editForm, deliveryPhone: e.target.value })}
+                        className="iv mono"
+                        style={{ border: '1px solid var(--bg-3)', borderRadius: '6px', padding: '4px 8px', background: 'var(--bg-0)' }}
+                      />
+                    </div>
+                    <div className="info-item">
+                      <div className="il">City</div>
+                      <input
+                        type="text"
+                        value={editForm.deliveryCity}
+                        onChange={(e) => setEditForm({ ...editForm, deliveryCity: e.target.value })}
+                        className="iv"
+                        style={{ border: '1px solid var(--bg-3)', borderRadius: '6px', padding: '4px 8px', background: 'var(--bg-0)' }}
+                      />
+                    </div>
+                    <div className="info-item">
+                      <div className="il">Payment</div>
+                      <div className="iv">{order.paymentMethod || 'COD'}</div>
+                    </div>
+                    <div className="info-item wide">
+                      <div className="il">Address</div>
+                      <input
+                        type="text"
+                        value={editForm.deliveryAddress}
+                        onChange={(e) => setEditForm({ ...editForm, deliveryAddress: e.target.value })}
+                        className="iv"
+                        style={{ border: '1px solid var(--bg-3)', borderRadius: '6px', padding: '4px 8px', background: 'var(--bg-0)' }}
+                      />
+                    </div>
+                    <div className="info-item wide">
+                      <div className="il">Delivery notes</div>
+                      <input
+                        type="text"
+                        value={editForm.deliveryNotes}
+                        onChange={(e) => setEditForm({ ...editForm, deliveryNotes: e.target.value })}
+                        className="iv tx-mid"
+                        style={{ border: '1px solid var(--bg-3)', borderRadius: '6px', padding: '4px 8px', background: 'var(--bg-0)' }}
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 
@@ -198,13 +575,15 @@ export default function OrderDetailPage() {
                 <Truck className="panel-head-icon" />
                 <h3>Sendit shipment</h3>
                 <div className="spacer"></div>
-                <span className="badge green">{order.senditShipment?.status || 'Not created'}</span>
+                <span className={`badge ${order.senditTrackingId ? 'green' : 'amber'}`}>
+                  {order.senditStatus || 'Not created'}
+                </span>
               </div>
               <div className="panel-pad info-grid">
-                <Info label="Tracking number" value={order.senditShipment?.trackingNumber || order.senditShipment?.senditShipmentId || 'No shipment yet'} mono />
-                <Info label="Status" value={order.senditShipment?.status || 'Not created'} />
-                <Info label="Delivery cost" value={`${totals.deliveryCost} MAD`} mono />
-                <Info label="Last synced" value={order.senditShipment?.lastSyncedAt ? new Date(order.senditShipment.lastSyncedAt).toLocaleString('fr-FR') : 'N/A'} />
+                <Info label="Tracking number" value={order.senditTrackingId || 'No shipment yet'} mono />
+                <Info label="Barcode" value={order.senditBarcode || 'N/A'} mono />
+                <Info label="Delivery cost" value={`${formatMoney(totals.deliveryCost)} MAD`} mono />
+                <Info label="Status" value={order.senditStatus || 'Not created'} />
               </div>
             </div>
           </div>
