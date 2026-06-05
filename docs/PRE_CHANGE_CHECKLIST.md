@@ -215,6 +215,11 @@ npx tsc --noEmit
 - Forget phone formatting → Use `formatPhoneForSendit()`
 - Do string concatenation → Use number utilities
 - Ignore CLAUDE.md rules → Re-read CLAUDE.md
+- **Build a sync/webhook system → VERIFY databases are actually separate first!**
+- **Use button `disabled={loading}` → Add `if (loading) return` guard too**
+- **Type as `string` → Check if DB can return NULL (use `string | null`)**
+- **Add cross-origin fetch → Update CSP in next.config.ts**
+- **Create migration SQL → Actually RUN it on the database!**
 
 ---
 

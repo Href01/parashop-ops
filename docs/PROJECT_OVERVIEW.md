@@ -56,7 +56,7 @@
 ### BOS (parashop-ops)
 - **URL:** https://ops.shinecosmetics.ma
 - **Purpose:** Internal operations management
-- **Database:** PostgreSQL (SEPARATE from main site)
+- **Database:** PostgreSQL (**SAME database as main site**)
 - **Users:** Admin team
 - **Features:**
   - Order management
@@ -65,7 +65,7 @@
   - Analytics dashboard
   - Product management
 
-**CRITICAL:** These are TWO DIFFERENT DATABASES. Orders created in main site do NOT automatically appear in BOS unless webhook is working.
+**CRITICAL:** Both systems use the **SAME PostgreSQL database**. Orders are automatically visible in both admins. No webhook needed for sync.
 
 ---
 
@@ -78,11 +78,11 @@ POST /api/orders
 ├─ Validates customer input
 ├─ Creates User if guest (auto-account)
 ├─ Calculates total server-side (security)
-├─ Creates Order in main database
+├─ Creates Order in shared database
 ├─ Creates OrderItems
 ├─ Handles loyalty points
 ├─ Sends confirmation email
-└─ Triggers webhook to BOS (if configured)
+└─ Order immediately visible in both admins (same DB!)
 ```
 
 **Database Tables:**
@@ -91,25 +91,25 @@ POST /api/orders
 - `User` - Customer account
 - `LoyaltyTransaction` - Points history
 
-### 2. Webhook Sync (Main Site → BOS)
+### 2. ~~Webhook Sync~~ (REMOVED - Was Creating Duplicates!)
 
+**Previous Implementation (BUGGY):**
 ```typescript
+// This was creating duplicate orders!
 POST https://ops.shinecosmetics.ma/api/ops/orders
-Headers: x-webhook-secret: SHARED_SECRET
-Body: {
-  orderNumber: "WEB-123",
-  deliveryName, deliveryPhone, deliveryCity,
-  items: [...],
-  total: 349,
-  confirmImmediately: false
-}
+// Created NEW order instead of reading existing one
 ```
 
-**Authentication:** Shared secret in env vars (`WEBHOOK_SECRET`)
+**Why Removed (2026-06-06):**
+- Both systems share **SAME database**
+- Orders already auto-sync (no webhook needed)
+- Webhook was creating **duplicate orders**
+- Customer places 1 order → got 2 orders in system
 
-**When It Runs:** After successful order creation in main site
-
-**What It Does:** Creates matching order in BOS database with `WEB-` prefix
+**Current Implementation:**
+- No webhook
+- Orders created in main site are **instantly visible** in BOS
+- Both admins query same `Order` table
 
 ### 3. Manual Order (BOS)
 
@@ -452,11 +452,17 @@ WEBHOOK_SECRET=...  # Shared with BOS
 
 ## Decision Log
 
-### Why Two Separate Databases?
-- **Main site:** Customer data, high traffic
-- **BOS:** Internal ops, different access patterns
-- **Trade-off:** Need webhook for sync
-- **Future:** Consider shared database or better sync
+### ~~Why Two Separate Databases?~~ (OUTDATED - They Share Same DB!)
+**Previous assumption (WRONG):**
+- Main site and BOS had separate databases
+- Webhook needed to sync orders between them
+
+**Reality (discovered 2026-06-05):**
+- Both systems use **SAME PostgreSQL database**
+- Webhook was **redundant and creating duplicates**
+- Removed webhook on 2026-06-06
+
+**Lesson:** Always verify database configuration before building sync systems!
 
 ### Why Auto-Sendit on Confirm?
 - **Reason:** Reduces manual steps
@@ -527,6 +533,88 @@ WEBHOOK_SECRET=...  # Shared with BOS
 3. **Automated testing** - Contract tests for Sendit
 4. **Monitoring** - Track validation failures
 5. **Bulk operations** - Import orders, bulk Sendit creation
+
+---
+
+## Changelog (Recent Critical Fixes)
+
+### 2026-06-06: REMOVED Webhook - Fixed Duplicate Orders
+**Issue:** Every customer order created TWO orders in the system  
+**Root Cause:** Webhook creating duplicate when both systems share same DB  
+**Fix:** Removed webhook entirely from `app/api/orders/route.ts`  
+**Impact:** No more duplicates. Orders auto-sync via shared database.
+
+### 2026-06-06: Added District Picker to Checkout
+**Issue:** Guessing district from city → wrong delivery fees  
+**Fix:** 
+- Created `/api/public/districts` endpoint in BOS
+- Added district dropdown to checkout form
+- Stores `senditDistrictId` in Order table
+- Sendit uses exact district (no guessing)
+
+**Files Changed:**
+- `app/checkout/page.tsx` - Added district picker UI
+- `app/api/public/districts/route.ts` - New endpoint
+- `migrations/add_sendit_district_id.sql` - New column
+- `next.config.ts` - Added ops.shinecosmetics.ma to CSP
+
+### 2026-06-06: Fixed Double-Click Order Submission
+**Issue:** Users clicking "Confirm" twice → duplicate orders  
+**Fix:** Added `if (loading) return` guard in `handleOrder()`  
+**File:** `app/checkout/page.tsx`
+
+### 2026-06-06: Fixed Admin to Show Guest Orders
+**Issue:** Orders without userId (guest orders from BOS) not showing in main admin  
+**Fix:** Changed TypeScript type to allow `null` for clientName/clientEmail  
+**File:** `app/admin/orders/page.tsx`
+
+### 2026-06-05: Created OrderAuditLog Table
+**Issue:** No audit trail for deleted orders  
+**Fix:** Created OrderAuditLog table to store complete order data before deletion  
+**Files:**
+- `prisma/migrations/add_order_audit_log.sql`
+- Both DELETE endpoints log to audit before deleting
+
+### 2026-06-05: Fixed CSP Blocking Districts API
+**Issue:** Browser blocked fetch to ops.shinecosmetics.ma  
+**Fix:** Added `https://ops.shinecosmetics.ma` to Content-Security-Policy  
+**File:** `next.config.ts` in main site
+
+### 2026-06-05: Added Product Names to Orders List
+**Issue:** Orders list showing "1 items" instead of product names  
+**Fix:** Modified API query to join Product table and return product_names  
+**Files:**
+- `app/api/ops/orders/route.ts` - Added STRING_AGG for product names
+- `app/orders/page.tsx` - Display product names in UI
+
+---
+
+## Lessons Learned
+
+### 1. Always Verify Database Architecture First
+**Mistake:** Assumed separate databases → built unnecessary webhook  
+**Lesson:** Run `SELECT DATABASE_URL FROM .env` for both systems FIRST  
+**Prevention:** Document database architecture in PROJECT_OVERVIEW.md
+
+### 2. Prevent Double-Click Submission
+**Mistake:** Button `disabled={loading}` isn't instant (React re-render delay)  
+**Lesson:** Add early return `if (loading) return` before `setLoading(true)`  
+**Prevention:** Added to PRE_CHANGE_CHECKLIST.md
+
+### 3. Handle NULL Fields in TypeScript
+**Mistake:** Type `clientName: string` rejects NULL from database  
+**Lesson:** Use `string | null` for optional database fields  
+**Prevention:** Always check database schema vs TypeScript types
+
+### 4. CSP Must Allow Cross-Origin APIs
+**Mistake:** Forgot to add ops.shinecosmetics.ma to Content-Security-Policy  
+**Lesson:** When calling API from different domain, update CSP connect-src  
+**Prevention:** Test in production (CSP not enforced in dev)
+
+### 5. Migration Files Must Be Run on Database
+**Mistake:** Created migration SQL but never ran it → 500 errors on delete  
+**Lesson:** Creating file ≠ running migration. Must execute on DB.  
+**Prevention:** Run `SELECT * FROM "OrderAuditLog" LIMIT 1` to verify table exists
 
 ---
 
