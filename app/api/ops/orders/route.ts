@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
 import { generateOrderNumber } from '@/lib/order-utils'
+import { createSenditShipment } from '@/lib/sendit'
 
 // GET /api/ops/orders - List all orders
 export async function GET(request: NextRequest) {
@@ -236,6 +237,60 @@ export async function POST(request: NextRequest) {
 
       await client.query('COMMIT')
 
+      // Auto-create Sendit shipment if order was confirmed immediately
+      if (confirmImmediately) {
+        try {
+          console.log(`🚀 Auto-creating Sendit shipment for new order ${order.id}...`)
+
+          // Create shipment with Sendit
+          const shipment = await createSenditShipment({
+            reference: orderNumber,
+            recipient_name: deliveryName,
+            recipient_phone: deliveryPhone,
+            recipient_city: deliveryCity,
+            recipient_address: deliveryAddress || '',
+            cod_amount: paymentMethod === 'COD' ? total : 0,
+            package_weight: 0.5,
+            package_description: `Order ${orderNumber}`,
+            notes: notes || deliveryNotes || '',
+          })
+
+          // Update order with Sendit tracking info and change status to SHIPPED
+          await pool.query(
+            `UPDATE "Order"
+             SET "senditTrackingId" = $1,
+                 "senditBarcode" = $2,
+                 "senditStatus" = $3,
+                 "actualDeliveryCost" = $4,
+                 "status" = 'SHIPPED',
+                 "deliveryStatus" = 'SENDIT_CREATED',
+                 "updatedAt" = NOW()
+             WHERE id = $5`,
+            [
+              shipment.tracking_id,
+              shipment.barcode,
+              shipment.status,
+              shipment.shipping_cost,
+              order.id,
+            ]
+          )
+
+          // Add status history for SHIPPED
+          await pool.query(
+            `INSERT INTO "OrderStatusHistory" (
+              "orderId", "oldStatus", "newStatus", "source", "note", "createdAt"
+            ) VALUES ($1, $2, $3, 'auto', $4, NOW())`,
+            [order.id, 'CONFIRMED', 'SHIPPED', `Auto-created Sendit shipment: ${shipment.tracking_id}`]
+          )
+
+          console.log(`✅ Sendit shipment created: ${shipment.tracking_id}`)
+        } catch (senditError: any) {
+          // Log error but don't fail the order creation
+          console.error(`❌ Failed to auto-create Sendit shipment for order ${order.id}:`, senditError.message)
+          // Order stays CONFIRMED, user can manually create shipment later
+        }
+      }
+
       // Fetch complete order with items
       const completeOrder = await pool.query(
         `SELECT o.*,
@@ -260,7 +315,8 @@ export async function POST(request: NextRequest) {
         id: createdOrder?.id,
         orderNumber: createdOrder?.orderNumber,
         hasItems: createdOrder?.items?.length,
-        fullOrder: createdOrder
+        status: createdOrder?.status,
+        senditTrackingId: createdOrder?.senditTrackingId,
       })
 
       return NextResponse.json(createdOrder, { status: 201 })
