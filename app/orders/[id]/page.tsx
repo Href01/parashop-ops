@@ -162,7 +162,15 @@ export default function OrderDetailPage() {
         throw new Error(errorData.error || errorData.details || 'Failed to update status')
       }
 
-      setActionSuccess(`Status updated to ${newStatus}`)
+      const data = await res.json()
+
+      // Check if there's a Sendit warning
+      if (data._senditWarning) {
+        setActionError(data._senditWarning)
+      } else {
+        setActionSuccess(`Status updated to ${newStatus}`)
+      }
+
       await fetchOrder()
     } catch (err: any) {
       console.error('handleStatusChange error:', err)

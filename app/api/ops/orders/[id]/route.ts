@@ -227,6 +227,8 @@ export async function PUT(
     }
 
     // Add status history if status changed
+    let senditWarning: string | null = null
+
     if (status !== undefined && oldStatusValue !== null) {
 
       await pool.query(
@@ -304,14 +306,21 @@ export async function PUT(
 
               console.log(`✅ Sendit shipment created: ${shipment.tracking_id}`)
             } else {
-              console.warn(`⚠️ Order ${orderId} missing delivery info, skipping auto Sendit creation`)
+              senditWarning = `Order confirmed but missing delivery info: ${!order.deliveryName ? 'name ' : ''}${!order.deliveryPhone ? 'phone ' : ''}${!order.deliveryCity ? 'city' : ''}`
+              console.warn(`⚠️ ${senditWarning}`)
             }
           } else {
             console.log(`ℹ️ Order ${orderId} already has Sendit tracking: ${order.senditTrackingId}`)
           }
         } catch (senditError: any) {
           // Log error but don't fail the order confirmation
-          console.error(`❌ Failed to auto-create Sendit shipment for order ${orderId}:`, senditError.message)
+          senditWarning = `Order confirmed but Sendit shipment creation failed: ${senditError.message}`
+          console.error(`❌ Failed to auto-create Sendit shipment for order ${orderId}:`, senditError)
+          console.error('Sendit error details:', {
+            message: senditError.message,
+            stack: senditError.stack,
+            name: senditError.name,
+          })
           // Order stays CONFIRMED, user can manually create shipment later
         }
       }
@@ -323,7 +332,10 @@ export async function PUT(
       [orderId]
     )
 
-    return NextResponse.json(finalOrder.rows[0])
+    return NextResponse.json({
+      ...finalOrder.rows[0],
+      _senditWarning: senditWarning,
+    })
   } catch (error: any) {
     console.error('PUT /api/ops/orders/[id] - ERROR:', error)
     console.error('Error name:', error?.name)
