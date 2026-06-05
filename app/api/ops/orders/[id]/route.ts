@@ -209,7 +209,8 @@ export async function PUT(
       oldStatusValue = oldStatusResult.rows[0]?.status
     }
 
-    updates.push(`"updatedAt" = NOW()`)
+    // Note: updatedAt column doesn't exist in Order table
+    // updates.push(`"updatedAt" = NOW()`)
     values.push(orderId)
 
     const query = `
@@ -282,8 +283,7 @@ export async function PUT(
                      "senditBarcode" = $2,
                      "senditStatus" = $3,
                      "actualDeliveryCost" = $4,
-                     "status" = 'SHIPPED',
-                     "updatedAt" = NOW()
+                     "status" = 'SHIPPED'
                  WHERE id = $5`,
                 [
                   shipment.tracking_id,

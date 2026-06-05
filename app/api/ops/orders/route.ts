@@ -273,8 +273,7 @@ export async function POST(request: NextRequest) {
                  "senditStatus" = $3,
                  "actualDeliveryCost" = $4,
                  "status" = 'SHIPPED',
-                 "deliveryStatus" = 'SENDIT_CREATED',
-                 "updatedAt" = NOW()
+                 "deliveryStatus" = 'SENDIT_CREATED'
              WHERE id = $5`,
             [
               shipment.tracking_id,
