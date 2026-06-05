@@ -6,6 +6,16 @@ import { isFounder } from '@/lib/auth'
 import pool from '@/lib/db'
 
 const DAILY_REVENUE_GOAL = 6000
+const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+
+// In-memory cache for dashboard stats
+let statsCache: {
+  data: any
+  timestamp: number
+} | null = null
+
+// Cache for table columns introspection (rarely changes)
+let tableColumnsCache: Map<string, { columns: Set<string>; timestamp: number }> = new Map()
 
 type Tone = 'rose' | 'green' | 'amber' | 'blue' | 'violet' | 'red'
 
@@ -164,6 +174,14 @@ async function safeQuery<T extends QueryResultRow>(label: string, query: string)
 }
 
 async function getTableColumns(tableName: string): Promise<Set<string>> {
+  // Check cache first (schema rarely changes)
+  const cached = tableColumnsCache.get(tableName)
+  const now = Date.now()
+
+  if (cached && now - cached.timestamp < 60 * 60 * 1000) { // 1 hour cache
+    return cached.columns
+  }
+
   const result = await pool.query<ColumnRow>(
     `
       SELECT column_name
@@ -174,7 +192,10 @@ async function getTableColumns(tableName: string): Promise<Set<string>> {
     [tableName]
   )
 
-  return new Set(result.rows.map((row) => row.column_name))
+  const columns = new Set(result.rows.map((row) => row.column_name))
+  tableColumnsCache.set(tableName, { columns, timestamp: now })
+
+  return columns
 }
 
 function buildNumericExpression(alias: string, columns: Set<string>, candidates: string[]): string {
@@ -198,6 +219,15 @@ export async function GET() {
     if (!isFounder(session.user.email)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
+
+    // Check cache first (5-minute TTL)
+    const now = Date.now()
+    if (statsCache && now - statsCache.timestamp < CACHE_TTL_MS) {
+      console.log('✅ Dashboard stats served from cache')
+      return NextResponse.json(statsCache.data)
+    }
+
+    console.log('🔄 Generating fresh dashboard stats...')
 
     const orderColumns = await getTableColumns('Order')
     const revenueExpression = buildNumericExpression('o', orderColumns, ['revenue', 'total'])
@@ -479,7 +509,7 @@ export async function GET() {
     const adRevenue30d = toNumber(roasRows[0]?.revenue)
     const roas = spend30d > 0 ? adRevenue30d / spend30d : 0
 
-    return NextResponse.json({
+    const responseData = {
       generatedAt: new Date().toISOString(),
       dailyGoal: DAILY_REVENUE_GOAL,
       revenueToday,
@@ -516,7 +546,17 @@ export async function GET() {
             ],
       },
       activity,
-    })
+    }
+
+    // Store in cache
+    statsCache = {
+      data: responseData,
+      timestamp: Date.now(),
+    }
+
+    console.log('✅ Dashboard stats cached for 5 minutes')
+
+    return NextResponse.json(responseData)
   } catch (error) {
     console.error('Dashboard stats error:', error)
 
