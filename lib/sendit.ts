@@ -4,6 +4,7 @@
 const SENDIT_API_URL = 'https://app.sendit.ma/api/v1'
 const PUBLIC_KEY = process.env.SENDIT_PUBLIC_KEY || ''
 const PRIVATE_KEY = process.env.SENDIT_PRIVATE_KEY || ''
+const PICKUP_DISTRICT_ID = parseInt(process.env.SENDIT_PICKUP_DISTRICT_ID || '1') // Default: Casablanca
 
 interface SenditLoginResponse {
   success: boolean
@@ -15,6 +16,7 @@ interface SenditLoginResponse {
 }
 
 interface SenditDelivery {
+  pickup_district_id: number
   district_id: number
   name: string
   phone: string
@@ -177,6 +179,7 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
 
     // Create delivery
     const deliveryData: SenditDelivery = {
+      pickup_district_id: PICKUP_DISTRICT_ID,
       district_id: districtId,
       name: shipment.recipient_name,
       phone: shipment.recipient_phone,
