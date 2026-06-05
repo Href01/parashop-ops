@@ -207,12 +207,21 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
     const comment = shipment.notes || undefined
 
     // Amount must be integer for Sendit - this should be the TOTAL (with shipping)
+    // Sendit has a maximum limit of 5000 DH
     const totalAmount = shipment.cod_amount || 0
+    const roundedAmount = Math.round(Number(totalAmount))
+
     console.log('💰 Total Amount:', {
       original: totalAmount,
       type: typeof totalAmount,
-      rounded: Math.round(Number(totalAmount))
+      rounded: roundedAmount,
+      exceedsLimit: roundedAmount > 5000
     })
+
+    // Validate Sendit amount limit
+    if (roundedAmount > 5000) {
+      throw new Error(`Order amount (${roundedAmount} DH) exceeds Sendit maximum limit of 5000 DH. Please split the order or use alternative delivery method.`)
+    }
 
     const deliveryData: SenditDelivery = {
       pickup_district_id: PICKUP_DISTRICT_ID,
@@ -220,7 +229,7 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
       name: shipment.recipient_name,
       phone: shipment.recipient_phone,
       address: shipment.recipient_address,
-      amount: Math.round(Number(totalAmount)),
+      amount: roundedAmount,
       reference: shipment.reference,
       comment: comment,
       allow_open: 1,
