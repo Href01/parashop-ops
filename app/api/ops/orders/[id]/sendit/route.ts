@@ -67,7 +67,7 @@ export async function POST(
       recipient_phone: order.deliveryPhone,
       recipient_city: order.deliveryCity,
       recipient_address: order.deliveryAddress || '',
-      cod_amount: order.paymentMethod === 'COD' ? order.revenue : 0,
+      cod_amount: order.paymentMethod === 'COD' ? order.total : 0,
       package_weight: packageWeight || 0.5,
       package_description: `Order ${order.orderNumber} - ${order.items?.length || 0} items`,
       notes: notes || order.notes || '',

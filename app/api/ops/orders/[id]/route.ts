@@ -290,7 +290,7 @@ export async function PUT(
                 recipient_phone: order.deliveryPhone,
                 recipient_city: order.deliveryCity,
                 recipient_address: order.deliveryAddress || '',
-                cod_amount: order.paymentMethod === 'COD' ? order.revenue : 0,
+                cod_amount: order.paymentMethod === 'COD' ? order.total : 0,
                 package_weight: 0.5,
                 package_description: productsDesc,
                 notes: order.notes || '',

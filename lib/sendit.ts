@@ -200,22 +200,18 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
     // Get district ID from city name
     const districtId = getDistrictId(shipment.recipient_city)
 
-    // Build comment with product description and notes
-    const commentParts = []
-    if (shipment.package_description) {
-      commentParts.push(`Produits: ${shipment.package_description}`)
-    }
-    if (shipment.notes) {
-      commentParts.push(shipment.notes)
-    }
-    const comment = commentParts.length > 0 ? commentParts.join(' | ') : undefined
+    // Products description goes in products field (for Sendit UI "Produit" section)
+    const productsDescription = shipment.package_description || ''
 
-    // Create delivery (amount must be integer for Sendit)
-    const codAmount = shipment.cod_amount || 0
-    console.log('💰 COD Amount:', {
-      original: codAmount,
-      type: typeof codAmount,
-      rounded: Math.round(Number(codAmount))
+    // Notes go in comment field (separate from products)
+    const comment = shipment.notes || undefined
+
+    // Amount must be integer for Sendit - this should be the TOTAL (with shipping)
+    const totalAmount = shipment.cod_amount || 0
+    console.log('💰 Total Amount:', {
+      original: totalAmount,
+      type: typeof totalAmount,
+      rounded: Math.round(Number(totalAmount))
     })
 
     const deliveryData: SenditDelivery = {
@@ -224,12 +220,12 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
       name: shipment.recipient_name,
       phone: shipment.recipient_phone,
       address: shipment.recipient_address,
-      amount: Math.round(Number(codAmount)),
+      amount: Math.round(Number(totalAmount)),
       reference: shipment.reference,
       comment: comment,
       allow_open: 1,
       allow_try: 1,
-      products: '',
+      products: productsDescription,  // Products go here, NOT in comment
       products_from_stock: 0,
     }
 
