@@ -43,8 +43,8 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Map website order items to BOS format
-    const orderItems = await Promise.all(
+    // Map website order items to BOS format and get products
+    const orderItemsWithProducts = await Promise.all(
       items.map(async (item: any) => {
         // Get product details including cost price
         const productResult = await pool.query(
@@ -61,8 +61,10 @@ export async function POST(request: NextRequest) {
         return {
           productId: item.productId,
           quantity: item.quantity,
+          price: item.price, // Use 'price' for calculateOrderTotals
           unitPrice: item.price,
           costPrice: product.costPrice || null,
+          product: product,
         }
       })
     )
@@ -73,18 +75,27 @@ export async function POST(request: NextRequest) {
     // Estimate delivery cost based on city
     const estimatedDeliveryCost = estimateDeliveryCost(customerCity || '')
 
-    // Calculate totals
-    const totals = calculateOrderTotals(orderItems, 0, estimatedDeliveryCost)
+    // Calculate totals (items, deliveryFee, discount)
+    const totals = calculateOrderTotals(orderItemsWithProducts, estimatedDeliveryCost, 0)
 
-    // Check data completeness
-    const completeness = checkOrderCompleteness({
+    // Prepare order object for completeness check
+    const orderForCheck = {
       deliveryName: customerName,
       deliveryPhone: customerPhone,
       deliveryCity: customerCity,
       deliveryAddress: customerAddress,
+      deliveryFeeCharged: 0,
+      estimatedDeliveryCost: estimatedDeliveryCost,
+      paymentMethod: paymentMethod || 'COD',
       sourceChannel: 'Website',
-      items: orderItems,
-    })
+    }
+
+    // Check data completeness (order, items, products)
+    const completeness = checkOrderCompleteness(
+      orderForCheck,
+      orderItemsWithProducts,
+      orderItemsWithProducts.map(i => i.product)
+    )
 
     // Create order in BOS database
     const orderResult = await pool.query(
@@ -121,7 +132,7 @@ export async function POST(request: NextRequest) {
         customerEmail,
         paymentMethod || 'COD',
         totals.revenue,
-        totals.totalCost,
+        totals.estimatedCost,
         totals.estimatedProfit,
         totals.marginPercent,
         0, // Website orders have free delivery for customer
@@ -133,7 +144,7 @@ export async function POST(request: NextRequest) {
     const bosOrderId = orderResult.rows[0].id
 
     // Insert order items
-    for (const item of orderItems) {
+    for (const item of orderItemsWithProducts) {
       await pool.query(
         `INSERT INTO "OrderItem" (
           "orderId",
