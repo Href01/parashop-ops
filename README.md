@@ -251,10 +251,33 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for troubleshooting.
 
 ## 📚 Documentation Index
 
-- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Tech stack, design decisions, folder structure
-- **[DATABASE.md](docs/DATABASE.md)** - Complete schema, migration guide, query patterns
-- **[API.md](docs/API.md)** - All endpoints with request/response examples
-- **[DEVELOPMENT.md](docs/DEVELOPMENT.md)** - Local setup, common tasks, troubleshooting
+### 🧠 For Claude Code (Read Before Any Changes)
+
+**Mandatory reading order:**
+
+1. **[../parashop/CLAUDE.md](../parashop/CLAUDE.md)** - Project rules (TypeScript, Git, Build protocols)
+2. **[PRE_CHANGE_CHECKLIST.md](docs/PRE_CHANGE_CHECKLIST.md)** - 10-step process before code changes
+3. **[PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md)** - Complete system architecture (800+ lines)
+4. **[PREVENTION_SYSTEM.md](docs/PREVENTION_SYSTEM.md)** - Validation layer, bug prevention
+
+**Why?** Prevents duplicate work, breaking changes, and bugs. 20-30 min reading saves hours of debugging.
+
+---
+
+### 📖 For Humans (Developers)
+
+**I want to...**
+
+| Goal | Read This |
+|------|-----------|
+| Understand the full system | [PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) |
+| Set up dev environment | [DEVELOPMENT.md](docs/DEVELOPMENT.md) |
+| Deploy to production | [DEPLOYMENT.md](docs/DEPLOYMENT.md) |
+| Use API endpoints | [API.md](docs/API.md) |
+| Quick command reference | [QUICK_START.md](QUICK_START.md) |
+| Understand validation/bug prevention | [PREVENTION_SYSTEM.md](docs/PREVENTION_SYSTEM.md) |
+
+**Consolidated (2026-06-05):** Deleted 6 redundant docs (PROJECT_STATUS, ARCHITECTURE, DATABASE, SENDIT, WEBHOOKS, UI_DESIGN). All content merged into PROJECT_OVERVIEW.md.
 
 ---
 
@@ -267,16 +290,18 @@ See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for troubleshooting.
 - [x] Custom domain (ops.shinecosmetics.ma)
 - [x] Sendit API keys configured
 
-### Phase 2: Orders Module ✅ IN PROGRESS
+### Phase 2: Orders Module ✅ COMPLETE
 - [x] Orders API (create, list, detail, update)
 - [x] Data completeness checker
 - [x] Profit/margin calculator
 - [x] Order creation UI
 - [x] Order list UI
 - [x] Order detail page
-- [ ] Product picker with search
-- [ ] Website order sync (webhook)
-- [ ] Sendit shipment integration
+- [x] Product picker with search
+- [x] Website order sync (webhook) ✅ Fixed 2026-06-05
+- [x] Sendit shipment integration ✅ Hardened 2026-06-05
+- [x] Bug prevention system (validation layer) ✅ 2026-06-05
+- [x] Audit trail (deleted orders) ✅ 2026-06-05
 
 ### Phase 3: Products Module
 - [ ] Product list with filters
@@ -335,6 +360,22 @@ Private - All Rights Reserved © 2026 Shine Cosmetics
 
 ---
 
-**Last Updated**: June 4, 2026
-**Version**: 1.0.0
-**Status**: Phase 2 in progress
+## 🎯 System Status
+
+- **Prevention System:** ✅ ACTIVE (phone/number validation, Sendit hardening)
+- **Webhook Sync:** ✅ WORKING (main site → BOS)
+- **Sendit Integration:** ✅ HARDENED (validated before API calls)
+- **Audit Trail:** ✅ IMPLEMENTED (OrderAuditLog table)
+- **Documentation:** ✅ CONSOLIDATED (6 redundant docs deleted)
+
+**Common bugs PREVENTED:**
+- ✅ Phone format error (Sendit 422) - formatPhoneForSendit()
+- ✅ String concatenation (33019 bug) - Zod number validation
+- ✅ Amount > 5000 DH - Validation at order creation
+- ✅ Missing data in DB - Validation at API boundary
+
+---
+
+**Last Updated**: June 5, 2026
+**Version**: 2.0.0 (Post-Prevention System)
+**Status**: Phase 2 complete, Phase 3 ready
