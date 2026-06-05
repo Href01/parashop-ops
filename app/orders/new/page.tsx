@@ -50,6 +50,7 @@ export default function NewOrderPage() {
     paymentMethod: 'COD',
     notes: '',
     confirmImmediately: true,
+    discount: 0,
   })
 
   useEffect(() => {
@@ -150,7 +151,7 @@ export default function NewOrderPage() {
         notes: formData.notes,
         confirmImmediately: formData.confirmImmediately,
         items: selectedItems,
-        discountTotal: 0,
+        discountTotal: formData.discount,
         deliveryFeeCharged: selectedDistrict.price,
         estimatedDeliveryCost: selectedDistrict.price,
       }
@@ -407,6 +408,38 @@ export default function NewOrderPage() {
                       </div>
                     </div>
                   ))}
+
+                  {/* Pricing Summary */}
+                  {selectedItems.length > 0 && (
+                    <div className="pricing-summary">
+                      <div className="pricing-row">
+                        <span>Products Subtotal</span>
+                        <span className="mono">{productsTotal.toFixed(2)} MAD</span>
+                      </div>
+                      <div className="pricing-row">
+                        <span>Discount</span>
+                        <input
+                          type="number"
+                          value={formData.discount}
+                          onChange={(e) => setFormData({ ...formData, discount: parseFloat(e.target.value) || 0 })}
+                          className="discount-input"
+                          placeholder="0.00"
+                          step="0.01"
+                          min="0"
+                        />
+                      </div>
+                      <div className="pricing-row">
+                        <span>Delivery Fee</span>
+                        <span className="mono">{selectedDistrict ? selectedDistrict.price.toFixed(2) : '0.00'} MAD</span>
+                      </div>
+                      <div className="pricing-row total">
+                        <span>Order Total</span>
+                        <span className="mono">
+                          {(productsTotal - formData.discount + (selectedDistrict ? selectedDistrict.price : 0)).toFixed(2)} MAD
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -851,6 +884,53 @@ export default function NewOrderPage() {
 
         .spacer {
           flex: 1;
+        }
+
+        .pricing-summary {
+          margin-top: 16px;
+          padding-top: 16px;
+          border-top: 1px solid var(--line-soft);
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .pricing-row {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          font-size: 13px;
+          color: var(--tx-mid);
+        }
+
+        .pricing-row.total {
+          padding-top: 10px;
+          border-top: 1px solid var(--line-soft);
+          font-size: 15px;
+          font-weight: 600;
+          color: var(--tx-hi);
+        }
+
+        .pricing-row.total .mono {
+          color: var(--rose-bright);
+          font-size: 18px;
+        }
+
+        .discount-input {
+          width: 100px;
+          background: var(--bg-2);
+          border: 1px solid var(--line-soft);
+          border-radius: var(--radius-sm);
+          padding: 6px 8px;
+          font-size: 13px;
+          color: var(--tx-hi);
+          font-family: var(--mono);
+          text-align: right;
+        }
+
+        .discount-input:focus {
+          outline: none;
+          border-color: var(--rose);
         }
 
         @media (max-width: 768px) {
