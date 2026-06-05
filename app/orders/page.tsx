@@ -88,6 +88,22 @@ export default function OrdersPage() {
     }
   }
 
+  const deleteOrder = async (orderId: number, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!confirm(`Delete order #${orderId}?\n\nThis action cannot be undone.`)) return
+
+    try {
+      const res = await fetch(`/api/ops/orders/${orderId}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Delete failed')
+
+      // Remove from list
+      setOrders(orders.filter(o => o.id !== orderId))
+    } catch (error) {
+      console.error('Delete error:', error)
+      alert('Failed to delete order')
+    }
+  }
+
   const stats = useMemo(() => {
     const count = (status: string) => orders.filter((order) => order.status === status).length
 
@@ -185,6 +201,7 @@ export default function OrdersPage() {
                   <th className="r">Margin</th>
                   <th>Data</th>
                   <th className="r">Date</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -272,6 +289,15 @@ export default function OrdersPage() {
                         </td>
                         <td className="r">
                           <span className="fs12 tx-lo mono">{new Date(order.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</span>
+                        </td>
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={(e) => deleteOrder(order.id, e)}
+                            className="btn-ghost-red btn-icon-sm"
+                            title="Delete order"
+                          >
+                            🗑️
+                          </button>
                         </td>
                       </tr>
                     )
