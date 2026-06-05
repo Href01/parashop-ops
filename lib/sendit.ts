@@ -1,5 +1,6 @@
 // Sendit API Integration
 // Docs: https://app.sendit.ma/api/documentation
+// API Base: https://app.sendit.ma/api/v1
 
 const SENDIT_API_URL = 'https://app.sendit.ma/api/v1'
 const PUBLIC_KEY = process.env.SENDIT_PUBLIC_KEY || ''
