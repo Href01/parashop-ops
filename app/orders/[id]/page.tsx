@@ -183,6 +183,32 @@ export default function OrderDetailPage() {
     }
   }
 
+  async function handleDelete() {
+    if (!order) return
+    if (!confirm(`Are you sure you want to delete order #${order.id}? This action cannot be undone.`)) return
+
+    setActionLoading(true)
+    setActionError('')
+    setActionSuccess('')
+
+    try {
+      const res = await fetch(`/api/ops/orders/${orderId}`, {
+        method: 'DELETE',
+      })
+
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.error || 'Failed to delete order')
+      }
+
+      router.push('/orders')
+    } catch (err: any) {
+      setActionError(err.message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   async function handleSaveEdit() {
     if (!order) return
 
@@ -419,6 +445,29 @@ export default function OrderDetailPage() {
                         onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
                       >
                         Cancel Order
+                      </button>
+
+                      <div style={{ borderTop: '1px solid var(--line-soft)', margin: '4px 0' }}></div>
+
+                      <button
+                        type="button"
+                        onClick={handleDelete}
+                        disabled={actionLoading}
+                        style={{
+                          padding: '8px 12px',
+                          textAlign: 'left',
+                          background: 'none',
+                          border: 'none',
+                          borderRadius: '6px',
+                          cursor: actionLoading ? 'not-allowed' : 'pointer',
+                          color: 'var(--red)',
+                          fontWeight: 600,
+                          opacity: actionLoading ? 0.5 : 1,
+                        }}
+                        onMouseEnter={(e) => !actionLoading && (e.currentTarget.style.background = 'var(--red-bg)')}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                      >
+                        🗑️ Delete Order
                       </button>
                     </div>
                   </div>
