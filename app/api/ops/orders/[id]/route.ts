@@ -92,11 +92,18 @@ export async function PUT(
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.email) {
+      console.error('PUT /api/ops/orders/[id] - Unauthorized: No session')
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const { id: orderId } = await params
     const body = await request.json()
+
+    console.log('PUT /api/ops/orders/[id] - Request:', {
+      orderId,
+      body,
+      user: session.user.email,
+    })
 
     const {
       deliveryName,

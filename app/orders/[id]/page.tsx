@@ -156,11 +156,16 @@ export default function OrderDetailPage() {
         body: JSON.stringify({ status: newStatus }),
       })
 
-      if (!res.ok) throw new Error('Failed to update status')
+      if (!res.ok) {
+        const errorData = await res.json()
+        console.error('Status update error:', errorData)
+        throw new Error(errorData.error || errorData.details || 'Failed to update status')
+      }
 
       setActionSuccess(`Status updated to ${newStatus}`)
       await fetchOrder()
     } catch (err: any) {
+      console.error('handleStatusChange error:', err)
       setActionError(err.message)
     } finally {
       setActionLoading(false)
