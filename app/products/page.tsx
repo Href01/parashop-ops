@@ -5,6 +5,7 @@ import { Download, Edit3, MoreHorizontal, Package, Percent, Plus, Search, Triang
 import { useEffect, useMemo, useState } from 'react'
 import BosShell from '@/components/BosShell'
 import EditCostPriceModal from './EditCostPriceModal'
+import BulkEditCostModal from './BulkEditCostModal'
 
 interface Product {
   id: number
@@ -42,6 +43,7 @@ export default function ProductsPage() {
   const [filterMissingCost, setFilterMissingCost] = useState(false)
   const [filterLowStock, setFilterLowStock] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
+  const [showBulkEdit, setShowBulkEdit] = useState(false)
 
   useEffect(() => {
     void fetchProducts()
@@ -66,7 +68,33 @@ export default function ProductsPage() {
   }
 
   const handleBulkEditCosts = () => {
-    alert('Bulk edit costs feature coming soon! Use the edit button on each product for now.')
+    if (products.length === 0) {
+      alert('No products available to edit')
+      return
+    }
+    setShowBulkEdit(true)
+  }
+
+  const handleBulkUpdate = async (updates: Array<{ id: number; costPrice: number }>) => {
+    try {
+      // Update all products in parallel
+      await Promise.all(
+        updates.map(({ id, costPrice }) =>
+          fetch(`/api/ops/products/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ costPrice }),
+          })
+        )
+      )
+
+      await fetchProducts()
+      setShowBulkEdit(false)
+      alert(`Successfully updated ${updates.length} product${updates.length !== 1 ? 's' : ''}!`)
+    } catch (error) {
+      console.error('Bulk update error:', error)
+      alert('Failed to update some products. Please try again.')
+    }
   }
 
   const handleExport = () => {
@@ -299,6 +327,14 @@ export default function ProductsPage() {
             }}
             onSave={handleUpdateCost}
             onClose={() => setSelectedProduct(null)}
+          />
+        )}
+
+        {showBulkEdit && (
+          <BulkEditCostModal
+            products={products}
+            onSave={handleBulkUpdate}
+            onClose={() => setShowBulkEdit(false)}
           />
         )}
       </div>

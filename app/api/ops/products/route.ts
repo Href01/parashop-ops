@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const search = searchParams.get('search') || ''
     const missingCost = searchParams.get('missingCost') === 'true'
+    const lowStock = searchParams.get('lowStock') === 'true'
     const category = searchParams.get('category')
 
     let query = `
@@ -38,6 +39,11 @@ export async function GET(request: NextRequest) {
     // Filter: Missing cost price
     if (missingCost) {
       query += ` AND ("costPrice" IS NULL OR "costPrice" = 0)`
+    }
+
+    // Filter: Low stock
+    if (lowStock) {
+      query += ` AND stock > 0 AND stock <= "lowStockThreshold"`
     }
 
     // Filter: Category
