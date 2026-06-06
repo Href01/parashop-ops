@@ -1,6 +1,8 @@
+'use client'
+
+import { useState } from 'react'
 import { BookOpen, Check, FlaskConical, Link as LinkIcon, Plus, StickyNote } from 'lucide-react'
 import BosShell from '@/components/BosShell'
-import { requireOpsAccess } from '@/lib/auth'
 
 const achraf = [
   ['Negotiate Sendit rate for Casablanca zone', true],
@@ -25,8 +27,16 @@ const tasks = [
   { title: 'Reconcile May COD collections', priority: 'MEDIUM', status: 'Blocked', owner: 'AM', due: '8 Jun', link: 'Finance' },
 ]
 
-export default async function WorkHubPage() {
-  await requireOpsAccess()
+export default function WorkHubPage() {
+  const [taskFilter, setTaskFilter] = useState<'All' | 'Urgent' | 'In progress' | 'Blocked'>('All')
+
+  const handleDecisionLog = () => {
+    alert('Decision log feature coming soon! Continue tracking decisions in the list below.')
+  }
+
+  const handleNewTask = () => {
+    alert('Task creation feature coming soon! Add tasks to your weekly priorities for now.')
+  }
 
   return (
     <BosShell active="work" title="Work Hub" crumb="Team">
@@ -37,8 +47,8 @@ export default async function WorkHubPage() {
             <div className="sub">Weekly priorities, tasks, decisions & experiments - week of 2 June</div>
           </div>
           <div className="spacer"></div>
-          <button className="btn"><BookOpen />Decision log</button>
-          <button className="btn primary"><Plus />New task</button>
+          <button className="btn" onClick={handleDecisionLog}><BookOpen />Decision log</button>
+          <button className="btn primary" onClick={handleNewTask}><Plus />New task</button>
         </div>
 
         <div className="prio-grid">
@@ -51,10 +61,10 @@ export default async function WorkHubPage() {
             <div className="panel-head">
               <h3>Tasks</h3>
               <div className="row gap6 task-chips">
-                <button className="chip active">All <span className="ct">12</span></button>
-                <button className="chip">Urgent <span className="ct">2</span></button>
-                <button className="chip">In progress <span className="ct">4</span></button>
-                <button className="chip">Blocked <span className="ct">1</span></button>
+                <button className={`chip ${taskFilter === 'All' ? 'active' : ''}`} onClick={() => setTaskFilter('All')}>All <span className="ct">12</span></button>
+                <button className={`chip ${taskFilter === 'Urgent' ? 'active' : ''}`} onClick={() => setTaskFilter('Urgent')}>Urgent <span className="ct">2</span></button>
+                <button className={`chip ${taskFilter === 'In progress' ? 'active' : ''}`} onClick={() => setTaskFilter('In progress')}>In progress <span className="ct">4</span></button>
+                <button className={`chip ${taskFilter === 'Blocked' ? 'active' : ''}`} onClick={() => setTaskFilter('Blocked')}>Blocked <span className="ct">1</span></button>
               </div>
             </div>
             {tasks.map((task) => (

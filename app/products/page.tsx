@@ -40,11 +40,12 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [filterMissingCost, setFilterMissingCost] = useState(false)
+  const [filterLowStock, setFilterLowStock] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
 
   useEffect(() => {
     void fetchProducts()
-  }, [search, filterMissingCost])
+  }, [search, filterMissingCost, filterLowStock])
 
   const fetchProducts = async () => {
     setLoading(true)
@@ -52,6 +53,7 @@ export default function ProductsPage() {
       const params = new URLSearchParams()
       if (search) params.append('search', search)
       if (filterMissingCost) params.append('missingCost', 'true')
+      if (filterLowStock) params.append('lowStock', 'true')
 
       const res = await fetch(`/api/ops/products?${params}`, { cache: 'no-store' })
       const data = (await res.json()) as Product[]
@@ -61,6 +63,37 @@ export default function ProductsPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleBulkEditCosts = () => {
+    alert('Bulk edit costs feature coming soon! Use the edit button on each product for now.')
+  }
+
+  const handleExport = () => {
+    const csv = [
+      ['Product', 'Brand', 'Category', 'Retail Price', 'Cost Price', 'Margin', 'Stock'],
+      ...products.map(p => [
+        p.name,
+        p.brand,
+        p.category,
+        p.price,
+        p.costPrice || '',
+        margin(p.price, p.costPrice)?.toFixed(1) || '',
+        p.stock
+      ])
+    ].map(row => row.join(',')).join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `products-${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleAddProduct = () => {
+    window.location.href = 'https://www.shinecosmetics.ma/admin/products'
   }
 
   const handleUpdateCost = async (productId: number, costPrice: number) => {
@@ -101,15 +134,15 @@ export default function ProductsPage() {
             <div className="sub">Inventory, cost prices & margins - synced with shinecosmetics.ma</div>
           </div>
           <div className="spacer"></div>
-          <button type="button" className="btn">
+          <button type="button" className="btn" onClick={handleBulkEditCosts}>
             <Edit3 />
             Bulk edit costs
           </button>
-          <button type="button" className="btn">
+          <button type="button" className="btn" onClick={handleExport}>
             <Download />
             Export
           </button>
-          <button type="button" className="btn primary">
+          <button type="button" className="btn primary" onClick={handleAddProduct}>
             <Plus />
             Add product
           </button>
@@ -129,13 +162,13 @@ export default function ProductsPage() {
               <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search products, SKU..." />
             </div>
             <div className="vdiv"></div>
-            <button type="button" className={`chip ${!filterMissingCost ? 'active' : ''}`} onClick={() => setFilterMissingCost(false)}>
+            <button type="button" className={`chip ${!filterMissingCost && !filterLowStock ? 'active' : ''}`} onClick={() => { setFilterMissingCost(false); setFilterLowStock(false); }}>
               All <span className="ct">{products.length}</span>
             </button>
-            <button type="button" className="chip">
+            <button type="button" className={`chip ${filterLowStock ? 'active' : ''}`} onClick={() => { setFilterLowStock(true); setFilterMissingCost(false); }}>
               Low stock <span className="ct">{stats.lowStock}</span>
             </button>
-            <button type="button" className={`chip ${filterMissingCost ? 'active' : ''}`} onClick={() => setFilterMissingCost(true)}>
+            <button type="button" className={`chip ${filterMissingCost ? 'active' : ''}`} onClick={() => { setFilterMissingCost(true); setFilterLowStock(false); }}>
               Missing cost <span className="ct">{stats.missingCost}</span>
             </button>
           </div>

@@ -1,7 +1,9 @@
+'use client'
+
 import type { ReactNode } from 'react'
+import { useState } from 'react'
 import { Calendar, Eye, Package, Play, Plus, ShoppingBag } from 'lucide-react'
 import BosShell from '@/components/BosShell'
-import { requireOpsAccess } from '@/lib/auth'
 
 const columns = [
   { label: 'Ideas', dot: 'var(--tx-lo)', cards: ['Before/after: Glow Serum 4-week results', 'GRWM using Palette Nude Eyes'] },
@@ -25,8 +27,16 @@ const schedule = [
   { day: '9', month: 'JUN', title: 'Masque ASMR routine', platform: 'TikTok', time: '18:30' },
 ]
 
-export default async function ContentPage() {
-  await requireOpsAccess()
+export default function ContentPage() {
+  const [view, setView] = useState<'Board' | 'Calendar' | 'Table'>('Board')
+
+  const handleNewContent = () => {
+    alert('Content creation feature coming soon! Track content planning in your external tools for now.')
+  }
+
+  const handleAddCard = (column: string) => {
+    alert(`Add content to ${column} - Feature coming soon!`)
+  }
 
   return (
     <BosShell active="content" title="Content Hub" crumb="Growth">
@@ -37,8 +47,12 @@ export default async function ContentPage() {
             <div className="sub">Plan, produce & track content across TikTok, Instagram & Facebook</div>
           </div>
           <div className="spacer"></div>
-          <div className="seg"><button className="active">Board</button><button>Calendar</button><button>Table</button></div>
-          <button className="btn primary"><Plus />New content</button>
+          <div className="seg">
+            <button className={view === 'Board' ? 'active' : ''} onClick={() => setView('Board')}>Board</button>
+            <button className={view === 'Calendar' ? 'active' : ''} onClick={() => setView('Calendar')}>Calendar</button>
+            <button className={view === 'Table' ? 'active' : ''} onClick={() => setView('Table')}>Table</button>
+          </div>
+          <button className="btn primary" onClick={handleNewContent}><Plus />New content</button>
         </div>
 
         <div className="cstat-row">
@@ -60,7 +74,7 @@ export default async function ContentPage() {
                     <div className="kc-foot"><span className={`avatar ${index % 2 ? 'a' : 'b'} small`}>{index % 2 ? 'AM' : 'MH'}</span><span className="mono">{column.label === 'Scheduled' ? '5 Jun - 19:00' : column.label === 'Published' ? '50.2k views' : 'Draft'}</span></div>
                   </div>
                 ))}
-                <button className="btn ghost sm full add-card"><Plus />Add</button>
+                <button className="btn ghost sm full add-card" onClick={() => handleAddCard(column.label)}><Plus />Add</button>
               </div>
             </div>
           ))}
