@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
 import { createSenditShipment } from '@/lib/sendit'
+import { onOrderConfirmed } from '@/lib/integrations/order-hooks'
 
 // GET /api/ops/orders/[id] - Get order detail
 export async function GET(
@@ -340,6 +341,21 @@ export async function PUT(
             name: senditError.name,
           })
           // Order stays CONFIRMED, user can manually create shipment later
+        }
+      }
+
+      // ================================================================
+      // INTEGRATION: Update stock and customer metrics when CONFIRMED
+      // ================================================================
+      if (status === 'CONFIRMED') {
+        try {
+          console.log(`🔄 Running order integrations for order ${orderId}...`)
+          await onOrderConfirmed(parseInt(orderId))
+          console.log(`✅ Order integrations complete for order ${orderId}`)
+        } catch (integrationError: any) {
+          // Log error but don't fail the order confirmation
+          console.error(`❌ Order integrations failed for order ${orderId}:`, integrationError)
+          // Order stays CONFIRMED, stock/customer data can be manually updated later
         }
       }
     }
