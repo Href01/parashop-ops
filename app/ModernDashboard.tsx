@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Download, Plus, TrendingUp, TrendingDown, DollarSign, Package, Truck, Target, Megaphone, Sparkles } from 'lucide-react'
 import Link from 'next/link'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts'
 
 interface DashboardStats {
   generatedAt: string
@@ -235,9 +236,58 @@ export default function ModernDashboard() {
               </div>
             </div>
             <div className="card-body">
-              <div className="h-64 flex items-center justify-center text-gray-400 text-sm">
-                Chart: Last 30 days revenue & profit
-              </div>
+              <ResponsiveContainer width="100%" height={300}>
+                <AreaChart data={stats.revenueSeries} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#A855F7" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#A855F7" stopOpacity={0}/>
+                    </linearGradient>
+                    <linearGradient id="colorProfit" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#22C55E" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#22C55E" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis
+                    dataKey="label"
+                    stroke="#9CA3AF"
+                    style={{ fontSize: '12px' }}
+                    tickLine={false}
+                  />
+                  <YAxis
+                    stroke="#9CA3AF"
+                    style={{ fontSize: '12px' }}
+                    tickLine={false}
+                    tickFormatter={(value) => `${(value / 1000).toFixed(0)}k`}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'white',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: '8px',
+                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                    }}
+                    formatter={(value: any) => [`${formatCurrency(Number(value))} MAD`, '']}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="revenue"
+                    stroke="#A855F7"
+                    strokeWidth={2}
+                    fillOpacity={1}
+                    fill="url(#colorRevenue)"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="profit"
+                    stroke="#22C55E"
+                    strokeWidth={2}
+                    fillOpacity={1}
+                    fill="url(#colorProfit)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
           </div>
 
