@@ -4,7 +4,159 @@
 
 ---
 
-## Bug #1: Duplicate Orders from Webhook (CRITICAL)
+## Bug #1: Sendit Shipment with 0 MAD - NULL Payment Method (CRITICAL)
+
+### Date
+2026-06-06
+
+### Symptom
+Sendit shipment created with **COD amount: 0 MAD** instead of actual order total.
+
+**Example:** Order #62
+- Order total: 204 MAD
+- Payment method: **NULL**
+- Sendit tracking: DH1F77C5086
+- **COD amount sent to Sendit: 0 MAD** ❌
+
+**Impact:** Delivery person won't collect payment from customer! Customer gets free product worth 204 MAD.
+
+### Root Cause #1: Website Never Sets Payment Method
+
+**File:** `app/api/orders/route.ts` (main site)
+
+Website order creation INSERT statement did NOT include `paymentMethod` column:
+
+```typescript
+// BEFORE (broken):
+INSERT INTO "Order" (
+  "userId", total, status, ...
+)
+VALUES ($1, $2, 'PENDING', ...)
+// paymentMethod not specified → defaults to NULL in database
+```
+
+**Why Bad:**
+- Database column allows NULL
+- No default value in schema
+- Website doesn't send paymentMethod in request
+- Result: ALL website orders have paymentMethod: NULL
+
+### Root Cause #2: BOS Doesn't Handle NULL
+
+**File:** `app/api/ops/orders/[id]/sendit/route.ts` (BOS)
+
+When creating Sendit shipment, code checks payment method:
+
+```typescript
+// BEFORE (broken):
+cod_amount: order.paymentMethod === 'COD' ? order.total : 0
+
+// When paymentMethod is NULL:
+null === 'COD' → false → sends cod_amount: 0 to Sendit! ❌
+```
+
+**Why Bad:**
+- Strict equality check doesn't handle NULL/undefined
+- Assumes paymentMethod is always set
+- Falls back to 0 instead of defaulting to COD
+
+### Fix #1: Website Sets Payment Method
+
+**File:** `app/api/orders/route.ts` (main site)  
+**Commit:** c491cee
+
+```typescript
+// AFTER (fixed):
+INSERT INTO "Order" (
+  "userId", total, status, "paymentMethod", ...
+)
+VALUES ($1, $2, 'PENDING', 'COD', ...)
+// Explicitly set paymentMethod to 'COD' for all website orders
+```
+
+**Why It Works:**
+- Website doesn't have online payment yet
+- All website orders are Cash On Delivery
+- Explicitly set 'COD' instead of relying on NULL
+
+### Fix #2: BOS Handles NULL Payment Method
+
+**File:** `app/api/ops/orders/[id]/sendit/route.ts` (BOS)  
+**Commit:** 87a468b
+
+```typescript
+// AFTER (fixed):
+const isCOD = !order.paymentMethod || order.paymentMethod === 'COD'
+const codAmount = isCOD ? order.total : 0
+
+console.log('💰 Payment method check:', {
+  paymentMethod: order.paymentMethod,
+  isCOD,
+  orderTotal: order.total,
+  codAmount,
+})
+```
+
+**Why It Works:**
+- `!order.paymentMethod` handles NULL, undefined, empty string
+- Defaults to COD (most common case)
+- Only sets COD=0 when explicitly prepaid (credit card, etc.)
+- Added logging to track payment method checks
+
+### Prevention
+
+1. **Always set paymentMethod when creating orders:**
+   ```typescript
+   INSERT INTO "Order" (..., "paymentMethod", ...)
+   VALUES (..., 'COD', ...)  // or 'CARD', 'BANK', etc.
+   ```
+
+2. **Handle NULL/undefined in business logic:**
+   ```typescript
+   // Bad:
+   if (value === 'EXPECTED') { ... }
+   
+   // Good:
+   if (!value || value === 'EXPECTED') { ... }
+   ```
+
+3. **Validate before Sendit API call:**
+   ```typescript
+   if (!order.paymentMethod) {
+     throw new Error('Payment method is required')
+   }
+   ```
+
+4. **Add database constraint (optional):**
+   ```sql
+   ALTER TABLE "Order"
+   ALTER COLUMN "paymentMethod"
+   SET DEFAULT 'COD';
+   
+   -- Or make it NOT NULL:
+   ALTER TABLE "Order"
+   ALTER COLUMN "paymentMethod"
+   SET NOT NULL;
+   ```
+
+### Files Changed
+
+**Main Site (parashop):**
+- `app/api/orders/route.ts` - Added paymentMethod: 'COD' to INSERT
+
+**BOS (parashop-ops):**
+- `app/api/ops/orders/[id]/sendit/route.ts` - Handle NULL paymentMethod
+
+### Lessons Learned
+
+1. **Database NULLs are dangerous** - Always set values explicitly
+2. **Strict equality fails on NULL** - Use truthy/falsy checks for optional fields
+3. **Log critical calculations** - Added logging for payment method checks
+4. **Test with missing data** - NULL/undefined should be handled gracefully
+
+---
+
+## Bug #2: Duplicate Orders from Webhook (CRITICAL)
 
 ### Date
 2026-06-06
@@ -62,7 +214,7 @@ Every customer order created TWO orders in the system:
 
 ---
 
-## Bug #2: District Picker Not Loading (CSP Block)
+## Bug #3: District Picker Not Loading (CSP Block)
 
 ### Date
 2026-06-06
@@ -111,7 +263,7 @@ Added `https://ops.shinecosmetics.ma` to CSP connect-src:
 
 ---
 
-## Bug #3: Double-Click Creating Duplicate Orders
+## Bug #4: Double-Click Creating Duplicate Orders
 
 ### Date
 2026-06-06
@@ -171,7 +323,7 @@ const handleOrder = async () => {
 
 ---
 
-## Bug #4: Guest Orders Not Showing in Main Admin
+## Bug #5: Guest Orders Not Showing in Main Admin
 
 ### Date
 2026-06-06
@@ -239,7 +391,7 @@ type Order = {
 
 ---
 
-## Bug #5: OrderAuditLog Table Doesn't Exist (500 on Delete)
+## Bug #6: OrderAuditLog Table Doesn't Exist (500 on Delete)
 
 ### Date
 2026-06-05 (created migration) → 2026-06-06 (ran it)
@@ -303,6 +455,7 @@ CREATE TABLE "OrderAuditLog" (
 
 | Bug | Root Cause Category | Prevention |
 |-----|---------------------|------------|
+| Sendit 0 MAD shipment | NULL payment method not handled | Always set values explicitly, handle NULL gracefully |
 | Duplicate orders | False assumption (separate DBs) | Verify architecture first |
 | Districts not loading | Missing CSP config | Update CSP for cross-origin |
 | Double-click submit | React re-render delay | Add early return guard |
