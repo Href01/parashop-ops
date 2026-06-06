@@ -168,16 +168,16 @@ export default function OrdersPage() {
             <div className="sub">{orders.length} orders across active channels</div>
           </div>
           <div className="spacer"></div>
-          <button type="button" className="btn" onClick={handleSyncSendit}>
-            <RefreshCw />
+          <button type="button" className="btn-modern btn-secondary" onClick={handleSyncSendit}>
+            <RefreshCw className="w-4 h-4" />
             Sync Sendit
           </button>
-          <button type="button" className="btn" onClick={handleExport}>
-            <Download />
+          <button type="button" className="btn-modern btn-secondary" onClick={handleExport}>
+            <Download className="w-4 h-4" />
             Export
           </button>
-          <Link className="btn primary" href="/orders/new">
-            <Plus />
+          <Link className="btn-modern btn-primary" href="/orders/new">
+            <Plus className="w-4 h-4" />
             New order
           </Link>
         </div>

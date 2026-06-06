@@ -47,8 +47,8 @@ export default function WorkHubPage() {
             <div className="sub">Weekly priorities, tasks, decisions & experiments - week of 2 June</div>
           </div>
           <div className="spacer"></div>
-          <button className="btn" onClick={handleDecisionLog}><BookOpen />Decision log</button>
-          <button className="btn primary" onClick={handleNewTask}><Plus />New task</button>
+          <button className="btn-modern btn-secondary" onClick={handleDecisionLog}><BookOpen className="w-4 h-4" />Decision log</button>
+          <button className="btn-modern btn-primary" onClick={handleNewTask}><Plus className="w-4 h-4" />New task</button>
         </div>
 
         <div className="prio-grid">

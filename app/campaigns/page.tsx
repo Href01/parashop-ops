@@ -105,8 +105,8 @@ export default function CampaignsPage() {
               Completed
             </button>
           </div>
-          <button className="btn primary" onClick={() => window.location.href = '/campaigns/new'}>
-            <Plus />New campaign
+          <button className="btn-modern btn-primary" onClick={() => window.location.href = '/campaigns/new'}>
+            <Plus className="w-4 h-4" />New campaign
           </button>
         </div>
 

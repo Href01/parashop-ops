@@ -142,8 +142,8 @@ export default function InventoryPage() {
             <div className="sub">Stock levels, alerts & reorder management</div>
           </div>
           <div className="spacer"></div>
-          <button className="btn" onClick={handleExport}><Download />Export</button>
-          <button className="btn primary" onClick={handleAddStock}><Package />Add stock</button>
+          <button className="btn-modern btn-secondary" onClick={handleExport}><Download className="w-4 h-4" />Export</button>
+          <button className="btn-modern btn-primary" onClick={handleAddStock}><Package className="w-4 h-4" />Add stock</button>
         </div>
 
         {/* Stats */}

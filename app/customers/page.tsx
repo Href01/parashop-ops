@@ -125,8 +125,8 @@ export default function CustomersPage() {
             <div className="sub">Customer relationship management & segmentation</div>
           </div>
           <div className="spacer"></div>
-          <button className="btn" onClick={handleExport}><Download />Export</button>
-          <button className="btn primary" onClick={handleAddCustomer}><UserPlus />Add customer</button>
+          <button className="btn-modern btn-secondary" onClick={handleExport}><Download className="w-4 h-4" />Export</button>
+          <button className="btn-modern btn-primary" onClick={handleAddCustomer}><UserPlus className="w-4 h-4" />Add customer</button>
         </div>
 
         {/* Stats */}

@@ -52,7 +52,7 @@ export default function ContentPage() {
             <button className={view === 'Calendar' ? 'active' : ''} onClick={() => setView('Calendar')}>Calendar</button>
             <button className={view === 'Table' ? 'active' : ''} onClick={() => setView('Table')}>Table</button>
           </div>
-          <button className="btn primary" onClick={handleNewContent}><Plus />New content</button>
+          <button className="btn-modern btn-primary" onClick={handleNewContent}><Plus className="w-4 h-4" />New content</button>
         </div>
 
         <div className="cstat-row">

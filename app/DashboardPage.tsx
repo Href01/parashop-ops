@@ -411,29 +411,29 @@ function DashboardContent({
           </div>
         </div>
         <div className="spacer"></div>
-        <div className="seg" aria-label="Selected period">
-          <button type="button" className={timePeriod === 'Today' ? 'active' : ''} onClick={() => onTimePeriodChange('Today')}>Today</button>
-          <button type="button" className={timePeriod === '7D' ? 'active' : ''} onClick={() => onTimePeriodChange('7D')}>
+        <div className="inline-flex gap-1 p-1 bg-gray-100 rounded-lg" aria-label="Selected period">
+          <button type="button" className={`btn-modern btn-sm ${timePeriod === 'Today' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => onTimePeriodChange('Today')}>Today</button>
+          <button type="button" className={`btn-modern btn-sm ${timePeriod === '7D' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => onTimePeriodChange('7D')}>
             7D
           </button>
-          <button type="button" className={timePeriod === '30D' ? 'active' : ''} onClick={() => onTimePeriodChange('30D')}>30D</button>
-          <button type="button" className={timePeriod === 'QTD' ? 'active' : ''} onClick={() => onTimePeriodChange('QTD')}>QTD</button>
+          <button type="button" className={`btn-modern btn-sm ${timePeriod === '30D' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => onTimePeriodChange('30D')}>30D</button>
+          <button type="button" className={`btn-modern btn-sm ${timePeriod === 'QTD' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => onTimePeriodChange('QTD')}>QTD</button>
         </div>
-        <button type="button" className="btn" onClick={onExport}>
-          <Download />
+        <button type="button" className="btn-modern btn-secondary" onClick={onExport}>
+          <Download className="w-4 h-4" />
           Export
         </button>
-        <Link className="btn primary" href="/orders/new">
-          <Plus />
+        <Link className="btn-modern btn-primary" href="/orders/new">
+          <Plus className="w-4 h-4" />
           New order
         </Link>
       </div>
 
-      <div className="panel mb16">
-        <div className="goalbar">
-          <div className="row gap10 goal-copy">
-            <div className="kpi-ico" style={{ background: 'var(--rose-bg)', color: 'var(--rose-bright)' }}>
-              <Target />
+      <div className="card-modern mb-6">
+        <div className="card-body">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-3 rounded-xl" style={{ background: 'var(--primary-100)', color: 'var(--primary-600)' }}>
+              <Target className="w-5 h-5" />
             </div>
             <div>
               <div className="label">Daily revenue goal</div>

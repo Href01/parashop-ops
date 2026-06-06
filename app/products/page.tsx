@@ -162,16 +162,16 @@ export default function ProductsPage() {
             <div className="sub">Inventory, cost prices & margins - synced with shinecosmetics.ma</div>
           </div>
           <div className="spacer"></div>
-          <button type="button" className="btn" onClick={handleBulkEditCosts}>
-            <Edit3 />
+          <button type="button" className="btn-modern btn-secondary" onClick={handleBulkEditCosts}>
+            <Edit3 className="w-4 h-4" />
             Bulk edit costs
           </button>
-          <button type="button" className="btn" onClick={handleExport}>
-            <Download />
+          <button type="button" className="btn-modern btn-secondary" onClick={handleExport}>
+            <Download className="w-4 h-4" />
             Export
           </button>
-          <button type="button" className="btn primary" onClick={handleAddProduct}>
-            <Plus />
+          <button type="button" className="btn-modern btn-primary" onClick={handleAddProduct}>
+            <Plus className="w-4 h-4" />
             Add product
           </button>
         </div>

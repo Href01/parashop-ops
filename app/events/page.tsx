@@ -123,8 +123,8 @@ export default function EventsPage() {
               Completed
             </button>
           </div>
-          <button className="btn primary" onClick={() => window.location.href = '/events/new'}>
-            <Plus />New event
+          <button className="btn-modern btn-primary" onClick={() => window.location.href = '/events/new'}>
+            <Plus className="w-4 h-4" />New event
           </button>
         </div>
 
