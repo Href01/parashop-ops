@@ -54,6 +54,36 @@ export default function CustomersPage() {
     fetchCustomers()
   }
 
+  const handleExport = () => {
+    const csv = [
+      ['Name', 'Email', 'Phone', 'Segment', 'Tier', 'Orders', 'LTV (MAD)', 'Avg Order (MAD)', 'Last Order', 'RFM Score'],
+      ...customers.map(c => [
+        c.name,
+        c.email,
+        c.phone,
+        c.segment,
+        c.tier,
+        c.ordersCount,
+        c.lifetimeValue,
+        c.averageOrderValue,
+        formatDate(c.lastOrderDate),
+        c.rfmScore
+      ])
+    ].map(row => row.join(',')).join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `customers-${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleAddCustomer = () => {
+    alert('Customer creation feature coming soon!\n\nCustomers are automatically created when they place their first order.')
+  }
+
   const getSegmentColor = (segment: string) => {
     const colors: Record<string, string> = {
       'VIP': 'badge green',
@@ -95,8 +125,8 @@ export default function CustomersPage() {
             <div className="sub">Customer relationship management & segmentation</div>
           </div>
           <div className="spacer"></div>
-          <button className="btn"><Download />Export</button>
-          <button className="btn primary"><UserPlus />Add customer</button>
+          <button className="btn" onClick={handleExport}><Download />Export</button>
+          <button className="btn primary" onClick={handleAddCustomer}><UserPlus />Add customer</button>
         </div>
 
         {/* Stats */}

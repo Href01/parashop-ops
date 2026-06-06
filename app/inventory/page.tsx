@@ -82,6 +82,33 @@ export default function InventoryPage() {
     }
   }
 
+  const handleExport = () => {
+    const csv = [
+      ['Product', 'Brand', 'Stock', 'Reorder Point', 'Weekly Sales', 'Days Left', 'Status'],
+      ...products.map(p => [
+        p.name,
+        p.brand,
+        p.stock,
+        p.reorderPoint,
+        p.weeklySales || 0,
+        p.daysOfStockLeft || '∞',
+        p.stockStatus
+      ])
+    ].map(row => row.join(',')).join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `inventory-${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleAddStock = () => {
+    alert('Stock adjustment feature coming soon!\n\nFor now, update stock levels via Products page.')
+  }
+
   const getStatusColor = (status: string) => {
     const colors: Record<string, string> = {
       'In stock': 'badge green',
@@ -115,8 +142,8 @@ export default function InventoryPage() {
             <div className="sub">Stock levels, alerts & reorder management</div>
           </div>
           <div className="spacer"></div>
-          <button className="btn"><Download />Export</button>
-          <button className="btn primary"><Package />Add stock</button>
+          <button className="btn" onClick={handleExport}><Download />Export</button>
+          <button className="btn primary" onClick={handleAddStock}><Package />Add stock</button>
         </div>
 
         {/* Stats */}

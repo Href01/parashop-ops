@@ -195,6 +195,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState(false)
+  const [timePeriod, setTimePeriod] = useState<'Today' | '7D' | '30D' | 'QTD'>('7D')
 
   useEffect(() => {
     void fetchStats()
@@ -218,6 +219,28 @@ export default function DashboardPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleExport = () => {
+    if (!stats) return
+
+    const csvData = [
+      ['Metric', 'Value'],
+      ['Revenue (7D)', stats.revenueWeek + ' MAD'],
+      ['Profit (7D)', stats.estimatedProfit + ' MAD'],
+      ['Orders (7D)', stats.ordersWeek],
+      ['Margin %', stats.marginPercent.toFixed(1) + '%'],
+      ['ROAS', stats.roas.toFixed(1) + 'x'],
+      ['Ad Spend', stats.adSpend + ' MAD'],
+    ].map(row => row.join(',')).join('\n')
+
+    const blob = new Blob([csvData], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `dashboard-export-${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   if (loading) {
@@ -263,7 +286,7 @@ export default function DashboardPage() {
 
   return (
     <DashboardShell collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)}>
-      <DashboardContent stats={stats} />
+      <DashboardContent stats={stats} timePeriod={timePeriod} onTimePeriodChange={setTimePeriod} onExport={handleExport} />
     </DashboardShell>
   )
 }
@@ -355,7 +378,17 @@ function DashboardShell({
   )
 }
 
-function DashboardContent({ stats }: { stats: DashboardStats }) {
+function DashboardContent({
+  stats,
+  timePeriod,
+  onTimePeriodChange,
+  onExport
+}: {
+  stats: DashboardStats
+  timePeriod: 'Today' | '7D' | '30D' | 'QTD'
+  onTimePeriodChange: (period: 'Today' | '7D' | '30D' | 'QTD') => void
+  onExport: () => void
+}) {
   const maxPipelineValue = Math.max(1, ...stats.pipeline.map((entry) => entry.value))
   const maxProductUnits = Math.max(1, ...stats.topProducts.map((entry) => entry.units))
   const maxCityOrders = Math.max(1, ...stats.topCities.map((entry) => entry.orders))
@@ -379,14 +412,14 @@ function DashboardContent({ stats }: { stats: DashboardStats }) {
         </div>
         <div className="spacer"></div>
         <div className="seg" aria-label="Selected period">
-          <button type="button">Today</button>
-          <button type="button" className="active">
+          <button type="button" className={timePeriod === 'Today' ? 'active' : ''} onClick={() => onTimePeriodChange('Today')}>Today</button>
+          <button type="button" className={timePeriod === '7D' ? 'active' : ''} onClick={() => onTimePeriodChange('7D')}>
             7D
           </button>
-          <button type="button">30D</button>
-          <button type="button">QTD</button>
+          <button type="button" className={timePeriod === '30D' ? 'active' : ''} onClick={() => onTimePeriodChange('30D')}>30D</button>
+          <button type="button" className={timePeriod === 'QTD' ? 'active' : ''} onClick={() => onTimePeriodChange('QTD')}>QTD</button>
         </div>
-        <button type="button" className="btn">
+        <button type="button" className="btn" onClick={onExport}>
           <Download />
           Export
         </button>

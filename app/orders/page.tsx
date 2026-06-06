@@ -106,6 +106,46 @@ export default function OrdersPage() {
     }
   }
 
+  const handleSyncSendit = async () => {
+    if (!confirm('Sync delivery statuses from Sendit?\n\nThis will update all in-transit orders.')) return
+
+    try {
+      const res = await fetch('/api/ops/orders/sync-sendit', { method: 'POST' })
+      if (!res.ok) throw new Error('Sync failed')
+
+      await fetchOrders()
+      alert('Successfully synced with Sendit!')
+    } catch (error) {
+      console.error('Sync error:', error)
+      alert('Failed to sync with Sendit')
+    }
+  }
+
+  const handleExport = () => {
+    const csv = [
+      ['Order #', 'Customer', 'Phone', 'City', 'Status', 'Revenue', 'Profit', 'Margin %', 'Date'],
+      ...orders.map(o => [
+        o.orderNumber || o.id,
+        o.deliveryName || '',
+        o.deliveryPhone || '',
+        o.deliveryCity || '',
+        o.status,
+        o.revenue || 0,
+        o.estimatedProfit || 0,
+        o.marginPercent || 0,
+        new Date(o.createdAt).toLocaleDateString()
+      ])
+    ].map(row => row.join(',')).join('\n')
+
+    const blob = new Blob([csv], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `orders-${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const stats = useMemo(() => {
     const count = (status: string) => orders.filter((order) => order.status === status).length
 
@@ -128,11 +168,11 @@ export default function OrdersPage() {
             <div className="sub">{orders.length} orders across active channels</div>
           </div>
           <div className="spacer"></div>
-          <button type="button" className="btn">
+          <button type="button" className="btn" onClick={handleSyncSendit}>
             <RefreshCw />
             Sync Sendit
           </button>
-          <button type="button" className="btn">
+          <button type="button" className="btn" onClick={handleExport}>
             <Download />
             Export
           </button>
