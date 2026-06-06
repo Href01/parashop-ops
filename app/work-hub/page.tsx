@@ -60,11 +60,19 @@ export default function WorkHubPage() {
           <div className="panel">
             <div className="panel-head">
               <h3>Tasks</h3>
-              <div className="row gap6 task-chips">
-                <button className={`chip ${taskFilter === 'All' ? 'active' : ''}`} onClick={() => setTaskFilter('All')}>All <span className="ct">12</span></button>
-                <button className={`chip ${taskFilter === 'Urgent' ? 'active' : ''}`} onClick={() => setTaskFilter('Urgent')}>Urgent <span className="ct">2</span></button>
-                <button className={`chip ${taskFilter === 'In progress' ? 'active' : ''}`} onClick={() => setTaskFilter('In progress')}>In progress <span className="ct">4</span></button>
-                <button className={`chip ${taskFilter === 'Blocked' ? 'active' : ''}`} onClick={() => setTaskFilter('Blocked')}>Blocked <span className="ct">1</span></button>
+              <div className="inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
+                <button className={`btn-modern btn-sm ${taskFilter === 'All' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setTaskFilter('All')}>
+                  All <span className="ml-1 badge-modern badge-neutral badge-sm">12</span>
+                </button>
+                <button className={`btn-modern btn-sm ${taskFilter === 'Urgent' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setTaskFilter('Urgent')}>
+                  Urgent <span className="ml-1 badge-modern badge-danger badge-sm">2</span>
+                </button>
+                <button className={`btn-modern btn-sm ${taskFilter === 'In progress' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setTaskFilter('In progress')}>
+                  In progress <span className="ml-1 badge-modern badge-info badge-sm">4</span>
+                </button>
+                <button className={`btn-modern btn-sm ${taskFilter === 'Blocked' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setTaskFilter('Blocked')}>
+                  Blocked <span className="ml-1 badge-modern badge-warning badge-sm">1</span>
+                </button>
               </div>
             </div>
             {tasks.map((task) => (

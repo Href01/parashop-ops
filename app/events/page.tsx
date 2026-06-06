@@ -97,27 +97,27 @@ export default function EventsPage() {
             <div className="sub">Track Ramadan, Black Friday, seasonal events & impact analysis</div>
           </div>
           <div className="spacer"></div>
-          <div className="seg">
+          <div className="inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
             <button
-              className={statusFilter === 'All' ? 'active' : ''}
+              className={`btn-modern btn-sm ${statusFilter === 'All' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('All')}
             >
               All
             </button>
             <button
-              className={statusFilter === 'Upcoming' ? 'active' : ''}
+              className={`btn-modern btn-sm ${statusFilter === 'Upcoming' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('Upcoming')}
             >
               Upcoming
             </button>
             <button
-              className={statusFilter === 'Active' ? 'active' : ''}
+              className={`btn-modern btn-sm ${statusFilter === 'Active' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('Active')}
             >
               Active
             </button>
             <button
-              className={statusFilter === 'Completed' ? 'active' : ''}
+              className={`btn-modern btn-sm ${statusFilter === 'Completed' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('Completed')}
             >
               Completed
@@ -163,19 +163,19 @@ export default function EventsPage() {
           />
         </div>
 
-        <div className="panel">
-          <div className="panel-head">
-            <h3>All events</h3>
+        <div className="card-modern">
+          <div className="card-header">
+            <h3 className="text-lg font-semibold">All events</h3>
             <div className="spacer"></div>
             {activeEvents.length > 0 && (
-              <span className="badge green">
-                <span className="bdot"></span>
+              <span className="badge-modern badge-success">
+                <span className="w-2 h-2 bg-green-500 rounded-full"></span>
                 {activeEvents.length} active
               </span>
             )}
           </div>
-          <div className="table-scroll">
-            <table className="tbl">
+          <div className="overflow-x-auto">
+            <table className="table-modern">
               <thead>
                 <tr>
                   <th>Event</th>
@@ -198,12 +198,12 @@ export default function EventsPage() {
                 ) : events.length === 0 ? (
                   <tr>
                     <td colSpan={8} style={{ textAlign: 'center', padding: '40px' }}>
-                      <div className="empty-state">
-                        <Calendar size={48} style={{ color: 'var(--tx-faint)', marginBottom: 16 }} />
-                        <p className="fw600">No events yet</p>
-                        <p className="tx-lo fs13">Create your first event to track seasonal performance</p>
-                        <button className="btn primary mt16" onClick={() => window.location.href = '/events/new'}>
-                          <Plus />Create event
+                      <div className="flex flex-col items-center justify-center py-12">
+                        <Calendar className="w-12 h-12 text-gray-300 mb-4" />
+                        <p className="font-semibold text-gray-900 mb-2">No events yet</p>
+                        <p className="text-sm text-gray-500 mb-6">Create your first event to track seasonal performance</p>
+                        <button className="btn-modern btn-primary" onClick={() => window.location.href = '/events/new'}>
+                          <Plus className="w-4 h-4" />Create event
                         </button>
                       </div>
                     </td>

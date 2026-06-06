@@ -85,21 +85,21 @@ export default function CampaignsPage() {
             <div className="sub">Real P&L tracking with ad spend, ROAS & ROI</div>
           </div>
           <div className="spacer"></div>
-          <div className="seg">
+          <div className="inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
             <button
-              className={statusFilter === 'All' ? 'active' : ''}
+              className={`btn-modern btn-sm ${statusFilter === 'All' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('All')}
             >
               All
             </button>
             <button
-              className={statusFilter === 'Active' ? 'active' : ''}
+              className={`btn-modern btn-sm ${statusFilter === 'Active' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('Active')}
             >
               Active
             </button>
             <button
-              className={statusFilter === 'Completed' ? 'active' : ''}
+              className={`btn-modern btn-sm ${statusFilter === 'Completed' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('Completed')}
             >
               Completed
@@ -146,19 +146,19 @@ export default function CampaignsPage() {
         </div>
 
         <div className="camp-grid">
-          <div className="panel" style={{ gridColumn: '1 / -1' }}>
-            <div className="panel-head">
-              <h3>Active campaigns</h3>
+          <div className="card-modern" style={{ gridColumn: '1 / -1' }}>
+            <div className="card-header">
+              <h3 className="text-lg font-semibold">Active campaigns</h3>
               <div className="spacer"></div>
               {activeCampaigns.length > 0 && (
-                <span className="badge green">
-                  <span className="bdot"></span>
+                <span className="badge-modern badge-success">
+                  <span className="w-2 h-2 bg-green-500 rounded-full"></span>
                   {activeCampaigns.length} running
                 </span>
               )}
             </div>
-            <div className="table-scroll">
-              <table className="tbl">
+            <div className="overflow-x-auto">
+              <table className="table-modern">
                 <thead>
                   <tr>
                     <th>Campaign</th>
