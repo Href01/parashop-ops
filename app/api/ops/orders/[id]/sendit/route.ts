@@ -61,6 +61,18 @@ export async function POST(
     const { notes, packageWeight } = body
 
     // Create shipment with Sendit
+    // CRITICAL: If paymentMethod is null/undefined, default to COD (customer pays on delivery)
+    // Otherwise for prepaid orders (credit card, etc.), COD amount should be 0
+    const isCOD = !order.paymentMethod || order.paymentMethod === 'COD'
+    const codAmount = isCOD ? order.total : 0
+
+    console.log('💰 Payment method check:', {
+      paymentMethod: order.paymentMethod,
+      isCOD,
+      orderTotal: order.total,
+      codAmount,
+    })
+
     const shipment = await createSenditShipment({
       reference: order.orderNumber || `ORD-${order.id}`,
       recipient_name: order.deliveryName,
@@ -68,7 +80,7 @@ export async function POST(
       recipient_city: order.deliveryCity,
       recipient_address: order.deliveryAddress || '',
       district_id: order.senditDistrictId,  // Use stored district if available
-      cod_amount: order.paymentMethod === 'COD' ? order.total : 0,
+      cod_amount: codAmount,  // Use calculated COD amount
       package_weight: packageWeight || 0.5,
       package_description: `Order ${order.orderNumber} - ${order.items?.length || 0} items`,
       notes: notes || order.notes || '',
