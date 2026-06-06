@@ -246,8 +246,39 @@ export async function onOrderConfirmed(orderId: number) {
       }
     }
 
+    // ================================================================
+    // PART 3: UPDATE CAMPAIGN METRICS (if order attributed to campaign)
+    // ================================================================
+
+    if (order.campaignId) {
+      try {
+        console.log(`📊 Order attributed to campaign ${order.campaignId}, recalculating metrics...`)
+        await client.query('SELECT calculate_campaign_metrics($1)', [order.campaignId])
+        console.log(`✅ Campaign ${order.campaignId} metrics updated`)
+      } catch (error) {
+        console.error(`❌ Failed to update campaign metrics:`, error)
+        // Non-blocking - continue
+      }
+    }
+
+    // ================================================================
+    // PART 4: UPDATE EVENT METRICS (if order during event period)
+    // ================================================================
+
+    if (order.eventId) {
+      try {
+        console.log(`🎉 Order during event ${order.eventId}, recalculating impact...`)
+        await client.query('SELECT calculate_event_metrics($1)', [order.eventId])
+        console.log(`✅ Event ${order.eventId} metrics updated`)
+      } catch (error) {
+        console.error(`❌ Failed to update event metrics:`, error)
+        // Non-blocking - continue
+      }
+    }
+
     await client.query('COMMIT')
     console.log(`✅ Order #${orderId} integration complete`)
+
 
   } catch (error) {
     await client.query('ROLLBACK')
