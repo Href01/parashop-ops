@@ -266,19 +266,71 @@ export default function GlowDashboard() {
               </div>
             </div>
             <div style={{ padding: '6px 20px 20px' }}>
-              {/* Chart placeholder - would use actual chart library */}
+              <svg width="100%" height="236" viewBox="0 0 800 236" style={{ overflow: 'visible' }}>
+                <defs>
+                  <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--neon-rose)" stopOpacity="0.3" />
+                    <stop offset="100%" stopColor="var(--neon-rose)" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                {/* Simple area chart visualization */}
+                {chartType === 'area' && stats.revenueSeries.slice(0, 14).map((point, i, arr) => {
+                  const x = (i / (arr.length - 1)) * 800
+                  const maxRevenue = Math.max(...arr.map(p => p.revenue))
+                  const y = 236 - (point.revenue / maxRevenue) * 200
+                  const nextPoint = arr[i + 1]
+                  if (!nextPoint) return null
+                  const nextX = ((i + 1) / (arr.length - 1)) * 800
+                  const nextY = 236 - (nextPoint.revenue / maxRevenue) * 200
+                  return (
+                    <g key={i}>
+                      <line
+                        x1={x}
+                        y1={y}
+                        x2={nextX}
+                        y2={nextY}
+                        stroke="var(--neon-rose)"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                      />
+                      <circle
+                        cx={x}
+                        cy={y}
+                        r="3"
+                        fill="var(--neon-rose)"
+                        opacity={i === arr.length - 1 ? 1 : 0.6}
+                      />
+                    </g>
+                  )
+                })}
+                {/* Grid lines */}
+                {[0, 1, 2, 3, 4].map((i) => (
+                  <line
+                    key={i}
+                    x1="0"
+                    y1={i * 59}
+                    x2="800"
+                    y2={i * 59}
+                    stroke="var(--line-soft)"
+                    strokeWidth="1"
+                    strokeDasharray="3,3"
+                    opacity="0.3"
+                  />
+                ))}
+              </svg>
               <div style={{
-                height: '236px',
-                background: 'var(--bg-inset)',
-                borderRadius: '8px',
                 display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                justifyContent: 'space-between',
+                marginTop: '6px',
+                fontSize: '10px',
                 color: 'var(--tx-faint)',
-                fontSize: '12px',
                 fontFamily: 'var(--mono)'
               }}>
-                {chartType === 'area' ? 'Area Chart' : 'Candlestick Chart'} · {chartRange}
+                {chartRange === '7D' ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => (
+                  <span key={i}>{day}</span>
+                )) : ['Start', '', '', '', 'Now'].map((label, i) => (
+                  <span key={i}>{label}</span>
+                ))}
               </div>
             </div>
           </div>

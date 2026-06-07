@@ -19,7 +19,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={cn("font-sans", geist.variable)}>
-      <body className="antialiased">
+      <body className="crypto antialiased">
         {children}
       </body>
     </html>
