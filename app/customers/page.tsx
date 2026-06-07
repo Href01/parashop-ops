@@ -130,7 +130,7 @@ export default function CustomersPage() {
         </div>
 
         {/* Stats */}
-        <div className="cstat-row">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <Metric icon={<UserPlus />} tone="blue" title="Total customers" value={customers.length.toString()} trend="+12 this week" />
           <Metric icon={<DollarSign />} tone="green" title="Avg LTV" value={`${formatCurrency(customers.reduce((sum, c) => sum + c.lifetimeValue, 0) / (customers.length || 1))} MAD`} />
           <Metric icon={<TrendingUp />} tone="teal" title="VIP customers" value={customers.filter(c => c.segment === 'VIP').length.toString()} trend={`${((customers.filter(c => c.segment === 'VIP').length / (customers.length || 1)) * 100).toFixed(1)}%`} />
@@ -138,72 +138,73 @@ export default function CustomersPage() {
         </div>
 
         {/* Filters */}
-        <div className="row gap12 mb20">
-          <div className="search-box">
-            <Search />
+        <div className="flex flex-wrap items-center gap-3 mb-6">
+          <div className="relative flex-1 min-w-[280px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
               placeholder="Search by name, email, phone..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+              className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
 
-          <div className="seg">
+          <div className="inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
             <button
-              className={segmentFilter === '' ? 'active' : ''}
+              className={`btn-modern btn-sm ${segmentFilter === '' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setSegmentFilter('')}
             >
               All
             </button>
             <button
-              className={segmentFilter === 'VIP' ? 'active' : ''}
+              className={`btn-modern btn-sm ${segmentFilter === 'VIP' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setSegmentFilter('VIP')}
             >
               VIP
             </button>
             <button
-              className={segmentFilter === 'Regular' ? 'active' : ''}
+              className={`btn-modern btn-sm ${segmentFilter === 'Regular' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setSegmentFilter('Regular')}
             >
               Regular
             </button>
             <button
-              className={segmentFilter === 'At Risk' ? 'active' : ''}
+              className={`btn-modern btn-sm ${segmentFilter === 'At Risk' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setSegmentFilter('At Risk')}
             >
               At Risk
             </button>
             <button
-              className={segmentFilter === 'New' ? 'active' : ''}
+              className={`btn-modern btn-sm ${segmentFilter === 'New' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setSegmentFilter('New')}
             >
               New
             </button>
           </div>
 
-          <div className="seg">
+          <div className="inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
             <button
-              className={tierFilter === '' ? 'active' : ''}
+              className={`btn-modern btn-sm ${tierFilter === '' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setTierFilter('')}
             >
               All Tiers
             </button>
             <button
-              className={tierFilter === 'Platinum' ? 'active' : ''}
+              className={`btn-modern btn-sm ${tierFilter === 'Platinum' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setTierFilter('Platinum')}
             >
               Platinum
             </button>
             <button
-              className={tierFilter === 'Gold' ? 'active' : ''}
+              className={`btn-modern btn-sm ${tierFilter === 'Gold' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setTierFilter('Gold')}
             >
               Gold
             </button>
             <button
-              className={tierFilter === 'Silver' ? 'active' : ''}
+              className={`btn-modern btn-sm ${tierFilter === 'Silver' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setTierFilter('Silver')}
             >
               Silver
@@ -212,9 +213,9 @@ export default function CustomersPage() {
         </div>
 
         {/* Customer Table */}
-        <div className="panel">
-          <div className="table-scroll">
-            <table className="tbl">
+        <div className="card-modern">
+          <div className="overflow-x-auto">
+            <table className="table-modern">
               <thead>
                 <tr>
                   <th>Customer</th>
@@ -294,13 +295,34 @@ export default function CustomersPage() {
 }
 
 function Metric({ icon, tone, title, value, trend }: { icon: React.ReactNode; tone: string; title: string; value: string; trend?: string }) {
+  const bgColors: Record<string, string> = {
+    blue: 'bg-blue-100',
+    green: 'bg-green-100',
+    teal: 'bg-teal-100',
+    amber: 'bg-amber-100',
+  }
+  const textColors: Record<string, string> = {
+    blue: 'text-blue-600',
+    green: 'text-green-600',
+    teal: 'text-teal-600',
+    amber: 'text-amber-600',
+  }
+
   return (
-    <div className="cstat">
-      <div className={`cstat-icon ${tone}`}>{icon}</div>
-      <div className="cstat-main">
-        <div className="cstat-title">{title}</div>
-        <div className="cstat-value">{value}</div>
-        {trend && <div className="cstat-trend">{trend}</div>}
+    <div className="card-modern">
+      <div className="card-body">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">{title}</p>
+          <div className={`w-10 h-10 rounded-lg ${bgColors[tone]} ${textColors[tone]} flex items-center justify-center`}>
+            {icon}
+          </div>
+        </div>
+
+        <div className="flex items-baseline gap-2 mb-2">
+          <p className="text-2xl font-bold text-gray-900">{value}</p>
+        </div>
+
+        {trend && <p className="text-xs text-gray-500">{trend}</p>}
       </div>
     </div>
   )

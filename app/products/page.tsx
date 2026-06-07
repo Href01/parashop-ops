@@ -176,33 +176,53 @@ export default function ProductsPage() {
           </button>
         </div>
 
-        <div className="pstat-row">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <ProductStat icon={<Package />} title="Active SKUs" value={stats.activeSkus} subtitle="Catalog products" tone="blue" />
           <ProductStat icon={<Wallet />} title="Inventory value" value={stats.inventoryValue} unit="MAD" subtitle="at cost" tone="green" />
           <ProductStat icon={<Percent />} title="Avg margin" value={stats.avgMargin} unit="%" subtitle="tracked products" tone="rose" decimals={1} />
           <ProductStat icon={<TriangleAlert />} title="Need attention" value={stats.lowStock + stats.missingCost} subtitle={`${stats.lowStock} low - ${stats.missingCost} missing cost`} tone="amber" />
         </div>
 
-        <div className="panel">
-          <div className="toolbar">
-            <div className="ord-search">
-              <Search />
-              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search products, SKU..." />
+        <div className="card-modern">
+          <div className="flex flex-wrap items-center gap-3 p-4 border-b border-gray-200">
+            <div className="relative flex-1 min-w-[240px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search products, SKU..."
+                className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              />
             </div>
-            <div className="vdiv"></div>
-            <button type="button" className={`chip ${!filterMissingCost && !filterLowStock ? 'active' : ''}`} onClick={() => { setFilterMissingCost(false); setFilterLowStock(false); }}>
-              All <span className="ct">{products.length}</span>
-            </button>
-            <button type="button" className={`chip ${filterLowStock ? 'active' : ''}`} onClick={() => { setFilterLowStock(true); setFilterMissingCost(false); }}>
-              Low stock <span className="ct">{stats.lowStock}</span>
-            </button>
-            <button type="button" className={`chip ${filterMissingCost ? 'active' : ''}`} onClick={() => { setFilterMissingCost(true); setFilterLowStock(false); }}>
-              Missing cost <span className="ct">{stats.missingCost}</span>
-            </button>
+
+            <div className="inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
+              <button
+                type="button"
+                className={`btn-modern btn-sm ${!filterMissingCost && !filterLowStock ? 'btn-primary' : 'btn-subtle'}`}
+                onClick={() => { setFilterMissingCost(false); setFilterLowStock(false); }}
+              >
+                All <span className="ml-1 badge-modern badge-neutral badge-sm">{products.length}</span>
+              </button>
+              <button
+                type="button"
+                className={`btn-modern btn-sm ${filterLowStock ? 'btn-primary' : 'btn-subtle'}`}
+                onClick={() => { setFilterLowStock(true); setFilterMissingCost(false); }}
+              >
+                Low stock <span className="ml-1 badge-modern badge-warning badge-sm">{stats.lowStock}</span>
+              </button>
+              <button
+                type="button"
+                className={`btn-modern btn-sm ${filterMissingCost ? 'btn-primary' : 'btn-subtle'}`}
+                onClick={() => { setFilterMissingCost(true); setFilterLowStock(false); }}
+              >
+                Missing cost <span className="ml-1 badge-modern badge-danger badge-sm">{stats.missingCost}</span>
+              </button>
+            </div>
           </div>
 
-          <div className="table-scroll">
-            <table className="tbl">
+          <div className="overflow-x-auto">
+            <table className="table-modern">
               <thead>
                 <tr>
                   <th>Product</th>
@@ -297,8 +317,8 @@ export default function ProductsPage() {
                           <MiniBars color={stockColor} />
                         </td>
                         <td className="r">
-                          <button type="button" className="btn sm icon">
-                            <MoreHorizontal />
+                          <button type="button" className="btn-modern btn-icon btn-subtle">
+                            <MoreHorizontal className="w-4 h-4" />
                           </button>
                         </td>
                       </tr>
@@ -308,12 +328,12 @@ export default function ProductsPage() {
               </tbody>
             </table>
           </div>
-          <div className="between table-foot">
-            <span className="fs12 tx-lo">{products.length} products - {stats.missingCost} missing cost price hurt profit tracking</span>
-            <div className="row gap6">
-              <button type="button" className="btn sm">Prev</button>
-              <button type="button" className="btn sm active-page">1</button>
-              <button type="button" className="btn sm">Next</button>
+          <div className="flex items-center justify-between p-4 border-t border-gray-200 bg-gray-50">
+            <span className="text-xs text-gray-600">{products.length} products - {stats.missingCost} missing cost price hurt profit tracking</span>
+            <div className="flex items-center gap-2">
+              <button type="button" className="btn-modern btn-sm btn-secondary">Prev</button>
+              <button type="button" className="btn-modern btn-sm btn-primary">1</button>
+              <button type="button" className="btn-modern btn-sm btn-secondary">Next</button>
             </div>
           </div>
         </div>
@@ -359,20 +379,37 @@ function ProductStat({
   tone: 'blue' | 'green' | 'rose' | 'amber'
   decimals?: number
 }) {
+  const bgColors = {
+    blue: 'bg-blue-100',
+    green: 'bg-green-100',
+    rose: 'bg-pink-100',
+    amber: 'bg-amber-100',
+  }
+  const textColors = {
+    blue: 'text-blue-600',
+    green: 'text-green-600',
+    rose: 'text-pink-600',
+    amber: 'text-amber-600',
+  }
+
   return (
-    <div className="panel kpi">
-      <div className="kpi-top">
-        <div className="kpi-ico" style={{ background: `var(--${tone}-bg)`, color: tone === 'rose' ? 'var(--rose-bright)' : `var(--${tone})` }}>
-          {icon}
+    <div className="card-modern">
+      <div className="card-body">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">{title}</p>
+          <div className={`w-10 h-10 rounded-lg ${bgColors[tone]} ${textColors[tone]} flex items-center justify-center`}>
+            {icon}
+          </div>
         </div>
-        <span className="kpi-title">{title}</span>
-      </div>
-      <div className="kpi-val">
-        <span>{value.toLocaleString('en-US', { maximumFractionDigits: decimals, minimumFractionDigits: decimals })}</span>
-        {unit ? <span className="cur">{unit}</span> : null}
-      </div>
-      <div className="kpi-meta">
-        <span className="tx-lo">{subtitle}</span>
+
+        <div className="flex items-baseline gap-2 mb-2">
+          <p className="text-2xl font-bold text-gray-900">
+            {value.toLocaleString('en-US', { maximumFractionDigits: decimals, minimumFractionDigits: decimals })}
+          </p>
+          {unit && <span className="text-sm text-gray-500">{unit}</span>}
+        </div>
+
+        <p className="text-xs text-gray-500">{subtitle}</p>
       </div>
     </div>
   )

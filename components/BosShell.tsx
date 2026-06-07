@@ -69,26 +69,66 @@ export default function BosShell({
   const [collapsed, setCollapsed] = useState(false)
 
   return (
-    <div className={`bos-app ${collapsed ? 'collapsed' : ''}`}>
-      <aside className="sidebar-modern">
-        <div className="sidebar-header">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center text-white font-bold text-lg shadow-lg">
-              S
-            </div>
-            <div className="flex flex-col">
-              <div className="font-semibold text-gray-900">
-                Shine <span className="text-primary-600">BOS</span>
-              </div>
-              <div className="text-xs text-gray-500">shinecosmetics.ma</div>
-            </div>
+    <div className={`bos-app ${collapsed ? 'collapsed' : ''}`} style={{ display: 'grid', gridTemplateColumns: collapsed ? '64px 1fr' : '244px 1fr', minHeight: '100vh' }}>
+      <aside style={{
+        background: 'var(--bg-1)',
+        borderRight: '1px solid var(--line-soft)',
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'sticky',
+        top: 0,
+        height: '100vh',
+        overflow: 'hidden'
+      }}>
+        <div style={{
+          height: '56px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '10px',
+          padding: '0 16px',
+          borderBottom: '1px solid var(--line-soft)',
+          flexShrink: 0
+        }}>
+          <div className="logo-gradient" style={{
+            width: '26px',
+            height: '26px',
+            borderRadius: '7px',
+            flexShrink: 0,
+            display: 'grid',
+            placeItems: 'center',
+            color: 'white',
+            fontWeight: 700,
+            fontSize: '15px'
+          }}>
+            S
           </div>
+          {!collapsed && (
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: '14px', letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>
+                Shine <span className="glow-rose" style={{ fontWeight: 700 }}>BOS</span>
+              </div>
+              <div style={{ fontSize: '10px', color: 'var(--tx-lo)', fontFamily: 'var(--mono)', letterSpacing: '0.04em', marginTop: '-2px' }}>
+                shinecosmetics.ma
+              </div>
+            </div>
+          )}
         </div>
 
-        <nav className="sidebar-nav">
+        <nav style={{ flex: 1, overflowY: 'auto', padding: '10px 10px 16px' }}>
           {sections.map((section) => (
-            <div key={section.label} className="nav-section">
-              <div className="nav-section-label">{section.label}</div>
+            <div key={section.label} style={{ marginTop: '14px' }}>
+              {!collapsed && (
+                <div style={{
+                  fontSize: '10px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.08em',
+                  color: 'var(--tx-faint)',
+                  fontWeight: 600,
+                  padding: '4px 10px 6px'
+                }}>
+                  {section.label}
+                </div>
+              )}
               {section.items.map((item) => {
                 const Icon = item.icon
                 const isActive =
@@ -97,14 +137,43 @@ export default function BosShell({
                     : item.href.includes(active === 'work' ? 'work-hub' : active)
 
                 return (
-                  <Link key={item.label} href={item.href} className={`nav-item ${isActive ? 'active' : ''}`}>
-                    <Icon className="w-5 h-5" />
-                    <span className="flex-1">{item.label}</span>
-                    {item.count ? (
-                      <span className={`badge-modern badge-sm ${item.alert ? 'badge-danger' : 'badge-neutral'}`}>
-                        {item.count}
-                      </span>
-                    ) : null}
+                  <Link
+                    key={item.label}
+                    href={item.href}
+                    className={isActive ? 'nav-item active' : 'nav-item'}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px',
+                      padding: collapsed ? '9px' : '7px 10px',
+                      borderRadius: '6px',
+                      color: 'var(--tx-mid)',
+                      fontWeight: 500,
+                      fontSize: '13px',
+                      position: 'relative',
+                      whiteSpace: 'nowrap',
+                      marginBottom: '1px',
+                      justifyContent: collapsed ? 'center' : 'flex-start'
+                    }}
+                  >
+                    <Icon style={{ width: '17px', height: '17px', flexShrink: 0, strokeWidth: 1.7 }} />
+                    {!collapsed && (
+                      <>
+                        <span style={{ flex: 1 }}>{item.label}</span>
+                        {item.count && (
+                          <span style={{
+                            fontFamily: 'var(--mono)',
+                            fontSize: '11px',
+                            background: item.alert ? 'var(--rose-bg)' : 'var(--bg-3)',
+                            color: item.alert ? 'var(--rose-bright)' : 'var(--tx-mid)',
+                            padding: '1px 7px',
+                            borderRadius: '20px'
+                          }}>
+                            {item.count}
+                          </span>
+                        )}
+                      </>
+                    )}
                   </Link>
                 )
               })}
@@ -112,45 +181,182 @@ export default function BosShell({
           ))}
         </nav>
 
-        <div className="mt-auto p-4 border-t border-gray-200">
-          <div className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 hover:bg-gray-100 transition cursor-pointer">
-            <div className="flex -space-x-2">
-              <div className="w-8 h-8 rounded-full bg-primary-500 flex items-center justify-center text-white text-xs font-medium border-2 border-white">AM</div>
-              <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center text-white text-xs font-medium border-2 border-white">MH</div>
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium text-gray-900">Founders</div>
-              <div className="text-xs text-gray-500">2 online</div>
-            </div>
+        <div style={{ borderTop: '1px solid var(--line-soft)', padding: '10px', flexShrink: 0 }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '6px 8px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            transition: 'background 0.12s'
+          }} className="hover:bg-[var(--bg-2)]">
+            {!collapsed && (
+              <>
+                <div style={{ display: 'flex' }}>
+                  <div style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '50%',
+                    flexShrink: 0,
+                    display: 'grid',
+                    placeItems: 'center',
+                    fontWeight: 600,
+                    fontSize: '11px',
+                    color: 'white',
+                    background: 'linear-gradient(135deg, var(--rose-bright), oklch(0.6 0.13 350))',
+                    border: '2px solid var(--bg-1)',
+                    marginLeft: 0
+                  }}>AM</div>
+                  <div style={{
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '50%',
+                    flexShrink: 0,
+                    display: 'grid',
+                    placeItems: 'center',
+                    fontWeight: 600,
+                    fontSize: '11px',
+                    color: 'white',
+                    background: 'linear-gradient(135deg, var(--blue), var(--violet))',
+                    border: '2px solid var(--bg-1)',
+                    marginLeft: '-8px'
+                  }}>MH</div>
+                </div>
+                <div style={{ fontSize: '12px', lineHeight: 1.3, flex: 1 }}>
+                  <div>Founders</div>
+                  <small style={{ color: 'var(--tx-lo)', fontSize: '10px' }}>2 online</small>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </aside>
 
-      <main className="flex-1 flex flex-col bg-gray-50 overflow-hidden">
-        <header className="h-16 bg-white border-b border-gray-200 flex items-center gap-4 px-6 sticky top-0 z-10">
-          <button type="button" className="btn-modern btn-icon btn-subtle" aria-label="Toggle sidebar" onClick={() => setCollapsed((value) => !value)}>
-            <PanelLeft className="w-5 h-5" />
+      <main style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <header style={{
+          height: '56px',
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          gap: '14px',
+          padding: '0 20px',
+          borderBottom: '1px solid var(--line-soft)',
+          background: 'oklch(0.165 0.012 265 / 0.8)',
+          backdropFilter: 'blur(12px)',
+          position: 'sticky',
+          top: 0,
+          zIndex: 30
+        }}>
+          <button
+            type="button"
+            onClick={() => setCollapsed((value) => !value)}
+            aria-label="Toggle sidebar"
+            style={{
+              width: '30px',
+              height: '30px',
+              borderRadius: '6px',
+              display: 'grid',
+              placeItems: 'center',
+              color: 'var(--tx-mid)',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              transition: 'all 0.12s'
+            }}
+            className="hover:bg-[var(--bg-2)] hover:text-[var(--tx-hi)]"
+          >
+            <PanelLeft style={{ width: '17px', height: '17px', strokeWidth: 1.8 }} />
           </button>
-          <div className="font-semibold text-gray-900">{title}</div>
-          <span className="text-sm text-gray-500">
-            <b>{crumb}</b>
-          </span>
-          <button type="button" className="hidden md:flex items-center gap-2 px-3 py-2 bg-gray-100 rounded-lg text-gray-600 hover:bg-gray-200 transition flex-1 max-w-md">
-            <Search className="w-4 h-4" />
-            <span className="text-sm">Search orders, products...</span>
-            <span className="ml-auto text-xs bg-white px-2 py-1 rounded border border-gray-200">Ctrl K</span>
+          <div style={{ fontSize: '14px', fontWeight: 600, letterSpacing: '-0.01em' }}>{title}</div>
+          <div style={{ color: 'var(--tx-lo)', fontSize: '12px' }}>
+            <b style={{ color: 'var(--tx-mid)', fontWeight: 500 }}>{crumb}</b>
+          </div>
+          <button
+            type="button"
+            style={{
+              marginLeft: 'auto',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: 'var(--bg-2)',
+              border: '1px solid var(--line-soft)',
+              borderRadius: '6px',
+              padding: '6px 10px',
+              width: '260px',
+              color: 'var(--tx-lo)',
+              fontSize: '12.5px',
+              cursor: 'pointer',
+              transition: 'border-color 0.12s'
+            }}
+            className="hidden md:flex hover:border-[var(--line)]"
+          >
+            <Search style={{ width: '15px', height: '15px', strokeWidth: 1.8 }} />
+            <span>Search...</span>
+            <span style={{
+              marginLeft: 'auto',
+              fontFamily: 'var(--mono)',
+              fontSize: '10px',
+              color: 'var(--tx-lo)',
+              background: 'var(--bg-3)',
+              border: '1px solid var(--line)',
+              borderRadius: '4px',
+              padding: '1px 5px',
+              lineHeight: 1.5
+            }}>⌘K</span>
           </button>
-          <div className="ml-auto flex items-center gap-2 px-2 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium">
-            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            fontSize: '11px',
+            color: 'var(--green)',
+            fontFamily: 'var(--mono)',
+            padding: '4px 9px',
+            borderRadius: '20px',
+            background: 'var(--green-bg)'
+          }}>
+            <span style={{
+              width: '7px',
+              height: '7px',
+              borderRadius: '50%',
+              background: 'var(--green)',
+              animation: 'pulse 2s infinite'
+            }}></span>
             LIVE
           </div>
-          <button type="button" className="btn-modern btn-icon btn-subtle relative" aria-label="Notifications">
-            <Bell className="w-5 h-5" />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+          <button
+            type="button"
+            aria-label="Notifications"
+            style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '6px',
+              display: 'grid',
+              placeItems: 'center',
+              color: 'var(--tx-mid)',
+              position: 'relative',
+              background: 'transparent',
+              border: 'none',
+              cursor: 'pointer',
+              transition: 'all 0.12s'
+            }}
+            className="hover:bg-[var(--bg-2)] hover:text-[var(--tx-hi)]"
+          >
+            <Bell style={{ width: '17px', height: '17px', strokeWidth: 1.7 }} />
+            <span style={{
+              position: 'absolute',
+              top: '6px',
+              right: '7px',
+              width: '7px',
+              height: '7px',
+              borderRadius: '50%',
+              background: 'var(--rose-bright)',
+              border: '2px solid var(--bg-0)'
+            }}></span>
           </button>
-          <div className="w-8 h-8 rounded-full bg-primary-500 flex items-center justify-center text-white text-sm font-medium cursor-pointer hover:ring-2 ring-primary-200 transition">AM</div>
         </header>
-        <div className="flex-1 overflow-auto">{children}</div>
+        <div style={{ flex: 1, overflowY: 'auto' }} className="page-glow">{children}</div>
       </main>
     </div>
   )

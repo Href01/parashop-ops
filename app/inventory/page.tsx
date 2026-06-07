@@ -147,7 +147,7 @@ export default function InventoryPage() {
         </div>
 
         {/* Stats */}
-        <div className="cstat-row">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <Metric
             icon={<Package />}
             tone="blue"
@@ -180,39 +180,38 @@ export default function InventoryPage() {
 
         {/* Alerts Panel */}
         {showAlerts && alerts.length > 0 && (
-          <div className="panel mb20" style={{ borderLeft: '4px solid var(--red)' }}>
-            <div className="panel-head">
-              <AlertTriangle style={{ color: 'var(--red)' }} />
-              <h3>Active Stock Alerts</h3>
-              <span className="badge red">{alerts.length}</span>
-              <div className="spacer"></div>
-              <button className="btn ghost sm" onClick={() => setShowAlerts(false)}>
+          <div className="card-modern mb-6" style={{ borderLeft: '4px solid var(--danger-500)' }}>
+            <div className="card-header">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+              <h3 className="text-lg font-semibold">Active Stock Alerts</h3>
+              <span className="badge-modern badge-danger">{alerts.length}</span>
+              <div className="flex-1"></div>
+              <button className="btn-modern btn-sm btn-subtle" onClick={() => setShowAlerts(false)}>
                 Dismiss all
               </button>
             </div>
-            <div className="panel-pad">
-              <div className="row gap12" style={{ flexDirection: 'column' }}>
+            <div className="card-body">
+              <div className="flex flex-col gap-3">
                 {alerts.slice(0, 5).map((alert) => (
                   <div
                     key={alert.id}
-                    className={`row gap12 p12 rounded-lg border ${getSeverityColor(alert.severity)}`}
-                    style={{ justifyContent: 'space-between', alignItems: 'center' }}
+                    className={`flex items-center justify-between p-3 rounded-lg border ${getSeverityColor(alert.severity)}`}
                   >
                     <div>
-                      <div className="fw600 fs13">{alert.message}</div>
-                      <div className="fs11 tx-lo mt4">
+                      <div className="font-semibold text-sm">{alert.message}</div>
+                      <div className="text-xs text-gray-500 mt-1">
                         {alert.productBrand} • {new Date(alert.createdAt).toLocaleDateString('fr-FR')}
                       </div>
                     </div>
-                    <div className="row gap8">
+                    <div className="flex items-center gap-2">
                       <button
-                        className="btn ghost sm"
+                        className="btn-modern btn-sm btn-subtle"
                         onClick={() => window.location.href = `/products/${alert.productId}`}
                       >
                         View product
                       </button>
                       <button
-                        className="btn sm"
+                        className="btn-modern btn-sm btn-secondary"
                         onClick={() => acknowledgeAlert(alert.id)}
                       >
                         Acknowledge
@@ -226,28 +225,28 @@ export default function InventoryPage() {
         )}
 
         {/* Filters */}
-        <div className="row gap12 mb20">
-          <div className="seg">
+        <div className="mb-6">
+          <div className="inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
             <button
-              className={statusFilter === '' ? 'active' : ''}
+              className={`btn-modern btn-sm ${statusFilter === '' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('')}
             >
               All products
             </button>
             <button
-              className={statusFilter === 'Low stock' ? 'active' : ''}
+              className={`btn-modern btn-sm ${statusFilter === 'Low stock' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('Low stock')}
             >
               Low stock
             </button>
             <button
-              className={statusFilter === 'Out of stock' ? 'active' : ''}
+              className={`btn-modern btn-sm ${statusFilter === 'Out of stock' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('Out of stock')}
             >
               Out of stock
             </button>
             <button
-              className={statusFilter === 'In stock' ? 'active' : ''}
+              className={`btn-modern btn-sm ${statusFilter === 'In stock' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('In stock')}
             >
               In stock
@@ -256,9 +255,9 @@ export default function InventoryPage() {
         </div>
 
         {/* Inventory Table */}
-        <div className="panel">
-          <div className="table-scroll">
-            <table className="tbl">
+        <div className="card-modern">
+          <div className="overflow-x-auto">
+            <table className="table-modern">
               <thead>
                 <tr>
                   <th>Product</th>
@@ -353,13 +352,34 @@ export default function InventoryPage() {
 }
 
 function Metric({ icon, tone, title, value, trend }: { icon: React.ReactNode; tone: string; title: string; value: string; trend?: string }) {
+  const bgColors: Record<string, string> = {
+    blue: 'bg-blue-100',
+    amber: 'bg-amber-100',
+    red: 'bg-red-100',
+    green: 'bg-green-100',
+  }
+  const textColors: Record<string, string> = {
+    blue: 'text-blue-600',
+    amber: 'text-amber-600',
+    red: 'text-red-600',
+    green: 'text-green-600',
+  }
+
   return (
-    <div className="cstat">
-      <div className={`cstat-icon ${tone}`}>{icon}</div>
-      <div className="cstat-main">
-        <div className="cstat-title">{title}</div>
-        <div className="cstat-value">{value}</div>
-        {trend && <div className="cstat-trend">{trend}</div>}
+    <div className="card-modern">
+      <div className="card-body">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">{title}</p>
+          <div className={`w-10 h-10 rounded-lg ${bgColors[tone]} ${textColors[tone]} flex items-center justify-center`}>
+            {icon}
+          </div>
+        </div>
+
+        <div className="flex items-baseline gap-2 mb-2">
+          <p className="text-2xl font-bold text-gray-900">{value}</p>
+        </div>
+
+        {trend && <p className="text-xs text-gray-500">{trend}</p>}
       </div>
     </div>
   )

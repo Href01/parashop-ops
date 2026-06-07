@@ -182,52 +182,61 @@ export default function OrdersPage() {
           </Link>
         </div>
 
-        <div className="ostat-row">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
           {stats.map((item) => (
-            <div key={item.label} className="panel ostat">
-              <div className="ov" style={{ color: item.color }}>
-                {item.value}
-              </div>
-              <div className={`ol st ${item.className}`}>
-                <span className="sd"></span>
-                {item.label}
+            <div key={item.label} className="card-modern">
+              <div className="card-body">
+                <p className="text-xs font-medium text-gray-600 uppercase tracking-wide mb-2">{item.label}</p>
+                <p className="text-3xl font-bold mb-1" style={{ color: item.color }}>
+                  {item.value}
+                </p>
+                <div className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full" style={{ background: item.color }}></span>
+                  <span className="text-xs text-gray-500">{item.label}</span>
+                </div>
               </div>
             </div>
           ))}
         </div>
 
-        <div className="panel">
-          <div className="toolbar">
-            <div className="ord-search">
-              <Search />
-              <input placeholder="Search by name, phone, order #..." />
+        <div className="card-modern">
+          <div className="flex flex-wrap items-center gap-3 p-4 border-b border-gray-200">
+            <div className="relative flex-1 min-w-[240px]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search by name, phone, order #..."
+                className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              />
             </div>
-            <div className="vdiv"></div>
-            <button type="button" className="chip active">
-              All <span className="ct">{orders.length}</span>
-            </button>
-            <button type="button" className="chip">
-              Needs confirmation <span className="ct">{stats[0].value}</span>
-            </button>
-            <button type="button" className="chip">
-              No shipment <span className="ct">{orders.filter((order) => order.status === 'CONFIRMED' && !order.deliveryStatus).length}</span>
-            </button>
-            <button type="button" className="chip">
-              Incomplete <span className="ct">{orders.filter((order) => toNumber(order.completenessScore) < 90).length}</span>
-            </button>
-            <div className="spacer"></div>
-            <button type="button" className="btn sm">
-              <Filter />
+
+            <div className="inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
+              <button type="button" className="btn-modern btn-sm btn-primary">
+                All <span className="ml-1 badge-modern badge-neutral badge-sm">{orders.length}</span>
+              </button>
+              <button type="button" className="btn-modern btn-sm btn-subtle">
+                Pending <span className="ml-1 badge-modern badge-warning badge-sm">{stats[0].value}</span>
+              </button>
+              <button type="button" className="btn-modern btn-sm btn-subtle">
+                No shipment <span className="ml-1 badge-modern badge-info badge-sm">{orders.filter((order) => order.status === 'CONFIRMED' && !order.deliveryStatus).length}</span>
+              </button>
+              <button type="button" className="btn-modern btn-sm btn-subtle">
+                Incomplete <span className="ml-1 badge-modern badge-danger badge-sm">{orders.filter((order) => toNumber(order.completenessScore) < 90).length}</span>
+              </button>
+            </div>
+
+            <button type="button" className="btn-modern btn-sm btn-secondary">
+              <Filter className="w-4 h-4" />
               Filters
             </button>
-            <button type="button" className="btn sm">
+            <button type="button" className="btn-modern btn-sm btn-secondary">
               This week
-              <ChevronDown />
+              <ChevronDown className="w-4 h-4" />
             </button>
           </div>
 
-          <div className="table-scroll">
-            <table className="tbl">
+          <div className="overflow-x-auto">
+            <table className="table-modern">
               <thead>
                 <tr>
                   <th className="select-col">
@@ -356,14 +365,14 @@ export default function OrdersPage() {
             </table>
           </div>
 
-          <div className="between table-foot">
-            <span className="fs12 tx-lo">
-              Showing <b className="tx-mid">{Math.min(orders.length, 100)}</b> of {orders.length} orders
+          <div className="flex items-center justify-between p-4 border-t border-gray-200 bg-gray-50">
+            <span className="text-xs text-gray-600">
+              Showing <span className="font-semibold text-gray-900">{Math.min(orders.length, 100)}</span> of {orders.length} orders
             </span>
-            <div className="row gap6">
-              <button type="button" className="btn sm">Prev</button>
-              <button type="button" className="btn sm active-page">1</button>
-              <button type="button" className="btn sm">Next</button>
+            <div className="flex items-center gap-2">
+              <button type="button" className="btn-modern btn-sm btn-secondary">Prev</button>
+              <button type="button" className="btn-modern btn-sm btn-primary">1</button>
+              <button type="button" className="btn-modern btn-sm btn-secondary">Next</button>
             </div>
           </div>
         </div>
