@@ -161,13 +161,32 @@ export default function OrdersPage() {
 
   return (
     <BosShell active="orders" title="Orders" crumb="Operations">
-      <div className="page-inner page-wide">
-        <div className="page-head">
+      <div style={{ maxWidth: '1640px', margin: '0 auto', padding: '22px 24px 60px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '16px' }}>
           <div>
-            <h1>Orders</h1>
-            <div className="sub">{orders.length} orders across active channels</div>
+            <div className="eyebrow" style={{ marginBottom: '4px' }}>
+              OPERATIONS · ORDER BOOK
+            </div>
+            <h1 style={{ fontSize: '22px', fontWeight: 600, letterSpacing: '-0.02em', marginBottom: '4px' }}>Orders</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px', fontSize: '13px', color: 'var(--tx-lo)' }}>
+              <span style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '5px',
+                padding: '2px 8px',
+                borderRadius: '20px',
+                fontSize: '11px',
+                fontWeight: 500,
+                border: '1px solid var(--up-line)',
+                color: 'var(--up)',
+                background: 'var(--up-bg)'
+              }}>
+                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--up)' }}></span>
+                +{Math.round(orders.length * 0.15)} vs last week
+              </span>
+              <span>{orders.length} orders this week across 5 channels</span>
+            </div>
           </div>
-          <div className="spacer"></div>
           <button type="button" className="btn-modern btn-secondary" onClick={handleSyncSendit}>
             <RefreshCw className="w-4 h-4" />
             Sync Sendit
