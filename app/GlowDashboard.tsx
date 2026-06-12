@@ -15,7 +15,7 @@ interface DashboardStats {
   deliveryRate: number
   roas: number
   revenueSeries: Array<{ date: string; label: string; revenue: number; profit: number }>
-  topProducts: Array<{ name: string; units: number; revenue: number; trend: number }>
+  topProducts: Array<{ name: string; units: number; revenue: number }>
   channels: Array<{ name: string; revenue: number; color: string }>
 }
 
@@ -66,12 +66,12 @@ export default function GlowDashboard() {
     )
   }
 
-  // Product ticker data
-  const tickerAssets = stats.topProducts.slice(0, 8).map((p, i) => ({
+  // Product ticker data — units sold is real; never fabricate a trend %.
+  const tickerAssets = stats.topProducts.slice(0, 8).map((p) => ({
     sym: p.name.substring(0, 5).toUpperCase(),
     name: p.name,
     revenue: formatCurrency(p.revenue),
-    change: p.trend || (Math.random() * 40 - 10),
+    units: p.units,
   }))
 
   return (
@@ -88,8 +88,8 @@ export default function GlowDashboard() {
               <div key={idx} className="ticker-item">
                 <span className="symbol">{asset.sym}</span>
                 <span className="price">{asset.revenue}</span>
-                <span className={`change ${asset.change >= 0 ? 'up' : 'down'}`}>
-                  {asset.change >= 0 ? '▲' : '▼'}{Math.abs(asset.change).toFixed(1)}%
+                <span className="change" style={{ color: 'var(--tx-lo)' }}>
+                  {asset.units} u.
                 </span>
               </div>
             ))}

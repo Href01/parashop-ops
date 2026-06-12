@@ -16,7 +16,7 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 interface NavItem {
   label: string
@@ -35,7 +35,7 @@ const sections: Array<{ label: string; items: NavItem[] }> = [
   {
     label: 'Operations',
     items: [
-      { label: 'Orders', href: '/orders', icon: Package, count: '12', alert: true },
+      { label: 'Orders', href: '/orders', icon: Package },
       { label: 'Products', href: '/products', icon: Box },
       { label: 'Inventory', href: '/inventory', icon: Box },
     ],
@@ -46,12 +46,12 @@ const sections: Array<{ label: string; items: NavItem[] }> = [
       { label: 'Customers', href: '/customers', icon: Users },
       { label: 'Campaigns', href: '/campaigns', icon: Megaphone },
       { label: 'Events', href: '/events', icon: Calendar },
-      { label: 'Content Hub', href: '/content', icon: Sparkles, count: '3' },
+      { label: 'Content Hub', href: '/content', icon: Sparkles },
     ],
   },
   {
     label: 'Team',
-    items: [{ label: 'Work Hub', href: '/work-hub', icon: Flame, count: '5' }],
+    items: [{ label: 'Work Hub', href: '/work-hub', icon: Flame }],
   },
 ]
 
@@ -67,9 +67,22 @@ export default function BosShell({
   children: ReactNode
 }) {
   const [collapsed, setCollapsed] = useState(false)
+  const [isNarrow, setIsNarrow] = useState(false)
+  const shellCollapsed = collapsed || isNarrow
+  const showDesktopChrome = !isNarrow
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 900px)')
+    const updateNarrowState = () => setIsNarrow(mediaQuery.matches)
+
+    updateNarrowState()
+    mediaQuery.addEventListener('change', updateNarrowState)
+
+    return () => mediaQuery.removeEventListener('change', updateNarrowState)
+  }, [])
 
   return (
-    <div className={`bos-app ${collapsed ? 'collapsed' : ''}`} style={{ display: 'grid', gridTemplateColumns: collapsed ? '64px 1fr' : '244px 1fr', minHeight: '100vh' }}>
+    <div className={`bos-app ${shellCollapsed ? 'collapsed' : ''}`}>
       <aside style={{
         background: 'var(--bg-1)',
         borderRight: '1px solid var(--line-soft)',
@@ -102,7 +115,7 @@ export default function BosShell({
           }}>
             S
           </div>
-          {!collapsed && (
+          {!shellCollapsed && (
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600, fontSize: '14px', letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>
                 Shine <span className="glow-rose" style={{ fontWeight: 700 }}>BOS</span>
@@ -117,7 +130,7 @@ export default function BosShell({
         <nav style={{ flex: 1, overflowY: 'auto', padding: '10px 10px 16px' }}>
           {sections.map((section) => (
             <div key={section.label} style={{ marginTop: '14px' }}>
-              {!collapsed && (
+              {!shellCollapsed && (
                 <div style={{
                   fontSize: '10px',
                   textTransform: 'uppercase',
@@ -145,7 +158,7 @@ export default function BosShell({
                       display: 'flex',
                       alignItems: 'center',
                       gap: '10px',
-                      padding: collapsed ? '9px' : '7px 10px',
+                      padding: shellCollapsed ? '9px' : '7px 10px',
                       borderRadius: '6px',
                       color: 'var(--tx-mid)',
                       fontWeight: 500,
@@ -153,11 +166,11 @@ export default function BosShell({
                       position: 'relative',
                       whiteSpace: 'nowrap',
                       marginBottom: '1px',
-                      justifyContent: collapsed ? 'center' : 'flex-start'
+                      justifyContent: shellCollapsed ? 'center' : 'flex-start'
                     }}
                   >
                     <Icon style={{ width: '17px', height: '17px', flexShrink: 0, strokeWidth: 1.7 }} />
-                    {!collapsed && (
+                    {!shellCollapsed && (
                       <>
                         <span style={{ flex: 1 }}>{item.label}</span>
                         {item.count && (
@@ -191,7 +204,7 @@ export default function BosShell({
             cursor: 'pointer',
             transition: 'background 0.12s'
           }} className="hover:bg-[var(--bg-2)]">
-            {!collapsed && (
+            {!shellCollapsed && (
               <>
                 <div style={{ display: 'flex' }}>
                   <div style={{
@@ -225,7 +238,6 @@ export default function BosShell({
                 </div>
                 <div style={{ fontSize: '12px', lineHeight: 1.3, flex: 1 }}>
                   <div>Founders</div>
-                  <small style={{ color: 'var(--tx-lo)', fontSize: '10px' }}>2 online</small>
                 </div>
               </>
             )}
@@ -239,8 +251,10 @@ export default function BosShell({
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
-          gap: '14px',
-          padding: '0 20px',
+          gap: isNarrow ? '8px' : '14px',
+          minWidth: 0,
+          overflow: 'hidden',
+          padding: isNarrow ? '0 10px' : '0 20px',
           borderBottom: '1px solid var(--line-soft)',
           background: 'oklch(0.165 0.012 265 / 0.8)',
           backdropFilter: 'blur(12px)',
@@ -268,11 +282,23 @@ export default function BosShell({
           >
             <PanelLeft style={{ width: '17px', height: '17px', strokeWidth: 1.8 }} />
           </button>
-          <div style={{ fontSize: '14px', fontWeight: 600, letterSpacing: '-0.01em' }}>{title}</div>
-          <div style={{ color: 'var(--tx-lo)', fontSize: '12px' }}>
-            <b style={{ color: 'var(--tx-mid)', fontWeight: 500 }}>{crumb}</b>
-          </div>
-          <button
+          <div style={{
+            flex: isNarrow ? '1 1 auto' : '0 1 auto',
+            fontSize: '14px',
+            fontWeight: 600,
+            letterSpacing: 0,
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap'
+          }}>{title}</div>
+          {showDesktopChrome && (
+            <div style={{ color: 'var(--tx-lo)', fontSize: '12px', flexShrink: 0 }}>
+              <b style={{ color: 'var(--tx-mid)', fontWeight: 500 }}>{crumb}</b>
+            </div>
+          )}
+          {showDesktopChrome && (
+            <button
             type="button"
             style={{
               marginLeft: 'auto',
@@ -289,7 +315,7 @@ export default function BosShell({
               cursor: 'pointer',
               transition: 'border-color 0.12s'
             }}
-            className="hidden md:flex hover:border-[var(--line)]"
+            className="hover:border-[var(--line)]"
           >
             <Search style={{ width: '15px', height: '15px', strokeWidth: 1.8 }} />
             <span>Search...</span>
@@ -303,12 +329,14 @@ export default function BosShell({
               borderRadius: '4px',
               padding: '1px 5px',
               lineHeight: 1.5
-            }}>⌘K</span>
-          </button>
+            }}>Ctrl K</span>
+            </button>
+          )}
           <div style={{
             display: 'flex',
             alignItems: 'center',
             gap: '6px',
+            flexShrink: 0,
             fontSize: '11px',
             color: 'var(--green)',
             fontFamily: 'var(--mono)',
@@ -332,6 +360,7 @@ export default function BosShell({
               width: '32px',
               height: '32px',
               borderRadius: '6px',
+              flexShrink: 0,
               display: 'grid',
               placeItems: 'center',
               color: 'var(--tx-mid)',
@@ -344,16 +373,6 @@ export default function BosShell({
             className="hover:bg-[var(--bg-2)] hover:text-[var(--tx-hi)]"
           >
             <Bell style={{ width: '17px', height: '17px', strokeWidth: 1.7 }} />
-            <span style={{
-              position: 'absolute',
-              top: '6px',
-              right: '7px',
-              width: '7px',
-              height: '7px',
-              borderRadius: '50%',
-              background: 'var(--rose-bright)',
-              border: '2px solid var(--bg-0)'
-            }}></span>
           </button>
         </header>
         <div style={{ flex: 1, overflowY: 'auto' }} className="page-glow">{children}</div>
