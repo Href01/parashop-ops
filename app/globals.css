@@ -804,19 +804,43 @@ body {
 
 .filter-strip {
   align-items: center;
-  background: var(--bg-inset);
+  background: var(--bg-2);
   border: 1px solid var(--line-soft);
-  border-radius: 8px;
+  border-radius: 10px;
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 3px;
   max-width: 100%;
   min-width: 0;
-  padding: 4px;
+  padding: 3px;
 }
 
 .filter-strip .btn-modern {
   flex: 0 0 auto;
+  border-radius: 7px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--tx-mid);
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.filter-strip .btn-modern:hover {
+  background: var(--bg-1);
+  color: var(--tx-hi);
+}
+
+/* Active filter chip (btn-primary inside a filter strip) */
+.filter-strip .btn-primary {
+  background: var(--bg-1);
+  color: var(--rose);
+  box-shadow: var(--shadow-1);
+}
+
+.filter-strip .btn-primary:hover {
+  background: var(--bg-1);
+  color: var(--rose);
 }
 
 .btn {
@@ -1571,31 +1595,33 @@ textarea {
 .st {
   align-items: center;
   display: inline-flex;
-  font-size: 11.5px;
-  font-weight: 500;
+  font-size: 11px;
+  font-weight: 600;
   gap: 6px;
   white-space: nowrap;
+  padding: 3px 9px;
+  border-radius: 20px;
 }
 
 .st .sd {
   border-radius: 50%;
-  height: 7px;
-  width: 7px;
+  height: 6px;
+  width: 6px;
 }
 
-.st-pending { color: var(--amber); }
+.st-pending { color: var(--amber); background: var(--amber-bg); }
 .st-pending .sd { background: var(--amber); }
-.st-confirmed { color: var(--blue); }
+.st-confirmed { color: var(--blue); background: var(--blue-bg); }
 .st-confirmed .sd { background: var(--blue); }
-.st-shipped { color: var(--violet); }
+.st-shipped { color: var(--violet); background: var(--violet-bg); }
 .st-shipped .sd { background: var(--violet); }
-.st-delivered { color: var(--green); }
+.st-delivered { color: var(--green); background: var(--green-bg); }
 .st-delivered .sd { background: var(--green); }
 .st-returned,
-.st-failed { color: var(--red); }
+.st-failed { color: var(--red); background: var(--red-bg); }
 .st-returned .sd,
 .st-failed .sd { background: var(--red); }
-.st-cancelled { color: var(--tx-lo); }
+.st-cancelled { color: var(--tx-lo); background: var(--bg-3); }
 .st-cancelled .sd { background: var(--tx-lo); }
 
 .pos { color: var(--green); }
