@@ -125,7 +125,7 @@ export default function ProductPicker({ onProductsChange }: ProductPickerProps) 
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search by name, brand, or SKU..."
-          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
         />
 
         {/* Search Results Dropdown */}
@@ -162,7 +162,7 @@ export default function ProductPicker({ onProductsChange }: ProductPickerProps) 
                     </div>
                     <button
                       type="button"
-                      className="px-3 py-1 bg-purple-600 text-white text-sm rounded hover:bg-purple-700"
+                      className="px-3 py-1 bg-pink-600 text-white text-sm rounded hover:bg-pink-700"
                       onClick={(e) => {
                         e.stopPropagation()
                         addProduct(product)

@@ -24,6 +24,7 @@ export default function EditCostPriceModal({
     product.costPrice?.toString() || ''
   )
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const calculateMargin = () => {
     const cost = parseFloat(costPrice)
@@ -35,20 +36,16 @@ export default function EditCostPriceModal({
     const cost = parseFloat(costPrice)
 
     if (!cost || cost <= 0) {
-      alert('Please enter a valid cost price')
+      setError('Entrez un prix d\'achat valide (> 0).')
       return
     }
-
-    if (cost >= product.price) {
-      const confirm = window.confirm(
-        `Cost price (${cost} MAD) is higher than retail price (${product.price} MAD). This means negative margin. Continue anyway?`
-      )
-      if (!confirm) return
-    }
+    setError(null)
 
     setSaving(true)
     try {
       await onSave(product.id, cost)
+    } catch {
+      setError('Échec de l\'enregistrement. Réessayez.')
     } finally {
       setSaving(false)
     }
@@ -57,8 +54,8 @@ export default function EditCostPriceModal({
   const margin = calculateMargin()
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="px-6 py-4 border-b">
           <h3 className="text-lg font-semibold text-gray-900">
@@ -92,11 +89,12 @@ export default function EditCostPriceModal({
                 placeholder="Enter cost price..."
                 step="0.01"
                 min="0"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
                 autoFocus
               />
               <span className="absolute right-4 top-2 text-gray-500">MAD</span>
             </div>
+            {error && <p className="text-xs text-red-600 mt-2">{error}</p>}
           </div>
 
           {/* Calculated Margin */}
@@ -144,9 +142,10 @@ export default function EditCostPriceModal({
           <button
             onClick={handleSave}
             disabled={saving || !costPrice}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50"
+            style={{ background: '#E11D74' }}
+            className="px-4 py-2 text-white rounded-lg hover:opacity-90 transition disabled:opacity-50"
           >
-            {saving ? 'Saving...' : 'Save Cost Price'}
+            {saving ? 'Enregistrement…' : 'Enregistrer le prix d\'achat'}
           </button>
         </div>
       </div>

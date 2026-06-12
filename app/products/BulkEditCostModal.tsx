@@ -83,7 +83,7 @@ export default function BulkEditCostModal({
   const selectedCount = selectedIds.size
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden">
         {/* Header */}
         <div className="px-6 py-4 border-b flex items-center justify-between">
@@ -113,7 +113,7 @@ export default function BulkEditCostModal({
                 onClick={() => setMethod('percentage')}
                 className={`flex-1 px-4 py-3 border-2 rounded-lg transition ${
                   method === 'percentage'
-                    ? 'border-purple-600 bg-purple-50 text-purple-700'
+                    ? 'border-pink-600 bg-pink-50 text-pink-700'
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
@@ -127,7 +127,7 @@ export default function BulkEditCostModal({
                 onClick={() => setMethod('fixed')}
                 className={`flex-1 px-4 py-3 border-2 rounded-lg transition ${
                   method === 'fixed'
-                    ? 'border-purple-600 bg-purple-50 text-purple-700'
+                    ? 'border-pink-600 bg-pink-50 text-pink-700'
                     : 'border-gray-200 hover:border-gray-300'
                 }`}
               >
@@ -153,7 +153,7 @@ export default function BulkEditCostModal({
                 min="0"
                 max="100"
                 step="0.1"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
               />
               <p className="text-xs text-gray-500 mt-1">
                 Cost will be calculated as: Price × (1 - {percentage}%)
@@ -171,7 +171,7 @@ export default function BulkEditCostModal({
                 placeholder="e.g., 150"
                 min="0"
                 step="0.01"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-pink-500 focus:border-transparent"
               />
               <p className="text-xs text-gray-500 mt-1">
                 All selected products will have the same cost price
@@ -195,14 +195,14 @@ export default function BulkEditCostModal({
                   <label
                     key={product.id}
                     className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition ${
-                      isSelected ? 'bg-purple-50' : ''
+                      isSelected ? 'bg-pink-50' : ''
                     }`}
                   >
                     <input
                       type="checkbox"
                       checked={isSelected}
                       onChange={() => toggleProduct(product.id)}
-                      className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                      className="w-4 h-4 text-pink-600 rounded focus:ring-pink-500"
                     />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium text-gray-900 truncate">
@@ -220,7 +220,7 @@ export default function BulkEditCostModal({
               <button
                 type="button"
                 onClick={() => setSelectedIds(new Set(products.map(p => p.id)))}
-                className="text-xs text-purple-600 hover:text-purple-700"
+                className="text-xs text-pink-600 hover:text-pink-700"
               >
                 Select All
               </button>
@@ -228,7 +228,7 @@ export default function BulkEditCostModal({
               <button
                 type="button"
                 onClick={() => setSelectedIds(new Set())}
-                className="text-xs text-purple-600 hover:text-purple-700"
+                className="text-xs text-pink-600 hover:text-pink-700"
               >
                 Deselect All
               </button>
@@ -260,7 +260,7 @@ export default function BulkEditCostModal({
           <button
             onClick={handleSave}
             disabled={saving || selectedCount === 0}
-            className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50"
+            className="px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 transition disabled:opacity-50"
           >
             {saving ? 'Saving...' : `Update ${selectedCount} Product${selectedCount !== 1 ? 's' : ''}`}
           </button>
