@@ -28,13 +28,39 @@ export default function ProductPicker({ onProductsChange }: ProductPickerProps) 
   const [loading, setLoading] = useState(false)
   const [showResults, setShowResults] = useState(false)
 
-  // Fetch products when search changes
+  // Fetch products when search changes — debounced (300ms) and race-safe
+  // (aborts the in-flight request so a slow earlier response can't overwrite
+  // a newer one).
   useEffect(() => {
-    if (search.length >= 2) {
-      fetchProducts()
-    } else {
+    if (search.length < 2) {
       setProducts([])
       setShowResults(false)
+      return
+    }
+
+    const controller = new AbortController()
+    const timer = setTimeout(async () => {
+      setLoading(true)
+      try {
+        const res = await fetch(`/api/ops/products?search=${encodeURIComponent(search)}`, {
+          signal: controller.signal,
+        })
+        const data = await res.json()
+        // API returns an array on success but { error } on failure — guard it.
+        setProducts(Array.isArray(data) ? data : [])
+        setShowResults(true)
+      } catch (error) {
+        if ((error as Error)?.name !== 'AbortError') {
+          console.error('Failed to fetch products:', error)
+        }
+      } finally {
+        setLoading(false)
+      }
+    }, 300)
+
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
     }
   }, [search])
 
@@ -42,20 +68,6 @@ export default function ProductPicker({ onProductsChange }: ProductPickerProps) 
   useEffect(() => {
     onProductsChange(selectedProducts)
   }, [selectedProducts])
-
-  const fetchProducts = async () => {
-    setLoading(true)
-    try {
-      const res = await fetch(`/api/ops/products?search=${encodeURIComponent(search)}`)
-      const data = await res.json()
-      setProducts(data)
-      setShowResults(true)
-    } catch (error) {
-      console.error('Failed to fetch products:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
 
   const addProduct = (product: Product) => {
     // Check if already added

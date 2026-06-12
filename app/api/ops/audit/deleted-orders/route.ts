@@ -13,8 +13,18 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url)
-    const limit = parseInt(searchParams.get('limit') || '50')
-    const orderId = searchParams.get('orderId')
+
+    // Validate + clamp limit; parameterize it (NaN/unbounded interpolation removed).
+    const rawLimit = Number(searchParams.get('limit'))
+    const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(Math.trunc(rawLimit), 1), 200) : 50
+
+    // Only filter by orderId when it parses to a valid integer.
+    const rawOrderId = searchParams.get('orderId')
+    const orderId = rawOrderId !== null ? Number(rawOrderId) : null
+    const hasOrderId = orderId !== null && Number.isInteger(orderId)
+    if (rawOrderId !== null && !hasOrderId) {
+      return NextResponse.json({ error: 'orderId must be an integer' }, { status: 400 })
+    }
 
     let query = `
       SELECT
@@ -30,20 +40,24 @@ export async function GET(request: NextRequest) {
     `
 
     const params: any[] = []
-    if (orderId) {
-      query += ` WHERE "orderId" = $1`
-      params.push(parseInt(orderId))
+    if (hasOrderId) {
+      params.push(orderId)
+      query += ` WHERE "orderId" = $${params.length}`
     }
 
-    query += ` ORDER BY "deletedAt" DESC LIMIT ${limit}`
+    params.push(limit)
+    query += ` ORDER BY "deletedAt" DESC LIMIT $${params.length}`
 
     const result = await pool.query(query, params)
 
-    // Parse orderData JSON
-    const logs = result.rows.map((row: any) => ({
-      ...row,
-      orderData: typeof row.orderData === 'string' ? JSON.parse(row.orderData) : row.orderData
-    }))
+    // Parse orderData JSON defensively — a malformed row must not 500 the whole list.
+    const logs = result.rows.map((row: any) => {
+      let orderData = row.orderData
+      if (typeof orderData === 'string') {
+        try { orderData = JSON.parse(orderData) } catch { /* keep raw string */ }
+      }
+      return { ...row, orderData }
+    })
 
     return NextResponse.json({
       count: logs.length,
