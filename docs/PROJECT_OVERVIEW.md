@@ -1,11 +1,15 @@
 # Project Overview - Shine Cosmetics BOS
 
-**Last Updated:** 2026-06-05  
+**Last Updated:** 2026-06-08
 **Purpose:** Complete mental model of the system
 
 ---
 
 ## System Architecture
+
+Current flow: the storefront and BOS share the same PostgreSQL database. Website orders are created once by the storefront and become visible to BOS because both systems query the same `Order` table. BOS must not create duplicate orders through a webhook. `/api/webhooks/orders` is intentionally disabled with HTTP 410.
+
+Sendit integration remains BOS-owned: founders confirm or create shipments from BOS, then Sendit status can be refreshed through `/api/ops/orders/sync-sendit`.
 
 ```
 ┌─────────────────────────────────────────────────────────┐
@@ -339,13 +343,12 @@ NEXTAUTH_URL=https://...
 SENDIT_PUBLIC_KEY=...
 SENDIT_PRIVATE_KEY=...
 SENDIT_PICKUP_DISTRICT_ID=1  # Your warehouse district
-WEBHOOK_SECRET=...  # Shared with main site
 ```
 
 ### Main Site Specific
 ```bash
-WEBHOOK_SECRET=...  # Shared with BOS
-# (Same secret in both systems for webhook auth)
+# No order sync webhook secret is required for BOS order visibility.
+# The storefront and BOS share the same database.
 ```
 
 ---
@@ -389,9 +392,11 @@ WEBHOOK_SECRET=...  # Shared with BOS
 ## Known Issues & Workarounds
 
 ### Issue: Webhook Duplicates
+**Current status (2026-06-08):** Order webhook creation is disabled. BOS should read orders from the shared `Order` table and must not create duplicate copies.
+
 **Symptom:** 2 orders in main site → 2 in BOS  
-**Cause:** Webhook calling itself (fixed 2026-06-05)  
-**Solution:** Webhook now calls BOS directly, not recursive
+**Cause:** A webhook attempted to copy orders between apps sharing one database
+**Solution:** Order webhook creation is disabled; BOS reads the shared `Order` table directly
 
 ### Issue: String Concatenation (33019)
 **Symptom:** Total shows 33019 instead of 349  
@@ -412,10 +417,12 @@ WEBHOOK_SECRET=...  # Shared with BOS
 **Prevention:** Validation at order creation
 
 ### Issue: Missing Customer Order
+**Current debug path (2026-06-08):** Confirm both apps use the same `DATABASE_URL`, then check whether the order exists in the shared `Order` table. Do not troubleshoot webhook secrets for order visibility.
+
 **Symptom:** Customer placed order, not in BOS  
-**Cause:** Webhook not configured or failed  
-**Debug:** Check email confirmation (if sent, order was created)  
-**Solution:** Manually recreate in BOS from email details
+**Cause:** Wrong `DATABASE_URL`, failed storefront order creation, or a BOS query/API issue
+**Debug:** Check email confirmation, shared database record, and both apps' database URLs
+**Solution:** Fix the shared database connection or recreate only after confirming no order exists
 
 ---
 
@@ -520,19 +527,21 @@ WEBHOOK_SECRET=...  # Shared with BOS
 3. Restart Next.js if needed
 
 ### Orders Not Syncing
-1. Check WEBHOOK_SECRET matches both systems
-2. Check main site logs for webhook errors
-3. Manually recreate important orders in BOS
+Current order visibility is shared-database based, not webhook based.
+
+1. Confirm storefront and BOS point at the same `DATABASE_URL`
+2. Check whether the order exists in the shared `Order` table
+3. Check BOS order API/query logs for errors
+4. Manually recreate only after confirming the order was not created
 
 ---
 
 ## Future Improvements
 
-1. **Real-time sync** - WebSockets for instant updates
-2. **Shared database** - Eliminate webhook complexity
-3. **Automated testing** - Contract tests for Sendit
-4. **Monitoring** - Track validation failures
-5. **Bulk operations** - Import orders, bulk Sendit creation
+1. **Real-time updates** - Push fresh shared-database data to open dashboards
+2. **Automated testing** - Contract tests for Sendit and order creation
+3. **Monitoring** - Track dashboard, validation, and Sendit failures
+4. **Bulk operations** - Import orders, bulk Sendit creation
 
 ---
 

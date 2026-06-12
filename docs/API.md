@@ -363,48 +363,27 @@ Update campaign metrics.
 
 ## Webhooks
 
-### POST `/webhooks/sendit`
-Receive Sendit delivery status updates.
+### POST `/api/ops/orders/sync-sendit`
+Refresh Sendit statuses for existing BOS orders with tracking IDs.
 
-**Headers**:
-```
-X-Sendit-Signature: <hmac-signature>
-Content-Type: application/json
-```
+**Status**: implemented, founder session required.
 
-**Request Body**:
-```json
-{
-  "event": "shipment.delivered",
-  "shipmentId": "SND-123456",
-  "trackingId": "TRK-789012",
-  "status": "DELIVERED",
-  "deliveredAt": "2026-06-05T11:30:00Z",
-  "deliveryCost": 32.00
-}
-```
+---
+
+### POST `/api/webhooks/orders`
+Website order creation webhook.
+
+**Status**: intentionally disabled. The storefront and BOS share the same database, so webhook order creation would duplicate orders.
 
 **Response**:
 ```json
 {
-  "received": true
+  "error": "Order webhook sync is disabled",
+  "reason": "The storefront and BOS share the same database, so webhook order creation would duplicate orders."
 }
 ```
 
-**Status**: `200 OK`
-
----
-
-### POST `/webhooks/website-orders`
-Sync orders created on website (Coming Soon).
-
-**Request Body**:
-```json
-{
-  "orderId": 42,
-  "action": "created"
-}
-```
+**HTTP Status**: `410 Gone`
 
 ---
 

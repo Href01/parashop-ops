@@ -1,5 +1,7 @@
 # Shine Cosmetics BOS - Complete System Documentation
 
+> Legacy planning document. For current setup, deployment, auth, webhook, and missing-work status, use `README.md`, `QUICK_START.md`, `DEPLOYMENT.md`, `docs/PROJECT_OVERVIEW.md`, and `BROKEN_BUTTONS_AUDIT.md`. Some examples below still describe earlier Phase 1/2 plans.
+
 **Back Office System for E-commerce Beauty Products in Morocco**
 
 Version: 1.0  

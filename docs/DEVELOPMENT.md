@@ -2,7 +2,7 @@
 
 Local setup, common tasks, and troubleshooting for BOS development.
 
-**Last Updated**: June 4, 2026
+**Last Updated**: June 8, 2026
 
 ---
 
@@ -44,11 +44,7 @@ DATABASE_URL="postgresql://shinecosmetics_owner:YOUR_PASSWORD@ep-name.region.aws
 
 # NextAuth (generate secret with: openssl rand -base64 32)
 NEXTAUTH_SECRET="your-secret-key-here"
-NEXTAUTH_URL="http://localhost:3000"
-
-# Google OAuth (get from Google Cloud Console)
-GOOGLE_CLIENT_ID="your-client-id.apps.googleusercontent.com"
-GOOGLE_CLIENT_SECRET="your-client-secret"
+NEXTAUTH_URL="http://localhost:3001"
 
 # Sendit API
 SENDIT_PUBLIC_KEY="e6ef89a1a8a2c9f8cf95cc6cf10e3e3b"
@@ -60,12 +56,10 @@ SENDIT_PRIVATE_KEY="gNKoj1BQIdFF9YxvNUytq1UQ0TZtyluX"
 2. Select `shinecosmetics` project
 3. Copy connection string
 
-**Get Google OAuth credentials**:
-1. Go to [Google Cloud Console](https://console.cloud.google.com)
-2. Create project or select existing
-3. Enable Google+ API
-4. Create OAuth 2.0 credentials
-5. Add authorized redirect: `http://localhost:3000/api/auth/callback/google`
+**Auth credentials**:
+1. BOS uses the NextAuth credentials provider in `app/api/auth/[...nextauth]/route.ts`.
+2. Allowed founder emails are enforced in `lib/auth.ts`.
+3. No Google OAuth credentials are required for local development.
 
 ### 5. Run Development Server
 
@@ -73,7 +67,7 @@ SENDIT_PRIVATE_KEY="gNKoj1BQIdFF9YxvNUytq1UQ0TZtyluX"
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+Open [http://localhost:3001](http://localhost:3001)
 
 ---
 
@@ -158,7 +152,7 @@ export async function GET(request: NextRequest) {
 }
 
 # 3. Test
-curl http://localhost:3000/api/ops/campaigns
+curl http://localhost:3001/api/ops/campaigns
 ```
 
 ### Update Shared Component
@@ -196,7 +190,7 @@ npx tsc --noEmit
 
 # 5. Test locally
 npm run dev
-# Visit http://localhost:3000 and test feature
+# Visit http://localhost:3001 and test feature
 
 # 6. Commit
 git add .
@@ -404,11 +398,11 @@ Before pushing:
 # Copy next-auth.session-token value
 
 # Test GET
-curl -X GET 'http://localhost:3000/api/ops/orders' \
+curl -X GET 'http://localhost:3001/api/ops/orders' \
   -H 'Cookie: next-auth.session-token=YOUR_TOKEN'
 
 # Test POST
-curl -X POST 'http://localhost:3000/api/ops/orders' \
+curl -X POST 'http://localhost:3001/api/ops/orders' \
   -H 'Content-Type: application/json' \
   -H 'Cookie: next-auth.session-token=YOUR_TOKEN' \
   -d '{

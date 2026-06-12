@@ -1,135 +1,75 @@
-# BOS Broken Buttons - Complete Audit
+# BOS UI / Tool State Audit
 
-## Dashboard (app/DashboardPage.tsx)
+Last updated: 2026-06-08
 
-### ❌ Non-Working Buttons:
-1. **Time Period Filters** (Lines 382-387)
-   - Today button - no onClick
-   - 7D button - no onClick (currently shows as active)
-   - 30D button - no onClick
-   - QTD button - no onClick
+## Fixed In This Pass
 
-2. **Export Button** (Lines 389-392)
-   - Export button - no onClick handler
+- Orders page search now filters by order id, order number, customer, phone, city, channel, and product names.
+- Orders status pills now filter: All, Pending, No shipment, Incomplete.
+- Orders date control now cycles Today, This week, 30 days, All time.
+- Orders pagination now pages through filtered results.
+- Orders "Sync Sendit" now calls `/api/ops/orders/sync-sendit`.
+- Products pagination now pages through result sets.
+- Products row action now opens the cost editor instead of doing nothing.
+- Campaign and event creation now redirect using API-returned IDs.
+- Campaign/event API sorting now uses whitelisted columns.
+- Major app sections now have authenticated layouts.
+- Sendit shipment creation now sends real product names and quantities in the `products` field instead of generic order/item text.
+- Sendit COD now defaults to the order total unless the payment method is explicitly prepaid.
+- Sendit tracking sync now stores in-transit statuses and maps final statuses from the current Sendit status set.
+- Sendit city/district selection now saves and sends the selected `senditDistrictId`; shipment creation no longer guesses unknown city text as Casablanca Fida.
+- Campaign APIs now tolerate the live storefront schema (`slug`, `active`, `startsAt`, `endsAt`) and return safe zero metrics when ops analytics tables are absent.
+- Event APIs now return an explicit not-installed state instead of raw 500s when event tables are not present.
+- Dashboard KPIs now use live order financials: booked revenue/profit only from `CONFIRMED` and `DELIVERED` orders, order pipeline from valid local statuses, real `sourceChannel` mix, and conservative profit when cost data is missing.
+- Static sidebar badge counts were removed until they can be backed by live stats.
 
-3. **Search Button** (Line 338)
-   - Search bar - not functional (decorative only)
+## Still Missing
 
-4. **Notifications Bell** (Line 346)
-   - Bell icon - no onClick handler
+### Dashboard
 
-5. **User Avatar** (Line 350)
-   - Avatar - no dropdown menu
+- Global search in the top bar is still decorative.
+- Notifications bell has no dropdown or read state.
+- Founder avatar has no account menu.
+- Dashboard API has a fallback, but production still needs monitoring for "Executive dashboard unavailable" cases.
 
----
+### Orders
 
-## Products Page (app/products/page.tsx)
+- Filters are client-side over the latest 100 API rows; server-side search/date pagination is still needed for larger order volume.
+- Bulk select checkboxes are visual only.
+- Delete still uses a browser confirm/alert flow instead of a proper modal/toast pattern.
 
-### ✅ FIXED (Previous commits):
-- Bulk edit costs - NOW WORKING ✅
-- Export - NOW WORKING ✅
-- Add product - NOW WORKING ✅
-- Low stock filter - NOW WORKING ✅
-- Missing cost filter - NOW WORKING ✅
+### Products
 
-### ❌ Non-Working Buttons:
-1. **Pagination** (Lines 254-255)
-   - Prev button - no onClick
-   - Page 1 button - no onClick
-   - Next button - no onClick
+- Row actions only open cost editing; full product actions/detail view are still missing.
+- Pagination is client-side over the latest 100 API rows.
+- Add product sends founders to the storefront admin instead of a BOS-native product flow.
 
-2. **More Actions** (Line 239-241)
-   - Three dots menu button - no dropdown
+### Inventory
 
----
+- Add stock is still a placeholder alert.
+- Stock adjustments need a real movement form tied to `/api/ops/inventory/movement`.
 
-## Orders Page
+### Customers
 
-### Status: NOT AUDITED YET
-- Need to check for broken buttons
+- Add customer is still a placeholder because customers are currently created through orders.
+- Customer detail/actions should be checked against current workflows.
 
----
+### Content Hub
 
-## Inventory Page (app/inventory/page.tsx)
+- New content and Add card actions are placeholder alerts.
+- Calendar/table views are UI-only placeholders unless wired elsewhere.
 
-### Status: NOT AUDITED YET
-- Need to check if page exists and audit buttons
+### Work Hub
 
----
+- New task and Decision log actions are placeholder alerts.
+- Task persistence is not implemented.
 
-## Customers Page (app/customers/page.tsx)
+## Engineering Follow-Ups
 
-### Status: NOT AUDITED YET
-- Need to check if page exists and audit buttons
-
----
-
-## Campaigns Page (app/campaigns/page.tsx)
-
-### ✅ WORKING:
-- New campaign button - WORKS ✅
-- Status filters - WORK ✅
-
-### ❌ Potential Issues:
-- Need to verify all buttons in campaign detail page
-
----
-
-## Events Page (app/events/page.tsx)
-
-### ✅ WORKING:
-- New event button - WORKS ✅
-- Status filters - WORK ✅
-
-### ❌ Potential Issues:
-- Need to verify all buttons in event detail page
-
----
-
-## Content Hub (app/content/page.tsx)
-
-### ✅ FIXED:
-- View toggles - WORK ✅
-- New content - WORKS (alert) ✅
-- Add buttons - WORK (alerts) ✅
-
----
-
-## Work Hub (app/work-hub/page.tsx)
-
-### ✅ FIXED:
-- Task filters - WORK ✅
-- Decision log - WORKS (alert) ✅
-- New task - WORKS (alert) ✅
-
----
-
-## SUMMARY
-
-### Critical (High Priority):
-1. Dashboard time period filters
-2. Dashboard export
-3. Products pagination
-4. Orders page (full audit needed)
-5. Inventory page (full audit needed)
-6. Customers page (full audit needed)
-
-### Medium Priority:
-7. Dashboard search functionality
-8. Dashboard notifications
-9. Dashboard user menu
-10. Products more actions menu
-
-### Low Priority (Can be placeholders):
-11. Content Hub real functionality
-12. Work Hub real functionality
-
----
-
-## NEXT STEPS:
-
-1. ✅ Create modern design system CSS
-2. ⏳ Audit Orders, Inventory, Customers pages
-3. ⏳ Fix all broken buttons with proper handlers
-4. ⏳ Apply modern UI design to all pages
-5. ⏳ Test everything end-to-end
+- Move all `/api/ops/*` routes to the shared `getOpsSession()` founder guard.
+- Add E2E coverage for core flows: sign in, dashboard, create order, confirm order, create Sendit, sync Sendit, campaign/event creation.
+- Add server-side pagination/filtering to Orders and Products APIs.
+- Replace alert/confirm calls with consistent modal and toast components.
+- Decide whether to install the planned event/marketing analytics tables (`Event`, `EventMetrics`, `EventProduct`, `EventCategory`, `CampaignMetrics`, `CampaignCost`) or keep the ops UI in compatibility mode with the storefront campaign schema.
+- Fill missing product cost prices so dashboard profit/margin can be fully accurate for legacy delivered orders.
+- Resolve the ESLint warning backlog instead of keeping it suppressed to warnings.
