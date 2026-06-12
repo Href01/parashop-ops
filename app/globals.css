@@ -5,62 +5,62 @@
 @tailwind utilities;
 
 :root {
-  /* ---- Warm plum-black surfaces (Glow Terminal) ---- */
-  --bg-0: oklch(0.158 0.014 340);
-  --bg-1: oklch(0.195 0.016 340);
-  --bg-2: oklch(0.232 0.018 340);
-  --bg-3: oklch(0.268 0.02 340);
-  --bg-inset: oklch(0.132 0.013 340);
-  --bg-soft: oklch(0.232 0.018 340 / 0.58);
+  /* ---- Light surfaces (Notion / ClickUp clarity) ---- */
+  --bg-0: oklch(0.984 0.002 95);   /* app background — warm off-white */
+  --bg-1: oklch(1 0 0);            /* cards, sidebar, header — white */
+  --bg-2: oklch(0.967 0.002 95);   /* hover / subtle tiles */
+  --bg-3: oklch(0.928 0.003 95);   /* chips, bar tracks */
+  --bg-inset: oklch(0.955 0.002 95);
+  --bg-soft: oklch(0.967 0.002 95 / 0.7);
 
-  /* Borders */
-  --line: oklch(0.32 0.018 340);
-  --line-soft: oklch(0.268 0.016 340);
-  --line-strong: oklch(0.4 0.02 340);
+  /* Borders — subtle hairlines */
+  --line: oklch(0.9 0.003 95);
+  --line-soft: oklch(0.935 0.003 95);
+  --line-strong: oklch(0.85 0.004 95);
 
-  /* Text colors */
-  --tx-hi: oklch(0.975 0.006 340);
-  --tx-mid: oklch(0.76 0.012 340);
-  --tx-lo: oklch(0.62 0.016 340);
-  --tx-faint: oklch(0.51 0.016 340);
+  /* Text — ink on white */
+  --tx-hi: oklch(0.27 0.012 280);
+  --tx-mid: oklch(0.46 0.012 280);
+  --tx-lo: oklch(0.585 0.01 280);
+  --tx-faint: oklch(0.7 0.008 280);
 
-  /* ---- Brand: Blush rose + rose-gold ---- */
-  --rose: oklch(0.72 0.15 15);
-  --rose-bright: oklch(0.78 0.16 14);
-  --rose-dim: oklch(0.52 0.12 15);
-  --rose-bg: oklch(0.72 0.15 15 / 0.14);
-  --rose-line: oklch(0.72 0.15 15 / 0.34);
+  /* ---- Brand: rose (deepened for white text / light bg) ---- */
+  --rose: oklch(0.56 0.18 12);
+  --rose-bright: oklch(0.58 0.2 12);
+  --rose-dim: oklch(0.48 0.15 12);
+  --rose-bg: oklch(0.6 0.19 12 / 0.1);
+  --rose-line: oklch(0.6 0.19 12 / 0.24);
 
-  /* ---- Gold / champagne (beauty highlight) ---- */
-  --gold: oklch(0.83 0.1 84);
-  --gold-bright: oklch(0.88 0.11 86);
-  --gold-bg: oklch(0.83 0.1 84 / 0.13);
-  --gold-line: oklch(0.83 0.1 84 / 0.32);
-  --champagne: oklch(0.91 0.045 86);
+  /* ---- Gold / champagne ---- */
+  --gold: oklch(0.66 0.11 78);
+  --gold-bright: oklch(0.7 0.12 82);
+  --gold-bg: oklch(0.66 0.11 78 / 0.12);
+  --gold-line: oklch(0.66 0.11 78 / 0.28);
+  --champagne: oklch(0.78 0.05 86);
 
-  /* ---- Semantic ---- */
-  --green: oklch(0.76 0.15 162);
-  --green-bg: oklch(0.76 0.15 162 / 0.13);
-  --green-line: oklch(0.76 0.15 162 / 0.3);
-  --red: oklch(0.68 0.2 23);
-  --red-bg: oklch(0.68 0.2 23 / 0.14);
-  --red-line: oklch(0.68 0.2 23 / 0.32);
-  --amber: oklch(0.81 0.14 78);
-  --amber-bg: oklch(0.81 0.14 78 / 0.13);
-  --amber-line: oklch(0.81 0.14 78 / 0.3);
-  --blue: oklch(0.7 0.13 245);
-  --blue-bg: oklch(0.7 0.13 245 / 0.14);
-  --violet: oklch(0.7 0.15 295);
-  --violet-bg: oklch(0.7 0.15 295 / 0.14);
-  --teal: oklch(0.75 0.11 195);
-  --teal-bg: oklch(0.75 0.11 195 / 0.14);
+  /* ---- Semantic (deepened for readability on light) ---- */
+  --green: oklch(0.55 0.14 162);
+  --green-bg: oklch(0.55 0.14 162 / 0.1);
+  --green-line: oklch(0.55 0.14 162 / 0.26);
+  --red: oklch(0.55 0.2 23);
+  --red-bg: oklch(0.55 0.2 23 / 0.1);
+  --red-line: oklch(0.55 0.2 23 / 0.26);
+  --amber: oklch(0.6 0.13 66);
+  --amber-bg: oklch(0.6 0.13 66 / 0.12);
+  --amber-line: oklch(0.6 0.13 66 / 0.28);
+  --blue: oklch(0.55 0.16 250);
+  --blue-bg: oklch(0.55 0.16 250 / 0.1);
+  --violet: oklch(0.55 0.18 295);
+  --violet-bg: oklch(0.55 0.18 295 / 0.1);
+  --teal: oklch(0.55 0.1 195);
+  --teal-bg: oklch(0.55 0.1 195 / 0.1);
 
   /* Channel colors */
-  --c-website: oklch(0.7 0.13 245);
-  --c-whatsapp: oklch(0.76 0.15 150);
-  --c-instagram: oklch(0.7 0.16 12);
-  --c-tiktok: oklch(0.75 0.11 195);
-  --c-manual: oklch(0.75 0.01 265);
+  --c-website: oklch(0.55 0.16 250);
+  --c-whatsapp: oklch(0.5 0.14 150);
+  --c-instagram: oklch(0.55 0.19 12);
+  --c-tiktok: oklch(0.45 0.05 250);
+  --c-manual: oklch(0.6 0.01 280);
 
   /* Fonts */
   --font: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
@@ -70,7 +70,7 @@
   --radius: 9px;
   --radius-sm: 6px;
   --radius-lg: 14px;
-  --shadow-1: 0 1px 2px oklch(0 0 0 / 0.4);
+  --shadow-1: 0 1px 2px oklch(0 0 0 / 0.06);
   --sidebar-w: 244px;
   --sidebar-w-collapsed: 64px;
   --topbar-h: 56px;
@@ -124,7 +124,7 @@ body {
   background: var(--bg-1);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.04);
 }
 
 .panel-head {

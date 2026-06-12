@@ -260,7 +260,7 @@ export default function BosShell({
           overflow: 'hidden',
           padding: isNarrow ? '0 10px' : '0 20px',
           borderBottom: '1px solid var(--line-soft)',
-          background: 'oklch(0.165 0.012 265 / 0.8)',
+          background: 'oklch(1 0 0 / 0.8)',
           backdropFilter: 'blur(12px)',
           position: 'sticky',
           top: 0,

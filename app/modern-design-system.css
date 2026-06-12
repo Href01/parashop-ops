@@ -27,17 +27,17 @@
   --gray-800: #262626;
   --gray-900: #171717;
 
-  /* Primary - Purple (Notion-inspired) */
-  --primary-50: #FAF5FF;
-  --primary-100: #F3E8FF;
-  --primary-200: #E9D5FF;
-  --primary-300: #D8B4FE;
-  --primary-400: #C084FC;
-  --primary-500: #A855F7;
-  --primary-600: #9333EA;
-  --primary-700: #7E22CE;
-  --primary-800: #6B21A8;
-  --primary-900: #581C87;
+  /* Primary - Brand rose (Shine Cosmetics, matches storefront #E11D74) */
+  --primary-50: #FFF1F5;
+  --primary-100: #FFE4EC;
+  --primary-200: #FECDD8;
+  --primary-300: #FDA4BC;
+  --primary-400: #F76A95;
+  --primary-500: #EC3A72;
+  --primary-600: #E11D74;
+  --primary-700: #BE185D;
+  --primary-800: #9D174D;
+  --primary-900: #831843;
 
   /* Success - Green */
   --success-50: #F0FDF4;

@@ -66,37 +66,8 @@ export default function GlowDashboard() {
     )
   }
 
-  // Product ticker data — units sold is real; never fabricate a trend %.
-  const tickerAssets = stats.topProducts.slice(0, 8).map((p) => ({
-    sym: p.name.substring(0, 5).toUpperCase(),
-    name: p.name,
-    revenue: formatCurrency(p.revenue),
-    units: p.units,
-  }))
-
   return (
     <div style={{ flex: 1, overflowY: 'auto' }}>
-      {/* Ticker Tape */}
-      <div className="ticker">
-        <div className="ticker-label">
-          <span className="ticker-pulse"></span>
-          LIVE
-        </div>
-        <div className="ticker-track-wrap">
-          <div className="ticker-track">
-            {[...tickerAssets, ...tickerAssets].map((asset, idx) => (
-              <div key={idx} className="ticker-item">
-                <span className="symbol">{asset.sym}</span>
-                <span className="price">{asset.revenue}</span>
-                <span className="change" style={{ color: 'var(--tx-lo)' }}>
-                  {asset.units} u.
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
       {/* Main Content */}
       <div style={{ maxWidth: '1640px', margin: '0 auto', padding: '22px 24px 60px' }}>
 
