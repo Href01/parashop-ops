@@ -11,6 +11,7 @@ import {
   PanelLeft,
   Search,
   Sparkles,
+  Target,
   Users,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -30,7 +31,10 @@ interface NavItem {
 const sections: Array<{ label: string; items: NavItem[] }> = [
   {
     label: 'Overview',
-    items: [{ label: 'Dashboard', href: '/', icon: LayoutDashboard }],
+    items: [
+      { label: 'Dashboard', href: '/', icon: LayoutDashboard },
+      { label: 'Focus', href: '/intelligence', icon: Target },
+    ],
   },
   {
     label: 'Operations',
@@ -61,7 +65,7 @@ export default function BosShell({
   crumb,
   children,
 }: {
-  active: 'dashboard' | 'orders' | 'products' | 'customers' | 'inventory' | 'campaigns' | 'events' | 'content' | 'work'
+  active: 'dashboard' | 'intelligence' | 'orders' | 'products' | 'customers' | 'inventory' | 'campaigns' | 'events' | 'content' | 'work'
   title: string
   crumb: string
   children: ReactNode
