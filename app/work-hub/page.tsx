@@ -60,7 +60,7 @@ export default function WorkHubPage() {
           <div className="panel">
             <div className="panel-head">
               <h3>Tasks</h3>
-              <div className="inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
+              <div className="filter-strip inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
                 <button className={`btn-modern btn-sm ${taskFilter === 'All' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setTaskFilter('All')}>
                   All <span className="ml-1 badge-modern badge-neutral badge-sm">12</span>
                 </button>

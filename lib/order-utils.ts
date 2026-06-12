@@ -78,6 +78,46 @@ export function calculateOrderTotals(
 }
 
 /**
+ * Sendit COD should default to the order total unless an order is explicitly prepaid.
+ */
+export function calculateCodAmount(paymentMethod: unknown, total: unknown): number {
+  const amount = Number(total)
+  if (!Number.isFinite(amount) || amount < 0) return 0
+
+  const method = typeof paymentMethod === 'string' ? paymentMethod.trim().toUpperCase() : ''
+  const prepaidMethods = new Set(['CARD', 'TRANSFER', 'PREPAID', 'BANK', 'BANK_TRANSFER'])
+
+  return prepaidMethods.has(method) ? 0 : amount
+}
+
+/**
+ * Human-readable products text for Sendit's `products` field when products_from_stock=0.
+ */
+export function buildSenditProductsDescription(
+  items: Array<{
+    productName?: unknown
+    name?: unknown
+    productId?: unknown
+    quantity?: unknown
+  }> | null | undefined,
+  fallback = 'Products'
+): string {
+  const parts = (items || [])
+    .map((item) => {
+      const rawName = item.productName || item.name || (item.productId ? `Product #${item.productId}` : '')
+      const name = String(rawName || '').trim()
+      if (!name || name === 'null' || name === 'undefined') return null
+
+      const quantity = Number(item.quantity)
+      const cleanName = name.replace(/[;\n\r]+/g, ', ')
+      return Number.isFinite(quantity) && quantity > 0 ? `${cleanName} x${quantity}` : cleanName
+    })
+    .filter((part): part is string => Boolean(part))
+
+  return (parts.length ? parts.join(', ') : fallback).slice(0, 500)
+}
+
+/**
  * Check order completeness for data quality
  */
 export interface OrderCompleteness {

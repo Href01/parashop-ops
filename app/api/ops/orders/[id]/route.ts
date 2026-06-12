@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
 import { createSenditShipment } from '@/lib/sendit'
 import { onOrderConfirmed } from '@/lib/integrations/order-hooks'
+import { getOpsSession } from '@/lib/auth'
+import { buildSenditProductsDescription, calculateCodAmount } from '@/lib/order-utils'
 
 // GET /api/ops/orders/[id] - Get order detail
 export async function GET(
@@ -11,7 +11,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getOpsSession()
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -94,7 +94,7 @@ export async function PUT(
 
   try {
     console.log('PUT /api/ops/orders/[id] - Getting session...')
-    const session = await getServerSession(authOptions)
+    const session = await getOpsSession()
 
     if (!session?.user?.email) {
       console.error('PUT /api/ops/orders/[id] - Unauthorized: No session')
@@ -276,13 +276,10 @@ export async function PUT(
           // Check if shipment already exists
           if (!order.senditTrackingId) {
             // Validate order has required delivery info
-            if (order.deliveryName && order.deliveryPhone && order.deliveryCity) {
+            if (order.deliveryName && order.deliveryPhone && order.deliveryCity && order.senditDistrictId) {
               console.log(`🚀 Auto-creating Sendit shipment for order ${orderId}...`)
 
-              // Build products description
-              const productsDesc = order.items && order.items.length > 0 && order.items[0].productName
-                ? order.items.map((item: any) => `${item.productName} x${item.quantity}`).join(', ')
-                : 'Products'
+              const productsDesc = buildSenditProductsDescription(order.items, `Order ${order.orderNumber || order.id}`)
 
               // Create shipment with Sendit
               const shipment = await createSenditShipment({
@@ -291,8 +288,8 @@ export async function PUT(
                 recipient_phone: order.deliveryPhone,
                 recipient_city: order.deliveryCity,
                 recipient_address: order.deliveryAddress || '',
-                district_id: order.senditDistrictId,  // Use stored district if available
-                cod_amount: order.paymentMethod === 'COD' ? order.total : 0,
+                district_id: order.senditDistrictId,
+                cod_amount: calculateCodAmount(order.paymentMethod, order.total),
                 package_weight: 0.5,
                 package_description: productsDesc,
                 notes: order.notes || '',
@@ -325,7 +322,7 @@ export async function PUT(
 
               console.log(`✅ Sendit shipment created: ${shipment.tracking_id}`)
             } else {
-              senditWarning = `Order confirmed but missing delivery info: ${!order.deliveryName ? 'name ' : ''}${!order.deliveryPhone ? 'phone ' : ''}${!order.deliveryCity ? 'city' : ''}`
+              senditWarning = `Order confirmed but missing delivery info: ${!order.deliveryName ? 'name ' : ''}${!order.deliveryPhone ? 'phone ' : ''}${!order.deliveryCity ? 'city ' : ''}${!order.senditDistrictId ? 'Sendit district' : ''}`
               console.warn(`⚠️ ${senditWarning}`)
             }
           } else {
@@ -394,7 +391,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getOpsSession()
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

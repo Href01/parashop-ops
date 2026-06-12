@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
+import { emptyCampaignMetrics, tableExists } from '@/lib/ops-schema'
 
 /**
  * POST /api/ops/campaigns/[id]/calculate
@@ -29,6 +30,17 @@ export async function POST(
     }
 
     const { id: campaignId } = await params
+
+    if (!(await tableExists('CampaignMetrics'))) {
+      return NextResponse.json({
+        success: true,
+        metrics: {
+          campaignId,
+          ...emptyCampaignMetrics(),
+        },
+        missingTables: ['CampaignMetrics', 'CampaignCost'],
+      })
+    }
 
     console.log(`📊 Calculating P&L metrics for campaign ${campaignId}...`)
 

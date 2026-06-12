@@ -12,11 +12,21 @@ export async function requireOpsAccess() {
   const session = await getServerSession(authOptions)
 
   if (!session?.user?.email) {
-    redirect('/api/auth/signin?callbackUrl=/')
+    redirect('/auth/signin?callbackUrl=/')
   }
 
   if (!ALLOWED_EMAILS.includes(session.user.email)) {
-    return new Response('Unauthorized - Founders only', { status: 403 })
+    redirect('/auth/signin?error=AccessDenied')
+  }
+
+  return session
+}
+
+export async function getOpsSession() {
+  const session = await getServerSession(authOptions)
+
+  if (!isFounder(session?.user?.email)) {
+    return null
   }
 
   return session

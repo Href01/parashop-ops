@@ -6,16 +6,7 @@ import { isFounder } from '@/lib/auth'
 import pool from '@/lib/db'
 
 const DAILY_REVENUE_GOAL = 6000
-const CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
-
-// In-memory cache for dashboard stats
-let statsCache: {
-  data: any
-  timestamp: number
-} | null = null
-
-// Cache for table columns introspection (rarely changes)
-let tableColumnsCache: Map<string, { columns: Set<string>; timestamp: number }> = new Map()
+const BUSINESS_TIMEZONE = 'Africa/Casablanca'
 
 type Tone = 'rose' | 'green' | 'amber' | 'blue' | 'violet' | 'red'
 
@@ -28,22 +19,27 @@ interface SummaryRow {
   ordersToday: number | string | null
   ordersWeek: number | string | null
   previousOrdersWeek: number | string | null
+  bookedOrdersWeek: number | string | null
   delivered30d: number | string | null
-  completedDelivery30d: number | string | null
+  cancelled30d: number | string | null
 }
 
 interface SeriesRow {
-  day: string | Date
+  day: string
+  label: string
   revenue: number | string | null
   profit: number | string | null
+  orders: number | string | null
+  delivered: number | string | null
+  cancelled: number | string | null
 }
 
 interface PipelineRow {
   pending: number | string | null
   confirmed: number | string | null
-  shipped: number | string | null
+  sendit: number | string | null
   delivered: number | string | null
-  returned: number | string | null
+  cancelled: number | string | null
 }
 
 interface ProductRow {
@@ -61,6 +57,7 @@ interface AlertCountsRow {
   needsConfirmation: number | string | null
   unshippedConfirmed: number | string | null
   deliveryIssues: number | string | null
+  missingCosts: number | string | null
 }
 
 interface LowStockRow {
@@ -72,6 +69,12 @@ interface LowStockRow {
 
 interface RoasRow {
   spend: number | string | null
+  revenue: number | string | null
+}
+
+interface ChannelRow {
+  name: string | null
+  orders: number | string | null
   revenue: number | string | null
 }
 
@@ -91,9 +94,63 @@ interface RecentOrderRow {
   sourceChannel: string | null
 }
 
-interface ColumnRow {
-  column_name: string
-}
+const FINANCIAL_CTE = `
+  WITH bounds AS (
+    SELECT
+      ((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date)::timestamp AS today_start,
+      (((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date) - INTERVAL '6 days')::timestamp AS week_start,
+      (((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date) - INTERVAL '13 days')::timestamp AS previous_week_start,
+      (((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date) - INTERVAL '29 days')::timestamp AS month_start
+  ),
+  item_costs AS (
+    SELECT
+      oi."orderId",
+      COUNT(*)::int AS item_count,
+      COUNT(*) FILTER (
+        WHERE COALESCE(oi."totalCost", oi."unitCost" * oi.quantity, p."costPrice" * oi.quantity) IS NULL
+           OR COALESCE(oi."totalCost", oi."unitCost" * oi.quantity, p."costPrice" * oi.quantity) = 0
+      )::int AS missing_cost_items,
+      COALESCE(SUM(COALESCE(oi."totalCost", oi."unitCost" * oi.quantity, p."costPrice" * oi.quantity, 0)), 0)::numeric AS cogs
+    FROM "OrderItem" oi
+    LEFT JOIN "Product" p ON p.id = oi."productId"
+    GROUP BY oi."orderId"
+  ),
+  order_financials AS (
+    SELECT
+      o.id,
+      o.status::text AS status,
+      o."createdAt",
+      COALESCE(o."orderNumber", CONCAT('Order #', o.id)) AS "orderNumber",
+      o."deliveryName",
+      o."deliveryCity",
+      o."sourceChannel",
+      o."confirmationStatus",
+      o."deliveryStatus",
+      o."senditTrackingId",
+      o."senditStatus",
+      COALESCE(o."revenue", o."productsTotal", o.total::numeric, 0)::numeric AS revenue,
+      COALESCE(o.total::numeric, o."revenue", o."productsTotal", 0)::numeric AS order_total,
+      COALESCE(
+        o."finalProfit",
+        o."estimatedProfit",
+        CASE
+          WHEN COALESCE(ic.item_count, 0) > 0 AND COALESCE(ic.missing_cost_items, 0) = 0 THEN
+            COALESCE(o."revenue", o."productsTotal", o.total::numeric, 0)
+            - COALESCE(ic.cogs, 0)
+            - CASE
+                WHEN o.status::text = 'DELIVERED' THEN COALESCE(o."actualDeliveryCost", o."estimatedDeliveryCost", 0)
+                ELSE COALESCE(o."estimatedDeliveryCost", o."actualDeliveryCost", 0)
+              END
+            - COALESCE(o."returnOrFailedFees", 0)
+          ELSE 0
+        END
+      )::numeric AS profit,
+      COALESCE(ic.item_count, 0)::int AS item_count,
+      COALESCE(ic.missing_cost_items, 0)::int AS missing_cost_items
+    FROM "Order" o
+    LEFT JOIN item_costs ic ON ic."orderId" = o.id
+  )
+`
 
 function toNumber(value: unknown): number {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0
@@ -106,10 +163,7 @@ function toNumber(value: unknown): number {
 }
 
 function percentageChange(current: number, previous: number): number | null {
-  if (previous <= 0) {
-    return current > 0 ? 100 : null
-  }
-
+  if (previous <= 0) return current > 0 ? 100 : null
   return ((current - previous) / previous) * 100
 }
 
@@ -136,10 +190,6 @@ function humanizeStatus(status: string | null): string {
       return 'Confirmed'
     case 'DELIVERED':
       return 'Delivered'
-    case 'RETURNED':
-      return 'Returned'
-    case 'FAILED':
-      return 'Failed'
     case 'CANCELLED':
       return 'Cancelled'
     default:
@@ -153,8 +203,7 @@ function toneFromStatus(status: string | null): Tone {
       return 'green'
     case 'CONFIRMED':
       return 'blue'
-    case 'RETURNED':
-    case 'FAILED':
+    case 'CANCELLED':
       return 'red'
     case 'PENDING':
       return 'amber'
@@ -163,49 +212,25 @@ function toneFromStatus(status: string | null): Tone {
   }
 }
 
+function channelColor(name: string): string {
+  const normalized = name.toLowerCase()
+
+  if (normalized.includes('instagram')) return 'var(--c-instagram)'
+  if (normalized.includes('whatsapp')) return 'var(--c-whatsapp)'
+  if (normalized.includes('tiktok')) return 'var(--c-tiktok)'
+  if (normalized.includes('manual')) return 'var(--c-manual)'
+
+  return 'var(--c-website)'
+}
+
 async function safeQuery<T extends QueryResultRow>(label: string, query: string): Promise<T[]> {
   try {
     const result = await pool.query<T>(query)
     return result.rows
   } catch (error) {
-    console.warn(`Optional dashboard query failed (${label}):`, error)
-    return []
+    console.error(`Dashboard query failed (${label}):`, error)
+    throw error
   }
-}
-
-async function getTableColumns(tableName: string): Promise<Set<string>> {
-  // Check cache first (schema rarely changes)
-  const cached = tableColumnsCache.get(tableName)
-  const now = Date.now()
-
-  if (cached && now - cached.timestamp < 60 * 60 * 1000) { // 1 hour cache
-    return cached.columns
-  }
-
-  const result = await pool.query<ColumnRow>(
-    `
-      SELECT column_name
-      FROM information_schema.columns
-      WHERE table_schema = 'public'
-        AND table_name = $1
-    `,
-    [tableName]
-  )
-
-  const columns = new Set(result.rows.map((row) => row.column_name))
-  tableColumnsCache.set(tableName, { columns, timestamp: now })
-
-  return columns
-}
-
-function buildNumericExpression(alias: string, columns: Set<string>, candidates: string[]): string {
-  const availableCandidates = candidates.filter((candidate) => columns.has(candidate))
-
-  if (availableCandidates.length === 0) {
-    return '0'
-  }
-
-  return `COALESCE(${availableCandidates.map((candidate) => `${alias}."${candidate}"`).join(', ')}, 0)`
 }
 
 export async function GET() {
@@ -220,38 +245,6 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
-    // Check cache first (5-minute TTL)
-    const now = Date.now()
-    if (statsCache && now - statsCache.timestamp < CACHE_TTL_MS) {
-      console.log('✅ Dashboard stats served from cache')
-      return NextResponse.json(statsCache.data)
-    }
-
-    console.log('🔄 Generating fresh dashboard stats...')
-
-    const orderColumns = await getTableColumns('Order')
-    const revenueExpression = buildNumericExpression('o', orderColumns, ['revenue', 'total'])
-    const estimatedProfitExpression = buildNumericExpression('o', orderColumns, ['estimatedProfit'])
-    const hasConfirmationStatus = orderColumns.has('confirmationStatus')
-    const hasDeliveryStatus = orderColumns.has('deliveryStatus')
-    const hasDeliveryCity = orderColumns.has('deliveryCity')
-    const missingOrderColumns = [
-      'revenue',
-      'total',
-      'estimatedProfit',
-      'confirmationStatus',
-      'deliveryStatus',
-      'deliveryCity',
-    ].filter((column) => !orderColumns.has(column))
-
-    if (missingOrderColumns.length > 0) {
-      console.warn('Dashboard stats using schema fallbacks for missing Order columns:', missingOrderColumns)
-    }
-
-    const deliveryCityExpression = hasDeliveryCity
-      ? `COALESCE(NULLIF(TRIM(o."deliveryCity"), ''), 'Unknown')`
-      : `'Unknown'`
-
     const [
       summaryRows,
       seriesRows,
@@ -261,136 +254,178 @@ export async function GET() {
       alertRows,
       lowStockRows,
       roasRows,
+      channelRows,
       activityHistoryRows,
       recentOrdersRows,
     ] = await Promise.all([
       safeQuery<SummaryRow>('summary', `
+        ${FINANCIAL_CTE}
         SELECT
-          COALESCE(SUM(CASE WHEN o."createdAt" >= CURRENT_DATE THEN ${revenueExpression} ELSE 0 END), 0)::double precision AS "revenueToday",
-          COALESCE(SUM(CASE WHEN o."createdAt" >= CURRENT_DATE - INTERVAL '6 days' THEN ${revenueExpression} ELSE 0 END), 0)::double precision AS "revenueWeek",
-          COALESCE(SUM(CASE WHEN o."createdAt" >= CURRENT_DATE - INTERVAL '13 days' AND o."createdAt" < CURRENT_DATE - INTERVAL '6 days' THEN ${revenueExpression} ELSE 0 END), 0)::double precision AS "previousRevenueWeek",
-          COALESCE(SUM(CASE WHEN o."createdAt" >= CURRENT_DATE - INTERVAL '6 days' THEN ${estimatedProfitExpression} ELSE 0 END), 0)::double precision AS "estimatedProfitWeek",
-          COALESCE(SUM(CASE WHEN o."createdAt" >= CURRENT_DATE - INTERVAL '13 days' AND o."createdAt" < CURRENT_DATE - INTERVAL '6 days' THEN ${estimatedProfitExpression} ELSE 0 END), 0)::double precision AS "previousProfitWeek",
-          COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE)::int AS "ordersToday",
-          COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '6 days')::int AS "ordersWeek",
-          COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '13 days' AND o."createdAt" < CURRENT_DATE - INTERVAL '6 days')::int AS "previousOrdersWeek",
-          COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND o.status = 'DELIVERED')::int AS "delivered30d",
-          COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND o.status IN ('DELIVERED', 'FAILED', 'RETURNED'))::int AS "completedDelivery30d"
-        FROM "Order" o
+          COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= (SELECT today_start FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenueToday",
+          COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= (SELECT week_start FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenueWeek",
+          COALESCE(SUM(revenue) FILTER (
+            WHERE "createdAt" >= (SELECT previous_week_start FROM bounds)
+              AND "createdAt" < (SELECT week_start FROM bounds)
+              AND status IN ('CONFIRMED', 'DELIVERED')
+          ), 0)::double precision AS "previousRevenueWeek",
+          COALESCE(SUM(profit) FILTER (WHERE "createdAt" >= (SELECT week_start FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "estimatedProfitWeek",
+          COALESCE(SUM(profit) FILTER (
+            WHERE "createdAt" >= (SELECT previous_week_start FROM bounds)
+              AND "createdAt" < (SELECT week_start FROM bounds)
+              AND status IN ('CONFIRMED', 'DELIVERED')
+          ), 0)::double precision AS "previousProfitWeek",
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT today_start FROM bounds) AND status <> 'CANCELLED')::int AS "ordersToday",
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT week_start FROM bounds) AND status <> 'CANCELLED')::int AS "ordersWeek",
+          COUNT(*) FILTER (
+            WHERE "createdAt" >= (SELECT previous_week_start FROM bounds)
+              AND "createdAt" < (SELECT week_start FROM bounds)
+              AND status <> 'CANCELLED'
+          )::int AS "previousOrdersWeek",
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT week_start FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED'))::int AS "bookedOrdersWeek",
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT month_start FROM bounds) AND status = 'DELIVERED')::int AS "delivered30d",
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT month_start FROM bounds) AND status = 'CANCELLED')::int AS "cancelled30d"
+        FROM order_financials
       `),
       safeQuery<SeriesRow>('series', `
+        ${FINANCIAL_CTE},
+        days AS (
+          SELECT generate_series(
+            (SELECT month_start FROM bounds),
+            (SELECT today_start FROM bounds),
+            INTERVAL '1 day'
+          ) AS day_bucket
+        )
         SELECT
-          day_bucket::date AS "day",
-          COALESCE(SUM(${revenueExpression}), 0)::double precision AS "revenue",
-          COALESCE(SUM(${estimatedProfitExpression}), 0)::double precision AS "profit"
-        FROM generate_series(
-          CURRENT_DATE - INTERVAL '29 days',
-          CURRENT_DATE,
-          INTERVAL '1 day'
-        ) AS day_bucket
-        LEFT JOIN "Order" o
-          ON o."createdAt" >= day_bucket
-         AND o."createdAt" < day_bucket + INTERVAL '1 day'
-        GROUP BY day_bucket
-        ORDER BY day_bucket ASC
+          to_char(d.day_bucket, 'YYYY-MM-DD') AS day,
+          to_char(d.day_bucket, 'Mon DD') AS label,
+          COALESCE(SUM(ofn.revenue) FILTER (WHERE ofn.status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS revenue,
+          COALESCE(SUM(ofn.profit) FILTER (WHERE ofn.status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS profit,
+          COUNT(ofn.id) FILTER (WHERE ofn.status <> 'CANCELLED')::int AS orders,
+          COUNT(ofn.id) FILTER (WHERE ofn.status = 'DELIVERED')::int AS delivered,
+          COUNT(ofn.id) FILTER (WHERE ofn.status = 'CANCELLED')::int AS cancelled
+        FROM days d
+        LEFT JOIN order_financials ofn
+          ON ofn."createdAt" >= d.day_bucket
+         AND ofn."createdAt" < d.day_bucket + INTERVAL '1 day'
+        GROUP BY d.day_bucket
+        ORDER BY d.day_bucket ASC
       `),
       safeQuery<PipelineRow>('pipeline', `
+        ${FINANCIAL_CTE}
         SELECT
-          COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND o.status = 'PENDING')::int AS pending,
-          COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND o.status = 'CONFIRMED')::int AS confirmed,
-          ${hasDeliveryStatus
-            ? `COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND COALESCE(o."deliveryStatus", 'NOT_CREATED') IN ('SENDIT_CREATED', 'IN_DELIVERY'))::int`
-            : '0::int'} AS shipped,
-          COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND o.status = 'DELIVERED')::int AS delivered,
-          COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND o.status = 'RETURNED')::int AS returned
-        FROM "Order" o
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT month_start FROM bounds) AND status = 'PENDING')::int AS pending,
+          COUNT(*) FILTER (
+            WHERE "createdAt" >= (SELECT month_start FROM bounds)
+              AND status = 'CONFIRMED'
+              AND "senditTrackingId" IS NULL
+          )::int AS confirmed,
+          COUNT(*) FILTER (
+            WHERE "createdAt" >= (SELECT month_start FROM bounds)
+              AND "senditTrackingId" IS NOT NULL
+              AND status = 'CONFIRMED'
+          )::int AS sendit,
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT month_start FROM bounds) AND status = 'DELIVERED')::int AS delivered,
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT month_start FROM bounds) AND status = 'CANCELLED')::int AS cancelled
+        FROM order_financials
       `),
       safeQuery<ProductRow>('top-products', `
+        ${FINANCIAL_CTE}
         SELECT
-          COALESCE(NULLIF(TRIM(p.name), ''), CONCAT('Product #', COALESCE(oi."productId"::text, '—'))) AS "name",
-          COALESCE(SUM(oi.quantity), 0)::int AS "units",
-          COALESCE(SUM(COALESCE(oi.price, 0) * COALESCE(oi.quantity, 0)), 0)::double precision AS "revenue"
+          COALESCE(NULLIF(TRIM(p.name), ''), CONCAT('Product #', COALESCE(oi."productId"::text, '-'))) AS name,
+          COALESCE(SUM(oi.quantity), 0)::int AS units,
+          COALESCE(SUM(COALESCE(oi.price, 0) * COALESCE(oi.quantity, 0)), 0)::double precision AS revenue
         FROM "OrderItem" oi
-        INNER JOIN "Order" o ON o.id = oi."orderId"
+        INNER JOIN order_financials ofn ON ofn.id = oi."orderId"
         LEFT JOIN "Product" p ON p.id = oi."productId"
-        WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '6 days'
-        GROUP BY COALESCE(NULLIF(TRIM(p.name), ''), CONCAT('Product #', COALESCE(oi."productId"::text, '—')))
-        ORDER BY "units" DESC, "revenue" DESC
-        LIMIT 4
+        WHERE ofn."createdAt" >= (SELECT week_start FROM bounds)
+          AND ofn.status IN ('CONFIRMED', 'DELIVERED')
+        GROUP BY COALESCE(NULLIF(TRIM(p.name), ''), CONCAT('Product #', COALESCE(oi."productId"::text, '-')))
+        ORDER BY units DESC, revenue DESC
+        LIMIT 5
       `),
       safeQuery<CityRow>('top-cities', `
+        ${FINANCIAL_CTE}
         SELECT
-          ${deliveryCityExpression} AS "name",
-          COUNT(*)::int AS "orders"
-        FROM "Order" o
-        WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '6 days'
-        GROUP BY ${deliveryCityExpression}
-        ORDER BY "orders" DESC, "name" ASC
+          COALESCE(NULLIF(TRIM("deliveryCity"), ''), 'Unknown') AS name,
+          COUNT(*)::int AS orders
+        FROM order_financials
+        WHERE "createdAt" >= (SELECT week_start FROM bounds)
+          AND status IN ('CONFIRMED', 'DELIVERED')
+        GROUP BY COALESCE(NULLIF(TRIM("deliveryCity"), ''), 'Unknown')
+        ORDER BY orders DESC, name ASC
         LIMIT 5
       `),
       safeQuery<AlertCountsRow>('alerts', `
+        ${FINANCIAL_CTE}
         SELECT
-          ${hasConfirmationStatus ? `COUNT(*) FILTER (WHERE o."confirmationStatus" = 'NEEDS_CONFIRMATION')::int` : '0::int'} AS "needsConfirmation",
-          ${hasDeliveryStatus
-            ? `COUNT(*) FILTER (WHERE o.status = 'CONFIRMED' AND COALESCE(o."deliveryStatus", 'NOT_CREATED') = 'NOT_CREATED')::int`
-            : '0::int'} AS "unshippedConfirmed",
-          COUNT(*) FILTER (WHERE o."createdAt" >= CURRENT_DATE - INTERVAL '29 days' AND o.status IN ('FAILED', 'RETURNED'))::int AS "deliveryIssues"
-        FROM "Order" o
+          COUNT(*) FILTER (WHERE status = 'PENDING')::int AS "needsConfirmation",
+          COUNT(*) FILTER (WHERE status = 'CONFIRMED' AND "senditTrackingId" IS NULL)::int AS "unshippedConfirmed",
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT month_start FROM bounds) AND status = 'CANCELLED')::int AS "deliveryIssues",
+          COUNT(*) FILTER (WHERE status IN ('CONFIRMED', 'DELIVERED') AND missing_cost_items > 0)::int AS "missingCosts"
+        FROM order_financials
       `),
-      safeQuery<LowStockRow>(
-        'low-stock',
-        `
-          SELECT
-            p.name,
-            COALESCE(p.stock, 0)::int AS stock,
-            COALESCE(p."lowStockThreshold", 5)::int AS threshold,
-            COUNT(*) OVER()::int AS total
-          FROM "Product" p
-          WHERE COALESCE(p.stock, 0) > 0
-            AND COALESCE(p.stock, 0) <= COALESCE(p."lowStockThreshold", 5)
-          ORDER BY p.stock ASC, p.name ASC
-          LIMIT 3
-        `
-      ),
-      safeQuery<RoasRow>(
-        'roas',
-        `
-          SELECT
-            COALESCE(SUM(a.spend), 0)::double precision AS spend,
-            COALESCE(SUM(a.revenue), 0)::double precision AS revenue
-          FROM "AdCampaign" a
-          WHERE COALESCE(a."endDate", CURRENT_DATE) >= CURRENT_DATE - INTERVAL '29 days'
-        `
-      ),
-      safeQuery<ActivityHistoryRow>(
-        'activity-history',
-        `
-          SELECT
-            h."newStatus" AS status,
-            h.note,
-            h."createdAt" AS "createdAt",
-            o."orderNumber" AS "orderNumber",
-            o."deliveryName" AS "deliveryName"
-          FROM "OrderStatusHistory" h
-          LEFT JOIN "Order" o ON o.id = h."orderId"
-          ORDER BY h."createdAt" DESC
-          LIMIT 6
-        `
-      ),
-      safeQuery<RecentOrderRow>(
-        'recent-orders',
-        `
-          SELECT
-            o.status,
-            o."createdAt" AS "createdAt",
-            o."orderNumber" AS "orderNumber",
-            o."deliveryName" AS "deliveryName",
-            o."sourceChannel" AS "sourceChannel"
-          FROM "Order" o
-          ORDER BY o."createdAt" DESC
-          LIMIT 6
-        `
-      ),
+      safeQuery<LowStockRow>('low-stock', `
+        SELECT
+          p.name,
+          COALESCE(p.stock, 0)::int AS stock,
+          COALESCE(p."lowStockThreshold", 5)::int AS threshold,
+          COUNT(*) OVER()::int AS total
+        FROM "Product" p
+        WHERE COALESCE(p.stock, 0) > 0
+          AND COALESCE(p.stock, 0) <= COALESCE(p."lowStockThreshold", 5)
+        ORDER BY p.stock ASC, p.name ASC
+        LIMIT 3
+      `),
+      safeQuery<RoasRow>('roas', `
+        SELECT
+          COALESCE(SUM(a.spend), 0)::double precision AS spend,
+          COALESCE(SUM(a.revenue), 0)::double precision AS revenue
+        FROM "AdCampaign" a
+        WHERE COALESCE(a."endDate", CURRENT_DATE) >= CURRENT_DATE - INTERVAL '29 days'
+      `),
+      safeQuery<ChannelRow>('channels', `
+        ${FINANCIAL_CTE}
+        SELECT
+          CASE
+            WHEN LOWER(COALESCE("sourceChannel", '')) LIKE '%whatsapp%' THEN 'WhatsApp'
+            WHEN LOWER(COALESCE("sourceChannel", '')) LIKE '%instagram%' THEN 'Instagram'
+            WHEN LOWER(COALESCE("sourceChannel", '')) LIKE '%tiktok%' THEN 'TikTok'
+            WHEN LOWER(COALESCE("sourceChannel", '')) LIKE '%manual%' THEN 'Manual'
+            WHEN LOWER(COALESCE("sourceChannel", '')) LIKE '%web%' THEN 'Website'
+            WHEN NULLIF(TRIM(COALESCE("sourceChannel", '')), '') IS NULL THEN 'Website'
+            ELSE "sourceChannel"
+          END AS name,
+          COUNT(*)::int AS orders,
+          COALESCE(SUM(revenue), 0)::double precision AS revenue
+        FROM order_financials
+        WHERE "createdAt" >= (SELECT week_start FROM bounds)
+          AND status IN ('CONFIRMED', 'DELIVERED')
+        GROUP BY 1
+        ORDER BY orders DESC, revenue DESC
+      `),
+      safeQuery<ActivityHistoryRow>('activity-history', `
+        SELECT
+          h."newStatus" AS status,
+          h.note,
+          h."createdAt" AS "createdAt",
+          o."orderNumber" AS "orderNumber",
+          o."deliveryName" AS "deliveryName"
+        FROM "OrderStatusHistory" h
+        LEFT JOIN "Order" o ON o.id = h."orderId"
+        ORDER BY h."createdAt" DESC
+        LIMIT 6
+      `),
+      safeQuery<RecentOrderRow>('recent-orders', `
+        SELECT
+          o.status::text AS status,
+          o."createdAt" AS "createdAt",
+          o."orderNumber" AS "orderNumber",
+          o."deliveryName" AS "deliveryName",
+          o."sourceChannel" AS "sourceChannel"
+        FROM "Order" o
+        ORDER BY o."createdAt" DESC
+        LIMIT 6
+      `),
     ])
 
     const summary = summaryRows[0]
@@ -405,23 +440,34 @@ export async function GET() {
     const ordersToday = toNumber(summary?.ordersToday)
     const ordersWeek = toNumber(summary?.ordersWeek)
     const previousOrdersWeek = toNumber(summary?.previousOrdersWeek)
+    const bookedOrdersWeek = toNumber(summary?.bookedOrdersWeek)
     const delivered30d = toNumber(summary?.delivered30d)
-    const completedDelivery30d = toNumber(summary?.completedDelivery30d)
+    const cancelled30d = toNumber(summary?.cancelled30d)
+    const completedDelivery30d = delivered30d + cancelled30d
     const deliveryRate = completedDelivery30d > 0 ? (delivered30d / completedDelivery30d) * 100 : 0
     const marginPercent = revenueWeek > 0 ? (estimatedProfitWeek / revenueWeek) * 100 : 0
     const revenueDelta = percentageChange(revenueWeek, previousRevenueWeek)
     const profitDelta = percentageChange(estimatedProfitWeek, previousProfitWeek)
     const ordersDelta = percentageChange(ordersWeek, previousOrdersWeek)
-    const averageOrderValue = ordersWeek > 0 ? revenueWeek / ordersWeek : 0
+    const averageOrderValue = bookedOrdersWeek > 0 ? revenueWeek / bookedOrdersWeek : 0
 
-    const revenueSeries = seriesRows.map((row) => {
-      const date = new Date(row.day)
+    const revenueSeries = seriesRows.map((row) => ({
+      date: row.day,
+      label: row.label,
+      revenue: toNumber(row.revenue),
+      profit: toNumber(row.profit),
+      orders: toNumber(row.orders),
+    }))
+
+    const deliverySeries = seriesRows.map((row) => {
+      const delivered = toNumber(row.delivered)
+      const cancelled = toNumber(row.cancelled)
+      const completed = delivered + cancelled
 
       return {
-        date: date.toISOString(),
-        label: new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(date),
-        revenue: toNumber(row.revenue),
-        profit: toNumber(row.profit),
+        date: row.day,
+        label: row.label,
+        rate: completed > 0 ? (delivered / completed) * 100 : 0,
       }
     })
 
@@ -442,14 +488,15 @@ export async function GET() {
     const pipelineItems = [
       { label: 'Pending', value: toNumber(pipeline?.pending), tone: 'amber' as Tone },
       { label: 'Confirmed', value: toNumber(pipeline?.confirmed), tone: 'blue' as Tone },
-      { label: 'Shipped', value: toNumber(pipeline?.shipped), tone: 'violet' as Tone },
+      { label: 'In Sendit', value: toNumber(pipeline?.sendit), tone: 'violet' as Tone },
       { label: 'Delivered', value: toNumber(pipeline?.delivered), tone: 'green' as Tone },
-      { label: 'Returned', value: toNumber(pipeline?.returned), tone: 'red' as Tone },
+      { label: 'Cancelled', value: toNumber(pipeline?.cancelled), tone: 'red' as Tone },
     ]
 
     const needsConfirmation = toNumber(alertCounts?.needsConfirmation)
     const unshippedConfirmed = toNumber(alertCounts?.unshippedConfirmed)
     const deliveryIssues = toNumber(alertCounts?.deliveryIssues)
+    const missingCosts = toNumber(alertCounts?.missingCosts)
     const lowStockTotal = toNumber(lowStockRows[0]?.total)
 
     const attentionItems = [
@@ -457,7 +504,7 @@ export async function GET() {
         ? {
             tone: 'amber' as Tone,
             title: `${needsConfirmation} orders need confirmation`,
-            subtitle: 'Pending WhatsApp, Instagram, or manual follow-up',
+            subtitle: 'Pending orders are not counted as booked revenue yet',
             href: '/orders',
           }
         : null,
@@ -465,8 +512,16 @@ export async function GET() {
         ? {
             tone: 'violet' as Tone,
             title: `${unshippedConfirmed} confirmed orders are not shipped`,
-            subtitle: 'Shipment creation is still pending',
+            subtitle: 'Create Sendit shipments for confirmed orders',
             href: '/orders',
+          }
+        : null,
+      missingCosts > 0
+        ? {
+            tone: 'amber' as Tone,
+            title: `${missingCosts} booked orders have incomplete cost data`,
+            subtitle: 'Profit is conservative until product cost prices are filled',
+            href: '/products',
           }
         : null,
       lowStockTotal > 0
@@ -475,15 +530,15 @@ export async function GET() {
             title: `${lowStockTotal} products are low on stock`,
             subtitle: lowStockRows
               .map((item) => `${item.name || 'Unknown'} (${toNumber(item.stock)} left)`)
-              .join(' · '),
+              .join(' - '),
             href: '/products',
           }
         : null,
       deliveryIssues > 0
         ? {
             tone: 'rose' as Tone,
-            title: `${deliveryIssues} failed or returned deliveries in the last 30 days`,
-            subtitle: 'Review support or courier follow-up opportunities',
+            title: `${deliveryIssues} cancelled orders in the last 30 days`,
+            subtitle: 'Review cancellation reasons and customer follow-up',
             href: '/orders',
           }
         : null,
@@ -499,17 +554,30 @@ export async function GET() {
           timestamp: new Date(row.createdAt).toISOString(),
         }))
       : recentOrdersRows.map((row) => ({
-          tone: 'rose' as Tone,
+          tone: toneFromStatus(row.status),
           title: row.orderNumber ? `New order ${row.orderNumber}` : 'New order created',
-          subtitle: [row.deliveryName, row.sourceChannel].filter(Boolean).join(' · ') || 'Recent order activity',
+          subtitle: [row.deliveryName, row.sourceChannel].filter(Boolean).join(' - ') || 'Recent order activity',
           timestamp: new Date(row.createdAt).toISOString(),
         }))
 
     const spend30d = toNumber(roasRows[0]?.spend)
     const adRevenue30d = toNumber(roasRows[0]?.revenue)
     const roas = spend30d > 0 ? adRevenue30d / spend30d : 0
+    const channelOrderTotal = channelRows.reduce((sum, row) => sum + toNumber(row.orders), 0)
+    const channels = channelRows.map((row) => {
+      const name = row.name || 'Unknown'
+      const orders = toNumber(row.orders)
 
-    const responseData = {
+      return {
+        name,
+        orders,
+        revenue: toNumber(row.revenue),
+        value: channelOrderTotal > 0 ? Math.round((orders / channelOrderTotal) * 100) : 0,
+        color: channelColor(name),
+      }
+    })
+
+    return NextResponse.json({
       generatedAt: new Date().toISOString(),
       dailyGoal: DAILY_REVENUE_GOAL,
       revenueToday,
@@ -529,11 +597,13 @@ export async function GET() {
       streakDays,
       goalProgress,
       revenueSeries,
+      deliverySeries,
       pipeline: pipelineItems,
       topProducts,
       topCities,
+      channels,
       alerts: {
-        total: needsConfirmation + unshippedConfirmed + lowStockTotal + deliveryIssues,
+        total: needsConfirmation + unshippedConfirmed + missingCosts + lowStockTotal + deliveryIssues,
         items: attentionItems.length > 0
           ? attentionItems
           : [
@@ -546,17 +616,7 @@ export async function GET() {
             ],
       },
       activity,
-    }
-
-    // Store in cache
-    statsCache = {
-      data: responseData,
-      timestamp: Date.now(),
-    }
-
-    console.log('✅ Dashboard stats cached for 5 minutes')
-
-    return NextResponse.json(responseData)
+    })
   } catch (error) {
     console.error('Dashboard stats error:', error)
 

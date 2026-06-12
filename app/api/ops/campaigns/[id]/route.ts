@@ -2,6 +2,23 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
+import { columnExists, emptyCampaignMetrics, slugify, tableExists } from '@/lib/ops-schema'
+
+async function createUniqueSlug(name: string, campaignId: string) {
+  const baseSlug = slugify(name)
+  let slug = baseSlug
+  let suffix = 2
+
+  while (true) {
+    const result = await pool.query(
+      'SELECT 1 FROM "Campaign" WHERE slug = $1 AND id <> $2 LIMIT 1',
+      [slug, campaignId]
+    )
+    if (result.rows.length === 0) return slug
+    slug = `${baseSlug}-${suffix}`
+    suffix++
+  }
+}
 
 /**
  * GET /api/ops/campaigns/[id]
@@ -19,13 +36,18 @@ export async function GET(
 
     const { id: campaignId } = await params
 
-    // Get campaign with metrics
     const campaignResult = await pool.query(`
       SELECT
-        c.*,
-        cm.*
+        c.id,
+        c.name,
+        c.slug,
+        c.description,
+        c.active,
+        c."startsAt" as "startDate",
+        c."endsAt" as "endDate",
+        c."createdAt",
+        CASE WHEN c.active THEN 'Active' ELSE 'Draft' END as status
       FROM "Campaign" c
-      LEFT JOIN "CampaignMetrics" cm ON cm."campaignId" = c.id
       WHERE c.id = $1
     `, [campaignId])
 
@@ -33,7 +55,10 @@ export async function GET(
       return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
     }
 
-    const campaign = campaignResult.rows[0]
+    const campaign = {
+      ...campaignResult.rows[0],
+      ...emptyCampaignMetrics(),
+    }
 
     // Get products
     const productsResult = await pool.query(`
@@ -52,55 +77,59 @@ export async function GET(
 
     campaign.products = productsResult.rows
 
-    // Get costs grouped by type
-    const costsResult = await pool.query(`
-      SELECT
-        type,
-        COUNT(*) as count,
-        SUM(amount) as total
-      FROM "CampaignCost"
-      WHERE "campaignId" = $1
-      GROUP BY type
-      ORDER BY total DESC
-    `, [campaignId])
+    campaign.costsByType = []
+    campaign.costs = []
+    campaign.posts = []
+    campaign.orders = []
 
-    campaign.costsByType = costsResult.rows
+    if (await tableExists('CampaignCost')) {
+      const costsResult = await pool.query(`
+        SELECT
+          type,
+          COUNT(*) as count,
+          SUM(amount) as total
+        FROM "CampaignCost"
+        WHERE "campaignId" = $1
+        GROUP BY type
+        ORDER BY total DESC
+      `, [campaignId])
 
-    // Get all costs detailed
-    const costsDetailResult = await pool.query(`
-      SELECT * FROM "CampaignCost"
-      WHERE "campaignId" = $1
-      ORDER BY date DESC
-    `, [campaignId])
+      const costsDetailResult = await pool.query(`
+        SELECT * FROM "CampaignCost"
+        WHERE "campaignId" = $1
+        ORDER BY date DESC
+      `, [campaignId])
 
-    campaign.costs = costsDetailResult.rows
+      campaign.costsByType = costsResult.rows
+      campaign.costs = costsDetailResult.rows
+    }
 
-    // Get posts
-    const postsResult = await pool.query(`
-      SELECT * FROM "CampaignPost"
-      WHERE "campaignId" = $1
-      ORDER BY "publishedAt" DESC NULLS LAST
-    `, [campaignId])
+    if (await tableExists('CampaignPost')) {
+      const postsResult = await pool.query(`
+        SELECT * FROM "CampaignPost"
+        WHERE "campaignId" = $1
+        ORDER BY "publishedAt" DESC NULLS LAST
+      `, [campaignId])
 
-    campaign.posts = postsResult.rows
+      campaign.posts = postsResult.rows
+    }
 
-    // Get orders
-    const ordersResult = await pool.query(`
-      SELECT
-        o.id,
-        o."orderNumber",
-        o.total,
-        o."createdAt",
-        o.status,
-        o."deliveryName",
-        o."utmSource",
-        o."utmMedium"
-      FROM "Order" o
-      WHERE o."campaignId" = $1
-      ORDER BY o."createdAt" DESC
-    `, [campaignId])
+    if (await columnExists('Order', 'campaignId')) {
+      const ordersResult = await pool.query(`
+        SELECT
+          o.id,
+          o."orderNumber",
+          o.total,
+          o."createdAt",
+          o.status,
+          o."deliveryName"
+        FROM "Order" o
+        WHERE o."campaignId" = $1
+        ORDER BY o."createdAt" DESC
+      `, [campaignId])
 
-    campaign.orders = ordersResult.rows
+      campaign.orders = ordersResult.rows
+    }
 
     return NextResponse.json(campaign)
 
@@ -136,12 +165,7 @@ export async function PUT(
       status,
       startDate,
       endDate,
-      targetRevenue,
-      targetOrders,
       budgetTotal,
-      budgetAdSpend,
-      budgetOther,
-      assignedTo,
     } = body
 
     // Build update query
@@ -153,6 +177,10 @@ export async function PUT(
       updates.push(`"name" = $${paramIndex}`)
       values.push(name)
       paramIndex++
+
+      updates.push(`"slug" = $${paramIndex}`)
+      values.push(await createUniqueSlug(name, campaignId))
+      paramIndex++
     }
 
     if (description !== undefined) {
@@ -162,56 +190,26 @@ export async function PUT(
     }
 
     if (status !== undefined) {
-      updates.push(`"status" = $${paramIndex}`)
-      values.push(status)
+      updates.push(`"active" = $${paramIndex}`)
+      values.push(status === 'Active')
       paramIndex++
     }
 
     if (startDate !== undefined) {
-      updates.push(`"startDate" = $${paramIndex}`)
+      updates.push(`"startsAt" = $${paramIndex}`)
       values.push(startDate)
       paramIndex++
     }
 
     if (endDate !== undefined) {
-      updates.push(`"endDate" = $${paramIndex}`)
+      updates.push(`"endsAt" = $${paramIndex}`)
       values.push(endDate)
       paramIndex++
     }
 
-    if (targetRevenue !== undefined) {
-      updates.push(`"targetRevenue" = $${paramIndex}`)
-      values.push(targetRevenue)
-      paramIndex++
-    }
-
-    if (targetOrders !== undefined) {
-      updates.push(`"targetOrders" = $${paramIndex}`)
-      values.push(targetOrders)
-      paramIndex++
-    }
-
     if (budgetTotal !== undefined) {
-      updates.push(`"budgetTotal" = $${paramIndex}`)
-      values.push(budgetTotal)
-      paramIndex++
-    }
-
-    if (budgetAdSpend !== undefined) {
-      updates.push(`"budgetAdSpend" = $${paramIndex}`)
-      values.push(budgetAdSpend)
-      paramIndex++
-    }
-
-    if (budgetOther !== undefined) {
-      updates.push(`"budgetOther" = $${paramIndex}`)
-      values.push(budgetOther)
-      paramIndex++
-    }
-
-    if (assignedTo !== undefined) {
-      updates.push(`"assignedTo" = $${paramIndex}`)
-      values.push(assignedTo)
+      updates.push(`"description" = COALESCE("description", '') || $${paramIndex}`)
+      values.push(`\n\nBudget: ${budgetTotal} MAD`)
       paramIndex++
     }
 
@@ -219,7 +217,6 @@ export async function PUT(
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
     }
 
-    updates.push(`"updatedAt" = NOW()`)
     values.push(campaignId)
 
     const result = await pool.query(`

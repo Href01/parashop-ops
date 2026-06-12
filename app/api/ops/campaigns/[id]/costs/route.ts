@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
+import { tableExists } from '@/lib/ops-schema'
 
 /**
  * POST /api/ops/campaigns/[id]/costs
@@ -19,6 +20,16 @@ export async function POST(
 
     const { id: campaignId } = await params
     const body = await request.json()
+
+    if (!(await tableExists('CampaignCost'))) {
+      return NextResponse.json(
+        {
+          error: 'Campaign cost tracking is not installed',
+          missingTables: ['CampaignCost', 'CampaignMetrics'],
+        },
+        { status: 501 }
+      )
+    }
 
     const {
       type, // Meta Ads, Google Ads, TikTok Ads, Snapchat Ads, Influencer, Content Creation, Photography, Other
@@ -99,6 +110,14 @@ export async function GET(
     }
 
     const { id: campaignId } = await params
+
+    if (!(await tableExists('CampaignCost'))) {
+      return NextResponse.json({
+        costs: [],
+        totals: [],
+        missingTables: ['CampaignCost'],
+      })
+    }
 
     const result = await pool.query(`
       SELECT * FROM "CampaignCost"

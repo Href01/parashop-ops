@@ -46,6 +46,17 @@ interface SenditDeliveryResponse {
     address: string
     amount: number
     labelUrl: string
+    last_action_at?: string
+    audits?: Array<{
+      event?: string
+      user?: string
+      created_at?: string
+      data?: {
+        status?: string
+        district?: string | number
+        comment?: string
+      }
+    }>
     district: {
       id: number
       ville: string
@@ -61,7 +72,7 @@ interface SenditShipment {
   recipient_phone: string
   recipient_city: string
   recipient_address: string
-  district_id?: number  // If provided, use this instead of guessing from city
+  district_id: number
   cod_amount?: number
   package_weight?: number
   package_description?: string
@@ -162,35 +173,6 @@ async function getAuthToken(): Promise<string> {
 }
 
 /**
- * Get district ID from city name
- */
-function getDistrictId(city: string): number {
-  const cityLower = city.toLowerCase()
-
-  // Map common city names to district IDs
-  // TODO: Fetch from API /districts endpoint for complete list
-  if (cityLower.includes('casa')) return 1
-  if (cityLower.includes('rabat')) return 2
-  if (cityLower.includes('marrakech')) return 3
-  if (cityLower.includes('tanger')) return 4
-  if (cityLower.includes('fes')) return 5
-
-  // Default to Casablanca if unknown
-  return 1
-}
-
-/**
- * Estimate delivery cost based on city
- */
-function estimateDeliveryCost(city: string): number {
-  const cityLower = city.toLowerCase()
-
-  if (cityLower.includes('casa')) return 25
-  if (['rabat', 'marrakech', 'tanger', 'fes', 'agadir'].some(c => cityLower.includes(c))) return 35
-  return 45
-}
-
-/**
  * Create a new Sendit shipment
  */
 export async function createSenditShipment(shipment: SenditShipment): Promise<SenditShipmentResponse> {
@@ -198,6 +180,11 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
   console.log('📦 Shipment:', shipment)
 
   try {
+    const districtId = Number(shipment.district_id)
+    if (!Number.isInteger(districtId) || districtId <= 0) {
+      throw new Error('Sendit district is required. Select the exact Sendit city/district before creating a shipment.')
+    }
+
     // Validate and format phone BEFORE sending to API
     let formattedPhone: string
     try {
@@ -213,11 +200,9 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
     // Get auth token
     const token = await getAuthToken()
 
-    // Use provided district_id if available, otherwise guess from city name
-    const districtId = shipment.district_id || getDistrictId(shipment.recipient_city)
+    // Use the exact Sendit district selected by the operator/customer.
     console.log('📍 District:', {
       provided: shipment.district_id,
-      guessed: shipment.district_id ? null : getDistrictId(shipment.recipient_city),
       final: districtId,
     })
 
@@ -344,7 +329,12 @@ export async function getShipmentTracking(trackingId: string): Promise<SenditTra
     return {
       tracking_id: data.data.code,
       status: data.data.status,
-      status_history: [], // TODO: Parse from audits if available
+      status_history: (data.data.audits || []).map((audit) => ({
+        status: audit.data?.status || audit.event || data.data.status,
+        location: audit.data?.district ? String(audit.data.district) : '',
+        timestamp: audit.created_at || data.data.last_action_at || '',
+        note: [audit.event, audit.user, audit.data?.comment].filter(Boolean).join(' - ') || undefined,
+      })),
     }
 
   } catch (error: any) {
@@ -385,8 +375,18 @@ export async function cancelShipment(trackingId: string): Promise<{ success: boo
  * Get delivery cost estimate
  */
 export async function getDeliveryCostEstimate(city: string, weight: number = 0.5): Promise<number> {
-  // Use manual estimation for now
-  return estimateDeliveryCost(city)
+  void weight
+
+  const normalizedCity = city.trim().toLowerCase()
+  if (!normalizedCity) return 0
+
+  const districts = await getAllDistricts()
+  const district = districts.find((item) =>
+    item.name.toLowerCase() === normalizedCity ||
+    item.ville.toLowerCase() === normalizedCity
+  )
+
+  return district?.price || 0
 }
 
 /**

@@ -20,41 +20,30 @@ export async function POST(
     const { id: campaignId } = await params
     const body = await request.json()
 
-    const {
-      productId,
-      targetSales,
-      targetRevenue,
-      discountPercent,
-      specialPrice,
-    } = body
+    const { productId } = body
 
     if (!productId) {
       return NextResponse.json({ error: 'productId is required' }, { status: 400 })
     }
 
-    // Add product to campaign
+    const positionResult = await pool.query(
+      'SELECT COALESCE(MAX(position), -1) + 1 as position FROM "CampaignProduct" WHERE "campaignId" = $1',
+      [campaignId]
+    )
+
     const result = await pool.query(`
       INSERT INTO "CampaignProduct" (
         "campaignId",
         "productId",
-        "targetSales",
-        "targetRevenue",
-        "discountPercent",
-        "specialPrice"
-      ) VALUES ($1, $2, $3, $4, $5, $6)
+        "position"
+      ) VALUES ($1, $2, $3)
       ON CONFLICT ("campaignId", "productId") DO UPDATE SET
-        "targetSales" = EXCLUDED."targetSales",
-        "targetRevenue" = EXCLUDED."targetRevenue",
-        "discountPercent" = EXCLUDED."discountPercent",
-        "specialPrice" = EXCLUDED."specialPrice"
+        "position" = "CampaignProduct"."position"
       RETURNING *
     `, [
       campaignId,
       productId,
-      targetSales,
-      targetRevenue,
-      discountPercent,
-      specialPrice,
+      positionResult.rows[0].position,
     ])
 
     return NextResponse.json({

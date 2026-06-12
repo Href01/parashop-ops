@@ -14,6 +14,7 @@ export default function NewEventPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (saving) return
 
     if (!name || !startDate || !endDate) {
       alert('Please fill in all required fields')
@@ -38,7 +39,7 @@ export default function NewEventPage() {
       if (!res.ok) throw new Error('Failed to create event')
 
       const data = await res.json()
-      window.location.href = `/events/${data.id}`
+      window.location.href = `/events/${data.id || data.event?.id}`
     } catch (error) {
       console.error('Failed to create event:', error)
       alert('Failed to create event. Please try again.')

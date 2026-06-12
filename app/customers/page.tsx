@@ -6,18 +6,18 @@ import { Search, Filter, Download, UserPlus, TrendingUp, TrendingDown, Clock, Do
 
 type Customer = {
   id: number
-  name: string
-  email: string
-  phone: string
-  segment: string
-  tier: string
-  ordersCount: number
-  lifetimeValue: number
-  averageOrderValue: number
-  lastOrderDate: string
-  daysSinceLastOrder: number
-  rfmScore: string
-  churnRisk: number
+  name: string | null
+  email: string | null
+  phone: string | null
+  segment: string | null
+  tier: string | null
+  ordersCount: number | string | null
+  lifetimeValue: number | string | null
+  averageOrderValue: number | string | null
+  lastOrderDate: string | null
+  daysSinceLastOrder: number | string | null
+  rfmScore: string | null
+  churnRisk: number | string | null
   createdAt: string
 }
 
@@ -58,16 +58,16 @@ export default function CustomersPage() {
     const csv = [
       ['Name', 'Email', 'Phone', 'Segment', 'Tier', 'Orders', 'LTV (MAD)', 'Avg Order (MAD)', 'Last Order', 'RFM Score'],
       ...customers.map(c => [
-        c.name,
-        c.email,
-        c.phone,
-        c.segment,
-        c.tier,
-        c.ordersCount,
-        c.lifetimeValue,
-        c.averageOrderValue,
+        c.name || 'Unnamed customer',
+        c.email || '',
+        c.phone || '',
+        getSegmentLabel(c.segment),
+        getTierLabel(c.tier),
+        toNumber(c.ordersCount),
+        toNumber(c.lifetimeValue),
+        toNumber(c.averageOrderValue),
         formatDate(c.lastOrderDate),
-        c.rfmScore
+        c.rfmScore || ''
       ])
     ].map(row => row.join(',')).join('\n')
 
@@ -84,7 +84,20 @@ export default function CustomersPage() {
     alert('Customer creation feature coming soon!\n\nCustomers are automatically created when they place their first order.')
   }
 
-  const getSegmentColor = (segment: string) => {
+  const toNumber = (value: unknown) => {
+    const number = typeof value === 'number' ? value : Number(value ?? 0)
+    return Number.isFinite(number) ? number : 0
+  }
+
+  const getSegmentLabel = (segment: string | null | undefined) => {
+    return segment?.trim() || 'Unsegmented'
+  }
+
+  const getTierLabel = (tier: string | null | undefined) => {
+    return tier?.trim() || 'No tier'
+  }
+
+  const getSegmentColor = (segment: string | null | undefined) => {
     const colors: Record<string, string> = {
       'VIP': 'badge green',
       'Regular': 'badge blue',
@@ -92,28 +105,35 @@ export default function CustomersPage() {
       'New': 'badge violet',
       'Churned': 'badge red',
     }
-    return colors[segment] || 'badge'
+    return colors[getSegmentLabel(segment)] || 'badge'
   }
 
-  const getTierColor = (tier: string) => {
+  const getTierColor = (tier: string | null | undefined) => {
     const colors: Record<string, string> = {
       'Platinum': 'badge violet',
       'Gold': 'badge amber',
       'Silver': 'badge gray',
       'Bronze': 'badge',
     }
-    return colors[tier] || 'badge'
+    return colors[getTierLabel(tier)] || 'badge'
   }
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (dateString: string | null) => {
     if (!dateString) return 'Never'
     const date = new Date(dateString)
+    if (Number.isNaN(date.getTime())) return 'Never'
     return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
   }
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('fr-MA', { style: 'decimal', maximumFractionDigits: 0 }).format(amount)
+  const formatCurrency = (amount: unknown) => {
+    return new Intl.NumberFormat('fr-MA', { style: 'decimal', maximumFractionDigits: 0 }).format(toNumber(amount))
   }
+
+  const avgLifetimeValue = customers.length
+    ? customers.reduce((sum, customer) => sum + toNumber(customer.lifetimeValue), 0) / customers.length
+    : 0
+  const vipCustomers = customers.filter((customer) => getSegmentLabel(customer.segment) === 'VIP').length
+  const atRiskCustomers = customers.filter((customer) => getSegmentLabel(customer.segment) === 'At Risk').length
 
   return (
     <BosShell active="customers" title="Customers" crumb="Growth">
@@ -132,9 +152,9 @@ export default function CustomersPage() {
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <Metric icon={<UserPlus />} tone="blue" title="Total customers" value={customers.length.toString()} trend="+12 this week" />
-          <Metric icon={<DollarSign />} tone="green" title="Avg LTV" value={`${formatCurrency(customers.reduce((sum, c) => sum + c.lifetimeValue, 0) / (customers.length || 1))} MAD`} />
-          <Metric icon={<TrendingUp />} tone="teal" title="VIP customers" value={customers.filter(c => c.segment === 'VIP').length.toString()} trend={`${((customers.filter(c => c.segment === 'VIP').length / (customers.length || 1)) * 100).toFixed(1)}%`} />
-          <Metric icon={<Clock />} tone="amber" title="At risk" value={customers.filter(c => c.segment === 'At Risk').length.toString()} trend="Need attention" />
+          <Metric icon={<DollarSign />} tone="green" title="Avg LTV" value={`${formatCurrency(avgLifetimeValue)} MAD`} />
+          <Metric icon={<TrendingUp />} tone="teal" title="VIP customers" value={vipCustomers.toString()} trend={`${((vipCustomers / (customers.length || 1)) * 100).toFixed(1)}%`} />
+          <Metric icon={<Clock />} tone="amber" title="At risk" value={atRiskCustomers.toString()} trend="Need attention" />
         </div>
 
         {/* Filters */}
@@ -151,7 +171,7 @@ export default function CustomersPage() {
             />
           </div>
 
-          <div className="inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
+          <div className="filter-strip inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
             <button
               className={`btn-modern btn-sm ${segmentFilter === '' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setSegmentFilter('')}
@@ -184,7 +204,7 @@ export default function CustomersPage() {
             </button>
           </div>
 
-          <div className="inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
+          <div className="filter-strip inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
             <button
               className={`btn-modern btn-sm ${tierFilter === '' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setTierFilter('')}
@@ -246,27 +266,27 @@ export default function CustomersPage() {
                   customers.map((customer) => (
                     <tr key={customer.id} onClick={() => window.location.href = `/customers/${customer.id}`} style={{ cursor: 'pointer' }}>
                       <td>
-                        <div className="t-strong">{customer.name}</div>
-                        <div className="fs11 tx-lo">{customer.email}</div>
+                        <div className="t-strong">{customer.name || 'Unnamed customer'}</div>
+                        <div className="fs11 tx-lo">{customer.email || customer.phone || 'No contact on file'}</div>
                       </td>
                       <td>
                         <span className={getSegmentColor(customer.segment)}>
-                          {customer.segment}
+                          {getSegmentLabel(customer.segment)}
                         </span>
                       </td>
                       <td>
                         <span className={getTierColor(customer.tier)}>
-                          {customer.tier}
+                          {getTierLabel(customer.tier)}
                         </span>
                       </td>
-                      <td className="r num">{customer.ordersCount}</td>
+                      <td className="r num">{toNumber(customer.ordersCount)}</td>
                       <td className="r num pos">{formatCurrency(customer.lifetimeValue)} MAD</td>
                       <td className="r num">{formatCurrency(customer.averageOrderValue)} MAD</td>
                       <td>
                         <span className="fs12 tx-lo">
                           {formatDate(customer.lastOrderDate)}
-                          {customer.daysSinceLastOrder > 0 && (
-                            <span className="tx-lo"> ({customer.daysSinceLastOrder}d ago)</span>
+                          {toNumber(customer.daysSinceLastOrder) > 0 && (
+                            <span className="tx-lo"> ({toNumber(customer.daysSinceLastOrder)}d ago)</span>
                           )}
                         </span>
                       </td>
@@ -274,9 +294,9 @@ export default function CustomersPage() {
                         <span className="mono fs12 fw600">{customer.rfmScore || '---'}</span>
                       </td>
                       <td className="r">
-                        {customer.churnRisk > 0 ? (
-                          <span className={`num ${customer.churnRisk >= 70 ? 'neg' : customer.churnRisk >= 40 ? 'tx-lo' : ''}`}>
-                            {customer.churnRisk}%
+                        {toNumber(customer.churnRisk) > 0 ? (
+                          <span className={`num ${toNumber(customer.churnRisk) >= 70 ? 'neg' : toNumber(customer.churnRisk) >= 40 ? 'tx-lo' : ''}`}>
+                            {toNumber(customer.churnRisk)}%
                           </span>
                         ) : (
                           <span className="tx-lo">-</span>

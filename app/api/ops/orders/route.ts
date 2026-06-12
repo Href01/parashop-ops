@@ -1,15 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
-import { generateOrderNumber } from '@/lib/order-utils'
+import { buildSenditProductsDescription, calculateCodAmount, generateOrderNumber } from '@/lib/order-utils'
 import { createSenditShipment } from '@/lib/sendit'
 import { CreateOrderSchema } from '@/lib/validation/order'
+import { getOpsSession } from '@/lib/auth'
 
 // GET /api/ops/orders - List all orders
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
+    const session = await getOpsSession()
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
@@ -79,12 +78,9 @@ export async function GET(request: NextRequest) {
 // POST /api/ops/orders - Create new order
 export async function POST(request: NextRequest) {
   try {
-    // Check auth: either logged-in user OR valid webhook secret
-    const session = await getServerSession(authOptions)
-    const webhookSecret = request.headers.get('x-webhook-secret')
-    const isWebhook = webhookSecret && webhookSecret === process.env.WEBHOOK_SECRET
+    const session = await getOpsSession()
 
-    if (!session?.user?.email && !isWebhook) {
+    if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -193,23 +189,32 @@ export async function POST(request: NextRequest) {
       )
 
       const order = orderResult.rows[0]
+      let senditProductsDescription = buildSenditProductsDescription(items, `Order ${orderNumber}`)
 
       // Create order items (if any)
       if (items && items.length > 0) {
         // Get product cost prices
         const productIds = items.map((item: any) => item.productId)
         const productsResult = await client.query(
-          `SELECT id, "costPrice" FROM "Product" WHERE id = ANY($1)`,
+          `SELECT id, name, "costPrice" FROM "Product" WHERE id = ANY($1)`,
           [productIds]
         )
 
-        const productCosts = new Map(
-          productsResult.rows.map(p => [p.id, p.costPrice || 0])
+        const productsById = new Map(
+          productsResult.rows.map(p => [p.id, { name: p.name, costPrice: p.costPrice || 0 }])
+        )
+        senditProductsDescription = buildSenditProductsDescription(
+          items.map((item: any) => ({
+            productId: item.productId,
+            productName: productsById.get(item.productId)?.name,
+            quantity: item.quantity,
+          })),
+          `Order ${orderNumber}`
         )
 
         // Create order items
         for (const item of items) {
-        const unitCost = productCosts.get(item.productId) || 0
+        const unitCost = productsById.get(item.productId)?.costPrice || 0
         const totalPrice = item.unitPrice * item.quantity
         const totalCost = unitCost * item.quantity
 
@@ -227,6 +232,14 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Re-run the profit trigger now that OrderItem rows exist.
+      await client.query(
+        `UPDATE "Order"
+         SET "deliveryStatus" = "deliveryStatus"
+         WHERE id = $1`,
+        [order.id]
+      )
+
       // Add status history
       await client.query(
         `INSERT INTO "OrderStatusHistory" (
@@ -240,9 +253,7 @@ export async function POST(request: NextRequest) {
         [
           order.id,
           confirmImmediately ? 'CONFIRMED' : 'PENDING',
-          isWebhook
-            ? 'Order synced from website'
-            : `Order created via BOS by ${session?.user?.email}`,
+          `Order created via BOS by ${session.user.email}`,
         ]
       )
 
@@ -251,7 +262,11 @@ export async function POST(request: NextRequest) {
       // Auto-create Sendit shipment if order was confirmed immediately
       let senditWarning = null
       if (confirmImmediately) {
-        try {
+        if (!senditDistrictId) {
+          senditWarning = 'Order created but Sendit shipment was not created: exact Sendit district is required.'
+          console.warn(senditWarning)
+        } else {
+          try {
           console.log(`🚀 Auto-creating Sendit shipment for new order ${order.id}...`)
           console.log(`Order data:`, {
             orderNumber,
@@ -270,10 +285,10 @@ export async function POST(request: NextRequest) {
             recipient_phone: deliveryPhone,
             recipient_city: deliveryCity,
             recipient_address: deliveryAddress || '',
-            district_id: senditDistrictId,  // Use stored district if available
-            cod_amount: paymentMethod === 'COD' ? total : 0,
+            district_id: senditDistrictId,
+            cod_amount: calculateCodAmount(paymentMethod, total),
             package_weight: 0.5,
-            package_description: `Order ${orderNumber}`,
+            package_description: senditProductsDescription,
             notes: notes || deliveryNotes || '',
           })
 
@@ -304,7 +319,7 @@ export async function POST(request: NextRequest) {
           )
 
           console.log(`✅ Sendit shipment created: ${shipment.tracking_id}`)
-        } catch (senditError: any) {
+          } catch (senditError: any) {
           // Log error but don't fail the order creation
           console.error(`❌ Failed to auto-create Sendit shipment for order ${order.id}:`, senditError)
           console.error(`Error details:`, {
@@ -314,6 +329,7 @@ export async function POST(request: NextRequest) {
           })
           senditWarning = `Order created but Sendit shipment failed: ${senditError.message}`
           // Order stays CONFIRMED, user can manually create shipment later
+          }
         }
       }
 

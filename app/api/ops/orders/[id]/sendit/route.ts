@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import pool from '@/lib/db'
 import { createSenditShipment, getShipmentTracking } from '@/lib/sendit'
+import { getOpsSession } from '@/lib/auth'
+import { buildSenditProductsDescription, calculateCodAmount } from '@/lib/order-utils'
 
 // Create Sendit shipment for an order
 export async function POST(
@@ -8,6 +10,11 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await getOpsSession()
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { id: orderId } = await params
 
     // Get order details
@@ -58,17 +65,21 @@ export async function POST(
 
     // Parse request body for optional overrides
     const body = await request.json().catch(() => ({}))
-    const { notes, packageWeight } = body
+    const { notes, packageWeight, districtId: overrideDistrictId } = body
+    const districtId = Number(overrideDistrictId || order.senditDistrictId)
 
-    // Create shipment with Sendit
-    // CRITICAL: If paymentMethod is null/undefined, default to COD (customer pays on delivery)
-    // Otherwise for prepaid orders (credit card, etc.), COD amount should be 0
-    const isCOD = !order.paymentMethod || order.paymentMethod === 'COD'
-    const codAmount = isCOD ? order.total : 0
+    if (!Number.isInteger(districtId) || districtId <= 0) {
+      return NextResponse.json({
+        error: 'Sendit district is required',
+        details: 'Select the exact Sendit city/district before creating a shipment.',
+      }, { status: 400 })
+    }
+
+    const codAmount = calculateCodAmount(order.paymentMethod, order.total)
+    const productsDescription = buildSenditProductsDescription(order.items, `Order ${order.orderNumber || order.id}`)
 
     console.log('💰 Payment method check:', {
       paymentMethod: order.paymentMethod,
-      isCOD,
       orderTotal: order.total,
       codAmount,
     })
@@ -79,10 +90,10 @@ export async function POST(
       recipient_phone: order.deliveryPhone,
       recipient_city: order.deliveryCity,
       recipient_address: order.deliveryAddress || '',
-      district_id: order.senditDistrictId,  // Use stored district if available
+      district_id: districtId,
       cod_amount: codAmount,  // Use calculated COD amount
       package_weight: packageWeight || 0.5,
-      package_description: `Order ${order.orderNumber} - ${order.items?.length || 0} items`,
+      package_description: productsDescription,
       notes: notes || order.notes || '',
     })
 
@@ -92,7 +103,8 @@ export async function POST(
        SET "senditTrackingId" = $1,
            "senditBarcode" = $2,
            "senditStatus" = $3,
-           "actualDeliveryCost" = $4
+           "actualDeliveryCost" = $4,
+           "deliveryStatus" = 'SENDIT_CREATED'
        WHERE id = $5`,
       [
         shipment.tracking_id,
@@ -132,8 +144,6 @@ export async function POST(
       {
         error: 'Failed to create shipment',
         details: error?.message || String(error),
-        errorName: error?.name,
-        stack: error?.stack,
       },
       { status: 500 }
     )
@@ -146,11 +156,16 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await getOpsSession()
+    if (!session) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const { id: orderId } = await params
 
     // Get order with tracking ID
     const orderResult = await pool.query(
-      'SELECT "senditTrackingId" FROM "Order" WHERE id = $1',
+      'SELECT status, "senditTrackingId" FROM "Order" WHERE id = $1',
       [orderId]
     )
 
@@ -172,21 +187,22 @@ export async function GET(
     // Update order status based on Sendit status
     const statusMap: Record<string, string> = {
       'DELIVERED': 'DELIVERED',
-      'RETURNED': 'CANCELLED',
-      'FAILED': 'CANCELLED',
+      'CANCELED': 'CANCELLED',
+      'REJECTED': 'CANCELLED',
     }
 
     const newStatus = statusMap[tracking.status]
 
-    if (newStatus) {
-      // Update order status
-      await pool.query(
-        `UPDATE "Order"
-         SET status = $1, "senditStatus" = $2
-         WHERE id = $3 AND status != $1`,
-        [newStatus, tracking.status, orderId]
-      )
+    await pool.query(
+      `UPDATE "Order"
+       SET "senditStatus" = $1,
+           "deliveryStatus" = $2,
+           status = COALESCE($3::"OrderStatus", status)
+       WHERE id = $4`,
+      [tracking.status, tracking.status, newStatus || null, orderId]
+    )
 
+    if (newStatus && newStatus !== orderResult.rows[0].status) {
       // Add status history if status changed
       const changed = await pool.query(
         `SELECT COUNT(*) as count FROM "OrderStatusHistory"
@@ -198,8 +214,8 @@ export async function GET(
         await pool.query(
           `INSERT INTO "OrderStatusHistory" (
             "orderId", "oldStatus", "newStatus", note, "createdAt"
-          ) VALUES ($1, 'SHIPPED', $2, $3, NOW())`,
-          [orderId, newStatus, `Sendit status: ${tracking.status}`]
+          ) VALUES ($1, $2, $3, $4, NOW())`,
+          [orderId, orderResult.rows[0].status, newStatus, `Sendit status: ${tracking.status}`]
         )
       }
     }

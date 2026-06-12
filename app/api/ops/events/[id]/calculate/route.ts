@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
+import { tableExists } from '@/lib/ops-schema'
 
 /**
  * POST /api/ops/events/[id]/calculate
@@ -23,6 +24,16 @@ export async function POST(
     const session = await getServerSession(authOptions)
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!(await tableExists('Event'))) {
+      return NextResponse.json(
+        {
+          error: 'Event tracking is not installed',
+          missingTables: ['Event', 'EventMetrics', 'EventProduct', 'EventCategory'],
+        },
+        { status: 501 }
+      )
     }
 
     const { id: eventId } = await params

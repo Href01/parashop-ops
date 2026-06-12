@@ -376,6 +376,60 @@ select:focus {
   background: oklch(0.6 0.03 340 / 0.06);
 }
 
+/* ---- Dark compatibility for shared modern components ---- */
+body.crypto .table-modern {
+  background: transparent;
+}
+
+body.crypto .table-modern thead th {
+  background: var(--bg-inset);
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--tx-lo);
+}
+
+body.crypto .table-modern tbody td {
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--tx-mid);
+}
+
+body.crypto .table-modern tbody tr:hover {
+  background: var(--bg-2);
+}
+
+body.crypto .card-modern .text-gray-900,
+body.crypto .table-modern .text-gray-900 {
+  color: var(--tx-hi) !important;
+}
+
+body.crypto .card-modern .text-gray-600,
+body.crypto .card-modern .text-gray-500,
+body.crypto .table-modern .text-gray-600,
+body.crypto .table-modern .text-gray-500 {
+  color: var(--tx-lo) !important;
+}
+
+body.crypto .bg-gray-100 {
+  background: var(--bg-inset) !important;
+}
+
+body.crypto .border-gray-300 {
+  border-color: var(--line-soft) !important;
+}
+
+body.crypto input:not([type='checkbox']):not([type='radio']),
+body.crypto select,
+body.crypto textarea {
+  background-color: var(--bg-inset);
+  border-color: var(--line-soft);
+  color: var(--tx-hi);
+  color-scheme: dark;
+}
+
+body.crypto input::placeholder,
+body.crypto textarea::placeholder {
+  color: var(--tx-faint);
+}
+
 /* ---- Sidebar active item with rose gradient ---- */
 .nav-item.active {
   background: linear-gradient(90deg, oklch(0.76 0.16 14 / 0.16), transparent);

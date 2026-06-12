@@ -226,7 +226,7 @@ export default function InventoryPage() {
 
         {/* Filters */}
         <div className="mb-6">
-          <div className="inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
+          <div className="filter-strip inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
             <button
               className={`btn-modern btn-sm ${statusFilter === '' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('')}

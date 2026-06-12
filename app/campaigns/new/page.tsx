@@ -16,6 +16,7 @@ export default function NewCampaignPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (saving) return
 
     if (!name || !startDate || !endDate) {
       alert('Please fill in all required fields')
@@ -29,12 +30,11 @@ export default function NewCampaignPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name,
-          platform,
-          description,
+          description: [description, `Platform: ${platform}`, `Objective: ${objective}`].filter(Boolean).join('\n\n'),
           startDate,
           endDate,
-          budget: budget ? parseFloat(budget) : null,
-          objective,
+          budgetTotal: budget ? parseFloat(budget) : null,
+          budgetAdSpend: budget ? parseFloat(budget) : null,
           status: 'Active',
         }),
       })
@@ -42,7 +42,7 @@ export default function NewCampaignPage() {
       if (!res.ok) throw new Error('Failed to create campaign')
 
       const data = await res.json()
-      window.location.href = `/campaigns/${data.id}`
+      window.location.href = `/campaigns/${data.id || data.campaign?.id}`
     } catch (error) {
       console.error('Failed to create campaign:', error)
       alert('Failed to create campaign. Please try again.')

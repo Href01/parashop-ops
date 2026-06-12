@@ -71,7 +71,7 @@ function SignInForm() {
           </div>
         </div>
 
-        <div className="auth-foot">ops.shinecosmetics.ma - © 2026 Shine Cosmetics</div>
+        <div className="auth-foot">ops.shinecosmetics.ma - (c) 2026 Shine Cosmetics</div>
       </div>
 
       <div className="auth-form">
@@ -103,7 +103,7 @@ function SignInForm() {
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 required
-                placeholder="••••••••"
+                placeholder="********"
               />
             </div>
             <button type="submit" className="gbtn" disabled={loading}>

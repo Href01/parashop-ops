@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { Download, Edit3, MoreHorizontal, Package, Percent, Plus, Search, TriangleAlert, Wallet } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, Edit3, MoreHorizontal, Package, Percent, Plus, Search, TriangleAlert, Wallet } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import BosShell from '@/components/BosShell'
 import EditCostPriceModal from './EditCostPriceModal'
@@ -19,6 +19,8 @@ interface Product {
   stock: number
   lowStockThreshold: number
 }
+
+const PAGE_SIZE = 25
 
 function toNumber(value: unknown) {
   const parsed = Number(value)
@@ -44,6 +46,7 @@ export default function ProductsPage() {
   const [filterLowStock, setFilterLowStock] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [showBulkEdit, setShowBulkEdit] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
 
   useEffect(() => {
     void fetchProducts()
@@ -153,6 +156,11 @@ export default function ProductsPage() {
     return { activeSkus, inventoryValue, avgMargin, missingCost, lowStock }
   }, [products])
 
+  const totalPages = Math.max(1, Math.ceil(products.length / PAGE_SIZE))
+  const currentPageInRange = Math.min(currentPage, totalPages)
+  const pageStart = (currentPageInRange - 1) * PAGE_SIZE
+  const paginatedProducts = products.slice(pageStart, pageStart + PAGE_SIZE)
+
   return (
     <BosShell active="products" title="Products" crumb="Operations">
       <div className="page-inner page-wide">
@@ -190,31 +198,34 @@ export default function ProductsPage() {
               <input
                 type="text"
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => {
+                  setSearch(event.target.value)
+                  setCurrentPage(1)
+                }}
                 placeholder="Search products, SKU..."
                 className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
 
-            <div className="inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
+            <div className="filter-strip inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
               <button
                 type="button"
                 className={`btn-modern btn-sm ${!filterMissingCost && !filterLowStock ? 'btn-primary' : 'btn-subtle'}`}
-                onClick={() => { setFilterMissingCost(false); setFilterLowStock(false); }}
+                onClick={() => { setFilterMissingCost(false); setFilterLowStock(false); setCurrentPage(1); }}
               >
                 All <span className="ml-1 badge-modern badge-neutral badge-sm">{products.length}</span>
               </button>
               <button
                 type="button"
                 className={`btn-modern btn-sm ${filterLowStock ? 'btn-primary' : 'btn-subtle'}`}
-                onClick={() => { setFilterLowStock(true); setFilterMissingCost(false); }}
+                onClick={() => { setFilterLowStock(true); setFilterMissingCost(false); setCurrentPage(1); }}
               >
                 Low stock <span className="ml-1 badge-modern badge-warning badge-sm">{stats.lowStock}</span>
               </button>
               <button
                 type="button"
                 className={`btn-modern btn-sm ${filterMissingCost ? 'btn-primary' : 'btn-subtle'}`}
-                onClick={() => { setFilterMissingCost(true); setFilterLowStock(false); }}
+                onClick={() => { setFilterMissingCost(true); setFilterLowStock(false); setCurrentPage(1); }}
               >
                 Missing cost <span className="ml-1 badge-modern badge-danger badge-sm">{stats.missingCost}</span>
               </button>
@@ -252,7 +263,7 @@ export default function ProductsPage() {
                     </td>
                   </tr>
                 ) : (
-                  products.map((product) => {
+                  paginatedProducts.map((product) => {
                     const productMargin = margin(product.price, product.costPrice)
                     const hasCost = toNumber(product.costPrice) > 0
                     const lowStock = product.stock > 0 && product.stock <= product.lowStockThreshold
@@ -317,7 +328,13 @@ export default function ProductsPage() {
                           <MiniBars color={stockColor} />
                         </td>
                         <td className="r">
-                          <button type="button" className="btn-modern btn-icon btn-subtle">
+                          <button
+                            type="button"
+                            className="btn-modern btn-icon btn-subtle"
+                            onClick={() => setSelectedProduct(product)}
+                            title="Edit cost price"
+                            aria-label={`Edit ${product.name}`}
+                          >
                             <MoreHorizontal className="w-4 h-4" />
                           </button>
                         </td>
@@ -329,11 +346,29 @@ export default function ProductsPage() {
             </table>
           </div>
           <div className="flex items-center justify-between p-4 border-t border-gray-200 bg-gray-50">
-            <span className="text-xs text-gray-600">{products.length} products - {stats.missingCost} missing cost price hurt profit tracking</span>
+            <span className="text-xs text-gray-600">
+              Showing {products.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, products.length)} of {products.length} products - {stats.missingCost} missing cost price hurt profit tracking
+            </span>
             <div className="flex items-center gap-2">
-              <button type="button" className="btn-modern btn-sm btn-secondary">Prev</button>
-              <button type="button" className="btn-modern btn-sm btn-primary">1</button>
-              <button type="button" className="btn-modern btn-sm btn-secondary">Next</button>
+              <button
+                type="button"
+                className="btn-modern btn-sm btn-secondary"
+                onClick={() => setCurrentPage((page) => Math.max(1, Math.min(page, totalPages) - 1))}
+                disabled={currentPageInRange <= 1}
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Prev
+              </button>
+              <button type="button" className="btn-modern btn-sm btn-primary">{currentPageInRange}/{totalPages}</button>
+              <button
+                type="button"
+                className="btn-modern btn-sm btn-secondary"
+                onClick={() => setCurrentPage((page) => Math.min(totalPages, Math.min(page, totalPages) + 1))}
+                disabled={currentPageInRange >= totalPages}
+              >
+                Next
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           </div>
         </div>

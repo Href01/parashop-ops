@@ -47,7 +47,7 @@ export default function ContentPage() {
             <div className="sub">Plan, produce & track content across TikTok, Instagram & Facebook</div>
           </div>
           <div className="spacer"></div>
-          <div className="inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
+          <div className="filter-strip inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
             <button className={`btn-modern btn-sm ${view === 'Board' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setView('Board')}>Board</button>
             <button className={`btn-modern btn-sm ${view === 'Calendar' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setView('Calendar')}>Calendar</button>
             <button className={`btn-modern btn-sm ${view === 'Table' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setView('Table')}>Table</button>

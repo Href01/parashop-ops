@@ -1,12 +1,16 @@
 'use client'
 
-import { ChevronDown, Download, Filter, Plus, RefreshCw, Search } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Download, Filter, Plus, RefreshCw, Search, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import BosShell from '@/components/BosShell'
 
 type OrderStatus = 'PENDING' | 'CONFIRMED' | 'SHIPPED' | 'DELIVERED' | 'RETURNED' | 'CANCELLED' | 'FAILED'
+type OrderFilter = 'all' | 'pending' | 'no-shipment' | 'incomplete'
+type DateFilter = 'today' | 'week' | 'month' | 'all'
+
+const PAGE_SIZE = 25
 
 interface OrderRow {
   id: number
@@ -54,6 +58,13 @@ const channelColors: Record<string, string> = {
   Manual: 'var(--c-manual)',
 }
 
+const dateFilterLabels: Record<DateFilter, string> = {
+  today: 'Today',
+  week: 'This week',
+  month: '30 days',
+  all: 'All time',
+}
+
 function toNumber(value: unknown) {
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : 0
@@ -73,6 +84,10 @@ export default function OrdersPage() {
   const router = useRouter()
   const [orders, setOrders] = useState<OrderRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
+  const [activeFilter, setActiveFilter] = useState<OrderFilter>('all')
+  const [dateFilter, setDateFilter] = useState<DateFilter>('week')
+  const [currentPage, setCurrentPage] = useState(1)
 
   useEffect(() => {
     void fetchOrders()
@@ -99,7 +114,7 @@ export default function OrdersPage() {
       if (!res.ok) throw new Error('Delete failed')
 
       // Remove from list
-      setOrders(orders.filter(o => o.id !== orderId))
+      setOrders((currentOrders) => currentOrders.filter(o => o.id !== orderId))
     } catch (error) {
       console.error('Delete error:', error)
       alert('Failed to delete order')
@@ -124,7 +139,7 @@ export default function OrdersPage() {
   const handleExport = () => {
     const csv = [
       ['Order #', 'Customer', 'Phone', 'City', 'Status', 'Revenue', 'Profit', 'Margin %', 'Date'],
-      ...orders.map(o => [
+      ...filteredOrders.map(o => [
         o.orderNumber || o.id,
         o.deliveryName || '',
         o.deliveryPhone || '',
@@ -146,6 +161,22 @@ export default function OrdersPage() {
     URL.revokeObjectURL(url)
   }
 
+  const cycleDateFilter = () => {
+    const nextByFilter: Record<DateFilter, DateFilter> = {
+      today: 'week',
+      week: 'month',
+      month: 'all',
+      all: 'today',
+    }
+    setDateFilter(nextByFilter[dateFilter])
+    setCurrentPage(1)
+  }
+
+  const selectFilter = (filter: OrderFilter) => {
+    setActiveFilter(filter)
+    setCurrentPage(1)
+  }
+
   const stats = useMemo(() => {
     const count = (status: string) => orders.filter((order) => order.status === status).length
 
@@ -158,6 +189,65 @@ export default function OrdersPage() {
       { label: 'Cancelled', value: count('CANCELLED'), color: 'var(--tx-mid)', className: 'st-cancelled' },
     ]
   }, [orders])
+
+  const filteredOrders = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase()
+    const now = new Date()
+
+    return orders.filter((order) => {
+      if (normalizedSearch) {
+        const searchable = [
+          order.id,
+          order.orderNumber,
+          order.deliveryName,
+          order.deliveryPhone,
+          order.deliveryCity,
+          order.sourceChannel,
+          order.product_names,
+        ].join(' ').toLowerCase()
+
+        if (!searchable.includes(normalizedSearch)) return false
+      }
+
+      if (activeFilter === 'pending' && order.status !== 'PENDING') return false
+      if (
+        activeFilter === 'no-shipment' &&
+        (order.status !== 'CONFIRMED' || (order.deliveryStatus && order.deliveryStatus !== 'NOT_CREATED'))
+      ) {
+        return false
+      }
+      if (activeFilter === 'incomplete' && toNumber(order.completenessScore || 100) >= 90) return false
+
+      if (dateFilter !== 'all') {
+        const createdAt = new Date(order.createdAt)
+        if (Number.isNaN(createdAt.getTime())) return false
+
+        if (dateFilter === 'today') {
+          return createdAt.toDateString() === now.toDateString()
+        }
+
+        const days = dateFilter === 'week' ? 7 : 30
+        const cutoff = new Date(now)
+        cutoff.setDate(cutoff.getDate() - days)
+        return createdAt >= cutoff
+      }
+
+      return true
+    })
+  }, [orders, search, activeFilter, dateFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / PAGE_SIZE))
+  const currentPageInRange = Math.min(currentPage, totalPages)
+  const pageStart = (currentPageInRange - 1) * PAGE_SIZE
+  const paginatedOrders = filteredOrders.slice(pageStart, pageStart + PAGE_SIZE)
+  const hasActiveFilters = search.trim() || activeFilter !== 'all' || dateFilter !== 'week'
+
+  const resetFilters = () => {
+    setSearch('')
+    setActiveFilter('all')
+    setDateFilter('week')
+    setCurrentPage(1)
+  }
 
   return (
     <BosShell active="orders" title="Orders" crumb="Operations">
@@ -224,32 +314,53 @@ export default function OrdersPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
                 type="text"
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value)
+                  setCurrentPage(1)
+                }}
                 placeholder="Search by name, phone, order #..."
                 className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
 
-            <div className="inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
-              <button type="button" className="btn-modern btn-sm btn-primary">
+            <div className="filter-strip inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
+              <button
+                type="button"
+                className={`btn-modern btn-sm ${activeFilter === 'all' ? 'btn-primary' : 'btn-subtle'}`}
+                onClick={() => selectFilter('all')}
+              >
                 All <span className="ml-1 badge-modern badge-neutral badge-sm">{orders.length}</span>
               </button>
-              <button type="button" className="btn-modern btn-sm btn-subtle">
+              <button
+                type="button"
+                className={`btn-modern btn-sm ${activeFilter === 'pending' ? 'btn-primary' : 'btn-subtle'}`}
+                onClick={() => selectFilter('pending')}
+              >
                 Pending <span className="ml-1 badge-modern badge-warning badge-sm">{stats[0].value}</span>
               </button>
-              <button type="button" className="btn-modern btn-sm btn-subtle">
-                No shipment <span className="ml-1 badge-modern badge-info badge-sm">{orders.filter((order) => order.status === 'CONFIRMED' && !order.deliveryStatus).length}</span>
+              <button
+                type="button"
+                className={`btn-modern btn-sm ${activeFilter === 'no-shipment' ? 'btn-primary' : 'btn-subtle'}`}
+                onClick={() => selectFilter('no-shipment')}
+              >
+                No shipment <span className="ml-1 badge-modern badge-info badge-sm">{orders.filter((order) => order.status === 'CONFIRMED' && (!order.deliveryStatus || order.deliveryStatus === 'NOT_CREATED')).length}</span>
               </button>
-              <button type="button" className="btn-modern btn-sm btn-subtle">
+              <button
+                type="button"
+                className={`btn-modern btn-sm ${activeFilter === 'incomplete' ? 'btn-primary' : 'btn-subtle'}`}
+                onClick={() => selectFilter('incomplete')}
+              >
                 Incomplete <span className="ml-1 badge-modern badge-danger badge-sm">{orders.filter((order) => toNumber(order.completenessScore) < 90).length}</span>
               </button>
             </div>
 
-            <button type="button" className="btn-modern btn-sm btn-secondary">
+            <button type="button" className="btn-modern btn-sm btn-secondary" onClick={resetFilters} disabled={!hasActiveFilters}>
               <Filter className="w-4 h-4" />
-              Filters
+              Reset
             </button>
-            <button type="button" className="btn-modern btn-sm btn-secondary">
-              This week
+            <button type="button" className="btn-modern btn-sm btn-secondary" onClick={cycleDateFilter} title="Cycle date range">
+              {dateFilterLabels[dateFilter]}
               <ChevronDown className="w-4 h-4" />
             </button>
           </div>
@@ -278,19 +389,21 @@ export default function OrdersPage() {
                 {loading ? (
                   [1, 2, 3, 4, 5].map((item) => (
                     <tr key={item}>
-                      <td colSpan={11}>
+                      <td colSpan={12}>
                         <div className="skeleton-line"></div>
                       </td>
                     </tr>
                   ))
-                ) : orders.length === 0 ? (
+                ) : filteredOrders.length === 0 ? (
                   <tr>
-                    <td colSpan={11}>
-                      <div className="empty-state">No orders yet. Create the first one from WhatsApp, Instagram, TikTok, or phone.</div>
+                    <td colSpan={12}>
+                      <div className="empty-state">
+                        {orders.length === 0 ? 'No orders yet. Create the first one from WhatsApp, Instagram, TikTok, or phone.' : 'No orders match the current filters.'}
+                      </div>
                     </td>
                   </tr>
                 ) : (
-                  orders.map((order) => {
+                  paginatedOrders.map((order) => {
                     const completeness = toNumber(order.completenessScore || 100)
                     const profit = toNumber(order.estimatedProfit)
                     const margin = order.marginPercent === null || order.marginPercent === undefined ? null : toNumber(order.marginPercent)
@@ -373,7 +486,7 @@ export default function OrdersPage() {
                             className="btn-ghost-red btn-icon-sm"
                             title="Delete order"
                           >
-                            🗑️
+                            <Trash2 className="w-4 h-4" />
                           </button>
                         </td>
                       </tr>
@@ -386,12 +499,28 @@ export default function OrdersPage() {
 
           <div className="flex items-center justify-between p-4 border-t border-gray-200 bg-gray-50">
             <span className="text-xs text-gray-600">
-              Showing <span className="font-semibold text-gray-900">{Math.min(orders.length, 100)}</span> of {orders.length} orders
+              Showing <span className="font-semibold text-gray-900">{filteredOrders.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, filteredOrders.length)}</span> of {filteredOrders.length} orders
             </span>
             <div className="flex items-center gap-2">
-              <button type="button" className="btn-modern btn-sm btn-secondary">Prev</button>
-              <button type="button" className="btn-modern btn-sm btn-primary">1</button>
-              <button type="button" className="btn-modern btn-sm btn-secondary">Next</button>
+              <button
+                type="button"
+                className="btn-modern btn-sm btn-secondary"
+                onClick={() => setCurrentPage((page) => Math.max(1, Math.min(page, totalPages) - 1))}
+                disabled={currentPageInRange <= 1}
+              >
+                <ChevronLeft className="w-4 h-4" />
+                Prev
+              </button>
+              <button type="button" className="btn-modern btn-sm btn-primary">{currentPageInRange}/{totalPages}</button>
+              <button
+                type="button"
+                className="btn-modern btn-sm btn-secondary"
+                onClick={() => setCurrentPage((page) => Math.min(totalPages, Math.min(page, totalPages) + 1))}
+                disabled={currentPageInRange >= totalPages}
+              >
+                Next
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           </div>
         </div>

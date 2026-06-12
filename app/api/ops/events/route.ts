@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
+import { tableExists } from '@/lib/ops-schema'
 
 /**
  * GET /api/ops/events
@@ -14,11 +15,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    if (!(await tableExists('Event'))) {
+      return NextResponse.json({
+        events: [],
+        total: 0,
+        missingTables: ['Event', 'EventMetrics', 'EventProduct', 'EventCategory'],
+      })
+    }
+
     const { searchParams } = new URL(request.url)
     const status = searchParams.get('status') // Upcoming, Active, Completed
     const type = searchParams.get('type') // Ramadan, Black Friday, etc.
     const sort = searchParams.get('sort') || 'startDate'
     const order = searchParams.get('order') || 'DESC'
+    const sortColumns: Record<string, string> = {
+      createdAt: 'e."createdAt"',
+      startDate: 'e."startDate"',
+      endDate: 'e."endDate"',
+      name: 'e."name"',
+      status: 'e."status"',
+      type: 'e."type"',
+    }
+    const sortColumn = sortColumns[sort] || sortColumns.startDate
+    const sortOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC'
 
     // Build WHERE clause
     const conditions: string[] = []
@@ -59,7 +78,7 @@ export async function GET(request: NextRequest) {
       FROM "Event" e
       LEFT JOIN "EventMetrics" em ON em."eventId" = e.id
       ${whereClause}
-      ORDER BY e."${sort}" ${order}
+      ORDER BY ${sortColumn} ${sortOrder}
     `, values)
 
     return NextResponse.json({
@@ -85,6 +104,16 @@ export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions)
     if (!session?.user?.email) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!(await tableExists('Event'))) {
+      return NextResponse.json(
+        {
+          error: 'Event tracking is not installed',
+          missingTables: ['Event', 'EventMetrics', 'EventProduct', 'EventCategory'],
+        },
+        { status: 501 }
+      )
     }
 
     const body = await request.json()
@@ -149,6 +178,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      id: result.rows[0].id,
       event: result.rows[0],
     })
 

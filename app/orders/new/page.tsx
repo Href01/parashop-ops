@@ -145,6 +145,7 @@ export default function NewOrderPage() {
         deliveryName: formData.deliveryName,
         deliveryPhone: formData.deliveryPhone,
         deliveryCity: selectedDistrict.name,
+        senditDistrictId: selectedDistrict.id,
         deliveryAddress: formData.deliveryAddress,
         deliveryNotes: formData.deliveryNotes,
         paymentMethod: formData.paymentMethod,
