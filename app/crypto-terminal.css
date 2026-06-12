@@ -13,23 +13,23 @@
 
 /* ---- Terminal neon palette ---- */
 body {
-  /* P&L palette (warmed) */
-  --up: oklch(0.83 0.18 158);
-  --up-bg: oklch(0.83 0.18 158 / 0.12);
-  --up-line: oklch(0.83 0.18 158 / 0.35);
-  --up-glow: oklch(0.83 0.18 158 / 0.55);
-  --down: oklch(0.67 0.23 18);
-  --down-bg: oklch(0.67 0.23 18 / 0.13);
-  --down-line: oklch(0.67 0.23 18 / 0.38);
-  --down-glow: oklch(0.67 0.23 18 / 0.5);
+  /* P&L palette — deepened for readability on light surfaces */
+  --up: oklch(0.55 0.15 158);
+  --up-bg: oklch(0.55 0.15 158 / 0.1);
+  --up-line: oklch(0.55 0.15 158 / 0.3);
+  --up-glow: oklch(0.55 0.15 158 / 0.2);
+  --down: oklch(0.55 0.2 23);
+  --down-bg: oklch(0.55 0.2 23 / 0.1);
+  --down-line: oklch(0.55 0.2 23 / 0.3);
+  --down-glow: oklch(0.55 0.2 23 / 0.2);
 
-  /* Beauty neon set: rose-gold, champagne, plum */
-  --neon-rose: oklch(0.76 0.16 14);
-  --neon-gold: oklch(0.85 0.11 86);
-  --neon-champagne: oklch(0.9 0.05 86);
-  --neon-cyan: oklch(0.82 0.12 200);
-  --neon-violet: oklch(0.72 0.16 320);
-  --neon-amber: oklch(0.84 0.14 78);
+  /* Brand/accent set — deepened so they read on white */
+  --neon-rose: oklch(0.58 0.2 12);
+  --neon-gold: oklch(0.6 0.12 78);
+  --neon-champagne: oklch(0.62 0.06 86);
+  --neon-cyan: oklch(0.55 0.1 200);
+  --neon-violet: oklch(0.55 0.18 295);
+  --neon-amber: oklch(0.6 0.13 66);
 }
 
 /* ---- Glowing backdrop on page scroll area (activated by body.crypto) ---- */
@@ -81,17 +81,17 @@ body.crypto .panel-glow-gold {
 
 /* ---- Editorial serif display (beauty DNA) ---- */
 .serif-display {
-  font-family: var(--serif);
-  font-weight: 600;
-  letter-spacing: 0;
-  line-height: 1.05;
+  font-family: var(--font);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
 }
 
 .eyebrow {
-  font-size: 10.5px;
+  font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.22em;
-  color: var(--neon-gold);
+  letter-spacing: 0.12em;
+  color: var(--rose);
   font-weight: 600;
 }
 
@@ -103,13 +103,11 @@ body.crypto .panel-glow-gold {
 }
 
 .glow-gold {
-  color: var(--neon-gold);
-  text-shadow: 0 0 16px oklch(0.85 0.11 86 / 0.4);
+  color: var(--gold);
 }
 
 .glow-rose {
-  color: var(--neon-rose);
-  text-shadow: 0 0 16px oklch(0.76 0.16 14 / 0.4);
+  color: var(--rose);
 }
 
 /* ---- Live flash animations for counters ---- */

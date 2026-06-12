@@ -18,11 +18,11 @@
   --line-soft: oklch(0.935 0.003 95);
   --line-strong: oklch(0.85 0.004 95);
 
-  /* Text — ink on white */
+  /* Text — ink on white (tuned for AA contrast on light surfaces) */
   --tx-hi: oklch(0.27 0.012 280);
-  --tx-mid: oklch(0.46 0.012 280);
-  --tx-lo: oklch(0.585 0.01 280);
-  --tx-faint: oklch(0.7 0.008 280);
+  --tx-mid: oklch(0.44 0.012 280);
+  --tx-lo: oklch(0.53 0.01 280);
+  --tx-faint: oklch(0.62 0.009 280);
 
   /* ---- Brand: rose (deepened for white text / light bg) ---- */
   --rose: oklch(0.56 0.18 12);
