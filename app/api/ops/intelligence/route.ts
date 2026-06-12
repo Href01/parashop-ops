@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     const { start, end, days } = resolveRange(req.nextUrl.searchParams)
     const oDate = `(o."createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date`
 
-    const [statusRows, velocityRows, deadStockRows, costRows, channelRows] = await Promise.all([
+    const [statusRows, velocityRows, deadStockRows, costRows, channelRows, marginRows] = await Promise.all([
       // COD / order economics — status breakdown
       safeRows('status', pool.query(
         `SELECT status, COUNT(*)::int AS orders, COALESCE(SUM(total),0)::float AS revenue
@@ -96,6 +96,25 @@ export async function GET(req: NextRequest) {
          FROM "Order" o WHERE ${oDate}`,
         [start, end]
       )),
+
+      // Margin — products with a cost, joined to velocity (units sold in window).
+      // ROUND needs ::numeric (no ROUND(double precision, int) in PG).
+      safeRows('margin', pool.query(
+        `SELECT p.id, p.name, p.brand, p.price::float AS price, p."costPrice"::float AS cost,
+                ROUND(((p.price - p."costPrice") / NULLIF(p.price, 0) * 100)::numeric, 1) AS margin,
+                COALESCE(v.units, 0)::int AS units,
+                COALESCE(v.units, 0)::float * (p.price - p."costPrice") AS profit
+         FROM "Product" p
+         LEFT JOIN (
+           SELECT oi."productId" AS pid, SUM(oi.quantity)::int AS units
+           FROM "OrderItem" oi JOIN "Order" o ON o.id = oi."orderId"
+           WHERE o.status::text <> ALL($3) AND ${oDate}
+           GROUP BY 1
+         ) v ON v.pid = p.id
+         WHERE p.active = true AND p."costPrice" IS NOT NULL AND p."costPrice" > 0
+         ORDER BY margin ASC`,
+        [start, end, LOST]
+      )),
     ])
 
     // ---- COD economics ----
@@ -134,6 +153,26 @@ export async function GET(req: NextRequest) {
       channelUnlocked: num(channel.tagged) > 0,
     }
 
+    // ---- Margin / winners & losers ----
+    const marginProducts = marginRows.map((r) => ({
+      id: r.id, name: r.name, brand: r.brand,
+      price: num(r.price), cost: num(r.cost), margin: num(r.margin),
+      units: num(r.units), profit: num(r.profit),
+    }))
+    const avgMargin = marginProducts.length
+      ? marginProducts.reduce((s, p) => s + p.margin, 0) / marginProducts.length
+      : 0
+    const margin = {
+      productsCount: marginProducts.length,
+      avgMargin,
+      // Winners: healthy margin AND actually selling
+      winners: marginProducts.filter((p) => p.margin >= 35 && p.units > 0).sort((a, b) => b.profit - a.profit).slice(0, 8),
+      // Losers: selling but thin/negative margin (money left on the table)
+      losers: marginProducts.filter((p) => p.units > 0 && p.margin < 25).sort((a, b) => a.margin - b.margin).slice(0, 8),
+      // Negative margin = selling at a loss (urgent)
+      negative: marginProducts.filter((p) => p.margin < 0),
+    }
+
     return NextResponse.json({
       period: { start, end, days },
       cod,
@@ -141,6 +180,7 @@ export async function GET(req: NextRequest) {
         topSellers: velocityRows.map((r) => ({ id: r.id, name: r.name, brand: r.brand, units: num(r.units), revenue: num(r.revenue) })),
         deadStock: deadStockRows.map((r) => ({ id: r.id, name: r.name, brand: r.brand, stock: num(r.stock) })),
       },
+      margin,
       readiness,
     }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {

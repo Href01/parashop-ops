@@ -19,6 +19,13 @@ interface IntelData {
     topSellers: Array<{ id: number; name: string; brand: string; units: number; revenue: number }>
     deadStock: Array<{ id: number; name: string; brand: string; stock: number }>
   }
+  margin: {
+    productsCount: number
+    avgMargin: number
+    winners: Array<{ id: number; name: string; brand: string; margin: number; units: number; profit: number }>
+    losers: Array<{ id: number; name: string; brand: string; margin: number; units: number; profit: number }>
+    negative: Array<{ id: number; name: string; brand: string; margin: number; units: number }>
+  }
   readiness: {
     cost: { total: number; filled: number }
     channel: { total: number; filled: number }
@@ -170,7 +177,39 @@ export default function IntelligencePage() {
               </Section>
             </div>
 
-            {/* LOCKED — margin & channel P&L */}
+            {/* MARGIN — winners & losers (unlocked once costs exist) */}
+            {data.readiness.marginUnlocked && (
+              <Section
+                title="Marge — winners & losers"
+                hint={`${data.margin.productsCount}/${data.readiness.cost.total} produits avec coût · marge moy. ${data.margin.avgMargin.toFixed(0)}%`}
+              >
+                {data.margin.negative.length > 0 && (
+                  <div style={{ background: 'var(--red-bg)', border: '1px solid var(--red)', borderRadius: 8, padding: '10px 12px', marginBottom: 14, fontSize: 12, color: 'var(--red)' }}>
+                    ⚠️ <b>{data.margin.negative.length} produit(s) vendu(s) à perte</b> (marge négative) — {data.margin.negative.map((p) => p.name).slice(0, 3).join(', ')}
+                  </div>
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 16 }}>
+                  <div>
+                    <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)', marginBottom: 8 }}>🏆 À pousser (marge ≥35% + se vend)</h4>
+                    {data.margin.winners.length === 0 ? <Empty text="Pas encore de winner — remplis plus de coûts." /> : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {data.margin.winners.map((p) => <MarginRow key={p.id} p={p} good />)}
+                      </div>
+                    )}
+                  </div>
+                  <div>
+                    <h4 style={{ fontSize: 12, fontWeight: 700, color: 'var(--amber)', marginBottom: 8 }}>⚠️ Marge faible (se vend mais &lt;25%)</h4>
+                    {data.margin.losers.length === 0 ? <Empty text="Aucun produit à marge faible 👏" /> : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {data.margin.losers.map((p) => <MarginRow key={p.id} p={p} />)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </Section>
+            )}
+
+            {/* LOCKED — channel P&L (margin handled above) */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
               {!data.readiness.marginUnlocked && (
                 <LockedSection
@@ -208,6 +247,20 @@ function Section({ title, hint, icon, children }: { title: string; hint?: string
         {hint && <span style={{ fontSize: 11, color: 'var(--tx-lo)' }}>{hint}</span>}
       </div>
       {children}
+    </div>
+  )
+}
+
+function MarginRow({ p, good }: { p: { name: string; brand: string; margin: number; units: number; profit?: number }; good?: boolean }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--line-soft)' }}>
+      <div style={{ minWidth: 0 }}>
+        <p style={{ fontSize: 12, color: 'var(--tx-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</p>
+        <p style={{ fontSize: 10, color: 'var(--tx-faint)' }}>{p.brand} · {p.units} vendus</p>
+      </div>
+      <span style={{ flexShrink: 0, fontSize: 13, fontWeight: 700, color: good ? 'var(--green)' : p.margin < 0 ? 'var(--red)' : 'var(--amber)' }}>
+        {p.margin.toFixed(0)}%
+      </span>
     </div>
   )
 }
