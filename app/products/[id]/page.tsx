@@ -12,6 +12,7 @@ interface ProductDetail {
   sku?: string; stock?: number; lowStockThreshold?: number
   recentOrders?: Array<{ id: number; status: string; createdAt: string; deliveryCity: string | null; sourceChannel: string | null; quantity: number; price: number | string }>
   sold?: { units: number | string; revenue: number | string }
+  content?: Array<{ id: number; title: string; platform: string | null; type: string | null; status: string; dueDate: string | null }>
   error?: string
 }
 
@@ -19,6 +20,8 @@ const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n
 const mad = (v: unknown) => `${Math.round(num(v)).toLocaleString('fr-FR')} MAD`
 const STATUS_FR: Record<string, string> = { PENDING: 'En attente', CONFIRMED: 'Confirmée', DELIVERED: 'Livrée', CANCELLED: 'Annulée', SHIPPED: 'En livraison' }
 const STATUS_CLS: Record<string, string> = { PENDING: 'st-pending', CONFIRMED: 'st-confirmed', DELIVERED: 'st-delivered', CANCELLED: 'st-cancelled', SHIPPED: 'st-shipped' }
+const CONTENT_FR: Record<string, string> = { IDEA: 'Idée', TO_PRODUCE: 'À produire', SCHEDULED: 'Planifié', PUBLISHED: 'Publié' }
+const CONTENT_COLOR: Record<string, string> = { IDEA: 'var(--tx-lo)', TO_PRODUCE: 'var(--amber)', SCHEDULED: 'var(--blue)', PUBLISHED: 'var(--green)' }
 
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -86,6 +89,29 @@ export default function ProductDetailPage() {
               <Stat label="Vendus (total)" value={`${num(p.sold?.units)} u.`} />
               <Stat label="CA livré (total)" value={mad(p.sold?.revenue)} accent />
             </div>
+
+            {/* Content promoting this product */}
+            {p.content && p.content.length > 0 && (
+              <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 18px', borderBottom: '1px solid var(--line-soft)' }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx-hi)' }}>Contenus qui mettent en avant ce produit</span>
+                  <span style={{ fontSize: 11, color: 'var(--tx-faint)', fontFamily: 'var(--mono)' }}>{p.content.length}</span>
+                  <a href="/content" style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--rose-bright)', textDecoration: 'none' }}>Content Hub →</a>
+                </div>
+                <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {p.content.map((c) => (
+                    <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'var(--bg-2)', borderRadius: 8 }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: CONTENT_COLOR[c.status] || 'var(--tx-lo)', flexShrink: 0 }} />
+                      <span style={{ flex: 1, fontSize: 13, color: 'var(--tx-hi)' }}>{c.title}</span>
+                      {c.platform && <span style={{ fontSize: 11, color: 'var(--tx-lo)' }}>{c.platform}</span>}
+                      {c.type && <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>{c.type}</span>}
+                      <span style={{ fontSize: 10, fontWeight: 700, color: CONTENT_COLOR[c.status] || 'var(--tx-lo)' }}>{CONTENT_FR[c.status] || c.status}</span>
+                      {c.dueDate && <span style={{ fontSize: 10, color: 'var(--tx-faint)', fontFamily: 'var(--mono)' }}>{c.dueDate.slice(8, 10)}/{c.dueDate.slice(5, 7)}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Recent orders with this product */}
             <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>

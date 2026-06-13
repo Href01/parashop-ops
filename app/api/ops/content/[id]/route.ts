@@ -38,6 +38,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if ('hook' in b) add('hook', typeof b.hook === 'string' ? b.hook.slice(0, 2000) : null)
     if ('caption' in b) add('caption', typeof b.caption === 'string' ? b.caption.slice(0, 4000) : null)
     if ('assetLink' in b) add('assetLink', typeof b.assetLink === 'string' ? b.assetLink.slice(0, 500) : null)
+    if ('productId' in b) add('productId', Number.isInteger(b.productId) ? b.productId : null)
+    if ('campaignId' in b) add('campaignId', Number.isInteger(b.campaignId) ? b.campaignId : null)
 
     if (sets.length === 0) return NextResponse.json({ error: 'no fields to update' }, { status: 400 })
     values.push(id)

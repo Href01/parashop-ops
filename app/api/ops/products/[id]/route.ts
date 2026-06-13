@@ -55,10 +55,26 @@ export async function GET(
       [productId]
     )
 
+    // Content that promotes this product (connectivity → Content Hub)
+    let content: any[] = []
+    try {
+      const c = await pool.query(
+        `SELECT id, title, platform, type, status, to_char("dueDate", 'YYYY-MM-DD') AS "dueDate"
+         FROM "ContentItem"
+         WHERE "productId" = $1
+         ORDER BY "dueDate" NULLS LAST, "createdAt" DESC LIMIT 20`,
+        [productId]
+      )
+      content = c.rows
+    } catch {
+      content = [] // ContentItem table may not exist in some envs
+    }
+
     return NextResponse.json({
       ...result.rows[0],
       recentOrders: recent.rows,
       sold: sold.rows[0],
+      content,
     })
   } catch (error) {
     console.error('Get product error:', error)

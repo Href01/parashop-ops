@@ -15,7 +15,12 @@ interface Item {
   hook: string | null
   caption: string | null
   assetLink: string | null
+  productId: number | null
+  campaignId: number | null
 }
+
+interface ProductLite { id: number; name: string; brand?: string | null }
+interface CampaignLite { id: number; name: string }
 
 const COLUMNS: { key: Item['status']; label: string; color: string }[] = [
   { key: 'IDEA', label: 'Idées', color: 'var(--tx-lo)' },
@@ -52,7 +57,13 @@ export default function ContentPage() {
   const [draggingId, setDraggingId] = useState<number | null>(null)
   const [dragOver, setDragOver] = useState<Item['status'] | null>(null)
   const [editing, setEditing] = useState<Item | null>(null)
+  const [products, setProducts] = useState<ProductLite[]>([])
+  const [campaigns, setCampaigns] = useState<CampaignLite[]>([])
   const titleRef = useRef<HTMLInputElement>(null)
+
+  // Lookups for chips (id → name)
+  const productName = (id: number | null) => products.find((p) => p.id === id)?.name || null
+  const campaignName = (id: number | null) => campaigns.find((c) => c.id === id)?.name || null
 
   const load = () => {
     setLoading(true)
@@ -65,7 +76,17 @@ export default function ContentPage() {
       .catch((e) => setError(e.message || 'Chargement impossible'))
       .finally(() => setLoading(false))
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    fetch('/api/ops/products', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => setProducts(Array.isArray(d) ? d : []))
+      .catch(() => {})
+    fetch('/api/ops/campaigns', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : { campaigns: [] }))
+      .then((d) => setCampaigns(Array.isArray(d?.campaigns) ? d.campaigns : []))
+      .catch(() => {})
+  }, [])
 
   const create = async () => {
     if (saving) return
@@ -208,6 +229,16 @@ export default function ContentPage() {
                           {it.assetLink && <Link2 style={{ width: 11, height: 11, color: 'var(--blue)' }} />}
                           <span style={{ marginLeft: 'auto', width: 22, height: 22, borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: 9, fontWeight: 700, color: '#fff', background: it.owner === 'AM' ? 'var(--rose-bright)' : 'var(--blue)' }}>{it.owner || '–'}</span>
                         </div>
+                        {(productName(it.productId) || campaignName(it.campaignId)) && (
+                          <div style={{ display: 'flex', gap: 5, marginTop: 7, paddingLeft: 20, flexWrap: 'wrap' }}>
+                            {productName(it.productId) && (
+                              <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 5, color: 'var(--rose-bright)', background: 'var(--rose-bg)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🛍 {productName(it.productId)}</span>
+                            )}
+                            {campaignName(it.campaignId) && (
+                              <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 5, color: 'var(--amber)', background: 'var(--amber-bg)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📣 {campaignName(it.campaignId)}</span>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ))}
                     {colItems.length === 0 && <div style={{ fontSize: 11, color: 'var(--tx-faint)', textAlign: 'center', padding: '16px 0' }}>{isOver ? 'Déposer ici' : '—'}</div>}
@@ -221,13 +252,15 @@ export default function ContentPage() {
       </div>
 
       {/* Edit drawer */}
-      {editing && <EditDrawer item={editing} onClose={() => setEditing(null)} onSave={patch} onDelete={remove} />}
+      {editing && <EditDrawer item={editing} products={products} campaigns={campaigns} onClose={() => setEditing(null)} onSave={patch} onDelete={remove} />}
     </BosShell>
   )
 }
 
-function EditDrawer({ item, onClose, onSave, onDelete }: {
+function EditDrawer({ item, products, campaigns, onClose, onSave, onDelete }: {
   item: Item
+  products: ProductLite[]
+  campaigns: CampaignLite[]
   onClose: () => void
   onSave: (id: number, fields: Partial<Item>) => void
   onDelete: (id: number) => void
@@ -240,6 +273,8 @@ function EditDrawer({ item, onClose, onSave, onDelete }: {
   const [hook, setHook] = useState(item.hook || '')
   const [caption, setCaption] = useState(item.caption || '')
   const [assetLink, setAssetLink] = useState(item.assetLink || '')
+  const [productId, setProductId] = useState<string>(item.productId != null ? String(item.productId) : '')
+  const [campaignId, setCampaignId] = useState<string>(item.campaignId != null ? String(item.campaignId) : '')
 
   const save = () => {
     onSave(item.id, {
@@ -249,6 +284,8 @@ function EditDrawer({ item, onClose, onSave, onDelete }: {
       hook: hook || null,
       caption: caption || null,
       assetLink: assetLink || null,
+      productId: productId ? parseInt(productId, 10) : null,
+      campaignId: campaignId ? parseInt(campaignId, 10) : null,
     })
     onClose()
   }
@@ -296,6 +333,22 @@ function EditDrawer({ item, onClose, onSave, onDelete }: {
           <Field label="Lien du média (Drive, Canva…)">
             <input value={assetLink} onChange={(e) => setAssetLink(e.target.value)} placeholder="https://…" style={inp({ width: '100%' })} />
           </Field>
+
+          {/* Connexions — relier le contenu au produit / à la campagne */}
+          <div style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <Field label="🛍 Produit mis en avant">
+              <select value={productId} onChange={(e) => setProductId(e.target.value)} style={inp({ width: '100%' })}>
+                <option value="">— Aucun —</option>
+                {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </Field>
+            <Field label="📣 Campagne">
+              <select value={campaignId} onChange={(e) => setCampaignId(e.target.value)} style={inp({ width: '100%' })}>
+                <option value="">— Aucune —</option>
+                {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </Field>
+          </div>
 
           <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
             <button className="btn-modern btn-primary" onClick={save} style={{ flex: 1, justifyContent: 'center' }}>Enregistrer</button>
