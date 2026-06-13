@@ -33,12 +33,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if ('learnings' in b) add('learnings', typeof b.learnings === 'string' ? b.learnings.slice(0, 2000) : null)
     if (typeof b.name === 'string' && b.name.trim()) add('name', b.name.trim())
     if ('hypothesis' in b) add('hypothesis', typeof b.hypothesis === 'string' ? b.hypothesis.slice(0, 2000) : null)
+    if ('channel' in b) add('channel', typeof b.channel === 'string' && b.channel.trim() ? b.channel.trim().slice(0, 60) : null)
+    if ('successMetric' in b) add('successMetric', typeof b.successMetric === 'string' ? b.successMetric.slice(0, 200) : null)
+    if ('budget' in b) {
+      const n = Number(b.budget)
+      add('budget', Number.isFinite(n) && n > 0 ? n : null)
+    }
+    if ('startDate' in b) add('startDate', typeof b.startDate === 'string' && b.startDate ? b.startDate : null)
+    if ('endDate' in b) add('endDate', typeof b.endDate === 'string' && b.endDate ? b.endDate : null)
 
     if (sets.length === 0) return NextResponse.json({ error: 'no fields to update' }, { status: 400 })
     values.push(id)
     const r = await pool.query(
       `UPDATE "GrowthExperiment" SET ${sets.join(', ')}, "updatedAt" = NOW() WHERE id = $${values.length}
-       RETURNING id, name, hypothesis, channel, "successMetric", result, status, learnings, "startDate", "endDate", budget, "createdAt", "updatedAt"`,
+       RETURNING id, name, hypothesis, channel, "successMetric", result, status, learnings,
+                 to_char("startDate", 'YYYY-MM-DD') AS "startDate",
+                 to_char("endDate", 'YYYY-MM-DD') AS "endDate",
+                 budget, "createdAt", "updatedAt"`,
       values
     )
     if (r.rows.length === 0) return NextResponse.json({ error: 'not found' }, { status: 404 })

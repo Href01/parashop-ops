@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { BookOpen, FlaskConical, GripVertical, Plus, Trash2 } from 'lucide-react'
+import { BookOpen, FlaskConical, GripVertical, Plus, Trash2, X, AlertCircle, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import BosShell from '@/components/BosShell'
 
@@ -20,9 +20,22 @@ const LINK_HREF: Record<string, string> = { order: '/orders', product: '/product
 const LINK_LABEL: Record<string, string> = { order: 'Cmd', product: 'Produit', customer: 'Cliente', campaign: 'Campagne' }
 
 interface Decision { id: number; title: string; decision: string | null; owner: string | null; decisionDate: string | null }
-interface Experiment { id: number; name: string; successMetric: string | null; status: string }
+interface Experiment {
+  id: number
+  name: string
+  hypothesis: string | null
+  channel: string | null
+  successMetric: string | null
+  status: string
+  result: string | null
+  learnings: string | null
+  startDate: string | null
+  endDate: string | null
+  budget: number | string | null
+}
 
 const EXP_LABEL: Record<string, string> = { PLANNED: 'Planifiée', RUNNING: 'En cours', WON: 'Gagnée', LOST: 'Perdue', PAUSED: 'En pause' }
+const EXP_STATUS_LIST = ['PLANNED', 'RUNNING', 'PAUSED', 'WON', 'LOST']
 const EXP_TONE: Record<string, { c: string; bg: string }> = {
   PLANNED: { c: 'var(--tx-lo)', bg: 'var(--bg-3)' },
   RUNNING: { c: 'var(--blue)', bg: 'var(--blue-bg)' },
@@ -30,6 +43,7 @@ const EXP_TONE: Record<string, { c: string; bg: string }> = {
   LOST: { c: 'var(--red)', bg: 'var(--red-bg)' },
   PAUSED: { c: 'var(--amber)', bg: 'var(--amber-bg)' },
 }
+const EXP_CHANNELS = ['Instagram', 'TikTok', 'WhatsApp', 'Facebook', 'Email', 'Site web', 'Influence', 'Autre']
 
 const PRIO_LABEL: Record<Task['priority'], string> = { URGENT: 'Urgent', HIGH: 'Haute', MEDIUM: 'Moyenne', LOW: 'Basse' }
 const PRIO_COLOR: Record<Task['priority'], string> = { URGENT: 'var(--red)', HIGH: 'var(--amber)', MEDIUM: 'var(--blue)', LOW: 'var(--tx-faint)' }
@@ -63,6 +77,8 @@ export default function WorkHubPage() {
   const [dWhy, setDWhy] = useState('')
   const [eName, setEName] = useState('')
   const [eMetric, setEMetric] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [editingExp, setEditingExp] = useState<Experiment | null>(null)
 
   useEffect(() => {
     const j = (r: Response) => r.json()
@@ -85,19 +101,32 @@ export default function WorkHubPage() {
   }
   const createExperiment = async () => {
     if (!eName.trim()) return
-    const res = await fetch('/api/ops/experiments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: eName, successMetric: eMetric, status: 'RUNNING' }) }).catch(() => null)
-    const d = res && res.ok ? await res.json() : null
-    if (d?.experiment) { setExperiments((x) => [d.experiment, ...x]); setEName(''); setEMetric('') }
+    try {
+      const res = await fetch('/api/ops/experiments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: eName.trim(), successMetric: eMetric, status: 'PLANNED' }) })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || `Erreur ${res.status}`)
+      if (d.experiment) { setExperiments((x) => [d.experiment, ...x]); setEName(''); setEMetric(''); setError(null) }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Création impossible') }
   }
-  const cycleExp = async (e: Experiment) => {
-    const next: Record<string, string> = { PLANNED: 'RUNNING', RUNNING: 'WON', WON: 'LOST', LOST: 'PLANNED', PAUSED: 'RUNNING' }
-    const status = next[e.status] || 'RUNNING'
-    setExperiments((x) => x.map((y) => (y.id === e.id ? { ...y, status } : y)))
-    await fetch(`/api/ops/experiments/${e.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }).catch(() => {})
+  const patchExp = async (id: number, fields: Partial<Experiment>) => {
+    const prev = experiments
+    setExperiments((x) => x.map((y) => (y.id === id ? { ...y, ...fields } : y)))
+    if (editingExp?.id === id) setEditingExp((e) => (e ? { ...e, ...fields } : e))
+    try {
+      const res = await fetch(`/api/ops/experiments/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) })
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Erreur ${res.status}`) }
+      setError(null)
+    } catch (e) { setExperiments(prev); setError(e instanceof Error ? e.message : 'Mise à jour impossible') }
   }
   const deleteExperiment = async (id: number) => {
+    const prev = experiments
     setExperiments((x) => x.filter((e) => e.id !== id))
-    await fetch(`/api/ops/experiments/${id}`, { method: 'DELETE' }).catch(() => {})
+    if (editingExp?.id === id) setEditingExp(null)
+    try {
+      const res = await fetch(`/api/ops/experiments/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error(`Erreur ${res.status}`)
+      setError(null)
+    } catch (e) { setExperiments(prev); setError(e instanceof Error ? e.message : 'Suppression impossible') }
   }
 
   const createTask = async () => {
@@ -156,6 +185,15 @@ export default function WorkHubPage() {
           </p>
         </div>
 
+        {/* Error banner */}
+        {error && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--rose-bg)', border: '1px solid var(--rose-line)', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
+            <AlertCircle style={{ width: 16, height: 16, color: 'var(--rose-bright)', flexShrink: 0 }} />
+            <span style={{ flex: 1, fontSize: 13, color: 'var(--tx-hi)' }}>{error}</span>
+            <button onClick={() => setError(null)} aria-label="Fermer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-faint)', padding: 0 }}><X style={{ width: 14, height: 14 }} /></button>
+          </div>
+        )}
+
         {/* Composer */}
         <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 12, padding: 12, marginBottom: 16,
           display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -177,7 +215,7 @@ export default function WorkHubPage() {
           </select>
           {linkType && <input value={linkId} onChange={(e) => setLinkId(e.target.value)} type="number" placeholder="N°" style={inp({ width: 72 })} />}
           <button className="btn-modern btn-primary" onClick={createTask} disabled={!title.trim() || saving}>
-            <Plus className="w-4 h-4" />{saving ? '…' : 'Ajouter'}
+            <Plus style={{ width: 16, height: 16 }} />{saving ? '…' : 'Ajouter'}
           </button>
         </div>
 
@@ -268,7 +306,7 @@ export default function WorkHubPage() {
               <input value={dTitle} onChange={(e) => setDTitle(e.target.value)} placeholder="Décision prise…" style={inp({})} />
               <div style={{ display: 'flex', gap: 6 }}>
                 <input value={dWhy} onChange={(e) => setDWhy(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createDecision()} placeholder="Pourquoi / rationale" style={inp({ flex: 1 })} />
-                <button className="btn-modern btn-primary" onClick={createDecision} disabled={!dTitle.trim()}><Plus className="w-4 h-4" /></button>
+                <button className="btn-modern btn-primary" onClick={createDecision} disabled={!dTitle.trim()}><Plus style={{ width: 16, height: 16 }} /></button>
               </div>
             </div>
             {decisions.length === 0 ? (
@@ -290,38 +328,169 @@ export default function WorkHubPage() {
           {/* Growth experiments */}
           <div style={panel()}>
             <div style={panelHead()}><FlaskConical style={{ width: 16, height: 16, color: 'var(--rose)' }} /><h3 style={h3()}>Expériences de croissance</h3></div>
-            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
-              <input value={eName} onChange={(e) => setEName(e.target.value)} placeholder="Expérience…" style={inp({ flex: 2 })} />
-              <input value={eMetric} onChange={(e) => setEMetric(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createExperiment()} placeholder="Métrique" style={inp({ flex: 1 })} />
-              <button className="btn-modern btn-primary" onClick={createExperiment} disabled={!eName.trim()}><Plus className="w-4 h-4" /></button>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+              <input value={eName} onChange={(e) => setEName(e.target.value)} placeholder="Hypothèse à tester…" style={inp({ flex: 2 })} />
+              <input value={eMetric} onChange={(e) => setEMetric(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createExperiment()} placeholder="Métrique de succès" style={inp({ flex: 1 })} />
+              <button className="btn-modern btn-primary" onClick={createExperiment} disabled={!eName.trim()}><Plus style={{ width: 16, height: 16 }} /></button>
             </div>
+            <p style={{ fontSize: 11, color: 'var(--tx-faint)', marginBottom: 12 }}>Clique une expérience pour définir hypothèse, canal, budget, issue & apprentissages.</p>
             {experiments.length === 0 ? (
-              <p style={{ fontSize: 12, color: 'var(--tx-faint)', textAlign: 'center', padding: '12px 0' }}>Aucune expérience.</p>
+              <p style={{ fontSize: 12, color: 'var(--tx-faint)', textAlign: 'center', padding: '12px 0' }}>Aucune expérience. Lance-en une : « tester X pour améliorer Y ».</p>
             ) : experiments.map((e) => {
               const tone = EXP_TONE[e.status] || EXP_TONE.PLANNED
               return (
-                <div key={e.id} className="wh-row" style={{ padding: '9px 0', borderBottom: '1px solid var(--line-soft)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div key={e.id} className="wh-row" onClick={() => setEditingExp(e)}
+                  style={{ padding: '10px 0', borderBottom: '1px solid var(--line-soft)', display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer' }}>
+                  <span style={{ width: 7, height: 7, borderRadius: '50%', background: tone.c, flexShrink: 0 }} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.name}</div>
-                    {e.successMetric && <div style={{ fontSize: 11, color: 'var(--tx-lo)' }}>{e.successMetric}</div>}
+                    {(e.channel || e.successMetric) && (
+                      <div style={{ fontSize: 11, color: 'var(--tx-lo)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {[e.channel, e.successMetric].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
                   </div>
-                  <button onClick={() => cycleExp(e)} title="Changer le statut"
-                    style={{ flexShrink: 0, fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, border: 'none', cursor: 'pointer', color: tone.c, background: tone.bg }}>
-                    {EXP_LABEL[e.status] || e.status}
-                  </button>
-                  <button onClick={() => deleteExperiment(e.id)} aria-label="Supprimer" className="wh-del" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-faint)', padding: 0, flexShrink: 0 }}><Trash2 style={{ width: 12, height: 12 }} /></button>
+                  <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, color: tone.c, background: tone.bg }}>{EXP_LABEL[e.status] || e.status}</span>
+                  <ChevronRight style={{ width: 14, height: 14, color: 'var(--tx-faint)', flexShrink: 0 }} />
+                  <button onClick={(ev) => { ev.stopPropagation(); deleteExperiment(e.id) }} aria-label="Supprimer" className="wh-del" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-faint)', padding: 0, flexShrink: 0 }}><Trash2 style={{ width: 12, height: 12 }} /></button>
                 </div>
               )
             })}
           </div>
         </div>
       </div>
+
+      {/* Experiment drawer */}
+      {editingExp && <ExperimentDrawer exp={editingExp} onClose={() => setEditingExp(null)} onSave={patchExp} onDelete={deleteExperiment} />}
     </BosShell>
   )
 }
 
+function ExperimentDrawer({ exp, onClose, onSave, onDelete }: {
+  exp: Experiment
+  onClose: () => void
+  onSave: (id: number, fields: Partial<Experiment>) => void
+  onDelete: (id: number) => void
+}) {
+  const [name, setName] = useState(exp.name)
+  const [status, setStatus] = useState(exp.status || 'PLANNED')
+  const [hypothesis, setHypothesis] = useState(exp.hypothesis || '')
+  const [channel, setChannel] = useState(exp.channel || '')
+  const [metric, setMetric] = useState(exp.successMetric || '')
+  const [budget, setBudget] = useState(exp.budget != null ? String(exp.budget) : '')
+  const [startDate, setStartDate] = useState(exp.startDate || '')
+  const [endDate, setEndDate] = useState(exp.endDate || '')
+  const [result, setResult] = useState(exp.result || '')
+  const [learnings, setLearnings] = useState(exp.learnings || '')
+  const tone = EXP_TONE[status] || EXP_TONE.PLANNED
+  const isOutcome = status === 'WON' || status === 'LOST'
+
+  const save = () => {
+    onSave(exp.id, {
+      name: name.trim() || exp.name,
+      status,
+      hypothesis: hypothesis || null,
+      channel: channel || null,
+      successMetric: metric || null,
+      budget: budget ? Number(budget) : null,
+      startDate: startDate || null,
+      endDate: endDate || null,
+      result: result || null,
+      learnings: learnings || null,
+    })
+    onClose()
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'oklch(0.2 0.02 350 / 0.35)', zIndex: 50, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(460px, 100%)', height: '100%', background: 'var(--bg-1)', borderLeft: '1px solid var(--line)', boxShadow: '-8px 0 24px oklch(0.4 0.05 350 / 0.12)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px', borderBottom: '1px solid var(--line-soft)', position: 'sticky', top: 0, background: 'var(--bg-1)', zIndex: 1 }}>
+          <FlaskConical style={{ width: 16, height: 16, color: 'var(--rose)' }} />
+          <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--tx-hi)' }}>Expérience de croissance</span>
+          <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, color: tone.c, background: tone.bg }}>{EXP_LABEL[status] || status}</span>
+          <button onClick={onClose} aria-label="Fermer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-lo)', padding: 0 }}><X style={{ width: 18, height: 18 }} /></button>
+        </div>
+
+        <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <WField label="Nom de l'expérience">
+            <input value={name} onChange={(e) => setName(e.target.value)} style={inp({ width: '100%' })} />
+          </WField>
+
+          <WField label="Statut">
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {EXP_STATUS_LIST.map((s) => {
+                const t = EXP_TONE[s]
+                const on = status === s
+                return (
+                  <button key={s} onClick={() => setStatus(s)}
+                    style={{ fontSize: 12, fontWeight: 600, padding: '5px 11px', borderRadius: 20, cursor: 'pointer', color: on ? t.c : 'var(--tx-lo)', background: on ? t.bg : 'transparent', border: `1px solid ${on ? t.c : 'var(--line)'}` }}>
+                    {EXP_LABEL[s]}
+                  </button>
+                )
+              })}
+            </div>
+          </WField>
+
+          <WField label="Hypothèse">
+            <textarea value={hypothesis} onChange={(e) => setHypothesis(e.target.value)} rows={3} placeholder="On pense que [changement] va améliorer [métrique] parce que [raison]." style={inp({ width: '100%', resize: 'vertical', fontFamily: 'inherit' })} />
+          </WField>
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <WField label="Canal" flex>
+              <select value={channel} onChange={(e) => setChannel(e.target.value)} style={inp({ width: '100%' })}>
+                <option value="">—</option>
+                {EXP_CHANNELS.map((c) => <option key={c}>{c}</option>)}
+              </select>
+            </WField>
+            <WField label="Budget (MAD)" flex>
+              <input value={budget} onChange={(e) => setBudget(e.target.value)} type="number" placeholder="—" style={inp({ width: '100%' })} />
+            </WField>
+          </div>
+
+          <WField label="Métrique de succès">
+            <input value={metric} onChange={(e) => setMetric(e.target.value)} placeholder="ex. +15% taux de conversion" style={inp({ width: '100%' })} />
+          </WField>
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <WField label="Début" flex>
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} style={inp({ width: '100%' })} />
+            </WField>
+            <WField label="Fin" flex>
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} style={inp({ width: '100%' })} />
+            </WField>
+          </div>
+
+          {/* Outcome — encouraged once won/lost */}
+          <div style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <WField label={`Résultat${isOutcome ? '' : ' (à remplir à la fin)'}`}>
+              <textarea value={result} onChange={(e) => setResult(e.target.value)} rows={2} placeholder="Ce qui s'est passé, les chiffres obtenus…" style={inp({ width: '100%', resize: 'vertical', fontFamily: 'inherit' })} />
+            </WField>
+            <WField label="Apprentissages">
+              <textarea value={learnings} onChange={(e) => setLearnings(e.target.value)} rows={3} placeholder="Ce qu'on retient, ce qu'on refait ou pas…" style={inp({ width: '100%', resize: 'vertical', fontFamily: 'inherit' })} />
+            </WField>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+            <button className="btn-modern btn-primary" onClick={save} style={{ flex: 1, justifyContent: 'center' }}>Enregistrer</button>
+            <button className="btn-modern" onClick={() => { onDelete(exp.id); onClose() }} style={{ color: 'var(--rose-bright)', borderColor: 'var(--rose-line)' }}><Trash2 style={{ width: 15, height: 15 }} />Supprimer</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function WField({ label, children, flex }: { label: string; children: React.ReactNode; flex?: boolean }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 5, flex: flex ? 1 : undefined, minWidth: 0 }}>
+      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx-lo)' }}>{label}</span>
+      {children}
+    </label>
+  )
+}
+
 function inp(extra: React.CSSProperties): React.CSSProperties {
-  return { background: 'var(--bg-1)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px', fontSize: 13, color: 'var(--tx-hi)', ...extra }
+  return { background: 'var(--bg-1)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px', fontSize: 13, color: 'var(--tx-hi)', boxSizing: 'border-box', ...extra }
 }
 function panel(): React.CSSProperties { return { background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 12, padding: 16 } }
 function panelHead(): React.CSSProperties { return { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 } }

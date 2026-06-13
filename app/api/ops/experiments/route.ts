@@ -26,9 +26,11 @@ export async function GET() {
     if (!g.ok) return NextResponse.json({ error: 'Unauthorized' }, { status: g.status })
     const r = await pool.query(
       `SELECT id, name, hypothesis, channel, "successMetric", result, status, learnings,
-              "startDate", "endDate", budget, "createdAt", "updatedAt"
+              to_char("startDate", 'YYYY-MM-DD') AS "startDate",
+              to_char("endDate", 'YYYY-MM-DD') AS "endDate",
+              budget, "createdAt", "updatedAt"
        FROM "GrowthExperiment"
-       ORDER BY CASE status WHEN 'RUNNING' THEN 0 WHEN 'PLANNED' THEN 1 ELSE 2 END, "createdAt" DESC LIMIT 100`
+       ORDER BY CASE status WHEN 'RUNNING' THEN 0 WHEN 'PLANNED' THEN 1 WHEN 'PAUSED' THEN 2 ELSE 3 END, "createdAt" DESC LIMIT 100`
     )
     return NextResponse.json({ experiments: r.rows })
   } catch (e) {
@@ -51,7 +53,10 @@ export async function POST(req: NextRequest) {
     const r = await pool.query(
       `INSERT INTO "GrowthExperiment" (name, hypothesis, channel, "successMetric", status, "createdAt", "updatedAt")
        VALUES ($1,$2,$3,$4,$5,NOW(),NOW())
-       RETURNING id, name, hypothesis, channel, "successMetric", result, status, learnings, "startDate", "endDate", budget, "createdAt", "updatedAt"`,
+       RETURNING id, name, hypothesis, channel, "successMetric", result, status, learnings,
+                 to_char("startDate", 'YYYY-MM-DD') AS "startDate",
+                 to_char("endDate", 'YYYY-MM-DD') AS "endDate",
+                 budget, "createdAt", "updatedAt"`,
       [name, hypothesis, channel, successMetric, status]
     )
     return NextResponse.json({ experiment: r.rows[0] }, { status: 201 })
