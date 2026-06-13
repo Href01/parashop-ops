@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { BookOpen, FlaskConical, GripVertical, Plus, Trash2 } from 'lucide-react'
+import Link from 'next/link'
 import BosShell from '@/components/BosShell'
 
 interface Task {
@@ -11,7 +12,12 @@ interface Task {
   status: 'TODO' | 'IN_PROGRESS' | 'BLOCKED' | 'DONE'
   priority: 'URGENT' | 'HIGH' | 'MEDIUM' | 'LOW'
   dueDate: string | null
+  linkedType?: string | null
+  linkedId?: number | null
 }
+
+const LINK_HREF: Record<string, string> = { order: '/orders', product: '/products', customer: '/customers', campaign: '/campaigns' }
+const LINK_LABEL: Record<string, string> = { order: 'Cmd', product: 'Produit', customer: 'Cliente', campaign: 'Campagne' }
 
 interface Decision { id: number; title: string; decision: string | null; owner: string | null; decisionDate: string | null }
 interface Experiment { id: number; name: string; successMetric: string | null; status: string }
@@ -44,6 +50,8 @@ export default function WorkHubPage() {
   const [owner, setOwner] = useState('AM')
   const [priority, setPriority] = useState<Task['priority']>('MEDIUM')
   const [due, setDue] = useState('')
+  const [linkType, setLinkType] = useState('')
+  const [linkId, setLinkId] = useState('')
   const [saving, setSaving] = useState(false)
   // drag & drop
   const [draggingId, setDraggingId] = useState<number | null>(null)
@@ -96,14 +104,19 @@ export default function WorkHubPage() {
     if (!title.trim() || saving) return
     setSaving(true)
     try {
+      const lid = parseInt(linkId, 10)
       const res = await fetch('/api/ops/tasks', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, owner, priority, dueDate: due || null }),
+        body: JSON.stringify({
+          title, owner, priority, dueDate: due || null,
+          linkedType: linkType && Number.isInteger(lid) ? linkType : null,
+          linkedId: linkType && Number.isInteger(lid) ? lid : null,
+        }),
       })
       const d = await res.json()
       if (res.ok && d.task) {
         setTasks((t) => [d.task, ...t])
-        setTitle(''); setDue(''); setPriority('MEDIUM')
+        setTitle(''); setDue(''); setPriority('MEDIUM'); setLinkType(''); setLinkId('')
       }
     } finally { setSaving(false) }
   }
@@ -150,6 +163,14 @@ export default function WorkHubPage() {
             {PRIORITIES.map((p) => <option key={p} value={p}>{PRIO_LABEL[p]}</option>)}
           </select>
           <input type="date" value={due} onChange={(e) => setDue(e.target.value)} style={inp({ width: 150 })} />
+          <select value={linkType} onChange={(e) => setLinkType(e.target.value)} style={inp({ width: 110 })} title="Lier à">
+            <option value="">Lier à…</option>
+            <option value="order">Commande</option>
+            <option value="product">Produit</option>
+            <option value="customer">Cliente</option>
+            <option value="campaign">Campagne</option>
+          </select>
+          {linkType && <input value={linkId} onChange={(e) => setLinkId(e.target.value)} type="number" placeholder="N°" style={inp({ width: 72 })} />}
           <button className="btn-modern btn-primary" onClick={createTask} disabled={!title.trim() || saving}>
             <Plus className="w-4 h-4" />{saving ? '…' : 'Ajouter'}
           </button>
@@ -207,6 +228,12 @@ export default function WorkHubPage() {
                           {t.dueDate && <span style={{ fontSize: 10, color: 'var(--tx-lo)', fontFamily: 'var(--mono)' }}>
                             {new Date(t.dueDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
                           </span>}
+                          {t.linkedType && t.linkedId && LINK_HREF[t.linkedType] && (
+                            <Link href={`${LINK_HREF[t.linkedType]}/${t.linkedId}`} onClick={(ev) => ev.stopPropagation()}
+                              style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 20, background: 'var(--rose-bg)', color: 'var(--rose-bright)', textDecoration: 'none' }}>
+                              🔗 {LINK_LABEL[t.linkedType]} #{t.linkedId}
+                            </Link>
+                          )}
                           <span style={{ marginLeft: 'auto', width: 22, height: 22, borderRadius: '50%', display: 'grid', placeItems: 'center',
                             fontSize: 9, fontWeight: 700, color: '#fff', background: t.owner === 'MH' ? 'var(--blue)' : 'var(--rose-bright)' }}>
                             {t.owner || '–'}
