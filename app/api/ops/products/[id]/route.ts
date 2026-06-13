@@ -38,7 +38,28 @@ export async function GET(
       return NextResponse.json({ error: 'Product not found' }, { status: 404 })
     }
 
-    return NextResponse.json(result.rows[0])
+    // Recent orders containing this product (connectivity → who bought it)
+    const recent = await pool.query(
+      `SELECT o.id, o.status, o."createdAt", o."deliveryCity", o."sourceChannel",
+              oi.quantity, oi.price
+       FROM "OrderItem" oi JOIN "Order" o ON o.id = oi."orderId"
+       WHERE oi."productId" = $1
+       ORDER BY o."createdAt" DESC LIMIT 15`,
+      [productId]
+    )
+    const sold = await pool.query(
+      `SELECT COALESCE(SUM(oi.quantity),0)::int AS units,
+              COALESCE(SUM(oi.quantity * oi.price) FILTER (WHERE o.status = 'DELIVERED'),0)::float AS revenue
+       FROM "OrderItem" oi JOIN "Order" o ON o.id = oi."orderId"
+       WHERE oi."productId" = $1 AND o.status <> 'CANCELLED'`,
+      [productId]
+    )
+
+    return NextResponse.json({
+      ...result.rows[0],
+      recentOrders: recent.rows,
+      sold: sold.rows[0],
+    })
   } catch (error) {
     console.error('Get product error:', error)
     return NextResponse.json(

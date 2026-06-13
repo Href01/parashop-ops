@@ -140,7 +140,7 @@ export default function IntelligencePage() {
                     {data.velocity.topSellers.slice(0, 8).map((p, i) => {
                       const max = data.velocity.topSellers[0]?.units || 1
                       return (
-                        <div key={p.id}>
+                        <Link key={p.id} href={`/products/${p.id}`} style={{ textDecoration: 'none' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
                             <span style={{ color: 'var(--tx-hi)', display: 'flex', gap: 6, minWidth: 0 }}>
                               <span style={{ color: 'var(--tx-faint)', fontFamily: 'var(--mono)' }}>{i + 1}</span>
@@ -151,7 +151,7 @@ export default function IntelligencePage() {
                           <div style={{ height: 5, background: 'var(--bg-3)', borderRadius: 3, overflow: 'hidden' }}>
                             <div style={{ width: `${(p.units / max) * 100}%`, height: '100%', background: 'var(--green)', borderRadius: 3 }} />
                           </div>
-                        </div>
+                        </Link>
                       )
                     })}
                   </div>
@@ -166,7 +166,7 @@ export default function IntelligencePage() {
                     </p>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                       {data.velocity.deadStock.map((p) => (
-                        <Link key={p.id} href={`/products`} style={{ fontSize: 12, padding: '4px 9px', borderRadius: 20, background: 'var(--bg-3)',
+                        <Link key={p.id} href={`/products/${p.id}`} style={{ fontSize: 12, padding: '4px 9px', borderRadius: 20, background: 'var(--bg-3)',
                           border: '1px solid var(--line-soft)', color: 'var(--tx-mid)', textDecoration: 'none', whiteSpace: 'nowrap' }}>
                           {p.name.length > 26 ? p.name.slice(0, 26) + '…' : p.name}
                           <span style={{ color: 'var(--tx-faint)', marginLeft: 6 }}>{p.stock} en stock</span>
@@ -291,9 +291,9 @@ function Section({ title, hint, icon, children }: { title: string; hint?: string
   )
 }
 
-function MarginRow({ p, good }: { p: { name: string; brand: string; margin: number; units: number; profit?: number }; good?: boolean }) {
+function MarginRow({ p, good }: { p: { id: number; name: string; brand: string; margin: number; units: number; profit?: number }; good?: boolean }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--line-soft)' }}>
+    <Link href={`/products/${p.id}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--line-soft)', textDecoration: 'none' }}>
       <div style={{ minWidth: 0 }}>
         <p style={{ fontSize: 12, color: 'var(--tx-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.name}</p>
         <p style={{ fontSize: 10, color: 'var(--tx-faint)' }}>{p.brand} · {p.units} vendus</p>
@@ -301,7 +301,7 @@ function MarginRow({ p, good }: { p: { name: string; brand: string; margin: numb
       <span style={{ flexShrink: 0, fontSize: 13, fontWeight: 700, color: good ? 'var(--green)' : p.margin < 0 ? 'var(--red)' : 'var(--amber)' }}>
         {p.margin.toFixed(0)}%
       </span>
-    </div>
+    </Link>
   )
 }
 

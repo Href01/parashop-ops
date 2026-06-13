@@ -1,6 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
+import Link from 'next/link'
 import { ChevronLeft, ChevronRight, Download, Edit3, MoreHorizontal, Package, Percent, Plus, Search, TriangleAlert, Wallet } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import BosShell from '@/components/BosShell'
@@ -274,13 +275,13 @@ export default function ProductsPage() {
                           <div className="row gap10">
                             {product.image ? <img src={product.image} alt={product.name} className="thumb" /> : <div className="thumb"></div>}
                             <div className="cellstack">
-                              <span className="t-strong">{product.name}</span>
-                              <span className="t-sub mono">{product.sku || product.brand || 'No SKU'}</span>
+                              <Link href={`/products/${product.id}`} className="t-strong" style={{ color: 'var(--tx-hi)', textDecoration: 'none' }}>{product.name}</Link>
+                              <span className="t-sub mono">{product.sku || product.brand || 'Sans SKU'}</span>
                             </div>
                           </div>
                         </td>
                         <td>
-                          <span className="badge">{product.category || 'Uncategorized'}</span>
+                          <span className="badge">{product.category || 'Sans catégorie'}</span>
                         </td>
                         <td className="r num">{formatMoney(product.price)} <span className="tx-lo fs11">MAD</span></td>
                         <td className="r">
