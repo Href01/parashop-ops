@@ -271,7 +271,7 @@ export default function EventDetailPage() {
               <div className="panel-head">
                 <ShoppingCart />
                 <h3>Orders during event</h3>
-                <span className="badge green">{event.totalOrders || 0}</span>
+                <span className="badge green">{(event.orders || []).length}</span>
               </div>
               <div className="table-scroll">
                 <table className="tbl">
