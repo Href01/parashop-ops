@@ -121,6 +121,13 @@ export default function OrdersPage() {
     }
   }
 
+  const updateChannel = async (orderId: number, sourceChannel: string) => {
+    setOrders((cur) => cur.map((o) => (o.id === orderId ? { ...o, sourceChannel } : o)))
+    await fetch(`/api/ops/orders/${orderId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sourceChannel }),
+    }).catch(() => {})
+  }
+
   const handleSyncSendit = async () => {
     if (!confirm('Synchroniser les statuts de livraison depuis Sendit ?\n\nToutes les commandes en transit seront mises à jour.')) return
 
@@ -426,10 +433,21 @@ export default function OrdersPage() {
                             </span>
                           </div>
                         </td>
-                        <td>
+                        <td onClick={(e) => e.stopPropagation()}>
                           <span className="row gap6">
                             <span className="chan-dot" style={{ background: channelColors[order.sourceChannel || 'Manual'] || 'var(--c-manual)' }}></span>
-                            <span className="fs12">{order.sourceChannel || 'Manual'}</span>
+                            <select
+                              value={order.sourceChannel || 'Manual'}
+                              onChange={(e) => updateChannel(order.id, e.target.value)}
+                              title="Tagger le canal"
+                              style={{ background: 'transparent', border: '1px solid transparent', borderRadius: 6, padding: '2px 4px', fontSize: 12, color: 'var(--tx-mid)', cursor: 'pointer' }}
+                              onFocus={(e) => (e.currentTarget.style.borderColor = 'var(--line)')}
+                              onBlur={(e) => (e.currentTarget.style.borderColor = 'transparent')}
+                            >
+                              {['Manual', 'WhatsApp', 'Instagram', 'TikTok', 'Phone', 'Website', 'Facebook'].map((ch) => (
+                                <option key={ch} value={ch}>{ch}</option>
+                              ))}
+                            </select>
                           </span>
                         </td>
                         <td>

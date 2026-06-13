@@ -26,6 +26,7 @@ interface IntelData {
     losers: Array<{ id: number; name: string; brand: string; margin: number; units: number; profit: number }>
     negative: Array<{ id: number; name: string; brand: string; margin: number; units: number }>
   }
+  channels: Array<{ channel: string; orders: number; delivered: number; cancelled: number; revenue: number; cancelRate: number }>
   readiness: {
     cost: { total: number; filled: number }
     channel: { total: number; filled: number }
@@ -206,6 +207,45 @@ export default function IntelligencePage() {
                     )}
                   </div>
                 </div>
+              </Section>
+            )}
+
+            {/* CHANNEL P&L — unlocked once any order has a channel */}
+            {data.readiness.channelUnlocked && data.channels.length > 0 && (
+              <Section
+                title="P&L par canal"
+                hint={`${data.readiness.channel.filled}/${data.readiness.channel.total} commandes taguées`}
+              >
+                {(() => {
+                  const untagged = data.channels.find((c) => c.channel === 'Non taggé')
+                  const maxRev = Math.max(1, ...data.channels.map((c) => c.revenue))
+                  return (
+                    <>
+                      {untagged && untagged.orders > 0 && (
+                        <div style={{ background: 'var(--amber-bg)', border: '1px solid var(--amber)', borderRadius: 8, padding: '9px 12px', marginBottom: 12, fontSize: 12, color: 'var(--tx-mid)' }}>
+                          ⚠️ <b>{untagged.orders} commande(s) sans canal</b> — tague-les dans <Link href="/orders" style={{ color: 'var(--rose-bright)', fontWeight: 600 }}>Commandes</Link> pour voir d&apos;où vient vraiment ton CA.
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {data.channels.map((c) => (
+                          <div key={c.channel}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                              <span style={{ fontWeight: 600, color: c.channel === 'Non taggé' ? 'var(--tx-faint)' : 'var(--tx-hi)' }}>{c.channel}</span>
+                              <span style={{ color: 'var(--tx-mid)' }}>
+                                <b style={{ color: 'var(--tx-hi)' }}>{Math.round(c.revenue).toLocaleString('fr-FR')} MAD</b>
+                                {' · '}{c.orders} cmd
+                                {c.cancelRate > 0 && <span style={{ color: c.cancelRate >= 25 ? 'var(--red)' : 'var(--amber)' }}> · {c.cancelRate.toFixed(0)}% annul.</span>}
+                              </span>
+                            </div>
+                            <div style={{ height: 6, borderRadius: 3, background: 'var(--bg-3)', overflow: 'hidden' }}>
+                              <div style={{ width: `${(c.revenue / maxRev) * 100}%`, height: '100%', borderRadius: 3, background: c.channel === 'Non taggé' ? 'var(--tx-faint)' : 'var(--rose-bright)' }} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )
+                })()}
               </Section>
             )}
 

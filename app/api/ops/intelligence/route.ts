@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     const { start, end, days } = resolveRange(req.nextUrl.searchParams)
     const oDate = `(o."createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date`
 
-    const [statusRows, velocityRows, deadStockRows, costRows, channelRows, marginRows] = await Promise.all([
+    const [statusRows, velocityRows, deadStockRows, costRows, channelRows, marginRows, channelPnlRows] = await Promise.all([
       // COD / order economics — status breakdown
       safeRows('status', pool.query(
         `SELECT status, COUNT(*)::int AS orders, COALESCE(SUM(total),0)::float AS revenue
@@ -115,6 +115,18 @@ export async function GET(req: NextRequest) {
          ORDER BY margin ASC`,
         [start, end, LOST]
       )),
+
+      // Channel P&L — orders, delivered revenue, cancellation per source channel
+      safeRows('channelPnl', pool.query(
+        `SELECT COALESCE(NULLIF(o."sourceChannel",''),'Non taggé') AS channel,
+                COUNT(*)::int AS orders,
+                COUNT(*) FILTER (WHERE o.status = 'DELIVERED')::int AS delivered,
+                COUNT(*) FILTER (WHERE o.status = 'CANCELLED')::int AS cancelled,
+                COALESCE(SUM(o.total) FILTER (WHERE o.status = 'DELIVERED'),0)::float AS revenue
+         FROM "Order" o WHERE ${oDate}
+         GROUP BY 1 ORDER BY revenue DESC, orders DESC`,
+        [start, end]
+      )),
     ])
 
     // ---- COD economics ----
@@ -181,6 +193,16 @@ export async function GET(req: NextRequest) {
         deadStock: deadStockRows.map((r) => ({ id: r.id, name: r.name, brand: r.brand, stock: num(r.stock) })),
       },
       margin,
+      channels: channelPnlRows
+        .map((r) => ({
+          channel: r.channel,
+          orders: num(r.orders),
+          delivered: num(r.delivered),
+          cancelled: num(r.cancelled),
+          revenue: num(r.revenue),
+          cancelRate: num(r.orders) > 0 ? (num(r.cancelled) / num(r.orders)) * 100 : 0,
+        }))
+        .filter((c) => c.channel !== 'Non taggé' || c.orders > 0),
       readiness,
     }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {

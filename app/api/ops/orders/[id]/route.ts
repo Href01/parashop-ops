@@ -129,6 +129,7 @@ export async function PUT(
       discountTotal,
       notes,
       status,
+      sourceChannel,
     } = body
 
     // Build update query dynamically
@@ -187,6 +188,16 @@ export async function PUT(
     if (notes !== undefined) {
       updates.push(`"notes" = $${paramIndex}`)
       values.push(notes)
+      paramIndex++
+    }
+
+    if (sourceChannel !== undefined) {
+      const allowed = ['Manual', 'WhatsApp', 'Instagram', 'TikTok', 'Phone', 'Website', 'Facebook']
+      if (!allowed.includes(sourceChannel)) {
+        return NextResponse.json({ error: 'invalid sourceChannel' }, { status: 400 })
+      }
+      updates.push(`"sourceChannel" = $${paramIndex}`)
+      values.push(sourceChannel)
       paramIndex++
     }
 
