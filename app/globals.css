@@ -2305,6 +2305,22 @@ textarea.form-input {
   pointer-events: none;
 }
 
+/* Content Hub kanban cards */
+.ch-card {
+  transition: box-shadow 0.14s ease, transform 0.14s ease, border-color 0.14s ease;
+}
+.ch-card:hover {
+  box-shadow: 0 4px 12px oklch(0.4 0.05 350 / 0.12);
+  transform: translateY(-1px);
+}
+.ch-card .ch-del {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.ch-card:hover .ch-del {
+  opacity: 1;
+}
+
 /* Campaigns, content, work */
 .camp-grid,
 .ch-grid,

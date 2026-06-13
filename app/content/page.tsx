@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { GripVertical, Plus, Trash2, X, Link2, Sparkles, AlertCircle } from 'lucide-react'
+import { Plus, Trash2, X, Link2, Sparkles, AlertCircle } from 'lucide-react'
 import BosShell from '@/components/BosShell'
 
 interface Item {
@@ -16,6 +16,7 @@ interface Item {
   caption: string | null
   assetLink: string | null
   productId: number | null
+  productIds: number[] | null
   campaignId: number | null
 }
 
@@ -210,38 +211,47 @@ export default function ContentPage() {
                     <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tx-hi)' }}>{col.label}</span>
                     <span style={{ fontSize: 11, color: 'var(--tx-faint)', fontFamily: 'var(--mono)' }}>{colItems.length}</span>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {colItems.map((it) => (
-                      <div key={it.id} draggable
-                        onClick={() => setEditing(it)}
-                        onDragStart={(e) => { setDraggingId(it.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(it.id)) }}
-                        onDragEnd={() => { setDraggingId(null); setDragOver(null) }}
-                        style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 9, padding: 10, cursor: 'pointer', opacity: draggingId === it.id ? 0.4 : 1, boxShadow: 'var(--shadow-1)' }}>
-                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                          <GripVertical style={{ width: 14, height: 14, color: 'var(--tx-faint)', flexShrink: 0, marginTop: 1, cursor: 'grab' }} />
-                          <span style={{ flex: 1, fontSize: 13, color: 'var(--tx-hi)', lineHeight: 1.3 }}>{it.title}</span>
-                          <button onClick={(e) => { e.stopPropagation(); remove(it.id) }} aria-label="Supprimer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-faint)', padding: 0, flexShrink: 0 }}><Trash2 style={{ width: 13, height: 13 }} /></button>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 9, paddingLeft: 20, flexWrap: 'wrap' }}>
-                          {it.platform && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20, color: '#fff', background: PLAT_COLOR[it.platform] || 'var(--tx-faint)' }}>{it.platform}</span>}
-                          {it.type && <span style={{ fontSize: 10, color: 'var(--tx-lo)' }}>{it.type}</span>}
-                          {it.dueDate && <span style={{ fontSize: 10, color: 'var(--tx-lo)', fontFamily: 'var(--mono)' }}>{fmtDate(it.dueDate)}</span>}
-                          {it.assetLink && <Link2 style={{ width: 11, height: 11, color: 'var(--blue)' }} />}
-                          <span style={{ marginLeft: 'auto', width: 22, height: 22, borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: 9, fontWeight: 700, color: '#fff', background: it.owner === 'AM' ? 'var(--rose-bright)' : 'var(--blue)' }}>{it.owner || '–'}</span>
-                        </div>
-                        {(productName(it.productId) || campaignName(it.campaignId)) && (
-                          <div style={{ display: 'flex', gap: 5, marginTop: 7, paddingLeft: 20, flexWrap: 'wrap' }}>
-                            {productName(it.productId) && (
-                              <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 5, color: 'var(--rose-bright)', background: 'var(--rose-bg)', maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🛍 {productName(it.productId)}</span>
-                            )}
-                            {campaignName(it.campaignId) && (
-                              <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 5, color: 'var(--amber)', background: 'var(--amber-bg)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📣 {campaignName(it.campaignId)}</span>
-                            )}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+                    {colItems.map((it) => {
+                      const pids = it.productIds && it.productIds.length ? it.productIds : (it.productId ? [it.productId] : [])
+                      const pNames = pids.map(productName).filter(Boolean) as string[]
+                      const cName = campaignName(it.campaignId)
+                      const accent = it.platform ? (PLAT_COLOR[it.platform] || 'var(--line)') : 'var(--line)'
+                      return (
+                        <div key={it.id} className="ch-card" draggable
+                          onClick={() => setEditing(it)}
+                          onDragStart={(e) => { setDraggingId(it.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(it.id)) }}
+                          onDragEnd={() => { setDraggingId(null); setDragOver(null) }}
+                          style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderLeft: `3px solid ${accent}`, borderRadius: 10, padding: '11px 12px', cursor: 'pointer', opacity: draggingId === it.id ? 0.4 : 1, boxShadow: 'var(--shadow-1)' }}>
+                          {/* Title + delete */}
+                          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                            <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--tx-hi)', lineHeight: 1.35 }}>{it.title}</span>
+                            <button onClick={(e) => { e.stopPropagation(); remove(it.id) }} aria-label="Supprimer" className="ch-del" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-faint)', padding: 0, flexShrink: 0, marginTop: 1 }}><Trash2 style={{ width: 13, height: 13 }} /></button>
                           </div>
-                        )}
-                      </div>
-                    ))}
-                    {colItems.length === 0 && <div style={{ fontSize: 11, color: 'var(--tx-faint)', textAlign: 'center', padding: '16px 0' }}>{isOver ? 'Déposer ici' : '—'}</div>}
+
+                          {/* Meta: platform · type · date · link · owner */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginTop: 10, flexWrap: 'wrap' }}>
+                            {it.platform && <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.2, padding: '2px 8px', borderRadius: 20, color: '#fff', background: PLAT_COLOR[it.platform] || 'var(--tx-faint)' }}>{it.platform}</span>}
+                            {it.type && <span style={{ fontSize: 10, fontWeight: 500, color: 'var(--tx-lo)' }}>{it.type}</span>}
+                            {it.dueDate && <span style={{ fontSize: 10, color: 'var(--tx-lo)', fontFamily: 'var(--mono)' }}>{fmtDate(it.dueDate)}</span>}
+                            {it.assetLink && <Link2 style={{ width: 11, height: 11, color: 'var(--blue)' }} />}
+                            <span style={{ marginLeft: 'auto', width: 22, height: 22, borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: 9, fontWeight: 700, color: '#fff', background: it.owner === 'AM' ? 'var(--rose-bright)' : 'var(--blue)' }}>{it.owner || '–'}</span>
+                          </div>
+
+                          {/* Connections: products + campaign */}
+                          {(pNames.length > 0 || cName) && (
+                            <div style={{ display: 'flex', gap: 5, marginTop: 9, paddingTop: 9, borderTop: '1px solid var(--line-soft)', flexWrap: 'wrap' }}>
+                              {pNames.slice(0, 2).map((n, i) => (
+                                <span key={i} style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 5, color: 'var(--rose-bright)', background: 'var(--rose-bg)', maxWidth: 118, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>🛍 {n}</span>
+                              ))}
+                              {pNames.length > 2 && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 5, color: 'var(--rose-bright)', background: 'var(--rose-bg)' }}>+{pNames.length - 2}</span>}
+                              {cName && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 5, color: 'var(--amber)', background: 'var(--amber-bg)', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📣 {cName}</span>}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                    {colItems.length === 0 && <div style={{ fontSize: 11, color: 'var(--tx-faint)', textAlign: 'center', padding: '20px 0' }}>{isOver ? 'Déposer ici' : '—'}</div>}
                   </div>
                 </div>
               )
@@ -273,8 +283,15 @@ function EditDrawer({ item, products, campaigns, onClose, onSave, onDelete }: {
   const [hook, setHook] = useState(item.hook || '')
   const [caption, setCaption] = useState(item.caption || '')
   const [assetLink, setAssetLink] = useState(item.assetLink || '')
-  const [productId, setProductId] = useState<string>(item.productId != null ? String(item.productId) : '')
+  const [productIds, setProductIds] = useState<number[]>(
+    item.productIds && item.productIds.length ? item.productIds : (item.productId != null ? [item.productId] : [])
+  )
   const [campaignId, setCampaignId] = useState<string>(item.campaignId != null ? String(item.campaignId) : '')
+
+  const addProduct = (id: number) => setProductIds((x) => (x.includes(id) ? x : [...x, id]))
+  const removeProduct = (id: number) => setProductIds((x) => x.filter((p) => p !== id))
+  const pName = (id: number) => products.find((p) => p.id === id)?.name || `#${id}`
+  const available = products.filter((p) => !productIds.includes(p.id))
 
   const save = () => {
     onSave(item.id, {
@@ -284,7 +301,8 @@ function EditDrawer({ item, products, campaigns, onClose, onSave, onDelete }: {
       hook: hook || null,
       caption: caption || null,
       assetLink: assetLink || null,
-      productId: productId ? parseInt(productId, 10) : null,
+      productIds,
+      productId: productIds[0] ?? null, // keep legacy column in sync (first product)
       campaignId: campaignId ? parseInt(campaignId, 10) : null,
     })
     onClose()
@@ -334,12 +352,24 @@ function EditDrawer({ item, products, campaigns, onClose, onSave, onDelete }: {
             <input value={assetLink} onChange={(e) => setAssetLink(e.target.value)} placeholder="https://…" style={inp({ width: '100%' })} />
           </Field>
 
-          {/* Connexions — relier le contenu au produit / à la campagne */}
+          {/* Connexions — relier le contenu aux produits / à la campagne */}
           <div style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <Field label="🛍 Produit mis en avant">
-              <select value={productId} onChange={(e) => setProductId(e.target.value)} style={inp({ width: '100%' })}>
-                <option value="">— Aucun —</option>
-                {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            <Field label="🛍 Produits mis en avant">
+              {/* selected chips */}
+              {productIds.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                  {productIds.map((id) => (
+                    <span key={id} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 600, padding: '4px 6px 4px 9px', borderRadius: 6, color: 'var(--rose-bright)', background: 'var(--rose-bg)', border: '1px solid var(--rose-line)' }}>
+                      {pName(id)}
+                      <button onClick={() => removeProduct(id)} aria-label="Retirer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--rose-bright)', padding: 0, display: 'grid', placeItems: 'center' }}><X style={{ width: 13, height: 13 }} /></button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              {/* add dropdown */}
+              <select value="" onChange={(e) => { if (e.target.value) addProduct(parseInt(e.target.value, 10)) }} style={inp({ width: '100%' })} disabled={available.length === 0}>
+                <option value="">{available.length === 0 ? (productIds.length ? 'Tous ajoutés' : 'Aucun produit') : '+ Ajouter un produit…'}</option>
+                {available.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </Field>
             <Field label="📣 Campagne">

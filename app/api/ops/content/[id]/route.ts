@@ -40,12 +40,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if ('assetLink' in b) add('assetLink', typeof b.assetLink === 'string' ? b.assetLink.slice(0, 500) : null)
     if ('productId' in b) add('productId', Number.isInteger(b.productId) ? b.productId : null)
     if ('campaignId' in b) add('campaignId', Number.isInteger(b.campaignId) ? b.campaignId : null)
+    if ('productIds' in b) {
+      const ids = Array.isArray(b.productIds)
+        ? Array.from(new Set(b.productIds.filter((n: unknown) => Number.isInteger(n)))) as number[]
+        : []
+      add('productIds', ids)
+    }
 
     if (sets.length === 0) return NextResponse.json({ error: 'no fields to update' }, { status: 400 })
     values.push(id)
     const r = await pool.query(
       `UPDATE "ContentItem" SET ${sets.join(', ')}, "updatedAt" = NOW() WHERE id = $${values.length}
-       RETURNING id, title, type, platform, owner, status, "productId", "campaignId", hook, caption, "assetLink", to_char("dueDate", 'YYYY-MM-DD') AS "dueDate", "scheduledAt", "publishedAt", reach, views, clicks, "attributedOrders", "salesImpact", notes, "createdAt", "updatedAt"`,
+       RETURNING id, title, type, platform, owner, status, "productId", COALESCE("productIds", '{}') AS "productIds", "campaignId", hook, caption, "assetLink", to_char("dueDate", 'YYYY-MM-DD') AS "dueDate", "scheduledAt", "publishedAt", reach, views, clicks, "attributedOrders", "salesImpact", notes, "createdAt", "updatedAt"`,
       values
     )
     if (r.rows.length === 0) return NextResponse.json({ error: 'not found' }, { status: 404 })

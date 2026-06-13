@@ -61,7 +61,7 @@ export async function GET(
       const c = await pool.query(
         `SELECT id, title, platform, type, status, to_char("dueDate", 'YYYY-MM-DD') AS "dueDate"
          FROM "ContentItem"
-         WHERE "productId" = $1
+         WHERE "productId" = $1 OR $1 = ANY("productIds")
          ORDER BY "dueDate" NULLS LAST, "createdAt" DESC LIMIT 20`,
         [productId]
       )
