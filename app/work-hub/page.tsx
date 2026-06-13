@@ -13,6 +13,18 @@ interface Task {
   dueDate: string | null
 }
 
+interface Decision { id: number; title: string; decision: string | null; owner: string | null; decisionDate: string | null }
+interface Experiment { id: number; name: string; successMetric: string | null; status: string }
+
+const EXP_LABEL: Record<string, string> = { PLANNED: 'Planifiée', RUNNING: 'En cours', WON: 'Gagnée', LOST: 'Perdue', PAUSED: 'En pause' }
+const EXP_TONE: Record<string, { c: string; bg: string }> = {
+  PLANNED: { c: 'var(--tx-lo)', bg: 'var(--bg-3)' },
+  RUNNING: { c: 'var(--blue)', bg: 'var(--blue-bg)' },
+  WON: { c: 'var(--green)', bg: 'var(--green-bg)' },
+  LOST: { c: 'var(--red)', bg: 'var(--red-bg)' },
+  PAUSED: { c: 'var(--amber)', bg: 'var(--amber-bg)' },
+}
+
 const PRIO_LABEL: Record<Task['priority'], string> = { URGENT: 'Urgent', HIGH: 'Haute', MEDIUM: 'Moyenne', LOW: 'Basse' }
 const PRIO_COLOR: Record<Task['priority'], string> = { URGENT: 'var(--red)', HIGH: 'var(--amber)', MEDIUM: 'var(--blue)', LOW: 'var(--tx-faint)' }
 const PRIORITIES: Task['priority'][] = ['URGENT', 'HIGH', 'MEDIUM', 'LOW']
@@ -36,14 +48,49 @@ export default function WorkHubPage() {
   // drag & drop
   const [draggingId, setDraggingId] = useState<number | null>(null)
   const [dragOver, setDragOver] = useState<Task['status'] | null>(null)
+  // decisions & experiments
+  const [decisions, setDecisions] = useState<Decision[]>([])
+  const [experiments, setExperiments] = useState<Experiment[]>([])
+  const [dTitle, setDTitle] = useState('')
+  const [dWhy, setDWhy] = useState('')
+  const [eName, setEName] = useState('')
+  const [eMetric, setEMetric] = useState('')
 
   useEffect(() => {
-    fetch('/api/ops/tasks', { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((d) => setTasks(Array.isArray(d.tasks) ? d.tasks : []))
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    const j = (r: Response) => r.json()
+    Promise.all([
+      fetch('/api/ops/tasks', { cache: 'no-store' }).then(j).then((d) => setTasks(Array.isArray(d.tasks) ? d.tasks : [])),
+      fetch('/api/ops/decisions', { cache: 'no-store' }).then(j).then((d) => setDecisions(Array.isArray(d.decisions) ? d.decisions : [])),
+      fetch('/api/ops/experiments', { cache: 'no-store' }).then(j).then((d) => setExperiments(Array.isArray(d.experiments) ? d.experiments : [])),
+    ].map((p) => p.catch(() => {}))).finally(() => setLoading(false))
   }, [])
+
+  const createDecision = async () => {
+    if (!dTitle.trim()) return
+    const res = await fetch('/api/ops/decisions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: dTitle, decision: dWhy, owner }) }).catch(() => null)
+    const d = res && res.ok ? await res.json() : null
+    if (d?.decision) { setDecisions((x) => [d.decision, ...x]); setDTitle(''); setDWhy('') }
+  }
+  const deleteDecision = async (id: number) => {
+    setDecisions((x) => x.filter((d) => d.id !== id))
+    await fetch(`/api/ops/decisions/${id}`, { method: 'DELETE' }).catch(() => {})
+  }
+  const createExperiment = async () => {
+    if (!eName.trim()) return
+    const res = await fetch('/api/ops/experiments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: eName, successMetric: eMetric, status: 'RUNNING' }) }).catch(() => null)
+    const d = res && res.ok ? await res.json() : null
+    if (d?.experiment) { setExperiments((x) => [d.experiment, ...x]); setEName(''); setEMetric('') }
+  }
+  const cycleExp = async (e: Experiment) => {
+    const next: Record<string, string> = { PLANNED: 'RUNNING', RUNNING: 'WON', WON: 'LOST', LOST: 'PLANNED', PAUSED: 'RUNNING' }
+    const status = next[e.status] || 'RUNNING'
+    setExperiments((x) => x.map((y) => (y.id === e.id ? { ...y, status } : y)))
+    await fetch(`/api/ops/experiments/${e.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }).catch(() => {})
+  }
+  const deleteExperiment = async (id: number) => {
+    setExperiments((x) => x.filter((e) => e.id !== id))
+    await fetch(`/api/ops/experiments/${id}`, { method: 'DELETE' }).catch(() => {})
+  }
 
   const createTask = async () => {
     if (!title.trim() || saving) return
@@ -180,38 +227,60 @@ export default function WorkHubPage() {
         )}
         <p style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 8 }}>Glisse une carte entre les colonnes pour changer son statut.</p>
 
-        {/* Static context panels (decision log + experiments) — next slice */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, marginTop: 22 }}>
+        {/* Decision log + Growth experiments (persisted) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16, marginTop: 22 }}>
+          {/* Decision log */}
           <div style={panel()}>
-            <div style={panelHead()}><BookOpen style={{ width: 16, height: 16, color: 'var(--tx-mid)' }} /><h3 style={h3()}>Journal de décisions</h3><Soon /></div>
-            {[
-              ['Passer à Sendit comme transporteur', 'Meilleurs tarifs Casa + tracking API', '28 mai'],
-              ['Maintenir les prix tout l\'été', 'Marge saine ~42% ; compétition sur le contenu', '24 mai'],
-              ['Doubler TikTok vs Facebook', 'ROAS TikTok 4.2x vs FB 1.8x', '20 mai'],
-            ].map(([t, b, d]) => (
-              <div key={t} style={{ padding: '10px 0', borderBottom: '1px solid var(--line-soft)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3 }}>
-                  <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx-hi)' }}>{t}</span>
-                  <span style={{ fontSize: 11, color: 'var(--tx-faint)', fontFamily: 'var(--mono)' }}>{d}</span>
+            <div style={panelHead()}><BookOpen style={{ width: 16, height: 16, color: 'var(--rose)' }} /><h3 style={h3()}>Journal de décisions</h3></div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+              <input value={dTitle} onChange={(e) => setDTitle(e.target.value)} placeholder="Décision prise…" style={inp({})} />
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input value={dWhy} onChange={(e) => setDWhy(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createDecision()} placeholder="Pourquoi / rationale" style={inp({ flex: 1 })} />
+                <button className="btn-modern btn-primary" onClick={createDecision} disabled={!dTitle.trim()}><Plus className="w-4 h-4" /></button>
+              </div>
+            </div>
+            {decisions.length === 0 ? (
+              <p style={{ fontSize: 12, color: 'var(--tx-faint)', textAlign: 'center', padding: '12px 0' }}>Aucune décision enregistrée.</p>
+            ) : decisions.map((d) => (
+              <div key={d.id} className="wh-row" style={{ padding: '9px 0', borderBottom: '1px solid var(--line-soft)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 2 }}>
+                  <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx-hi)' }}>{d.title}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                    {d.decisionDate && <span style={{ fontSize: 11, color: 'var(--tx-faint)', fontFamily: 'var(--mono)' }}>{new Date(d.decisionDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}</span>}
+                    <button onClick={() => deleteDecision(d.id)} aria-label="Supprimer" className="wh-del" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-faint)', padding: 0 }}><Trash2 style={{ width: 12, height: 12 }} /></button>
+                  </span>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--tx-mid)' }}>{b}</div>
+                {d.decision && <div style={{ fontSize: 12, color: 'var(--tx-mid)' }}>{d.decision}</div>}
               </div>
             ))}
           </div>
+
+          {/* Growth experiments */}
           <div style={panel()}>
-            <div style={panelHead()}><FlaskConical style={{ width: 16, height: 16, color: 'var(--tx-mid)' }} /><h3 style={h3()}>Expériences de croissance</h3><Soon /></div>
-            {[
-              ['Cadeau offert dès 500 MAD', '+11% panier moyen'],
-              ['Relance WhatsApp paniers abandonnés', '18% récupérés'],
-              ['Pack routine soin', 'démarre 8 juin'],
-            ].map(([t, m]) => (
-              <div key={t} style={{ padding: '10px 0', borderBottom: '1px solid var(--line-soft)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx-hi)' }}>{t}</span>
-                  <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: 'var(--green-bg)', color: 'var(--green)', fontWeight: 600 }}>{m}</span>
+            <div style={panelHead()}><FlaskConical style={{ width: 16, height: 16, color: 'var(--rose)' }} /><h3 style={h3()}>Expériences de croissance</h3></div>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
+              <input value={eName} onChange={(e) => setEName(e.target.value)} placeholder="Expérience…" style={inp({ flex: 2 })} />
+              <input value={eMetric} onChange={(e) => setEMetric(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createExperiment()} placeholder="Métrique" style={inp({ flex: 1 })} />
+              <button className="btn-modern btn-primary" onClick={createExperiment} disabled={!eName.trim()}><Plus className="w-4 h-4" /></button>
+            </div>
+            {experiments.length === 0 ? (
+              <p style={{ fontSize: 12, color: 'var(--tx-faint)', textAlign: 'center', padding: '12px 0' }}>Aucune expérience.</p>
+            ) : experiments.map((e) => {
+              const tone = EXP_TONE[e.status] || EXP_TONE.PLANNED
+              return (
+                <div key={e.id} className="wh-row" style={{ padding: '9px 0', borderBottom: '1px solid var(--line-soft)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.name}</div>
+                    {e.successMetric && <div style={{ fontSize: 11, color: 'var(--tx-lo)' }}>{e.successMetric}</div>}
+                  </div>
+                  <button onClick={() => cycleExp(e)} title="Changer le statut"
+                    style={{ flexShrink: 0, fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20, border: 'none', cursor: 'pointer', color: tone.c, background: tone.bg }}>
+                    {EXP_LABEL[e.status] || e.status}
+                  </button>
+                  <button onClick={() => deleteExperiment(e.id)} aria-label="Supprimer" className="wh-del" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-faint)', padding: 0, flexShrink: 0 }}><Trash2 style={{ width: 12, height: 12 }} /></button>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       </div>
@@ -225,6 +294,3 @@ function inp(extra: React.CSSProperties): React.CSSProperties {
 function panel(): React.CSSProperties { return { background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 12, padding: 16 } }
 function panelHead(): React.CSSProperties { return { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 } }
 function h3(): React.CSSProperties { return { fontSize: 14, fontWeight: 700, color: 'var(--tx-hi)', flex: 1 } }
-function Soon() {
-  return <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 20, background: 'var(--bg-3)', color: 'var(--tx-lo)' }}>bientôt persistant</span>
-}
