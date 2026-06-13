@@ -384,7 +384,7 @@ export default function EventDetailPage() {
                 </div>
                 <div className="panel-pad">
                   {event.categories.slice(0, 5).map((cat: any) => {
-                    const share = (cat.revenue / event.totalRevenue) * 100
+                    const share = event.totalRevenue > 0 ? (Number(cat.revenue) / Number(event.totalRevenue)) * 100 : 0
                     return (
                       <div key={cat.category} className="mb12">
                         <div className="between mb4">
@@ -428,10 +428,10 @@ function ImpactMetric({ icon, title, value, unit, change, baseline }: any) {
       </div>
       <div className="kpi-meta">
         {change !== null && change !== undefined ? (
-          <span className={`delta ${change >= 0 ? 'up' : 'down'}`}>
-            {change >= 0 ? <TrendingUp /> : <TrendingDown />}
-            {change >= 0 ? '+' : ''}
-            {change.toFixed(1)}% vs normal
+          <span className={`delta ${Number(change) >= 0 ? 'up' : 'down'}`}>
+            {Number(change) >= 0 ? <TrendingUp /> : <TrendingDown />}
+            {Number(change) >= 0 ? '+' : ''}
+            {Number(change).toFixed(1)}% vs normal
           </span>
         ) : (
           <span className="delta up">
@@ -445,13 +445,14 @@ function ImpactMetric({ icon, title, value, unit, change, baseline }: any) {
 }
 
 function ComparisonRow({ label, eventValue, normalValue, increase }: any) {
+  const inc = Number(increase) || 0
   return (
     <div className="mb12">
       <div className="between mb4">
         <span className="fs12 fw500">{label}</span>
-        <span className={`num fs12 ${increase >= 0 ? 'pos' : 'neg'}`}>
-          {increase >= 0 ? '+' : ''}
-          {increase?.toFixed(1)}%
+        <span className={`num fs12 ${inc >= 0 ? 'pos' : 'neg'}`}>
+          {inc >= 0 ? '+' : ''}
+          {inc.toFixed(1)}%
         </span>
       </div>
       <div className="row gap8">
