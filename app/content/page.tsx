@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { GripVertical, Plus, Trash2, X, Link2, Sparkles, AlertCircle } from 'lucide-react'
 import BosShell from '@/components/BosShell'
 
@@ -52,6 +52,7 @@ export default function ContentPage() {
   const [draggingId, setDraggingId] = useState<number | null>(null)
   const [dragOver, setDragOver] = useState<Item['status'] | null>(null)
   const [editing, setEditing] = useState<Item | null>(null)
+  const titleRef = useRef<HTMLInputElement>(null)
 
   const load = () => {
     setLoading(true)
@@ -67,7 +68,12 @@ export default function ContentPage() {
   useEffect(() => { load() }, [])
 
   const create = async () => {
-    if (!title.trim() || saving) return
+    if (saving) return
+    if (!title.trim()) {
+      setError('Écris d’abord un titre pour ton idée de contenu.')
+      titleRef.current?.focus()
+      return
+    }
     setSaving(true)
     setError(null)
     try {
@@ -146,12 +152,12 @@ export default function ContentPage() {
 
         {/* Composer */}
         <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 12, padding: 12, marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && create()} placeholder="Idée de contenu…" style={inp({ flex: '1 1 220px' })} />
+          <input ref={titleRef} value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && create()} placeholder="Idée de contenu…" style={inp({ flex: '1 1 220px' })} />
           <select value={platform} onChange={(e) => setPlatform(e.target.value)} style={inp({ width: 120 })}>{PLATFORMS.map((p) => <option key={p}>{p}</option>)}</select>
           <select value={type} onChange={(e) => setType(e.target.value)} style={inp({ width: 110 })}>{TYPES.map((t) => <option key={t}>{t}</option>)}</select>
           <select value={owner} onChange={(e) => setOwner(e.target.value)} style={inp({ width: 80 })}>{OWNERS.map((o) => <option key={o}>{o}</option>)}</select>
           <input type="date" value={due} onChange={(e) => setDue(e.target.value)} style={inp({ width: 150 })} />
-          <button className="btn-modern btn-primary" onClick={create} disabled={!title.trim() || saving}><Plus className="w-4 h-4" />{saving ? '…' : 'Ajouter'}</button>
+          <button type="button" className="btn-modern btn-primary" onClick={create} disabled={saving} style={{ opacity: title.trim() ? 1 : 0.6 }}><Plus style={{ width: 16, height: 16 }} />{saving ? '…' : 'Ajouter'}</button>
         </div>
 
         {loading ? (
