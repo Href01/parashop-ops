@@ -1,116 +1,149 @@
 'use client'
 
-import type { ReactNode } from 'react'
-import { useState } from 'react'
-import { Calendar, Eye, Package, Play, Plus, ShoppingBag } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { GripVertical, Plus, Trash2 } from 'lucide-react'
 import BosShell from '@/components/BosShell'
 
-const columns = [
-  { label: 'Ideas', dot: 'var(--tx-lo)', cards: ['Before/after: Glow Serum 4-week results', 'GRWM using Palette Nude Eyes'] },
-  { label: 'Scripted', dot: 'var(--amber)', cards: ['5 ways to use Rouge Velours Lip Oil'] },
-  { label: 'Filmed', dot: 'var(--blue)', cards: ['Unboxing Summer Glow bundle', 'Customer testimonial - Casablanca'] },
-  { label: 'Edited', dot: 'var(--violet)', cards: ['Masque Argile Rose ASMR routine'] },
-  { label: 'Scheduled', dot: 'var(--teal)', cards: ['Skincare night routine ft. Hydra Boost', 'Lip Oil restock teaser'] },
-  { label: 'Published', dot: 'var(--green)', cards: ['Vitamine C serum viral hook', 'Founder story - why Shine'] },
-]
+interface Item {
+  id: number
+  title: string
+  type: string | null
+  platform: string | null
+  owner: string | null
+  status: 'IDEA' | 'TO_PRODUCE' | 'SCHEDULED' | 'PUBLISHED'
+  dueDate: string | null
+}
 
-const platforms = [
-  { name: 'TikTok', posts: 14, reach: '512k', engagement: '8.2%', orders: 38, format: 'Reel' },
-  { name: 'Instagram', posts: 11, reach: '264k', engagement: '5.4%', orders: 19, format: 'Reel' },
-  { name: 'Facebook', posts: 3, reach: '66k', engagement: '2.1%', orders: 6, format: 'Post' },
+const COLUMNS: { key: Item['status']; label: string; color: string }[] = [
+  { key: 'IDEA', label: 'Idées', color: 'var(--tx-lo)' },
+  { key: 'TO_PRODUCE', label: 'À produire', color: 'var(--amber)' },
+  { key: 'SCHEDULED', label: 'Planifié', color: 'var(--blue)' },
+  { key: 'PUBLISHED', label: 'Publié', color: 'var(--green)' },
 ]
-
-const schedule = [
-  { day: '5', month: 'JUN', title: 'Skincare night routine', platform: 'Instagram', time: '19:00' },
-  { day: '6', month: 'JUN', title: 'Lip Oil restock teaser', platform: 'TikTok', time: '12:00' },
-  { day: '7', month: 'JUN', title: 'Weekend bundle promo', platform: 'Facebook', time: '10:00' },
-  { day: '9', month: 'JUN', title: 'Masque ASMR routine', platform: 'TikTok', time: '18:30' },
-]
+const PLATFORMS = ['Instagram', 'TikTok', 'Facebook', 'WhatsApp', 'Autre']
+const TYPES = ['Reel', 'Post', 'Story', 'Carrousel', 'Live']
+const PLAT_COLOR: Record<string, string> = {
+  Instagram: 'var(--c-instagram)', TikTok: 'var(--c-tiktok)', Facebook: 'var(--blue)', WhatsApp: 'var(--c-whatsapp)', Autre: 'var(--tx-faint)',
+}
 
 export default function ContentPage() {
-  const [view, setView] = useState<'Board' | 'Calendar' | 'Table'>('Board')
+  const [items, setItems] = useState<Item[]>([])
+  const [loading, setLoading] = useState(true)
+  const [title, setTitle] = useState('')
+  const [platform, setPlatform] = useState('Instagram')
+  const [type, setType] = useState('Reel')
+  const [owner, setOwner] = useState('MH')
+  const [due, setDue] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [draggingId, setDraggingId] = useState<number | null>(null)
+  const [dragOver, setDragOver] = useState<Item['status'] | null>(null)
 
-  const handleNewContent = () => {
-    alert('Content creation feature coming soon! Track content planning in your external tools for now.')
+  useEffect(() => {
+    fetch('/api/ops/content', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => setItems(Array.isArray(d.items) ? d.items : []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  const create = async () => {
+    if (!title.trim() || saving) return
+    setSaving(true)
+    try {
+      const res = await fetch('/api/ops/content', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, platform, type, owner, dueDate: due || null }),
+      })
+      const d = await res.json()
+      if (res.ok && d.item) { setItems((x) => [d.item, ...x]); setTitle(''); setDue('') }
+    } finally { setSaving(false) }
   }
-
-  const handleAddCard = (column: string) => {
-    alert(`Add content to ${column} - Feature coming soon!`)
+  const patch = async (id: number, fields: Partial<Item>) => {
+    setItems((x) => x.map((i) => (i.id === id ? { ...i, ...fields } : i)))
+    await fetch(`/api/ops/content/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) }).catch(() => {})
+  }
+  const remove = async (id: number) => {
+    const prev = items
+    setItems((x) => x.filter((i) => i.id !== id))
+    const res = await fetch(`/api/ops/content/${id}`, { method: 'DELETE' }).catch(() => null)
+    if (!res || !res.ok) setItems(prev)
+  }
+  const drop = (status: Item['status']) => {
+    if (draggingId != null) {
+      const it = items.find((i) => i.id === draggingId)
+      if (it && it.status !== status) patch(draggingId, { status })
+    }
+    setDraggingId(null); setDragOver(null)
   }
 
   return (
-    <BosShell active="content" title="Content Hub" crumb="Growth">
-      <div className="page-inner page-wide">
-        <div className="page-head">
-          <div>
-            <h1>Content Hub</h1>
-            <div className="sub">Plan, produce & track content across TikTok, Instagram & Facebook</div>
-          </div>
-          <div className="spacer"></div>
-          <div className="filter-strip inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
-            <button className={`btn-modern btn-sm ${view === 'Board' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setView('Board')}>Board</button>
-            <button className={`btn-modern btn-sm ${view === 'Calendar' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setView('Calendar')}>Calendar</button>
-            <button className={`btn-modern btn-sm ${view === 'Table' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setView('Table')}>Table</button>
-          </div>
-          <button className="btn-modern btn-primary" onClick={handleNewContent}><Plus className="w-4 h-4" />New content</button>
+    <BosShell active="content" title="Content Hub" crumb="Croissance">
+      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '22px 24px 60px' }}>
+        <div style={{ marginBottom: 16 }}>
+          <div className="eyebrow" style={{ marginBottom: 4 }}>CALENDRIER DE CONTENU</div>
+          <h1 className="serif-display" style={{ fontSize: 28, lineHeight: 1.05 }}>Content Hub</h1>
         </div>
 
-        <div className="cstat-row">
-          <ContentStat icon={<Package />} title="In production" value="14" subtitle="3 due this week" tone="rose" />
-          <ContentStat icon={<Play />} title="Published - 30D" value="28" subtitle="+6" tone="blue" />
-          <ContentStat icon={<Eye />} title="Total reach - 30D" value="842k" subtitle="view-through" tone="teal" />
-          <ContentStat icon={<ShoppingBag />} title="Attributed orders" value="63" subtitle="+15.2k MAD" tone="green" />
+        {/* Composer */}
+        <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 12, padding: 12, marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && create()} placeholder="Idée de contenu…" style={inp({ flex: '1 1 220px' })} />
+          <select value={platform} onChange={(e) => setPlatform(e.target.value)} style={inp({ width: 120 })}>{PLATFORMS.map((p) => <option key={p}>{p}</option>)}</select>
+          <select value={type} onChange={(e) => setType(e.target.value)} style={inp({ width: 110 })}>{TYPES.map((t) => <option key={t}>{t}</option>)}</select>
+          <select value={owner} onChange={(e) => setOwner(e.target.value)} style={inp({ width: 80 })}><option value="AM">AM</option><option value="MH">MH</option></select>
+          <input type="date" value={due} onChange={(e) => setDue(e.target.value)} style={inp({ width: 150 })} />
+          <button className="btn-modern btn-primary" onClick={create} disabled={!title.trim() || saving}><Plus className="w-4 h-4" />{saving ? '…' : 'Ajouter'}</button>
         </div>
 
-        <div className="kanban">
-          {columns.map((column) => (
-            <div key={column.label} className="kcol">
-              <div className="kcol-head"><span className="kdot" style={{ background: column.dot }}></span><h4>{column.label}</h4><span className="kc">{column.cards.length}</span></div>
-              <div className="kcol-body">
-                {column.cards.map((card, index) => (
-                  <div key={card} className="kcard">
-                    <div className="kc-top"><span className="plat-tag">{index % 2 ? 'Instagram' : 'TikTok'}</span><span className="badge mini-badge">Reel</span></div>
-                    <div className="kc-title">{card}</div>
-                    <div className="kc-foot"><span className={`avatar ${index % 2 ? 'a' : 'b'} small`}>{index % 2 ? 'AM' : 'MH'}</span><span className="mono">{column.label === 'Scheduled' ? '5 Jun - 19:00' : column.label === 'Published' ? '50.2k views' : 'Draft'}</span></div>
+        {loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--tx-lo)' }}>Chargement…</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(220px, 1fr))', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
+            {COLUMNS.map((col) => {
+              const colItems = items.filter((i) => i.status === col.key)
+              const isOver = dragOver === col.key
+              return (
+                <div key={col.key}
+                  onDragOver={(e) => { e.preventDefault(); if (dragOver !== col.key) setDragOver(col.key) }}
+                  onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver((c) => (c === col.key ? null : c)) }}
+                  onDrop={() => drop(col.key)}
+                  style={{ background: isOver ? 'var(--rose-bg)' : 'var(--bg-2)', border: `1px solid ${isOver ? 'var(--rose-line)' : 'var(--line-soft)'}`, borderRadius: 12, padding: 10, minHeight: 200, transition: 'background 0.12s, border-color 0.12s' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '2px 4px 10px' }}>
+                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: col.color }} />
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tx-hi)' }}>{col.label}</span>
+                    <span style={{ fontSize: 11, color: 'var(--tx-faint)', fontFamily: 'var(--mono)' }}>{colItems.length}</span>
                   </div>
-                ))}
-                <button className="btn ghost sm full add-card" onClick={() => handleAddCard(column.label)}><Plus />Add</button>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        <div className="ch-grid">
-          <div className="panel">
-            <div className="panel-head"><h3>Performance by platform</h3><div className="spacer"></div><span className="hint">30D</span></div>
-            <div className="table-scroll">
-              <table className="tbl">
-                <thead><tr><th>Platform</th><th className="r">Posts</th><th className="r">Reach</th><th className="r">Eng. rate</th><th className="r">Orders</th><th>Top format</th></tr></thead>
-                <tbody>
-                  {platforms.map((platform) => (
-                    <tr key={platform.name}><td><span className="badge">{platform.name}</span></td><td className="r num">{platform.posts}</td><td className="r num">{platform.reach}</td><td className="r num">{platform.engagement}</td><td className="r num pos">{platform.orders}</td><td><span className="badge">{platform.format}</span></td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {colItems.map((it) => (
+                      <div key={it.id} draggable
+                        onDragStart={(e) => { setDraggingId(it.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(it.id)) }}
+                        onDragEnd={() => { setDraggingId(null); setDragOver(null) }}
+                        style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 9, padding: 10, cursor: 'grab', opacity: draggingId === it.id ? 0.4 : 1, boxShadow: 'var(--shadow-1)' }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
+                          <GripVertical style={{ width: 14, height: 14, color: 'var(--tx-faint)', flexShrink: 0, marginTop: 1 }} />
+                          <span style={{ flex: 1, fontSize: 13, color: 'var(--tx-hi)', lineHeight: 1.3 }}>{it.title}</span>
+                          <button onClick={() => remove(it.id)} aria-label="Supprimer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-faint)', padding: 0, flexShrink: 0 }}><Trash2 style={{ width: 13, height: 13 }} /></button>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 9, paddingLeft: 20, flexWrap: 'wrap' }}>
+                          {it.platform && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20, color: '#fff', background: PLAT_COLOR[it.platform] || 'var(--tx-faint)' }}>{it.platform}</span>}
+                          {it.type && <span style={{ fontSize: 10, color: 'var(--tx-lo)' }}>{it.type}</span>}
+                          {it.dueDate && <span style={{ fontSize: 10, color: 'var(--tx-lo)', fontFamily: 'var(--mono)' }}>{new Date(it.dueDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}</span>}
+                          <span style={{ marginLeft: 'auto', width: 22, height: 22, borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: 9, fontWeight: 700, color: '#fff', background: it.owner === 'AM' ? 'var(--rose-bright)' : 'var(--blue)' }}>{it.owner || '–'}</span>
+                        </div>
+                      </div>
+                    ))}
+                    {colItems.length === 0 && <div style={{ fontSize: 11, color: 'var(--tx-faint)', textAlign: 'center', padding: '16px 0' }}>{isOver ? 'Déposer ici' : '—'}</div>}
+                  </div>
+                </div>
+              )
+            })}
           </div>
-          <div className="panel">
-            <div className="panel-head"><Calendar className="panel-head-icon" /><h3>Upcoming schedule</h3></div>
-            {schedule.map((item) => (
-              <div key={item.title} className="alert-item">
-                <div className="date-tile"><span className="num fs16 fw600">{item.day}</span><span className="fs11 tx-lo">{item.month}</span></div>
-                <div className="alert-body"><div className="at">{item.title}</div><div className="as"><span className="badge mini-badge">{item.platform}</span> <span className="mono">{item.time}</span></div></div>
-              </div>
-            ))}
-          </div>
-        </div>
+        )}
+        <p style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 8 }}>Glisse une carte entre les colonnes pour faire avancer le contenu.</p>
       </div>
     </BosShell>
   )
 }
 
-function ContentStat({ icon, title, value, subtitle, tone }: { icon: ReactNode; title: string; value: string; subtitle: string; tone: string }) {
-  return (
-    <div className="panel kpi"><div className="kpi-top"><div className="kpi-ico" style={{ background: `var(--${tone}-bg)`, color: tone === 'rose' ? 'var(--rose-bright)' : `var(--${tone})` }}>{icon}</div><span className="kpi-title">{title}</span></div><div className="kpi-val"><span>{value}</span></div><div className="kpi-meta"><span className="tx-lo">{subtitle}</span></div></div>
-  )
+function inp(extra: React.CSSProperties): React.CSSProperties {
+  return { background: 'var(--bg-1)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px', fontSize: 13, color: 'var(--tx-hi)', ...extra }
 }

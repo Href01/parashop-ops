@@ -79,7 +79,8 @@ export default function GuidePage() {
         </Card>
 
         <Card icon={<Sparkles />} href="/content" title="Content Hub">
-          Planification de contenu (en construction).
+          Ton <b>calendrier de contenu</b> en Kanban : Idées → À produire → Planifié → Publié.
+          Glisse une carte pour la faire avancer ; tag la plateforme (Insta/TikTok…), le type (Reel, Post…) et l&apos;échéance.
         </Card>
 
         {/* Workflow */}
