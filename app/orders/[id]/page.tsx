@@ -11,6 +11,7 @@ interface Order {
   orderNumber?: string
   status: string
   sourceChannel?: string
+  userId?: number | null
   deliveryName?: string
   deliveryPhone?: string
   deliveryCity?: string
@@ -651,16 +652,23 @@ export default function OrderDetailPage() {
             </div>
 
             <div className="panel">
-              <div className="panel-head"><h3>Customer & delivery</h3></div>
+              <div className="panel-head">
+                <h3>Cliente & livraison</h3>
+                {order.userId && (
+                  <Link href={`/customers/${order.userId}`} style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 600, color: 'var(--rose-bright)', textDecoration: 'none' }}>
+                    Voir la fiche cliente →
+                  </Link>
+                )}
+              </div>
               <div className="panel-pad info-grid">
                 {!isEditing ? (
                   <>
-                    <Info label="Name" value={order.deliveryName || 'N/A'} />
-                    <Info label="Phone" value={order.deliveryPhone || 'N/A'} mono />
-                    <Info label="City" value={order.deliveryCity || 'N/A'} />
-                    <Info label="Payment" value={order.paymentMethod || 'COD'} />
-                    <Info label="Address" value={order.deliveryAddress || 'N/A'} wide />
-                    <Info label="Delivery notes" value={order.deliveryNotes || 'No delivery notes'} wide muted />
+                    <Info label="Nom" value={order.deliveryName || 'N/A'} />
+                    <Info label="Téléphone" value={order.deliveryPhone || 'N/A'} mono />
+                    <Info label="Ville" value={order.deliveryCity || 'N/A'} />
+                    <Info label="Paiement" value={order.paymentMethod || 'COD'} />
+                    <Info label="Adresse" value={order.deliveryAddress || 'N/A'} wide />
+                    <Info label="Notes de livraison" value={order.deliveryNotes || 'Aucune note'} wide muted />
                   </>
                 ) : (
                   <>

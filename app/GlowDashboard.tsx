@@ -15,7 +15,7 @@ interface DashboardStats {
   deliveryRate: number
   roas: number
   revenueSeries: Array<{ date: string; label: string; revenue: number; profit: number }>
-  topProducts: Array<{ name: string; units: number; revenue: number }>
+  topProducts: Array<{ productId: number | null; name: string; units: number; revenue: number }>
   channels: Array<{ name: string; revenue: number; color: string }>
 }
 
@@ -151,8 +151,8 @@ export default function GlowDashboard() {
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {stats.topProducts.length === 0 ? <Empty /> : stats.topProducts.slice(0, 6).map((p, i) => {
                 const max = stats.topProducts[0]?.revenue || 1
-                return (
-                  <div key={i}>
+                const inner = (
+                  <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
                       <span style={{ color: 'var(--tx-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{p.name}</span>
                       <span style={{ color: 'var(--tx-mid)', whiteSpace: 'nowrap', marginLeft: 8 }}><b style={{ color: 'var(--tx-hi)' }}>{mad(p.revenue)}</b> · {p.units}u</span>
@@ -160,8 +160,11 @@ export default function GlowDashboard() {
                     <div style={{ height: 5, borderRadius: 3, background: 'var(--bg-3)', overflow: 'hidden' }}>
                       <div style={{ width: `${(p.revenue / max) * 100}%`, height: '100%', background: 'var(--rose-bright)', borderRadius: 3 }} />
                     </div>
-                  </div>
+                  </>
                 )
+                return p.productId ? (
+                  <Link key={i} href={`/products/${p.productId}`} style={{ textDecoration: 'none' }}>{inner}</Link>
+                ) : <div key={i}>{inner}</div>
               })}
             </div>
           </Card>

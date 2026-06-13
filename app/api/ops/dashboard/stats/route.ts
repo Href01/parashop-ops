@@ -43,6 +43,7 @@ interface PipelineRow {
 }
 
 interface ProductRow {
+  productId: number | null
   name: string | null
   units: number | string | null
   revenue: number | string | null
@@ -331,6 +332,7 @@ export async function GET() {
       safeQuery<ProductRow>('top-products', `
         ${FINANCIAL_CTE}
         SELECT
+          oi."productId" AS "productId",
           COALESCE(NULLIF(TRIM(p.name), ''), CONCAT('Product #', COALESCE(oi."productId"::text, '-'))) AS name,
           COALESCE(SUM(oi.quantity), 0)::int AS units,
           COALESCE(SUM(COALESCE(oi.price, 0) * COALESCE(oi.quantity, 0)), 0)::double precision AS revenue
@@ -339,7 +341,7 @@ export async function GET() {
         LEFT JOIN "Product" p ON p.id = oi."productId"
         WHERE ofn."createdAt" >= (SELECT week_start FROM bounds)
           AND ofn.status IN ('CONFIRMED', 'DELIVERED')
-        GROUP BY COALESCE(NULLIF(TRIM(p.name), ''), CONCAT('Product #', COALESCE(oi."productId"::text, '-')))
+        GROUP BY oi."productId", p.name
         ORDER BY units DESC, revenue DESC
         LIMIT 5
       `),
@@ -475,6 +477,7 @@ export async function GET() {
     const goalProgress = revenueToday > 0 ? Math.min((revenueToday / DAILY_REVENUE_GOAL) * 100, 100) : 0
 
     const topProducts = topProductRows.map((row) => ({
+      productId: row.productId ?? null,
       name: row.name || 'Unknown product',
       units: toNumber(row.units),
       revenue: toNumber(row.revenue),
