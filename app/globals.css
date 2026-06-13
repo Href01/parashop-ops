@@ -1,4 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Cormorant+Garamond:ital,wght@0,500;0,600;0,700;1,500&display=swap');
+/* Shine Cosmetics identity — DM Sans (body) + Playfair Display (titles), matching shinecosmetics.ma */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
 
 /* Tailwind v4: the old `@tailwind base/components/utilities` directives are a
    no-op under @tailwindcss/postcss, which is why utility classes (fixed,
@@ -8,18 +9,18 @@
 @import 'tailwindcss/utilities.css' layer(utilities);
 
 :root {
-  /* ---- Light surfaces (Notion / ClickUp clarity) ---- */
-  --bg-0: oklch(0.984 0.002 95);   /* app background — warm off-white */
-  --bg-1: oklch(1 0 0);            /* cards, sidebar, header — white */
-  --bg-2: oklch(0.967 0.002 95);   /* hover / subtle tiles */
-  --bg-3: oklch(0.928 0.003 95);   /* chips, bar tracks */
-  --bg-inset: oklch(0.955 0.002 95);
-  --bg-soft: oklch(0.967 0.002 95 / 0.7);
+  /* ---- Shine surfaces: warm rosé-white (beauty identity) ---- */
+  --bg-0: oklch(0.986 0.004 350);  /* app background — soft rosé white */
+  --bg-1: oklch(1 0 0);            /* cards, sidebar, header — pure white */
+  --bg-2: oklch(0.972 0.005 350);  /* hover / subtle tiles — faint blush */
+  --bg-3: oklch(0.935 0.007 350);  /* chips, bar tracks */
+  --bg-inset: oklch(0.96 0.005 350);
+  --bg-soft: oklch(0.972 0.005 350 / 0.7);
 
-  /* Borders — subtle hairlines */
-  --line: oklch(0.9 0.003 95);
-  --line-soft: oklch(0.935 0.003 95);
-  --line-strong: oklch(0.85 0.004 95);
+  /* Borders — subtle warm hairlines */
+  --line: oklch(0.905 0.005 350);
+  --line-soft: oklch(0.94 0.004 350);
+  --line-strong: oklch(0.855 0.006 350);
 
   /* Text — ink on white (tuned for AA contrast on light surfaces) */
   --tx-hi: oklch(0.27 0.012 280);
@@ -66,14 +67,16 @@
   --c-manual: oklch(0.6 0.01 280);
 
   /* Fonts */
-  --font: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+  --serif: 'Playfair Display', Georgia, 'Times New Roman', serif;
   --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
 
   /* Radius */
-  --radius: 9px;
-  --radius-sm: 6px;
-  --radius-lg: 14px;
-  --shadow-1: 0 1px 2px oklch(0 0 0 / 0.06);
+  --radius: 11px;
+  --radius-sm: 7px;
+  --radius-lg: 16px;
+  --shadow-1: 0 1px 2px oklch(0.4 0.05 350 / 0.07);
+  --shadow-2: 0 4px 16px oklch(0.4 0.05 350 / 0.08);
   --sidebar-w: 244px;
   --sidebar-w-collapsed: 64px;
   --topbar-h: 56px;

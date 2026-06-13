@@ -162,14 +162,14 @@ export default function BosShell({
                       display: 'flex',
                       alignItems: 'center',
                       gap: '10px',
-                      padding: shellCollapsed ? '9px' : '7px 10px',
-                      borderRadius: '6px',
-                      color: 'var(--tx-mid)',
-                      fontWeight: 500,
+                      padding: shellCollapsed ? '9px' : '8px 10px',
+                      borderRadius: '8px',
+                      color: isActive ? 'var(--rose)' : 'var(--tx-mid)',
+                      fontWeight: isActive ? 600 : 500,
                       fontSize: '13px',
                       position: 'relative',
                       whiteSpace: 'nowrap',
-                      marginBottom: '1px',
+                      marginBottom: '2px',
                       justifyContent: shellCollapsed ? 'center' : 'flex-start'
                     }}
                   >
