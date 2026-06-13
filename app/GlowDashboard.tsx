@@ -19,391 +19,219 @@ interface DashboardStats {
   channels: Array<{ name: string; revenue: number; color: string }>
 }
 
+const DAILY_GOAL = 6000
+const mad = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v)
+
 export default function GlowDashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
-  const [chartRange, setChartRange] = useState<'1D' | '7D' | '1M' | '3M' | 'YTD'>('7D')
-  const [chartType, setChartType] = useState<'area' | 'candle'>('area')
 
   useEffect(() => {
-    fetchStats()
+    fetch('/api/ops/dashboard/stats', { cache: 'no-store' })
+      .then((r) => { if (!r.ok) throw new Error('fetch'); return r.json() })
+      .then((d) => setStats(d))
+      .catch((e) => console.error('Failed to fetch stats:', e))
+      .finally(() => setLoading(false))
   }, [])
-
-  const fetchStats = async () => {
-    try {
-      const res = await fetch('/api/ops/dashboard/stats', { cache: 'no-store' })
-      if (!res.ok) throw new Error('Failed to fetch')
-      const data = await res.json()
-      setStats(data)
-    } catch (error) {
-      console.error('Failed to fetch stats:', error)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(value)
-  }
 
   if (loading || !stats) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{
-            display: 'inline-block',
-            width: '32px',
-            height: '32px',
-            border: '2px solid var(--neon-gold)',
-            borderTopColor: 'transparent',
-            borderRadius: '50%',
-            animation: 'spin 0.8s linear infinite',
-            marginBottom: '16px'
-          }}></div>
-          <p style={{ fontSize: '13px', color: 'var(--tx-lo)' }}>Loading terminal...</p>
+          <div className="dash-spin" style={{ display: 'inline-block', width: 30, height: 30, border: '2px solid var(--rose-bright)', borderTopColor: 'transparent', borderRadius: '50%', marginBottom: 14 }} />
+          <p style={{ fontSize: 13, color: 'var(--tx-lo)' }}>Chargement…</p>
         </div>
+        <style jsx>{`.dash-spin{animation:spin 0.8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
     )
   }
 
+  const goalPct = Math.min(Math.round((stats.revenueToday / DAILY_GOAL) * 100), 100)
+  const series = stats.revenueSeries.slice(-14)
+  const maxRev = Math.max(1, ...series.map((p) => p.revenue))
+  const W = 800, H = 220
+  const pts = series.map((p, i) => ({
+    x: series.length > 1 ? (i / (series.length - 1)) * W : 0,
+    y: H - (p.revenue / maxRev) * (H - 24) - 8,
+  }))
+  const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')
+  const areaPath = pts.length ? `${linePath} L${W},${H} L0,${H} Z` : ''
+
   return (
     <div style={{ flex: 1, overflowY: 'auto' }}>
-      {/* Main Content */}
-      <div style={{ maxWidth: '1640px', margin: '0 auto', padding: '22px 24px 60px' }}>
+      <div style={{ maxWidth: 1480, margin: '0 auto', padding: '24px 24px 60px' }}>
 
-        {/* Page Head */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'flex-start',
-          justifyContent: 'space-between',
-          marginBottom: '16px',
-          flexWrap: 'wrap',
-          gap: '16px'
-        }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 22 }}>
           <div>
-            <div className="eyebrow" style={{ marginBottom: '4px' }}>
-              SHINE COSMETICS · LIVE OPERATIONS
-            </div>
-            <h1 className="serif-display" style={{ fontSize: '32px', color: 'var(--tx-hi)', lineHeight: 1.05 }}>
-              Revenue Terminal
-            </h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '6px', fontSize: '13px' }}>
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '5px',
-                padding: '2px 8px',
-                borderRadius: '20px',
-                fontSize: '11px',
-                fontWeight: 500,
-                border: '1px solid var(--up-line)',
-                color: 'var(--up)',
-                background: 'var(--up-bg)'
-              }}>
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--up)', boxShadow: '0 0 6px var(--up)' }}></span>
-                Markets open
-              </span>
-              <span style={{ color: 'var(--tx-lo)' }}>
-                {new Date().toLocaleDateString('en-US', { weekday: 'short' })} · {new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })} · Casablanca
-              </span>
+            <div className="eyebrow" style={{ marginBottom: 6 }}>SHINE COSMETICS · OPÉRATIONS</div>
+            <h1 className="serif-display" style={{ fontSize: 34, lineHeight: 1.04 }}>Vue d&apos;ensemble</h1>
+            <div style={{ fontSize: 13, color: 'var(--tx-lo)', marginTop: 6 }}>
+              {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · Casablanca
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button className="btn-modern btn-secondary" style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '7px',
-              padding: '7px 13px',
-              borderRadius: '6px',
-              fontSize: '12.5px',
-              fontWeight: 500
-            }}>
-              <Download style={{ width: '15px', height: '15px' }} />
-              Export
-            </button>
-            <Link href="/orders/new" className="btn-luxe" style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '7px',
-              padding: '7px 13px',
-              borderRadius: '6px',
-              fontSize: '12.5px',
-              textDecoration: 'none'
-            }}>
-              <Plus style={{ width: '15px', height: '15px' }} />
-              New order
-            </Link>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button className="btn-modern btn-secondary"><Download className="w-4 h-4" />Export</button>
+            <Link href="/orders/new" className="btn-modern btn-primary" style={{ textDecoration: 'none' }}><Plus className="w-4 h-4" />Nouvelle commande</Link>
           </div>
         </div>
 
-        {/* Hero Grid */}
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1.65fr 1fr',
-          gap: '14px',
-          marginBottom: '14px'
-        }} className="hero-responsive">
+        {/* KPI strip */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 16 }}>
+          <Kpi label="Chiffre d'affaires · 7j" value={`${mad(stats.revenueWeek)}`} unit="MAD" delta={stats.revenueDelta} accent />
+          <Kpi label="Profit estimé" value={mad(stats.estimatedProfit)} unit="MAD" sub={`${stats.marginPercent.toFixed(1)}% marge`} />
+          <Kpi label="Commandes · 7j" value={String(stats.ordersWeek)} />
+          <Kpi label="Panier moyen" value={mad(stats.averageOrderValue)} unit="MAD" />
+          <Kpi label="Taux de livraison" value={`${stats.deliveryRate.toFixed(0)}%`} />
+          <Kpi label="ROAS" value={`${stats.roas.toFixed(1)}x`} />
+        </div>
 
-          {/* Main Revenue Chart */}
-          <div className="card-modern panel-glow-rose" style={{
-            background: 'var(--bg-1)',
-            border: '1px solid var(--line-soft)',
-            borderRadius: '14px',
-            overflow: 'hidden'
-          }}>
-            <div style={{ padding: '18px 20px 4px', display: 'flex', alignItems: 'flex-start', gap: '16px' }}>
-              <div style={{ flex: 1 }}>
-                <div style={{
-                  fontSize: '10.5px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.07em',
-                  color: 'var(--tx-lo)',
-                  fontWeight: 600,
-                  marginBottom: '6px'
-                }}>
-                  Net revenue · this month
-                </div>
-                <div style={{
-                  fontSize: '42px',
-                  fontWeight: 600,
-                  fontFamily: 'var(--mono)',
-                  letterSpacing: '-0.03em',
-                  lineHeight: 1,
-                  color: 'var(--tx-hi)',
-                  marginBottom: '8px'
-                }}>
-                  {formatCurrency(stats.revenueWeek)}
-                  <span style={{ fontSize: '18px', color: 'var(--tx-lo)', fontWeight: 500, marginLeft: '8px' }}>MAD</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '13px' }}>
-                  <span className={`pct-pill ${(stats.revenueDelta || 0) >= 0 ? 'up' : 'down'}`} style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}>
-                    {(stats.revenueDelta || 0) >= 0 ? <ArrowUp style={{ width: '12px', height: '12px' }} /> : <ArrowDown style={{ width: '12px', height: '12px' }} />}
-                    {(stats.revenueDelta || 0) >= 0 ? '+' : ''}{(stats.revenueDelta || 0).toFixed(1)}%
-                  </span>
-                  <span style={{ color: 'var(--tx-mid)' }}>
-                    ≈ <b className="glow-gold" style={{ fontWeight: 600 }}>{formatCurrency(stats.estimatedProfit)}</b> profit · {stats.marginPercent.toFixed(1)}% margin
-                  </span>
+        {/* Chart + goal */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: 16, marginBottom: 16 }} className="dash-hero">
+          <Card>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+              <div>
+                <Label>Chiffre d&apos;affaires net · 14 jours</Label>
+                <div style={{ fontSize: 38, fontWeight: 600, fontFamily: 'var(--mono)', letterSpacing: '-0.02em', color: 'var(--tx-hi)', lineHeight: 1.1 }}>
+                  {mad(stats.revenueWeek)} <span style={{ fontSize: 16, color: 'var(--tx-lo)', fontWeight: 500 }}>MAD</span>
                 </div>
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' }}>
-                <div style={{ display: 'inline-flex', gap: '4px', padding: '3px', background: 'var(--bg-inset)', border: '1px solid var(--line-soft)', borderRadius: '8px' }}>
-                  {(['1D', '7D', '1M', '3M', 'YTD'] as const).map((range) => (
-                    <button
-                      key={range}
-                      onClick={() => setChartRange(range)}
-                      style={{
-                        padding: '4px 10px',
-                        borderRadius: '5px',
-                        fontSize: '11px',
-                        fontWeight: 500,
-                        fontFamily: 'var(--mono)',
-                        color: chartRange === range ? 'var(--neon-gold)' : 'var(--tx-lo)',
-                        background: chartRange === range ? 'var(--bg-2)' : 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        transition: 'all 0.12s'
-                      }}
-                    >
-                      {range}
-                    </button>
-                  ))}
-                </div>
-                <div style={{ display: 'inline-flex', gap: '2px', padding: '2px', background: 'var(--bg-inset)', border: '1px solid var(--line-soft)', borderRadius: '8px' }}>
-                  {(['area', 'candle'] as const).map((type) => (
-                    <button
-                      key={type}
-                      onClick={() => setChartType(type)}
-                      style={{
-                        padding: '4px 10px',
-                        borderRadius: '6px',
-                        fontSize: '11px',
-                        fontWeight: 500,
-                        color: chartType === type ? 'var(--neon-gold)' : 'var(--tx-lo)',
-                        background: chartType === type ? 'var(--bg-2)' : 'transparent',
-                        border: 'none',
-                        cursor: 'pointer',
-                        textTransform: 'capitalize',
-                        transition: 'all 0.12s'
-                      }}
-                    >
-                      {type}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {stats.revenueDelta != null && <DeltaPill value={stats.revenueDelta} />}
             </div>
-            <div style={{ padding: '6px 20px 20px' }}>
-              <svg width="100%" height="236" viewBox="0 0 800 236" style={{ overflow: 'visible' }}>
-                <defs>
-                  <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--neon-rose)" stopOpacity="0.3" />
-                    <stop offset="100%" stopColor="var(--neon-rose)" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                {/* Simple area chart visualization */}
-                {chartType === 'area' && stats.revenueSeries.slice(0, 14).map((point, i, arr) => {
-                  const x = (i / (arr.length - 1)) * 800
-                  const maxRevenue = Math.max(...arr.map(p => p.revenue))
-                  const y = 236 - (point.revenue / maxRevenue) * 200
-                  const nextPoint = arr[i + 1]
-                  if (!nextPoint) return null
-                  const nextX = ((i + 1) / (arr.length - 1)) * 800
-                  const nextY = 236 - (nextPoint.revenue / maxRevenue) * 200
-                  return (
-                    <g key={i}>
-                      <line
-                        x1={x}
-                        y1={y}
-                        x2={nextX}
-                        y2={nextY}
-                        stroke="var(--neon-rose)"
-                        strokeWidth="2.5"
-                        strokeLinecap="round"
-                      />
-                      <circle
-                        cx={x}
-                        cy={y}
-                        r="3"
-                        fill="var(--neon-rose)"
-                        opacity={i === arr.length - 1 ? 1 : 0.6}
-                      />
-                    </g>
-                  )
-                })}
-                {/* Grid lines */}
-                {[0, 1, 2, 3, 4].map((i) => (
-                  <line
-                    key={i}
-                    x1="0"
-                    y1={i * 59}
-                    x2="800"
-                    y2={i * 59}
-                    stroke="var(--line-soft)"
-                    strokeWidth="1"
-                    strokeDasharray="3,3"
-                    opacity="0.3"
-                  />
-                ))}
-              </svg>
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                marginTop: '6px',
-                fontSize: '10px',
-                color: 'var(--tx-faint)',
-                fontFamily: 'var(--mono)'
-              }}>
-                {chartRange === '7D' ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, i) => (
-                  <span key={i}>{day}</span>
-                )) : ['Start', '', '', '', 'Now'].map((label, i) => (
-                  <span key={i}>{label}</span>
-                ))}
-              </div>
+            <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ marginTop: 8 }}>
+              <defs>
+                <linearGradient id="rev-fill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--rose-bright)" stopOpacity="0.18" />
+                  <stop offset="100%" stopColor="var(--rose-bright)" stopOpacity="0" />
+                </linearGradient>
+              </defs>
+              {[0, 1, 2, 3].map((i) => (
+                <line key={i} x1="0" y1={(i * H) / 3} x2={W} y2={(i * H) / 3} stroke="var(--line-soft)" strokeWidth="1" strokeDasharray="4,4" />
+              ))}
+              {areaPath && <path d={areaPath} fill="url(#rev-fill)" />}
+              {linePath && <path d={linePath} fill="none" stroke="var(--rose-bright)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}
+              {pts.length > 0 && <circle cx={pts[pts.length - 1].x} cy={pts[pts.length - 1].y} r="4" fill="var(--rose-bright)" />}
+            </svg>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--tx-faint)', fontFamily: 'var(--mono)', marginTop: 4 }}>
+              {series.filter((_, i) => i % Math.ceil(series.length / 6 || 1) === 0).map((p, i) => <span key={i}>{p.label}</span>)}
             </div>
-          </div>
+          </Card>
 
-          {/* Right Rail: Gauge + Watchlist */}
-          <div style={{ display: 'grid', gap: '14px', alignContent: 'start' }}>
-            {/* Momentum Gauge */}
-            <div className="card-modern" style={{
-              background: 'var(--bg-1)',
-              border: '1px solid var(--line-soft)',
-              borderRadius: '14px',
-              overflow: 'hidden'
-            }}>
-              <div className="card-header card-header-gold" style={{
-                padding: '13px 16px',
-                borderBottom: '1px solid var(--line-soft)',
-                position: 'relative',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px'
-              }}>
-                <h3 style={{ fontSize: '13px', fontWeight: 600, flex: 1 }}>Momentum index</h3>
-                <span style={{ fontSize: '11px', color: 'var(--tx-lo)', fontFamily: 'var(--mono)' }}>vs daily goal</span>
-              </div>
-              <div style={{ padding: '24px', textAlign: 'center' }}>
-                <div className="glow-gold" style={{
-                  fontSize: '56px',
-                  fontWeight: 700,
-                  fontFamily: 'var(--mono)',
-                  marginBottom: '8px'
-                }}>
-                  {Math.round(stats.revenueToday / 6000 * 100)}
-                </div>
-                <div style={{ fontSize: '13px', color: 'var(--up)', fontWeight: 500 }}>
-                  Greedy · on track
-                </div>
-              </div>
+          <Card>
+            <Label>Objectif du jour</Label>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 6, marginBottom: 4 }}>
+              <span style={{ fontSize: 40, fontWeight: 700, fontFamily: 'var(--mono)', color: goalPct >= 100 ? 'var(--green)' : 'var(--rose-bright)' }}>{goalPct}%</span>
+              <span style={{ fontSize: 13, color: 'var(--tx-lo)' }}>de {mad(DAILY_GOAL)} MAD</span>
             </div>
+            <div style={{ height: 10, borderRadius: 6, background: 'var(--bg-3)', overflow: 'hidden', marginBottom: 6 }}>
+              <div style={{ width: `${goalPct}%`, height: '100%', borderRadius: 6, background: goalPct >= 100 ? 'var(--green)' : 'linear-gradient(90deg, var(--rose), var(--rose-bright))' }} />
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--tx-mid)' }}>
+              <b style={{ color: 'var(--tx-hi)' }}>{mad(stats.revenueToday)} MAD</b> encaissés aujourd&apos;hui
+            </p>
+            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line-soft)', display: 'grid', gap: 10 }}>
+              {[
+                { label: 'Commandes (7j)', value: String(stats.ordersWeek) },
+                { label: 'Panier moyen', value: `${mad(stats.averageOrderValue)} MAD` },
+                { label: 'Taux livraison', value: `${stats.deliveryRate.toFixed(0)}%` },
+              ].map((m) => (
+                <div key={m.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 12, color: 'var(--tx-lo)' }}>{m.label}</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, fontFamily: 'var(--mono)', color: 'var(--tx-hi)' }}>{m.value}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
 
-            {/* Watchlist */}
-            <div className="card-modern" style={{
-              background: 'var(--bg-1)',
-              border: '1px solid var(--line-soft)',
-              borderRadius: '14px',
-              overflow: 'hidden'
-            }}>
-              <div className="card-header card-header-gold" style={{
-                padding: '13px 16px',
-                borderBottom: '1px solid var(--line-soft)',
-                position: 'relative',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px'
-              }}>
-                <h3 style={{ fontSize: '13px', fontWeight: 600, flex: 1 }}>Watchlist</h3>
-                <span style={{ fontSize: '11px', color: 'var(--tx-lo)', fontFamily: 'var(--mono)' }}>7D</span>
-              </div>
-              <div style={{ padding: '8px' }}>
-                {[
-                  { label: 'Orders', value: stats.ordersWeek, change: 12.4 },
-                  { label: 'AOV', value: stats.averageOrderValue.toFixed(0), change: 8.2 },
-                  { label: 'Delivery', value: stats.deliveryRate.toFixed(1) + '%', change: 3.1 },
-                  { label: 'ROAS', value: stats.roas.toFixed(1) + 'x', change: 15.7 }
-                ].map((metric, idx) => (
-                  <div key={idx} style={{
-                    padding: '10px 12px',
-                    borderBottom: idx < 3 ? '1px solid var(--line-soft)' : 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between'
-                  }}>
-                    <div>
-                      <div style={{ fontSize: '11px', color: 'var(--tx-lo)', fontWeight: 500, marginBottom: '2px' }}>
-                        {metric.label}
-                      </div>
-                      <div style={{ fontSize: '18px', fontWeight: 600, fontFamily: 'var(--mono)', color: 'var(--tx-hi)' }}>
-                        {metric.value}
-                      </div>
+        {/* Top products + channels (real data, previously unused) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+          <Card>
+            <Label>Top produits · 7 jours</Label>
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {stats.topProducts.length === 0 ? <Empty /> : stats.topProducts.slice(0, 6).map((p, i) => {
+                const max = stats.topProducts[0]?.revenue || 1
+                return (
+                  <div key={i}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
+                      <span style={{ color: 'var(--tx-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{p.name}</span>
+                      <span style={{ color: 'var(--tx-mid)', whiteSpace: 'nowrap', marginLeft: 8 }}><b style={{ color: 'var(--tx-hi)' }}>{mad(p.revenue)}</b> · {p.units}u</span>
                     </div>
-                    <span className="pct-pill up" style={{ fontSize: '10px' }}>
-                      <ArrowUp style={{ width: '10px', height: '10px' }} />
-                      {metric.change}%
-                    </span>
+                    <div style={{ height: 5, borderRadius: 3, background: 'var(--bg-3)', overflow: 'hidden' }}>
+                      <div style={{ width: `${(p.revenue / max) * 100}%`, height: '100%', background: 'var(--rose-bright)', borderRadius: 3 }} />
+                    </div>
                   </div>
-                ))}
-              </div>
+                )
+              })}
             </div>
-          </div>
-        </div>
+          </Card>
 
+          <Card>
+            <Label>Canaux de vente · 7 jours</Label>
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {stats.channels.length === 0 ? <Empty /> : stats.channels.slice(0, 6).map((c, i) => {
+                const max = Math.max(...stats.channels.map((x) => x.revenue), 1)
+                return (
+                  <div key={i}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: 'var(--tx-hi)' }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.color || 'var(--rose-bright)' }} />{c.name}
+                      </span>
+                      <b style={{ color: 'var(--tx-hi)' }}>{mad(c.revenue)} MAD</b>
+                    </div>
+                    <div style={{ height: 5, borderRadius: 3, background: 'var(--bg-3)', overflow: 'hidden' }}>
+                      <div style={{ width: `${(c.revenue / max) * 100}%`, height: '100%', background: c.color || 'var(--rose-bright)', borderRadius: 3 }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </Card>
+        </div>
       </div>
 
       <style jsx>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-        @media (max-width: 1180px) {
-          .hero-responsive {
-            grid-template-columns: 1fr !important;
-          }
-        }
+        @media (max-width: 1100px) { .dash-hero { grid-template-columns: 1fr !important; } }
       `}</style>
     </div>
+  )
+}
+
+function Card({ children }: { children: React.ReactNode }) {
+  return <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-lg)', padding: 18, boxShadow: 'var(--shadow-1)' }}>{children}</div>
+}
+function Label({ children }: { children: React.ReactNode }) {
+  return <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--tx-lo)', fontWeight: 600 }}>{children}</div>
+}
+function Empty() { return <p style={{ fontSize: 13, color: 'var(--tx-faint)', textAlign: 'center', padding: '16px 0' }}>Pas de données.</p> }
+
+function Kpi({ label, value, unit, sub, delta, accent }: { label: string; value: string; unit?: string; sub?: string; delta?: number | null; accent?: boolean }) {
+  return (
+    <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius)', padding: 14, boxShadow: 'var(--shadow-1)' }}>
+      <div style={{ fontSize: 11, color: 'var(--tx-lo)', marginBottom: 6 }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
+        <span style={{ fontSize: 22, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: '-0.01em', color: accent ? 'var(--rose-bright)' : 'var(--tx-hi)' }}>{value}</span>
+        {unit && <span style={{ fontSize: 12, color: 'var(--tx-faint)' }}>{unit}</span>}
+      </div>
+      {(delta != null || sub) && (
+        <div style={{ marginTop: 6 }}>
+          {delta != null ? <DeltaPill value={delta} small /> : <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>{sub}</span>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function DeltaPill({ value, small }: { value: number; small?: boolean }) {
+  const up = value >= 0
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 3, padding: small ? '1px 6px' : '3px 9px', borderRadius: 20,
+      fontSize: small ? 10 : 12, fontWeight: 600,
+      color: up ? 'var(--green)' : 'var(--red)', background: up ? 'var(--green-bg)' : 'var(--red-bg)',
+    }}>
+      {up ? <ArrowUp style={{ width: small ? 10 : 12, height: small ? 10 : 12 }} /> : <ArrowDown style={{ width: small ? 10 : 12, height: small ? 10 : 12 }} />}
+      {up ? '+' : ''}{value.toFixed(1)}%
+    </span>
   )
 }
