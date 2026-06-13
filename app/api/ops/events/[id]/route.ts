@@ -30,11 +30,16 @@ export async function GET(
 
     const { id: eventId } = await params
 
-    // Get event with metrics
+    // Get event with metrics and computed status
     const eventResult = await pool.query(`
       SELECT
         e.*,
-        em.*
+        em.*,
+        CASE
+          WHEN CURRENT_DATE < e."startDate"::date THEN 'Upcoming'
+          WHEN CURRENT_DATE > e."endDate"::date THEN 'Completed'
+          ELSE 'Active'
+        END as "computedStatus"
       FROM "Event" e
       LEFT JOIN "EventMetrics" em ON em."eventId" = e.id
       WHERE e.id = $1
@@ -45,6 +50,9 @@ export async function GET(
     }
 
     const event = eventResult.rows[0]
+    // Use computed status instead of DB status
+    event.status = event.computedStatus
+    delete event.computedStatus
 
     // Get category performance
     const categoriesResult = await pool.query(`

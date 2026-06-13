@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
 
-    // Get events with metrics
+    // Get events with metrics and computed status
     const result = await pool.query(`
       SELECT
         e.*,
@@ -74,16 +74,28 @@ export async function GET(request: NextRequest) {
           SELECT COUNT(*)
           FROM "EventProduct" ep
           WHERE ep."eventId" = e.id
-        ) as "productsCount"
+        ) as "productsCount",
+        CASE
+          WHEN CURRENT_DATE < e."startDate"::date THEN 'Upcoming'
+          WHEN CURRENT_DATE > e."endDate"::date THEN 'Completed'
+          ELSE 'Active'
+        END as "computedStatus"
       FROM "Event" e
       LEFT JOIN "EventMetrics" em ON em."eventId" = e.id
       ${whereClause}
       ORDER BY ${sortColumn} ${sortOrder}
     `, values)
 
+    // Replace DB status with computed status for each event
+    const events = result.rows.map(e => ({
+      ...e,
+      status: e.computedStatus,
+      computedStatus: undefined
+    }))
+
     return NextResponse.json({
-      events: result.rows,
-      total: result.rows.length,
+      events,
+      total: events.length,
     })
 
   } catch (error: any) {
