@@ -160,6 +160,11 @@ export default function ContentPage() {
         <div style={{ marginBottom: 16 }}>
           <div className="eyebrow" style={{ marginBottom: 4 }}>CALENDRIER DE CONTENU</div>
           <h1 className="serif-display" style={{ fontSize: 28, lineHeight: 1.05 }}>Content Hub</h1>
+          <p style={{ fontSize: 13, color: 'var(--tx-mid)', marginTop: 7, lineHeight: 1.55, maxWidth: 640 }}>
+            Ton <b>calendrier éditorial social</b> — 1 carte = 1 post (Insta, TikTok, WhatsApp…). Tu planifies, produis et publies tes contenus.
+            <br />Pour les tâches, décisions et opérations internes →{' '}
+            <a href="/work-hub" style={{ color: 'var(--rose-bright)', fontWeight: 600, textDecoration: 'none' }}>Work Hub</a>.
+          </p>
         </div>
 
         {/* Error banner */}

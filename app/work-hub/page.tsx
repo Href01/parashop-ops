@@ -149,6 +149,11 @@ export default function WorkHubPage() {
         <div style={{ marginBottom: 18 }}>
           <div className="eyebrow" style={{ marginBottom: 4 }}>PRIORITÉS · TÂCHES · DÉCISIONS</div>
           <h1 className="serif-display" style={{ fontSize: 28, color: 'var(--tx-hi)', lineHeight: 1.05 }}>Work Hub</h1>
+          <p style={{ fontSize: 13, color: 'var(--tx-mid)', marginTop: 7, lineHeight: 1.55, maxWidth: 640 }}>
+            Ton <b>pilotage interne</b> — tâches, journal de décisions et expériences de croissance. Tout le travail qui fait tourner le business.
+            <br />Pour planifier tes posts Insta/TikTok →{' '}
+            <a href="/content" style={{ color: 'var(--rose-bright)', fontWeight: 600, textDecoration: 'none' }}>Content Hub</a>.
+          </p>
         </div>
 
         {/* Composer */}
