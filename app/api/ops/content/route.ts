@@ -26,7 +26,8 @@ export async function GET() {
     if (!g.ok) return NextResponse.json({ error: 'Unauthorized' }, { status: g.status })
     const r = await pool.query(
       `SELECT id, title, type, platform, owner, status, "productId", "campaignId",
-              hook, caption, "assetLink", "dueDate", "scheduledAt", "publishedAt",
+              hook, caption, "assetLink", to_char("dueDate", 'YYYY-MM-DD') AS "dueDate",
+              "scheduledAt", "publishedAt",
               reach, views, clicks, "attributedOrders", "salesImpact", notes, "createdAt", "updatedAt"
        FROM "ContentItem"
        ORDER BY "dueDate" NULLS LAST, "createdAt" DESC LIMIT 200`
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest) {
     const r = await pool.query(
       `INSERT INTO "ContentItem" (title, type, platform, owner, status, "dueDate", "productId", "createdAt", "updatedAt")
        VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW())
-       RETURNING id, title, type, platform, owner, status, "productId", "campaignId", hook, caption, "assetLink", "dueDate", "scheduledAt", "publishedAt", reach, views, clicks, "attributedOrders", "salesImpact", notes, "createdAt", "updatedAt"`,
+       RETURNING id, title, type, platform, owner, status, "productId", "campaignId", hook, caption, "assetLink", to_char("dueDate", 'YYYY-MM-DD') AS "dueDate", "scheduledAt", "publishedAt", reach, views, clicks, "attributedOrders", "salesImpact", notes, "createdAt", "updatedAt"`,
       [title, type, platform, owner, status, dueDate, productId]
     )
     return NextResponse.json({ item: r.rows[0] }, { status: 201 })

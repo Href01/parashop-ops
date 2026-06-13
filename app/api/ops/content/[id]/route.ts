@@ -43,7 +43,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     values.push(id)
     const r = await pool.query(
       `UPDATE "ContentItem" SET ${sets.join(', ')}, "updatedAt" = NOW() WHERE id = $${values.length}
-       RETURNING id, title, type, platform, owner, status, "productId", "campaignId", hook, caption, "assetLink", "dueDate", "scheduledAt", "publishedAt", reach, views, clicks, "attributedOrders", "salesImpact", notes, "createdAt", "updatedAt"`,
+       RETURNING id, title, type, platform, owner, status, "productId", "campaignId", hook, caption, "assetLink", to_char("dueDate", 'YYYY-MM-DD') AS "dueDate", "scheduledAt", "publishedAt", reach, views, clicks, "attributedOrders", "salesImpact", notes, "createdAt", "updatedAt"`,
       values
     )
     if (r.rows.length === 0) return NextResponse.json({ error: 'not found' }, { status: 404 })

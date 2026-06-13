@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { GripVertical, Plus, Trash2 } from 'lucide-react'
+import { GripVertical, Plus, Trash2, X, Link2, Sparkles, AlertCircle } from 'lucide-react'
 import BosShell from '@/components/BosShell'
 
 interface Item {
@@ -12,6 +12,9 @@ interface Item {
   owner: string | null
   status: 'IDEA' | 'TO_PRODUCE' | 'SCHEDULED' | 'PUBLISHED'
   dueDate: string | null
+  hook: string | null
+  caption: string | null
+  assetLink: string | null
 }
 
 const COLUMNS: { key: Item['status']; label: string; color: string }[] = [
@@ -22,13 +25,24 @@ const COLUMNS: { key: Item['status']; label: string; color: string }[] = [
 ]
 const PLATFORMS = ['Instagram', 'TikTok', 'Facebook', 'WhatsApp', 'Autre']
 const TYPES = ['Reel', 'Post', 'Story', 'Carrousel', 'Live']
+const OWNERS = ['AM', 'MH']
 const PLAT_COLOR: Record<string, string> = {
   Instagram: 'var(--c-instagram)', TikTok: 'var(--c-tiktok)', Facebook: 'var(--blue)', WhatsApp: 'var(--c-whatsapp)', Autre: 'var(--tx-faint)',
+}
+const MONTHS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.']
+
+/** Format 'YYYY-MM-DD' (timezone-safe — no Date parsing). */
+function fmtDate(d: string | null): string {
+  if (!d) return ''
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d)
+  if (!m) return d
+  return `${parseInt(m[3], 10)} ${MONTHS[parseInt(m[2], 10) - 1] || ''}`
 }
 
 export default function ContentPage() {
   const [items, setItems] = useState<Item[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [title, setTitle] = useState('')
   const [platform, setPlatform] = useState('Instagram')
   const [type, setType] = useState('Reel')
@@ -37,37 +51,71 @@ export default function ContentPage() {
   const [saving, setSaving] = useState(false)
   const [draggingId, setDraggingId] = useState<number | null>(null)
   const [dragOver, setDragOver] = useState<Item['status'] | null>(null)
+  const [editing, setEditing] = useState<Item | null>(null)
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true)
     fetch('/api/ops/content', { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((d) => setItems(Array.isArray(d.items) ? d.items : []))
-      .catch(() => {})
+      .then(async (r) => {
+        if (!r.ok) throw new Error(r.status === 401 ? 'Session expirée — reconnecte-toi.' : `Erreur ${r.status}`)
+        return r.json()
+      })
+      .then((d) => { setItems(Array.isArray(d.items) ? d.items : []); setError(null) })
+      .catch((e) => setError(e.message || 'Chargement impossible'))
       .finally(() => setLoading(false))
-  }, [])
+  }
+  useEffect(() => { load() }, [])
 
   const create = async () => {
     if (!title.trim() || saving) return
     setSaving(true)
+    setError(null)
     try {
       const res = await fetch('/api/ops/content', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, platform, type, owner, dueDate: due || null }),
+        body: JSON.stringify({ title: title.trim(), platform, type, owner, dueDate: due || null }),
       })
-      const d = await res.json()
-      if (res.ok && d.item) { setItems((x) => [d.item, ...x]); setTitle(''); setDue('') }
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || (res.status === 401 ? 'Session expirée — reconnecte-toi.' : `Erreur ${res.status}`))
+      if (d.item) { setItems((x) => [d.item, ...x]); setTitle(''); setDue('') }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Création impossible')
     } finally { setSaving(false) }
   }
+
   const patch = async (id: number, fields: Partial<Item>) => {
+    const prev = items
     setItems((x) => x.map((i) => (i.id === id ? { ...i, ...fields } : i)))
-    await fetch(`/api/ops/content/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) }).catch(() => {})
+    if (editing?.id === id) setEditing((e) => (e ? { ...e, ...fields } : e))
+    try {
+      const res = await fetch(`/api/ops/content/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.error || `Erreur ${res.status}`)
+      }
+      setError(null)
+    } catch (e) {
+      setItems(prev) // rollback
+      setError(e instanceof Error ? e.message : 'Mise à jour impossible')
+    }
   }
+
   const remove = async (id: number) => {
     const prev = items
     setItems((x) => x.filter((i) => i.id !== id))
-    const res = await fetch(`/api/ops/content/${id}`, { method: 'DELETE' }).catch(() => null)
-    if (!res || !res.ok) setItems(prev)
+    if (editing?.id === id) setEditing(null)
+    try {
+      const res = await fetch(`/api/ops/content/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error(`Erreur ${res.status}`)
+      setError(null)
+    } catch (e) {
+      setItems(prev) // rollback
+      setError(e instanceof Error ? e.message : 'Suppression impossible')
+    }
   }
+
   const drop = (status: Item['status']) => {
     if (draggingId != null) {
       const it = items.find((i) => i.id === draggingId)
@@ -75,6 +123,8 @@ export default function ContentPage() {
     }
     setDraggingId(null); setDragOver(null)
   }
+
+  const isEmpty = !loading && items.length === 0 && !error
 
   return (
     <BosShell active="content" title="Content Hub" crumb="Croissance">
@@ -84,18 +134,39 @@ export default function ContentPage() {
           <h1 className="serif-display" style={{ fontSize: 28, lineHeight: 1.05 }}>Content Hub</h1>
         </div>
 
+        {/* Error banner */}
+        {error && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--rose-bg)', border: '1px solid var(--rose-line)', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
+            <AlertCircle style={{ width: 16, height: 16, color: 'var(--rose-bright)', flexShrink: 0 }} />
+            <span style={{ flex: 1, fontSize: 13, color: 'var(--tx-hi)' }}>{error}</span>
+            <button onClick={() => { setError(null); load() }} style={{ fontSize: 12, fontWeight: 600, color: 'var(--rose-bright)', background: 'none', border: 'none', cursor: 'pointer' }}>Réessayer</button>
+            <button onClick={() => setError(null)} aria-label="Fermer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-faint)', padding: 0 }}><X style={{ width: 14, height: 14 }} /></button>
+          </div>
+        )}
+
         {/* Composer */}
         <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 12, padding: 12, marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <input value={title} onChange={(e) => setTitle(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && create()} placeholder="Idée de contenu…" style={inp({ flex: '1 1 220px' })} />
           <select value={platform} onChange={(e) => setPlatform(e.target.value)} style={inp({ width: 120 })}>{PLATFORMS.map((p) => <option key={p}>{p}</option>)}</select>
           <select value={type} onChange={(e) => setType(e.target.value)} style={inp({ width: 110 })}>{TYPES.map((t) => <option key={t}>{t}</option>)}</select>
-          <select value={owner} onChange={(e) => setOwner(e.target.value)} style={inp({ width: 80 })}><option value="AM">AM</option><option value="MH">MH</option></select>
+          <select value={owner} onChange={(e) => setOwner(e.target.value)} style={inp({ width: 80 })}>{OWNERS.map((o) => <option key={o}>{o}</option>)}</select>
           <input type="date" value={due} onChange={(e) => setDue(e.target.value)} style={inp({ width: 150 })} />
           <button className="btn-modern btn-primary" onClick={create} disabled={!title.trim() || saving}><Plus className="w-4 h-4" />{saving ? '…' : 'Ajouter'}</button>
         </div>
 
         {loading ? (
           <div style={{ padding: 40, textAlign: 'center', color: 'var(--tx-lo)' }}>Chargement…</div>
+        ) : isEmpty ? (
+          <div style={{ textAlign: 'center', padding: '48px 24px', background: 'var(--bg-1)', border: '1px dashed var(--line)', borderRadius: 14 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--rose-bg)', display: 'grid', placeItems: 'center', margin: '0 auto 14px' }}>
+              <Sparkles style={{ width: 22, height: 22, color: 'var(--rose-bright)' }} />
+            </div>
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 6 }}>Ton calendrier de contenu est vide</h3>
+            <p style={{ fontSize: 13, color: 'var(--tx-mid)', maxWidth: 420, margin: '0 auto', lineHeight: 1.6 }}>
+              Ajoute ta première idée ci-dessus (titre + plateforme + type). Ensuite glisse les cartes&nbsp;:
+              <b> Idées → À produire → Planifié → Publié</b>. Clique une carte pour ajouter le hook, la légende et le lien du média.
+            </p>
+          </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(220px, 1fr))', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
             {COLUMNS.map((col) => {
@@ -104,7 +175,7 @@ export default function ContentPage() {
               return (
                 <div key={col.key}
                   onDragOver={(e) => { e.preventDefault(); if (dragOver !== col.key) setDragOver(col.key) }}
-                  onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver((c) => (c === col.key ? null : c)) }}
+                  onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver((c) => (c === col.key ? null : c)) }}
                   onDrop={() => drop(col.key)}
                   style={{ background: isOver ? 'var(--rose-bg)' : 'var(--bg-2)', border: `1px solid ${isOver ? 'var(--rose-line)' : 'var(--line-soft)'}`, borderRadius: 12, padding: 10, minHeight: 200, transition: 'background 0.12s, border-color 0.12s' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '2px 4px 10px' }}>
@@ -115,18 +186,20 @@ export default function ContentPage() {
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {colItems.map((it) => (
                       <div key={it.id} draggable
+                        onClick={() => setEditing(it)}
                         onDragStart={(e) => { setDraggingId(it.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(it.id)) }}
                         onDragEnd={() => { setDraggingId(null); setDragOver(null) }}
-                        style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 9, padding: 10, cursor: 'grab', opacity: draggingId === it.id ? 0.4 : 1, boxShadow: 'var(--shadow-1)' }}>
+                        style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 9, padding: 10, cursor: 'pointer', opacity: draggingId === it.id ? 0.4 : 1, boxShadow: 'var(--shadow-1)' }}>
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                          <GripVertical style={{ width: 14, height: 14, color: 'var(--tx-faint)', flexShrink: 0, marginTop: 1 }} />
+                          <GripVertical style={{ width: 14, height: 14, color: 'var(--tx-faint)', flexShrink: 0, marginTop: 1, cursor: 'grab' }} />
                           <span style={{ flex: 1, fontSize: 13, color: 'var(--tx-hi)', lineHeight: 1.3 }}>{it.title}</span>
-                          <button onClick={() => remove(it.id)} aria-label="Supprimer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-faint)', padding: 0, flexShrink: 0 }}><Trash2 style={{ width: 13, height: 13 }} /></button>
+                          <button onClick={(e) => { e.stopPropagation(); remove(it.id) }} aria-label="Supprimer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-faint)', padding: 0, flexShrink: 0 }}><Trash2 style={{ width: 13, height: 13 }} /></button>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 9, paddingLeft: 20, flexWrap: 'wrap' }}>
                           {it.platform && <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 20, color: '#fff', background: PLAT_COLOR[it.platform] || 'var(--tx-faint)' }}>{it.platform}</span>}
                           {it.type && <span style={{ fontSize: 10, color: 'var(--tx-lo)' }}>{it.type}</span>}
-                          {it.dueDate && <span style={{ fontSize: 10, color: 'var(--tx-lo)', fontFamily: 'var(--mono)' }}>{new Date(it.dueDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}</span>}
+                          {it.dueDate && <span style={{ fontSize: 10, color: 'var(--tx-lo)', fontFamily: 'var(--mono)' }}>{fmtDate(it.dueDate)}</span>}
+                          {it.assetLink && <Link2 style={{ width: 11, height: 11, color: 'var(--blue)' }} />}
                           <span style={{ marginLeft: 'auto', width: 22, height: 22, borderRadius: '50%', display: 'grid', placeItems: 'center', fontSize: 9, fontWeight: 700, color: '#fff', background: it.owner === 'AM' ? 'var(--rose-bright)' : 'var(--blue)' }}>{it.owner || '–'}</span>
                         </div>
                       </div>
@@ -138,12 +211,105 @@ export default function ContentPage() {
             })}
           </div>
         )}
-        <p style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 8 }}>Glisse une carte entre les colonnes pour faire avancer le contenu.</p>
+        {!isEmpty && !loading && <p style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 8 }}>Glisse une carte entre les colonnes • clique une carte pour l&apos;éditer.</p>}
       </div>
+
+      {/* Edit drawer */}
+      {editing && <EditDrawer item={editing} onClose={() => setEditing(null)} onSave={patch} onDelete={remove} />}
     </BosShell>
   )
 }
 
+function EditDrawer({ item, onClose, onSave, onDelete }: {
+  item: Item
+  onClose: () => void
+  onSave: (id: number, fields: Partial<Item>) => void
+  onDelete: (id: number) => void
+}) {
+  const [title, setTitle] = useState(item.title)
+  const [platform, setPlatform] = useState(item.platform || 'Instagram')
+  const [type, setType] = useState(item.type || 'Reel')
+  const [owner, setOwner] = useState(item.owner || 'MH')
+  const [due, setDue] = useState(item.dueDate || '')
+  const [hook, setHook] = useState(item.hook || '')
+  const [caption, setCaption] = useState(item.caption || '')
+  const [assetLink, setAssetLink] = useState(item.assetLink || '')
+
+  const save = () => {
+    onSave(item.id, {
+      title: title.trim() || item.title,
+      platform, type, owner,
+      dueDate: due || null,
+      hook: hook || null,
+      caption: caption || null,
+      assetLink: assetLink || null,
+    })
+    onClose()
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'oklch(0.2 0.02 350 / 0.35)', zIndex: 50, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(440px, 100%)', height: '100%', background: 'var(--bg-1)', borderLeft: '1px solid var(--line)', boxShadow: '-8px 0 24px oklch(0.4 0.05 350 / 0.12)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px', borderBottom: '1px solid var(--line-soft)', position: 'sticky', top: 0, background: 'var(--bg-1)' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, color: '#fff', background: PLAT_COLOR[platform] || 'var(--tx-faint)' }}>{platform}</span>
+          <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--tx-hi)' }}>Éditer le contenu</span>
+          <button onClick={onClose} aria-label="Fermer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-lo)', padding: 0 }}><X style={{ width: 18, height: 18 }} /></button>
+        </div>
+
+        <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <Field label="Titre">
+            <input value={title} onChange={(e) => setTitle(e.target.value)} style={inp({ width: '100%' })} />
+          </Field>
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Field label="Plateforme" flex>
+              <select value={platform} onChange={(e) => setPlatform(e.target.value)} style={inp({ width: '100%' })}>{PLATFORMS.map((p) => <option key={p}>{p}</option>)}</select>
+            </Field>
+            <Field label="Type" flex>
+              <select value={type} onChange={(e) => setType(e.target.value)} style={inp({ width: '100%' })}>{TYPES.map((t) => <option key={t}>{t}</option>)}</select>
+            </Field>
+          </div>
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Field label="Responsable" flex>
+              <select value={owner} onChange={(e) => setOwner(e.target.value)} style={inp({ width: '100%' })}>{OWNERS.map((o) => <option key={o}>{o}</option>)}</select>
+            </Field>
+            <Field label="Échéance" flex>
+              <input type="date" value={due} onChange={(e) => setDue(e.target.value)} style={inp({ width: '100%' })} />
+            </Field>
+          </div>
+
+          <Field label="Hook / accroche">
+            <textarea value={hook} onChange={(e) => setHook(e.target.value)} rows={2} placeholder="La 1re phrase qui arrête le scroll…" style={inp({ width: '100%', resize: 'vertical', fontFamily: 'inherit' })} />
+          </Field>
+
+          <Field label="Légende (caption)">
+            <textarea value={caption} onChange={(e) => setCaption(e.target.value)} rows={4} placeholder="Texte du post, hashtags…" style={inp({ width: '100%', resize: 'vertical', fontFamily: 'inherit' })} />
+          </Field>
+
+          <Field label="Lien du média (Drive, Canva…)">
+            <input value={assetLink} onChange={(e) => setAssetLink(e.target.value)} placeholder="https://…" style={inp({ width: '100%' })} />
+          </Field>
+
+          <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+            <button className="btn-modern btn-primary" onClick={save} style={{ flex: 1, justifyContent: 'center' }}>Enregistrer</button>
+            <button className="btn-modern" onClick={() => { onDelete(item.id); onClose() }} style={{ color: 'var(--rose-bright)', borderColor: 'var(--rose-line)' }}><Trash2 style={{ width: 15, height: 15 }} />Supprimer</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Field({ label, children, flex }: { label: string; children: React.ReactNode; flex?: boolean }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 5, flex: flex ? 1 : undefined, minWidth: 0 }}>
+      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx-lo)' }}>{label}</span>
+      {children}
+    </label>
+  )
+}
+
 function inp(extra: React.CSSProperties): React.CSSProperties {
-  return { background: 'var(--bg-1)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px', fontSize: 13, color: 'var(--tx-hi)', ...extra }
+  return { background: 'var(--bg-1)', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 10px', fontSize: 13, color: 'var(--tx-hi)', boxSizing: 'border-box', ...extra }
 }
