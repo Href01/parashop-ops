@@ -49,10 +49,10 @@ export default function EventsPage() {
   }
 
   // Calculate aggregate metrics
-  const totalRevenue = events.reduce((sum, e) => sum + (e.totalRevenue || 0), 0)
-  const totalOrders = events.reduce((sum, e) => sum + (e.totalOrders || 0), 0)
+  const totalRevenue = events.reduce((sum, e) => sum + Number(e.totalRevenue || 0), 0)
+  const totalOrders = events.reduce((sum, e) => sum + Number(e.totalOrders || 0), 0)
   const avgIncrease = events.length > 0
-    ? events.reduce((sum, e) => sum + (e.revenueIncrease || 0), 0) / events.length
+    ? events.reduce((sum, e) => sum + Number(e.revenueIncrease || 0), 0) / events.length
     : 0
 
   const activeEvents = events.filter(e => e.status === 'Active')
@@ -229,9 +229,9 @@ export default function EventsPage() {
                       <td className="r num pos">{formatCurrency(event.totalRevenue || 0)}</td>
                       <td className="r num">{event.totalOrders || 0}</td>
                       <td className="r">
-                        <span className={`num ${(event.revenueIncrease || 0) >= 0 ? 'pos' : 'neg'}`}>
-                          {(event.revenueIncrease || 0) > 0 ? '+' : ''}
-                          {(event.revenueIncrease || 0).toFixed(1)}%
+                        <span className={`num ${Number(event.revenueIncrease || 0) >= 0 ? 'pos' : 'neg'}`}>
+                          {Number(event.revenueIncrease || 0) > 0 ? '+' : ''}
+                          {Number(event.revenueIncrease || 0).toFixed(1)}%
                         </span>
                       </td>
                       <td>
