@@ -44,13 +44,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
     if ('dueDate' in body) add('dueDate', typeof body.dueDate === 'string' && body.dueDate ? body.dueDate : null)
     if ('notes' in body) add('notes', typeof body.notes === 'string' ? body.notes.slice(0, 2000) : null)
+    if ('linkedType' in body) add('linkedType', typeof body.linkedType === 'string' && body.linkedType.trim() ? body.linkedType.trim().slice(0, 40) : null)
+    if ('linkedId' in body) add('linkedId', Number.isInteger(body.linkedId) ? body.linkedId : null)
 
     if (sets.length === 0) return NextResponse.json({ error: 'no fields to update' }, { status: 400 })
 
     values.push(id)
     const result = await pool.query(
       `UPDATE "Task" SET ${sets.join(', ')}, "updatedAt" = NOW() WHERE id = $${values.length}
-       RETURNING id, title, owner, status, priority, "dueDate", "linkedType", "linkedId", notes, "createdAt", "updatedAt"`,
+       RETURNING id, title, owner, status, priority, to_char("dueDate", 'YYYY-MM-DD') AS "dueDate", "linkedType", "linkedId", notes, "createdAt", "updatedAt"`,
       values
     )
     if (result.rows.length === 0) return NextResponse.json({ error: 'not found' }, { status: 404 })

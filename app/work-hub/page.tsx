@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { BookOpen, FlaskConical, GripVertical, Plus, Trash2, X, AlertCircle, ChevronRight } from 'lucide-react'
+import { BookOpen, FlaskConical, Plus, Trash2, X, AlertCircle, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import BosShell from '@/components/BosShell'
 
@@ -14,6 +14,7 @@ interface Task {
   dueDate: string | null
   linkedType?: string | null
   linkedId?: number | null
+  notes?: string | null
 }
 
 const LINK_HREF: Record<string, string> = { order: '/orders', product: '/products', customer: '/customers', campaign: '/campaigns' }
@@ -55,6 +56,22 @@ const COLUMNS: { key: Task['status']; label: string; color: string }[] = [
   { key: 'BLOCKED', label: 'Bloqué', color: 'var(--red)' },
   { key: 'DONE', label: 'Fait', color: 'var(--green)' },
 ]
+const OWNERS = ['AM', 'MH']
+
+const MONTHS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.']
+/** Format 'YYYY-MM-DD' → '13 juin' (timezone-safe — no Date parsing). */
+function fmtDate(d: string | null): string {
+  if (!d) return ''
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d)
+  if (!m) return d
+  return `${parseInt(m[3], 10)} ${MONTHS[parseInt(m[2], 10) - 1] || ''}`
+}
+/** A due date is overdue if strictly before today (YYYY-MM-DD compare). */
+function isOverdue(d: string | null, done: boolean): boolean {
+  if (!d || done) return false
+  const today = new Date().toISOString().slice(0, 10)
+  return d.slice(0, 10) < today
+}
 
 export default function WorkHubPage() {
   const [tasks, setTasks] = useState<Task[]>([])
@@ -79,6 +96,7 @@ export default function WorkHubPage() {
   const [eMetric, setEMetric] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [editingExp, setEditingExp] = useState<Experiment | null>(null)
+  const [editingTask, setEditingTask] = useState<Task | null>(null)
 
   useEffect(() => {
     const j = (r: Response) => r.json()
@@ -91,13 +109,21 @@ export default function WorkHubPage() {
 
   const createDecision = async () => {
     if (!dTitle.trim()) return
-    const res = await fetch('/api/ops/decisions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: dTitle, decision: dWhy, owner }) }).catch(() => null)
-    const d = res && res.ok ? await res.json() : null
-    if (d?.decision) { setDecisions((x) => [d.decision, ...x]); setDTitle(''); setDWhy('') }
+    try {
+      const res = await fetch('/api/ops/decisions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: dTitle.trim(), decision: dWhy, owner }) })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || `Erreur ${res.status}`)
+      if (d.decision) { setDecisions((x) => [d.decision, ...x]); setDTitle(''); setDWhy(''); setError(null) }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Création impossible') }
   }
   const deleteDecision = async (id: number) => {
+    const prev = decisions
     setDecisions((x) => x.filter((d) => d.id !== id))
-    await fetch(`/api/ops/decisions/${id}`, { method: 'DELETE' }).catch(() => {})
+    try {
+      const res = await fetch(`/api/ops/decisions/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error(`Erreur ${res.status}`)
+      setError(null)
+    } catch (e) { setDecisions(prev); setError(e instanceof Error ? e.message : 'Suppression impossible') }
   }
   const createExperiment = async () => {
     if (!eName.trim()) return
@@ -137,31 +163,42 @@ export default function WorkHubPage() {
       const res = await fetch('/api/ops/tasks', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title, owner, priority, dueDate: due || null,
+          title: title.trim(), owner, priority, dueDate: due || null,
           linkedType: linkType && Number.isInteger(lid) ? linkType : null,
           linkedId: linkType && Number.isInteger(lid) ? lid : null,
         }),
       })
-      const d = await res.json()
-      if (res.ok && d.task) {
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || `Erreur ${res.status}`)
+      if (d.task) {
         setTasks((t) => [d.task, ...t])
-        setTitle(''); setDue(''); setPriority('MEDIUM'); setLinkType(''); setLinkId('')
+        setTitle(''); setDue(''); setPriority('MEDIUM'); setLinkType(''); setLinkId(''); setError(null)
       }
-    } finally { setSaving(false) }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Création impossible') } finally { setSaving(false) }
   }
 
   const patchTask = async (id: number, fields: Partial<Task>) => {
+    const prev = tasks
     setTasks((t) => t.map((x) => (x.id === id ? { ...x, ...fields } : x)))
-    await fetch(`/api/ops/tasks/${id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields),
-    }).catch(() => {})
+    if (editingTask?.id === id) setEditingTask((e) => (e ? { ...e, ...fields } : e))
+    try {
+      const res = await fetch(`/api/ops/tasks/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields),
+      })
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Erreur ${res.status}`) }
+      setError(null)
+    } catch (e) { setTasks(prev); setError(e instanceof Error ? e.message : 'Mise à jour impossible') }
   }
 
   const deleteTask = async (id: number) => {
     const prev = tasks
     setTasks((t) => t.filter((x) => x.id !== id))
-    const res = await fetch(`/api/ops/tasks/${id}`, { method: 'DELETE' }).catch(() => null)
-    if (!res || !res.ok) setTasks(prev)
+    if (editingTask?.id === id) setEditingTask(null)
+    try {
+      const res = await fetch(`/api/ops/tasks/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error(`Erreur ${res.status}`)
+      setError(null)
+    } catch (e) { setTasks(prev); setError(e instanceof Error ? e.message : 'Suppression impossible') }
   }
 
   const drop = (status: Task['status']) => {
@@ -193,6 +230,12 @@ export default function WorkHubPage() {
             <button onClick={() => setError(null)} aria-label="Fermer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-faint)', padding: 0 }}><X style={{ width: 14, height: 14 }} /></button>
           </div>
         )}
+
+        {/* Section 1 — Tasks */}
+        <SectionIntro emoji="📋" title="Tâches — ta to-do visuelle">
+          Chaque carte = une chose à faire. <b>Glisse-la</b> entre les colonnes selon l&apos;avancement.
+          Ex. <i>« Rappeler le fournisseur Olaplex »</i> · <i>« Préparer la promo fête des mères »</i>. Clique une carte pour l&apos;éditer.
+        </SectionIntro>
 
         {/* Composer */}
         <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 12, padding: 12, marginBottom: 16,
@@ -244,32 +287,35 @@ export default function WorkHubPage() {
                   </div>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {colTasks.map((t) => (
+                    {colTasks.map((t) => {
+                      const overdue = isOverdue(t.dueDate ?? null, t.status === 'DONE')
+                      return (
                       <div key={t.id} draggable
+                        onClick={() => setEditingTask(t)}
                         onDragStart={(e) => { setDraggingId(t.id); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(t.id)) }}
                         onDragEnd={() => { setDraggingId(null); setDragOver(null) }}
                         style={{
-                          background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 9, padding: 10,
-                          cursor: 'grab', opacity: draggingId === t.id ? 0.4 : 1, boxShadow: 'var(--shadow-1)',
+                          background: 'var(--bg-1)', border: '1px solid var(--line-soft)',
+                          borderLeft: `3px solid ${overdue ? 'var(--red)' : PRIO_COLOR[t.priority]}`, borderRadius: 9, padding: 10,
+                          cursor: 'pointer', opacity: draggingId === t.id ? 0.4 : 1, boxShadow: 'var(--shadow-1)',
                         }}
                         className="kanban-card">
                         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                          <GripVertical style={{ width: 14, height: 14, color: 'var(--tx-faint)', flexShrink: 0, marginTop: 1 }} />
-                          <span style={{ flex: 1, fontSize: 13, color: 'var(--tx-hi)', lineHeight: 1.3,
+                          <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--tx-hi)', lineHeight: 1.35,
                             textDecoration: t.status === 'DONE' ? 'line-through' : 'none', opacity: t.status === 'DONE' ? 0.6 : 1 }}>
                             {t.title}
                           </span>
-                          <button onClick={() => deleteTask(t.id)} aria-label="Supprimer" className="kanban-del"
-                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--tx-faint)', padding: 0, flexShrink: 0 }}>
+                          <button onClick={(ev) => { ev.stopPropagation(); deleteTask(t.id) }} aria-label="Supprimer" className="kanban-del"
+                            style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--tx-faint)', padding: 0, flexShrink: 0, marginTop: 1 }}>
                             <Trash2 style={{ width: 13, height: 13 }} />
                           </button>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 9, paddingLeft: 20 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 9, flexWrap: 'wrap' }}>
                           <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.04em', color: PRIO_COLOR[t.priority] }}>
                             {PRIO_LABEL[t.priority].toUpperCase()}
                           </span>
-                          {t.dueDate && <span style={{ fontSize: 10, color: 'var(--tx-lo)', fontFamily: 'var(--mono)' }}>
-                            {new Date(t.dueDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+                          {t.dueDate && <span style={{ fontSize: 10, fontWeight: overdue ? 700 : 400, color: overdue ? 'var(--red)' : 'var(--tx-lo)', fontFamily: 'var(--mono)' }}>
+                            {overdue ? '⚠ ' : ''}{fmtDate(t.dueDate)}
                           </span>}
                           {t.linkedType && t.linkedId && LINK_HREF[t.linkedType] && (
                             <Link href={`${LINK_HREF[t.linkedType]}/${t.linkedId}`} onClick={(ev) => ev.stopPropagation()}
@@ -283,10 +329,11 @@ export default function WorkHubPage() {
                           </span>
                         </div>
                       </div>
-                    ))}
+                      )
+                    })}
                     {colTasks.length === 0 && (
-                      <div style={{ fontSize: 11, color: 'var(--tx-faint)', textAlign: 'center', padding: '16px 0' }}>
-                        {isOver ? 'Déposer ici' : '—'}
+                      <div style={{ fontSize: 11, color: 'var(--tx-faint)', textAlign: 'center', padding: '16px 8px', lineHeight: 1.5 }}>
+                        {isOver ? 'Déposer ici' : col.key === 'TODO' ? 'Ajoute ta 1re tâche ci-dessus ☝️' : '—'}
                       </div>
                     )}
                   </div>
@@ -295,17 +342,20 @@ export default function WorkHubPage() {
             })}
           </div>
         )}
-        <p style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 8 }}>Glisse une carte entre les colonnes pour changer son statut.</p>
+        <p style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 8 }}>Glisse une carte entre les colonnes • clique une carte pour l&apos;éditer • <span style={{ color: 'var(--red)' }}>⚠ rouge = en retard</span>.</p>
 
         {/* Decision log + Growth experiments (persisted) */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))', gap: 16, marginTop: 22 }}>
           {/* Decision log */}
           <div style={panel()}>
             <div style={panelHead()}><BookOpen style={{ width: 16, height: 16, color: 'var(--rose)' }} /><h3 style={h3()}>Journal de décisions</h3></div>
+            <p style={{ fontSize: 12, color: 'var(--tx-mid)', marginTop: -4, marginBottom: 12, lineHeight: 1.5 }}>
+              Ta <b>mémoire des choix importants</b> + le pourquoi. Ex. <i>« On arrête les pubs TikTok »</i> → <i>« ROAS &lt; 1 »</i>.
+            </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
-              <input value={dTitle} onChange={(e) => setDTitle(e.target.value)} placeholder="Décision prise…" style={inp({})} />
+              <input value={dTitle} onChange={(e) => setDTitle(e.target.value)} placeholder="La décision prise…" style={inp({})} />
               <div style={{ display: 'flex', gap: 6 }}>
-                <input value={dWhy} onChange={(e) => setDWhy(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createDecision()} placeholder="Pourquoi / rationale" style={inp({ flex: 1 })} />
+                <input value={dWhy} onChange={(e) => setDWhy(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createDecision()} placeholder="Pourquoi ? (la raison)" style={inp({ flex: 1 })} />
                 <button className="btn-modern btn-primary" onClick={createDecision} disabled={!dTitle.trim()}><Plus style={{ width: 16, height: 16 }} /></button>
               </div>
             </div>
@@ -328,6 +378,9 @@ export default function WorkHubPage() {
           {/* Growth experiments */}
           <div style={panel()}>
             <div style={panelHead()}><FlaskConical style={{ width: 16, height: 16, color: 'var(--rose)' }} /><h3 style={h3()}>Expériences de croissance</h3></div>
+            <p style={{ fontSize: 12, color: 'var(--tx-mid)', marginTop: -4, marginBottom: 12, lineHeight: 1.5 }}>
+              Des <b>idées qu&apos;on teste</b> pour vendre plus. Ex. <i>« Livraison gratuite dès 400 MAD »</i> → mesure le panier moyen → Gagnée ou Perdue.
+            </p>
             <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
               <input value={eName} onChange={(e) => setEName(e.target.value)} placeholder="Hypothèse à tester…" style={inp({ flex: 2 })} />
               <input value={eMetric} onChange={(e) => setEMetric(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && createExperiment()} placeholder="Métrique de succès" style={inp({ flex: 1 })} />
@@ -360,9 +413,124 @@ export default function WorkHubPage() {
         </div>
       </div>
 
-      {/* Experiment drawer */}
+      {/* Drawers */}
+      {editingTask && <TaskDrawer task={editingTask} onClose={() => setEditingTask(null)} onSave={patchTask} onDelete={deleteTask} />}
       {editingExp && <ExperimentDrawer exp={editingExp} onClose={() => setEditingExp(null)} onSave={patchExp} onDelete={deleteExperiment} />}
     </BosShell>
+  )
+}
+
+function SectionIntro({ emoji, title, children }: { emoji: string; title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx-hi)', display: 'flex', alignItems: 'center', gap: 7 }}>
+        <span>{emoji}</span>{title}
+      </h2>
+      <p style={{ fontSize: 12.5, color: 'var(--tx-mid)', marginTop: 3, lineHeight: 1.55 }}>{children}</p>
+    </div>
+  )
+}
+
+const LINK_TYPES = [
+  { v: 'order', label: 'Commande' }, { v: 'product', label: 'Produit' },
+  { v: 'customer', label: 'Cliente' }, { v: 'campaign', label: 'Campagne' },
+]
+
+function TaskDrawer({ task, onClose, onSave, onDelete }: {
+  task: Task
+  onClose: () => void
+  onSave: (id: number, fields: Partial<Task>) => void
+  onDelete: (id: number) => void
+}) {
+  const [title, setTitle] = useState(task.title)
+  const [owner, setOwner] = useState(task.owner || 'AM')
+  const [status, setStatus] = useState<Task['status']>(task.status)
+  const [priority, setPriority] = useState<Task['priority']>(task.priority)
+  const [due, setDue] = useState(task.dueDate || '')
+  const [linkType, setLinkType] = useState(task.linkedType || '')
+  const [linkId, setLinkId] = useState(task.linkedId != null ? String(task.linkedId) : '')
+  const [notes, setNotes] = useState(task.notes || '')
+
+  const save = () => {
+    const lid = parseInt(linkId, 10)
+    onSave(task.id, {
+      title: title.trim() || task.title,
+      owner, status, priority,
+      dueDate: due || null,
+      linkedType: linkType && Number.isInteger(lid) ? linkType : null,
+      linkedId: linkType && Number.isInteger(lid) ? lid : null,
+      notes: notes || null,
+    })
+    onClose()
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'oklch(0.2 0.02 350 / 0.35)', zIndex: 50, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(440px, 100%)', height: '100%', background: 'var(--bg-1)', borderLeft: '1px solid var(--line)', boxShadow: '-8px 0 24px oklch(0.4 0.05 350 / 0.12)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px', borderBottom: '1px solid var(--line-soft)', position: 'sticky', top: 0, background: 'var(--bg-1)', zIndex: 1 }}>
+          <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--tx-hi)' }}>Éditer la tâche</span>
+          <button onClick={onClose} aria-label="Fermer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-lo)', padding: 0 }}><X style={{ width: 18, height: 18 }} /></button>
+        </div>
+
+        <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <WField label="Tâche">
+            <input value={title} onChange={(e) => setTitle(e.target.value)} style={inp({ width: '100%' })} />
+          </WField>
+
+          <WField label="Statut">
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {COLUMNS.map((c) => {
+                const on = status === c.key
+                return (
+                  <button key={c.key} onClick={() => setStatus(c.key)}
+                    style={{ fontSize: 12, fontWeight: 600, padding: '5px 11px', borderRadius: 20, cursor: 'pointer', color: on ? '#fff' : 'var(--tx-lo)', background: on ? c.color : 'transparent', border: `1px solid ${on ? c.color : 'var(--line)'}` }}>
+                    {c.label}
+                  </button>
+                )
+              })}
+            </div>
+          </WField>
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <WField label="Responsable" flex>
+              <select value={owner} onChange={(e) => setOwner(e.target.value)} style={inp({ width: '100%' })}>{OWNERS.map((o) => <option key={o}>{o}</option>)}</select>
+            </WField>
+            <WField label="Priorité" flex>
+              <select value={priority} onChange={(e) => setPriority(e.target.value as Task['priority'])} style={inp({ width: '100%' })}>
+                {PRIORITIES.map((p) => <option key={p} value={p}>{PRIO_LABEL[p]}</option>)}
+              </select>
+            </WField>
+          </div>
+
+          <WField label="Échéance">
+            <input type="date" value={due} onChange={(e) => setDue(e.target.value)} style={inp({ width: '100%' })} />
+          </WField>
+
+          <div style={{ display: 'flex', gap: 10 }}>
+            <WField label="Lier à" flex>
+              <select value={linkType} onChange={(e) => setLinkType(e.target.value)} style={inp({ width: '100%' })}>
+                <option value="">— Rien —</option>
+                {LINK_TYPES.map((l) => <option key={l.v} value={l.v}>{l.label}</option>)}
+              </select>
+            </WField>
+            {linkType && (
+              <WField label="N°" flex>
+                <input value={linkId} onChange={(e) => setLinkId(e.target.value)} type="number" placeholder="ID" style={inp({ width: '100%' })} />
+              </WField>
+            )}
+          </div>
+
+          <WField label="Notes">
+            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="Détails, contexte…" style={inp({ width: '100%', resize: 'vertical', fontFamily: 'inherit' })} />
+          </WField>
+
+          <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+            <button className="btn-modern btn-primary" onClick={save} style={{ flex: 1, justifyContent: 'center' }}>Enregistrer</button>
+            <button className="btn-modern" onClick={() => { onDelete(task.id); onClose() }} style={{ color: 'var(--rose-bright)', borderColor: 'var(--rose-line)' }}><Trash2 style={{ width: 15, height: 15 }} />Supprimer</button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 

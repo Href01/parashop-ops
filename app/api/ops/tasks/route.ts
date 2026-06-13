@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''
     const result = await pool.query(
-      `SELECT id, title, owner, status, priority, "dueDate", "linkedType", "linkedId", notes, "createdAt", "updatedAt"
+      `SELECT id, title, owner, status, priority, to_char("dueDate", 'YYYY-MM-DD') AS "dueDate", "linkedType", "linkedId", notes, "createdAt", "updatedAt"
        FROM "Task" ${where}
        ORDER BY
          CASE priority WHEN 'URGENT' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END,
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
     const result = await pool.query(
       `INSERT INTO "Task" (title, owner, status, priority, "dueDate", notes, "linkedType", "linkedId", "createdAt", "updatedAt")
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8, NOW(), NOW())
-       RETURNING id, title, owner, status, priority, "dueDate", "linkedType", "linkedId", notes, "createdAt", "updatedAt"`,
+       RETURNING id, title, owner, status, priority, to_char("dueDate", 'YYYY-MM-DD') AS "dueDate", "linkedType", "linkedId", notes, "createdAt", "updatedAt"`,
       [title, owner, status, priority, dueDate, notes, linkedType, linkedId]
     )
     return NextResponse.json({ task: result.rows[0] }, { status: 201 })
