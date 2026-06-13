@@ -72,7 +72,7 @@ export default function ProductsPage() {
 
   const handleBulkEditCosts = () => {
     if (products.length === 0) {
-      alert('No products available to edit')
+      alert('Aucun produit à éditer')
       return
     }
     setShowBulkEdit(true)
@@ -93,10 +93,10 @@ export default function ProductsPage() {
 
       await fetchProducts()
       setShowBulkEdit(false)
-      alert(`Successfully updated ${updates.length} product${updates.length !== 1 ? 's' : ''}!`)
+      alert(`${updates.length} produit(s) mis à jour ✓`)
     } catch (error) {
       console.error('Bulk update error:', error)
-      alert('Failed to update some products. Please try again.')
+      alert('Échec de la mise à jour de certains produits. Réessayez.')
     }
   }
 
@@ -141,7 +141,7 @@ export default function ProductsPage() {
       setSelectedProduct(null)
     } catch (error) {
       console.error('Update error:', error)
-      alert('Failed to update cost price')
+      alert("Échec de l'enregistrement du coût")
     }
   }
 
@@ -162,33 +162,33 @@ export default function ProductsPage() {
   const paginatedProducts = products.slice(pageStart, pageStart + PAGE_SIZE)
 
   return (
-    <BosShell active="products" title="Products" crumb="Operations">
+    <BosShell active="products" title="Produits" crumb="Opérations">
       <div className="page-inner page-wide">
         <div className="page-head">
           <div>
-            <h1>Products</h1>
-            <div className="sub">Inventory, cost prices & margins - synced with shinecosmetics.ma</div>
+            <h1 className="serif-display">Produits</h1>
+            <div className="sub">Catalogue, coûts &amp; marges — synchronisé avec shinecosmetics.ma</div>
           </div>
           <div className="spacer"></div>
           <button type="button" className="btn-modern btn-secondary" onClick={handleBulkEditCosts}>
             <Edit3 className="w-4 h-4" />
-            Bulk edit costs
+            Coûts en masse
           </button>
           <button type="button" className="btn-modern btn-secondary" onClick={handleExport}>
             <Download className="w-4 h-4" />
-            Export
+            Exporter
           </button>
           <button type="button" className="btn-modern btn-primary" onClick={handleAddProduct}>
             <Plus className="w-4 h-4" />
-            Add product
+            Ajouter
           </button>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <ProductStat icon={<Package />} title="Active SKUs" value={stats.activeSkus} subtitle="Catalog products" tone="blue" />
-          <ProductStat icon={<Wallet />} title="Inventory value" value={stats.inventoryValue} unit="MAD" subtitle="at cost" tone="green" />
-          <ProductStat icon={<Percent />} title="Avg margin" value={stats.avgMargin} unit="%" subtitle="tracked products" tone="rose" decimals={1} />
-          <ProductStat icon={<TriangleAlert />} title="Need attention" value={stats.lowStock + stats.missingCost} subtitle={`${stats.lowStock} low - ${stats.missingCost} missing cost`} tone="amber" />
+          <ProductStat icon={<Package />} title="Produits actifs" value={stats.activeSkus} subtitle="au catalogue" tone="blue" />
+          <ProductStat icon={<Wallet />} title="Valeur du stock" value={stats.inventoryValue} unit="MAD" subtitle="au coût d'achat" tone="green" />
+          <ProductStat icon={<Percent />} title="Marge moyenne" value={stats.avgMargin} unit="%" subtitle="produits suivis" tone="rose" decimals={1} />
+          <ProductStat icon={<TriangleAlert />} title="À surveiller" value={stats.lowStock + stats.missingCost} subtitle={`${stats.lowStock} stock bas · ${stats.missingCost} sans coût`} tone="amber" />
         </div>
 
         <div className="card-modern">
@@ -202,7 +202,7 @@ export default function ProductsPage() {
                   setSearch(event.target.value)
                   setCurrentPage(1)
                 }}
-                placeholder="Search products, SKU..."
+                placeholder="Rechercher produit, SKU…"
                 className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
@@ -213,21 +213,21 @@ export default function ProductsPage() {
                 className={`btn-modern btn-sm ${!filterMissingCost && !filterLowStock ? 'btn-primary' : 'btn-subtle'}`}
                 onClick={() => { setFilterMissingCost(false); setFilterLowStock(false); setCurrentPage(1); }}
               >
-                All <span className="ml-1 badge-modern badge-neutral badge-sm">{products.length}</span>
+                Tous <span className="ml-1 badge-modern badge-neutral badge-sm">{products.length}</span>
               </button>
               <button
                 type="button"
                 className={`btn-modern btn-sm ${filterLowStock ? 'btn-primary' : 'btn-subtle'}`}
                 onClick={() => { setFilterLowStock(true); setFilterMissingCost(false); setCurrentPage(1); }}
               >
-                Low stock <span className="ml-1 badge-modern badge-warning badge-sm">{stats.lowStock}</span>
+                Stock bas <span className="ml-1 badge-modern badge-warning badge-sm">{stats.lowStock}</span>
               </button>
               <button
                 type="button"
                 className={`btn-modern btn-sm ${filterMissingCost ? 'btn-primary' : 'btn-subtle'}`}
                 onClick={() => { setFilterMissingCost(true); setFilterLowStock(false); setCurrentPage(1); }}
               >
-                Missing cost <span className="ml-1 badge-modern badge-danger badge-sm">{stats.missingCost}</span>
+                Sans coût <span className="ml-1 badge-modern badge-danger badge-sm">{stats.missingCost}</span>
               </button>
             </div>
           </div>
@@ -236,14 +236,12 @@ export default function ProductsPage() {
             <table className="table-modern">
               <thead>
                 <tr>
-                  <th>Product</th>
-                  <th>Category</th>
-                  <th className="r">Retail</th>
-                  <th className="r">Cost</th>
-                  <th className="r">Margin</th>
+                  <th>Produit</th>
+                  <th>Catégorie</th>
+                  <th className="r">Prix</th>
+                  <th className="r">Coût</th>
+                  <th className="r">Marge</th>
                   <th>Stock</th>
-                  <th className="r">Sold 30D</th>
-                  <th>Trend</th>
                   <th className="r"></th>
                 </tr>
               </thead>
@@ -251,15 +249,15 @@ export default function ProductsPage() {
                 {loading ? (
                   [1, 2, 3, 4, 5].map((item) => (
                     <tr key={item}>
-                      <td colSpan={9}>
+                      <td colSpan={7}>
                         <div className="skeleton-line"></div>
                       </td>
                     </tr>
                   ))
                 ) : products.length === 0 ? (
                   <tr>
-                    <td colSpan={9}>
-                      <div className="empty-state">No products found. Products from the website will appear here.</div>
+                    <td colSpan={7}>
+                      <div className="empty-state">Aucun produit. Les produits du site apparaîtront ici.</div>
                     </td>
                   </tr>
                 ) : (
@@ -293,7 +291,7 @@ export default function ProductsPage() {
                             </button>
                           ) : (
                             <button type="button" className="badge red" onClick={() => setSelectedProduct(product)}>
-                              Set cost
+                              Définir
                             </button>
                           )}
                         </td>
@@ -315,17 +313,13 @@ export default function ProductsPage() {
                         <td>
                           <div className="stock-cell">
                             <div className="between">
-                              <span className="num fs12" style={{ color: stockColor }}>{product.stock} units</span>
-                              {lowStock ? <span className="badge amber mini-badge">LOW</span> : null}
+                              <span className="num fs12" style={{ color: stockColor }}>{product.stock} unités</span>
+                              {lowStock ? <span className="badge amber mini-badge">BAS</span> : null}
                             </div>
                             <div className="bar">
                               <span style={{ width: `${stockPct}%`, background: stockColor }}></span>
                             </div>
                           </div>
-                        </td>
-                        <td className="r num t-strong">-</td>
-                        <td>
-                          <MiniBars color={stockColor} />
                         </td>
                         <td className="r">
                           <button
@@ -347,7 +341,7 @@ export default function ProductsPage() {
           </div>
           <div className="flex items-center justify-between p-4 border-t border-gray-200 bg-gray-50">
             <span className="text-xs text-gray-600">
-              Showing {products.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, products.length)} of {products.length} products - {stats.missingCost} missing cost price hurt profit tracking
+              {products.length === 0 ? 0 : pageStart + 1}–{Math.min(pageStart + PAGE_SIZE, products.length)} sur {products.length} produits{stats.missingCost > 0 ? ` · ${stats.missingCost} sans coût d'achat (marge incalculable)` : ''}
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -447,17 +441,5 @@ function ProductStat({
         <p className="text-xs text-gray-500">{subtitle}</p>
       </div>
     </div>
-  )
-}
-
-function MiniBars({ color }: { color: string }) {
-  const values = [35, 58, 42, 70, 66, 82, 75]
-
-  return (
-    <svg width="70" height="24" viewBox="0 0 70 24" fill="none" aria-hidden="true">
-      {values.map((value, index) => (
-        <rect key={index} x={index * 10} y={24 - value / 4} width="6" height={value / 4} rx="2" fill={color} opacity={0.55 + index * 0.05} />
-      ))}
-    </svg>
   )
 }

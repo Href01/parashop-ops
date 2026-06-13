@@ -31,13 +31,13 @@ interface OrderRow {
 }
 
 const statusLabels: Record<string, string> = {
-  PENDING: 'Pending',
-  CONFIRMED: 'Confirmed',
-  SHIPPED: 'In delivery',
-  DELIVERED: 'Delivered',
-  RETURNED: 'Returned',
-  CANCELLED: 'Cancelled',
-  FAILED: 'Failed',
+  PENDING: 'En attente',
+  CONFIRMED: 'Confirmée',
+  SHIPPED: 'En livraison',
+  DELIVERED: 'Livrée',
+  RETURNED: 'Retournée',
+  CANCELLED: 'Annulée',
+  FAILED: 'Échouée',
 }
 
 const statusClass: Record<string, string> = {
@@ -59,10 +59,10 @@ const channelColors: Record<string, string> = {
 }
 
 const dateFilterLabels: Record<DateFilter, string> = {
-  today: 'Today',
-  week: 'This week',
-  month: '30 days',
-  all: 'All time',
+  today: "Aujourd'hui",
+  week: 'Cette semaine',
+  month: '30 jours',
+  all: 'Tout',
 }
 
 function toNumber(value: unknown) {
@@ -107,7 +107,7 @@ export default function OrdersPage() {
 
   const deleteOrder = async (orderId: number, e: React.MouseEvent) => {
     e.stopPropagation()
-    if (!confirm(`Delete order #${orderId}?\n\nThis action cannot be undone.`)) return
+    if (!confirm(`Supprimer la commande #${orderId} ?\n\nCette action est irréversible.`)) return
 
     try {
       const res = await fetch(`/api/ops/orders/${orderId}`, { method: 'DELETE' })
@@ -117,22 +117,22 @@ export default function OrdersPage() {
       setOrders((currentOrders) => currentOrders.filter(o => o.id !== orderId))
     } catch (error) {
       console.error('Delete error:', error)
-      alert('Failed to delete order')
+      alert('Échec de la suppression de la commande')
     }
   }
 
   const handleSyncSendit = async () => {
-    if (!confirm('Sync delivery statuses from Sendit?\n\nThis will update all in-transit orders.')) return
+    if (!confirm('Synchroniser les statuts de livraison depuis Sendit ?\n\nToutes les commandes en transit seront mises à jour.')) return
 
     try {
       const res = await fetch('/api/ops/orders/sync-sendit', { method: 'POST' })
       if (!res.ok) throw new Error('Sync failed')
 
       await fetchOrders()
-      alert('Successfully synced with Sendit!')
+      alert('Synchronisation Sendit réussie ✓')
     } catch (error) {
       console.error('Sync error:', error)
-      alert('Failed to sync with Sendit')
+      alert('Échec de la synchronisation Sendit')
     }
   }
 
@@ -181,12 +181,12 @@ export default function OrdersPage() {
     const count = (status: string) => orders.filter((order) => order.status === status).length
 
     return [
-      { label: 'Pending', value: count('PENDING'), color: 'var(--amber)', className: 'st-pending' },
-      { label: 'Confirmed', value: count('CONFIRMED'), color: 'var(--blue)', className: 'st-confirmed' },
-      { label: 'Shipped', value: orders.filter((order) => order.deliveryStatus && order.deliveryStatus !== 'NOT_CREATED').length, color: 'var(--violet)', className: 'st-shipped' },
-      { label: 'Delivered', value: count('DELIVERED'), color: 'var(--green)', className: 'st-delivered' },
-      { label: 'Returned', value: count('RETURNED') + count('FAILED'), color: 'var(--red)', className: 'st-returned' },
-      { label: 'Cancelled', value: count('CANCELLED'), color: 'var(--tx-mid)', className: 'st-cancelled' },
+      { label: 'En attente', value: count('PENDING'), color: 'var(--amber)', className: 'st-pending' },
+      { label: 'Confirmées', value: count('CONFIRMED'), color: 'var(--blue)', className: 'st-confirmed' },
+      { label: 'En livraison', value: orders.filter((order) => order.deliveryStatus && order.deliveryStatus !== 'NOT_CREATED').length, color: 'var(--violet)', className: 'st-shipped' },
+      { label: 'Livrées', value: count('DELIVERED'), color: 'var(--green)', className: 'st-delivered' },
+      { label: 'Retournées', value: count('RETURNED') + count('FAILED'), color: 'var(--red)', className: 'st-returned' },
+      { label: 'Annulées', value: count('CANCELLED'), color: 'var(--tx-mid)', className: 'st-cancelled' },
     ]
   }, [orders])
 
@@ -250,45 +250,32 @@ export default function OrdersPage() {
   }
 
   return (
-    <BosShell active="orders" title="Orders" crumb="Operations">
+    <BosShell active="orders" title="Commandes" crumb="Opérations">
       <div style={{ maxWidth: '1640px', margin: '0 auto', padding: '22px 24px 60px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '16px' }}>
           <div>
-            <div className="eyebrow" style={{ marginBottom: '4px' }}>
-              OPERATIONS · ORDER BOOK
+            <div className="eyebrow" style={{ marginBottom: '6px' }}>
+              OPÉRATIONS · COMMANDES
             </div>
-            <h1 style={{ fontSize: '22px', fontWeight: 600, letterSpacing: '-0.02em', marginBottom: '4px' }}>Orders</h1>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginTop: '4px', fontSize: '13px', color: 'var(--tx-lo)' }}>
-              <span style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '5px',
-                padding: '2px 8px',
-                borderRadius: '20px',
-                fontSize: '11px',
-                fontWeight: 500,
-                border: '1px solid var(--up-line)',
-                color: 'var(--up)',
-                background: 'var(--up-bg)'
-              }}>
-                <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--up)' }}></span>
-                +{Math.round(orders.length * 0.15)} vs last week
-              </span>
-              <span>{orders.length} orders this week across 5 channels</span>
+            <h1 className="serif-display" style={{ fontSize: '30px', lineHeight: 1.05, marginBottom: '6px' }}>Commandes</h1>
+            <div style={{ fontSize: '13px', color: 'var(--tx-lo)' }}>
+              {orders.length} commande{orders.length !== 1 ? 's' : ''} au total
             </div>
           </div>
-          <button type="button" className="btn-modern btn-secondary" onClick={handleSyncSendit}>
-            <RefreshCw className="w-4 h-4" />
-            Sync Sendit
-          </button>
-          <button type="button" className="btn-modern btn-secondary" onClick={handleExport}>
-            <Download className="w-4 h-4" />
-            Export
-          </button>
-          <Link className="btn-modern btn-primary" href="/orders/new">
-            <Plus className="w-4 h-4" />
-            New order
-          </Link>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+            <button type="button" className="btn-modern btn-secondary" onClick={handleSyncSendit}>
+              <RefreshCw className="w-4 h-4" />
+              Sync Sendit
+            </button>
+            <button type="button" className="btn-modern btn-secondary" onClick={handleExport}>
+              <Download className="w-4 h-4" />
+              Exporter
+            </button>
+            <Link className="btn-modern btn-primary" href="/orders/new">
+              <Plus className="w-4 h-4" />
+              Nouvelle commande
+            </Link>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
@@ -319,7 +306,7 @@ export default function OrdersPage() {
                   setSearch(event.target.value)
                   setCurrentPage(1)
                 }}
-                placeholder="Search by name, phone, order #..."
+                placeholder="Rechercher par nom, téléphone, n°…"
                 className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
@@ -330,34 +317,34 @@ export default function OrdersPage() {
                 className={`btn-modern btn-sm ${activeFilter === 'all' ? 'btn-primary' : 'btn-subtle'}`}
                 onClick={() => selectFilter('all')}
               >
-                All <span className="ml-1 badge-modern badge-neutral badge-sm">{orders.length}</span>
+                Toutes <span className="ml-1 badge-modern badge-neutral badge-sm">{orders.length}</span>
               </button>
               <button
                 type="button"
                 className={`btn-modern btn-sm ${activeFilter === 'pending' ? 'btn-primary' : 'btn-subtle'}`}
                 onClick={() => selectFilter('pending')}
               >
-                Pending <span className="ml-1 badge-modern badge-warning badge-sm">{stats[0].value}</span>
+                En attente <span className="ml-1 badge-modern badge-warning badge-sm">{stats[0].value}</span>
               </button>
               <button
                 type="button"
                 className={`btn-modern btn-sm ${activeFilter === 'no-shipment' ? 'btn-primary' : 'btn-subtle'}`}
                 onClick={() => selectFilter('no-shipment')}
               >
-                No shipment <span className="ml-1 badge-modern badge-info badge-sm">{orders.filter((order) => order.status === 'CONFIRMED' && (!order.deliveryStatus || order.deliveryStatus === 'NOT_CREATED')).length}</span>
+                Sans envoi <span className="ml-1 badge-modern badge-info badge-sm">{orders.filter((order) => order.status === 'CONFIRMED' && (!order.deliveryStatus || order.deliveryStatus === 'NOT_CREATED')).length}</span>
               </button>
               <button
                 type="button"
                 className={`btn-modern btn-sm ${activeFilter === 'incomplete' ? 'btn-primary' : 'btn-subtle'}`}
                 onClick={() => selectFilter('incomplete')}
               >
-                Incomplete <span className="ml-1 badge-modern badge-danger badge-sm">{orders.filter((order) => toNumber(order.completenessScore) < 90).length}</span>
+                Incomplètes <span className="ml-1 badge-modern badge-danger badge-sm">{orders.filter((order) => toNumber(order.completenessScore) < 90).length}</span>
               </button>
             </div>
 
             <button type="button" className="btn-modern btn-sm btn-secondary" onClick={resetFilters} disabled={!hasActiveFilters}>
               <Filter className="w-4 h-4" />
-              Reset
+              Réinitialiser
             </button>
             <button type="button" className="btn-modern btn-sm btn-secondary" onClick={cycleDateFilter} title="Cycle date range">
               {dateFilterLabels[dateFilter]}
@@ -372,15 +359,15 @@ export default function OrdersPage() {
                   <th className="select-col">
                     <span className="selbox"></span>
                   </th>
-                  <th>Order</th>
-                  <th>Customer</th>
-                  <th>Channel</th>
-                  <th>Status</th>
-                  <th>Delivery</th>
-                  <th className="r">Revenue</th>
+                  <th>Commande</th>
+                  <th>Client</th>
+                  <th>Canal</th>
+                  <th>Statut</th>
+                  <th>Livraison</th>
+                  <th className="r">CA</th>
                   <th className="r">Profit</th>
-                  <th className="r">Margin</th>
-                  <th>Data</th>
+                  <th className="r">Marge</th>
+                  <th>Données</th>
                   <th className="r">Date</th>
                   <th></th>
                 </tr>
@@ -398,7 +385,7 @@ export default function OrdersPage() {
                   <tr>
                     <td colSpan={12}>
                       <div className="empty-state">
-                        {orders.length === 0 ? 'No orders yet. Create the first one from WhatsApp, Instagram, TikTok, or phone.' : 'No orders match the current filters.'}
+                        {orders.length === 0 ? 'Aucune commande pour le moment. Crée la première depuis WhatsApp, Instagram, TikTok ou par téléphone.' : 'Aucune commande ne correspond aux filtres.'}
                       </div>
                     </td>
                   </tr>
@@ -421,7 +408,7 @@ export default function OrdersPage() {
                         <td>
                           <div className="cellstack">
                             <span className="num fs12 t-strong">#{order.id}</span>
-                            <span className="t-sub mono">{order.orderNumber || 'Manual order'}</span>
+                            <span className="t-sub mono">{order.orderNumber || 'Commande manuelle'}</span>
                             {order.product_names && (
                               <span className="t-sub" style={{ fontSize: '11px', color: 'var(--tx-mid)' }}>
                                 {order.product_names.length > 50
@@ -433,9 +420,9 @@ export default function OrdersPage() {
                         </td>
                         <td>
                           <div className="cellstack">
-                            <span className="t-strong">{order.deliveryName || 'No name'}</span>
+                            <span className="t-strong">{order.deliveryName || 'Sans nom'}</span>
                             <span className="t-sub">
-                              {order.deliveryCity || 'No city'} - {order.deliveryPhone || 'No phone'}
+                              {order.deliveryCity || 'Ville ?'} · {order.deliveryPhone || 'Tél ?'}
                             </span>
                           </div>
                         </td>
