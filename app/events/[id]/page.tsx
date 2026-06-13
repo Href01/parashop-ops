@@ -165,9 +165,9 @@ export default function EventDetailPage() {
           />
         </div>
 
-        <div className="row gap20" style={{ alignItems: 'flex-start' }}>
+        <div className="row gap20" style={{ alignItems: 'flex-start', flexWrap: 'wrap' }}>
           {/* Left Column */}
-          <div style={{ flex: '2', display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div style={{ flex: '2 1 600px', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 20 }}>
             {/* Category Performance */}
             <div className="panel">
               <div className="panel-head">
@@ -316,7 +316,7 @@ export default function EventDetailPage() {
           </div>
 
           {/* Right Column */}
-          <div style={{ flex: '1', display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div style={{ flex: '1 1 320px', minWidth: 280, display: 'flex', flexDirection: 'column', gap: 20 }}>
             {/* Event Info */}
             <div className="panel">
               <div className="panel-head">
