@@ -89,12 +89,12 @@ export default function EventsPage() {
   }
 
   return (
-    <BosShell active="events" title="Events" crumb="Growth">
+    <BosShell active="events" title="Événements" crumb="Croissance">
       <div className="page-inner page-wide">
         <div className="page-head">
           <div>
-            <h1>Events</h1>
-            <div className="sub">Track Ramadan, Black Friday, seasonal events & impact analysis</div>
+            <h1 className="serif-display">Événements</h1>
+            <div className="sub">Ramadan, Black Friday, événements saisonniers & analyse d’impact</div>
           </div>
           <div className="spacer"></div>
           <div className="filter-strip inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
@@ -124,7 +124,7 @@ export default function EventsPage() {
             </button>
           </div>
           <button className="btn-modern btn-primary" onClick={() => window.location.href = '/events/new'}>
-            <Plus className="w-4 h-4" />New event
+            <Plus className="w-4 h-4" />Nouvel événement
           </button>
         </div>
 
@@ -132,7 +132,7 @@ export default function EventsPage() {
           <Metric
             icon={<Calendar />}
             tone="blue"
-            title="Total events"
+            title="Total événements"
             value={events.length.toString()}
             unit=""
             trend={`${activeEvents.length} active, ${upcomingEvents.length} upcoming`}
@@ -140,7 +140,7 @@ export default function EventsPage() {
           <Metric
             icon={<DollarSign />}
             tone="green"
-            title="Events revenue"
+            title="CA événements"
             value={formatCurrency(totalRevenue)}
             unit="MAD"
             trend={`${totalOrders} orders`}
@@ -148,7 +148,7 @@ export default function EventsPage() {
           <Metric
             icon={<TrendingUp />}
             tone="teal"
-            title="Avg impact"
+            title="Impact moyen"
             value={avgIncrease.toFixed(1)}
             unit="%"
             trend={avgIncrease > 0 ? 'vs normal period' : 'No data'}
@@ -156,7 +156,7 @@ export default function EventsPage() {
           <Metric
             icon={<ShoppingCart />}
             tone="violet"
-            title="Total orders"
+            title="Total commandes"
             value={totalOrders.toString()}
             unit=""
             trend={`across ${events.length} events`}
@@ -165,7 +165,7 @@ export default function EventsPage() {
 
         <div className="card-modern">
           <div className="card-header">
-            <h3 className="text-lg font-semibold">All events</h3>
+            <h3 className="text-lg font-semibold">Tous</h3>
             <div className="spacer"></div>
             {activeEvents.length > 0 && (
               <span className="badge-modern badge-success">
@@ -178,21 +178,21 @@ export default function EventsPage() {
             <table className="table-modern">
               <thead>
                 <tr>
-                  <th>Event</th>
+                  <th>Événement</th>
                   <th>Type</th>
-                  <th>Period</th>
-                  <th className="r">Revenue</th>
-                  <th className="r">Orders</th>
+                  <th>Période</th>
+                  <th className="r">CA</th>
+                  <th className="r">Commandes</th>
                   <th className="r">Impact</th>
-                  <th>Top category</th>
-                  <th>Status</th>
+                  <th>Top catégorie</th>
+                  <th>Statut</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
                     <td colSpan={8} style={{ textAlign: 'center', padding: '40px' }}>
-                      Loading events...
+                      Chargement…
                     </td>
                   </tr>
                 ) : events.length === 0 ? (
@@ -200,10 +200,10 @@ export default function EventsPage() {
                     <td colSpan={8} style={{ textAlign: 'center', padding: '40px' }}>
                       <div className="flex flex-col items-center justify-center py-12">
                         <Calendar className="w-12 h-12 text-gray-300 mb-4" />
-                        <p className="font-semibold text-gray-900 mb-2">No events yet</p>
-                        <p className="text-sm text-gray-500 mb-6">Create your first event to track seasonal performance</p>
+                        <p className="font-semibold text-gray-900 mb-2">Aucun événement</p>
+                        <p className="text-sm text-gray-500 mb-6">Crée ton premier événement pour suivre la performance saisonnière</p>
                         <button className="btn-modern btn-primary" onClick={() => window.location.href = '/events/new'}>
-                          <Plus className="w-4 h-4" />Create event
+                          <Plus className="w-4 h-4" />Créer un événement
                         </button>
                       </div>
                     </td>
@@ -241,7 +241,7 @@ export default function EventsPage() {
                       </td>
                       <td>
                         <span className={`badge ${getStatusColor(event.status)}`}>
-                          {event.status}
+                          {({Active:'En cours',Ongoing:'En cours',Upcoming:'À venir',Scheduled:'Planifié',Completed:'Terminé',Ended:'Terminé'} as Record<string,string>)[event.status]||event.status}
                         </span>
                       </td>
                     </tr>
@@ -256,7 +256,7 @@ export default function EventsPage() {
           <div className="panel mt20">
             <div className="panel-head">
               <Calendar />
-              <h3>Upcoming events</h3>
+              <h3>À venir</h3>
               <span className="badge blue">{upcomingEvents.length}</span>
             </div>
             <div className="panel-pad">

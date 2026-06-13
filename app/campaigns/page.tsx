@@ -77,12 +77,12 @@ export default function CampaignsPage() {
   }
 
   return (
-    <BosShell active="campaigns" title="Campaigns" crumb="Growth">
+    <BosShell active="campaigns" title="Campagnes" crumb="Croissance">
       <div className="page-inner page-wide">
         <div className="page-head">
           <div>
-            <h1>Campaigns & Ads</h1>
-            <div className="sub">Real P&L tracking with ad spend, ROAS & ROI</div>
+            <h1 className="serif-display">Campagnes & Pub</h1>
+            <div className="sub">Suivi P&L réel : dépense pub, ROAS & ROI</div>
           </div>
           <div className="spacer"></div>
           <div className="filter-strip inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
@@ -90,23 +90,23 @@ export default function CampaignsPage() {
               className={`btn-modern btn-sm ${statusFilter === 'All' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('All')}
             >
-              All
+              Tous
             </button>
             <button
               className={`btn-modern btn-sm ${statusFilter === 'Active' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('Active')}
             >
-              Active
+              Actives
             </button>
             <button
               className={`btn-modern btn-sm ${statusFilter === 'Completed' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('Completed')}
             >
-              Completed
+              Terminées
             </button>
           </div>
           <button className="btn-modern btn-primary" onClick={() => window.location.href = '/campaigns/new'}>
-            <Plus className="w-4 h-4" />New campaign
+            <Plus className="w-4 h-4" />Nouvelle campagne
           </button>
         </div>
 
@@ -114,46 +114,46 @@ export default function CampaignsPage() {
           <Metric
             icon={<Wallet />}
             tone="red"
-            title="Total ad spend"
+            title="Dépense pub totale"
             value={formatCurrency(totalAdSpend)}
             unit="MAD"
-            trend={campaigns.length > 0 ? `${campaigns.length} campaigns` : 'No data'}
+            trend={campaigns.length > 0 ? `${campaigns.length} campagnes` : 'Aucune donnée'}
           />
           <Metric
             icon={<TrendingUp />}
             tone="green"
-            title="Total revenue"
+            title="CA total"
             value={formatCurrency(totalRevenue)}
             unit="MAD"
-            trend={`${totalOrders} orders`}
+            trend={`${totalOrders} commandes`}
           />
           <Metric
             icon={<Megaphone />}
             tone="rose"
-            title="Blended ROAS"
+            title="ROAS global"
             value={avgROAS.toFixed(1)}
             unit="x"
-            trend={avgROAS >= 3 ? 'Excellent' : avgROAS >= 2 ? 'Good' : 'Review'}
+            trend={avgROAS >= 3 ? 'Excellent' : avgROAS >= 2 ? 'Bon' : 'À revoir'}
           />
           <Metric
             icon={<Target />}
             tone="blue"
-            title="Net profit"
+            title="Profit net"
             value={formatCurrency(totalProfit)}
             unit="MAD"
-            trend={totalProfit > 0 ? 'Profitable' : 'Loss'}
+            trend={totalProfit > 0 ? 'Rentable' : 'Perte'}
           />
         </div>
 
         <div className="camp-grid">
           <div className="card-modern" style={{ gridColumn: '1 / -1' }}>
             <div className="card-header">
-              <h3 className="text-lg font-semibold">Active campaigns</h3>
+              <h3 className="text-lg font-semibold">Campagnes actives</h3>
               <div className="spacer"></div>
               {activeCampaigns.length > 0 && (
                 <span className="badge-modern badge-success">
                   <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                  {activeCampaigns.length} running
+                  {activeCampaigns.length} actives
                 </span>
               )}
             </div>
@@ -161,21 +161,21 @@ export default function CampaignsPage() {
               <table className="table-modern">
                 <thead>
                   <tr>
-                    <th>Campaign</th>
-                    <th className="r">Ad Spend</th>
-                    <th className="r">Revenue</th>
+                    <th>Campagne</th>
+                    <th className="r">Dépense pub</th>
+                    <th className="r">CA</th>
                     <th className="r">Profit</th>
                     <th>ROAS</th>
                     <th>ROI</th>
-                    <th>Status</th>
-                    <th className="r">Ends</th>
+                    <th>Statut</th>
+                    <th className="r">Fin</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
                     <tr>
                       <td colSpan={8} style={{ textAlign: 'center', padding: '40px' }}>
-                        Loading campaigns...
+                        Chargement…
                       </td>
                     </tr>
                   ) : campaigns.length === 0 ? (
@@ -183,10 +183,10 @@ export default function CampaignsPage() {
                       <td colSpan={8} style={{ textAlign: 'center', padding: '40px' }}>
                         <div className="empty-state">
                           <Megaphone size={48} style={{ color: 'var(--tx-faint)', marginBottom: 16 }} />
-                          <p className="fw600">No campaigns yet</p>
-                          <p className="tx-lo fs13">Create your first campaign to track ad spend and ROI</p>
+                          <p className="fw600">Aucune campagne</p>
+                          <p className="tx-lo fs13">Crée ta première campagne pour suivre la dépense pub et le ROI</p>
                           <button className="btn primary mt16" onClick={() => window.location.href = '/campaigns/new'}>
-                            <Plus />Create campaign
+                            <Plus />Créer une campagne
                           </button>
                         </div>
                       </td>
@@ -227,7 +227,7 @@ export default function CampaignsPage() {
                         </td>
                         <td>
                           <span className={`badge ${getStatusColor(campaign.status)}`}>
-                            {campaign.status}
+                            {({Active:'Active',Draft:'Brouillon',Completed:'Terminée',Paused:'En pause'} as Record<string,string>)[campaign.status]||campaign.status}
                           </span>
                         </td>
                         <td className="r">
@@ -245,30 +245,30 @@ export default function CampaignsPage() {
             <div className="panel" style={{ gridColumn: '1 / -1' }}>
               <div className="panel-head">
                 <Calendar />
-                <h3>Quick stats</h3>
+                <h3>Stats rapides</h3>
               </div>
               <div className="panel-pad">
                 <div className="row gap20">
                   <div className="mini-stat">
-                    <span className="ms-l">Total campaigns</span>
+                    <span className="ms-l">Total campagnes</span>
                     <span className="ms-v">{campaigns.length}</span>
                   </div>
                   <div className="mini-stat">
-                    <span className="ms-l">Active</span>
+                    <span className="ms-l">Actives</span>
                     <span className="ms-v">{activeCampaigns.length}</span>
                   </div>
                   <div className="mini-stat">
-                    <span className="ms-l">Avg cost/order</span>
+                    <span className="ms-l">Coût moyen/commande</span>
                     <span className="ms-v">{formatCurrency(costPerOrder)} MAD</span>
                   </div>
                   <div className="mini-stat">
-                    <span className="ms-l">Best ROAS</span>
+                    <span className="ms-l">Meilleur ROAS</span>
                     <span className="ms-v pos">
                       {Math.max(...campaigns.map(c => c.roas || 0)).toFixed(1)}x
                     </span>
                   </div>
                   <div className="mini-stat">
-                    <span className="ms-l">Best ROI</span>
+                    <span className="ms-l">Meilleur ROI</span>
                     <span className="ms-v pos">
                       {Math.max(...campaigns.map(c => c.roi || 0)).toFixed(1)}%
                     </span>

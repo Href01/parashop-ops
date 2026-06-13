@@ -106,7 +106,7 @@ export default function InventoryPage() {
   }
 
   const handleAddStock = () => {
-    alert('Stock adjustment feature coming soon!\n\nFor now, update stock levels via Products page.')
+    alert('Ajuste les niveaux de stock depuis la page Produits pour le moment.')
   }
 
   const getStatusColor = (status: string) => {
@@ -133,17 +133,17 @@ export default function InventoryPage() {
   const criticalAlerts = alerts.filter(a => a.severity === 'critical').length
 
   return (
-    <BosShell active="inventory" title="Inventory" crumb="Operations">
+    <BosShell active="inventory" title="Stock" crumb="Opérations">
       <div className="page-inner page-wide">
         {/* Header */}
         <div className="page-head">
           <div>
-            <h1>Inventory</h1>
-            <div className="sub">Stock levels, alerts & reorder management</div>
+            <h1 className="serif-display">Stock</h1>
+            <div className="sub">Niveaux de stock, alertes & réapprovisionnement</div>
           </div>
           <div className="spacer"></div>
-          <button className="btn-modern btn-secondary" onClick={handleExport}><Download className="w-4 h-4" />Export</button>
-          <button className="btn-modern btn-primary" onClick={handleAddStock}><Package className="w-4 h-4" />Add stock</button>
+          <button className="btn-modern btn-secondary" onClick={handleExport}><Download className="w-4 h-4" />Exporter</button>
+          <button className="btn-modern btn-primary" onClick={handleAddStock}><Package className="w-4 h-4" />Ajouter</button>
         </div>
 
         {/* Stats */}
@@ -151,30 +151,30 @@ export default function InventoryPage() {
           <Metric
             icon={<Package />}
             tone="blue"
-            title="Total products"
+            title="Total produits"
             value={products.length.toString()}
-            trend="tracked"
+            trend="suivis"
           />
           <Metric
             icon={<AlertTriangle />}
             tone="amber"
-            title="Low stock"
+            title="Stock bas"
             value={lowStockCount.toString()}
-            trend="need reorder"
+            trend="à réappro."
           />
           <Metric
             icon={<XCircle />}
             tone="red"
-            title="Out of stock"
+            title="Rupture"
             value={outOfStockCount.toString()}
-            trend="critical"
+            trend="critique"
           />
           <Metric
             icon={<CheckCircle />}
             tone="green"
-            title="In stock"
+            title="En stock"
             value={(products.length - lowStockCount - outOfStockCount).toString()}
-            trend="healthy"
+            trend="OK"
           />
         </div>
 
@@ -183,11 +183,11 @@ export default function InventoryPage() {
           <div className="card-modern mb-6" style={{ borderLeft: '4px solid var(--danger-500)' }}>
             <div className="card-header">
               <AlertTriangle className="w-5 h-5 text-red-600" />
-              <h3 className="text-lg font-semibold">Active Stock Alerts</h3>
+              <h3 className="text-lg font-semibold">Alertes de stock</h3>
               <span className="badge-modern badge-danger">{alerts.length}</span>
               <div className="flex-1"></div>
               <button className="btn-modern btn-sm btn-subtle" onClick={() => setShowAlerts(false)}>
-                Dismiss all
+                Tout masquer
               </button>
             </div>
             <div className="card-body">
@@ -208,13 +208,13 @@ export default function InventoryPage() {
                         className="btn-modern btn-sm btn-subtle"
                         onClick={() => window.location.href = `/products/${alert.productId}`}
                       >
-                        View product
+                        Voir produit
                       </button>
                       <button
                         className="btn-modern btn-sm btn-secondary"
                         onClick={() => acknowledgeAlert(alert.id)}
                       >
-                        Acknowledge
+                        Acquitter
                       </button>
                     </div>
                   </div>
@@ -231,25 +231,25 @@ export default function InventoryPage() {
               className={`btn-modern btn-sm ${statusFilter === '' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('')}
             >
-              All products
+              Tous
             </button>
             <button
               className={`btn-modern btn-sm ${statusFilter === 'Low stock' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('Low stock')}
             >
-              Low stock
+              Stock bas
             </button>
             <button
               className={`btn-modern btn-sm ${statusFilter === 'Out of stock' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('Out of stock')}
             >
-              Out of stock
+              Rupture
             </button>
             <button
               className={`btn-modern btn-sm ${statusFilter === 'In stock' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('In stock')}
             >
-              In stock
+              En stock
             </button>
           </div>
         </div>
@@ -260,28 +260,28 @@ export default function InventoryPage() {
             <table className="table-modern">
               <thead>
                 <tr>
-                  <th>Product</th>
-                  <th>Status</th>
+                  <th>Produit</th>
+                  <th>Statut</th>
                   <th className="r">Stock</th>
-                  <th className="r">Reorder Point</th>
-                  <th className="r">Weekly Sales</th>
-                  <th className="r">Days Left</th>
-                  <th>Supplier</th>
-                  <th className="r">Cost</th>
-                  <th className="r">Alerts</th>
+                  <th className="r">Seuil de réappro</th>
+                  <th className="r">Ventes/sem.</th>
+                  <th className="r">Jours restants</th>
+                  <th>Fournisseur</th>
+                  <th className="r">Coût</th>
+                  <th className="r">Alertes</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
                     <td colSpan={9} style={{ textAlign: 'center', padding: '40px' }}>
-                      Loading inventory...
+                      Chargement…
                     </td>
                   </tr>
                 ) : products.length === 0 ? (
                   <tr>
                     <td colSpan={9} style={{ textAlign: 'center', padding: '40px' }}>
-                      No products found
+                      Aucun produit
                     </td>
                   </tr>
                 ) : (
@@ -309,7 +309,7 @@ export default function InventoryPage() {
                       </td>
                       <td>
                         <span className={getStatusColor(product.stockStatus)}>
-                          {product.stockStatus}
+                          {({'In stock':'En stock','Low stock':'Stock bas','Out of stock':'Rupture',Discontinued:'Arrêté'} as Record<string,string>)[product.stockStatus]||product.stockStatus}
                         </span>
                       </td>
                       <td className="r">

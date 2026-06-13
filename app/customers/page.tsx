@@ -58,7 +58,7 @@ export default function CustomersPage() {
     const csv = [
       ['Name', 'Email', 'Phone', 'Segment', 'Tier', 'Orders', 'LTV (MAD)', 'Avg Order (MAD)', 'Last Order', 'RFM Score'],
       ...customers.map(c => [
-        c.name || 'Unnamed customer',
+        c.name || 'Sans nom',
         c.email || '',
         c.phone || '',
         getSegmentLabel(c.segment),
@@ -81,7 +81,7 @@ export default function CustomersPage() {
   }
 
   const handleAddCustomer = () => {
-    alert('Customer creation feature coming soon!\n\nCustomers are automatically created when they place their first order.')
+    alert('Les clientes sont créées automatiquement lors de leur première commande.')
   }
 
   const toNumber = (value: unknown) => {
@@ -96,6 +96,10 @@ export default function CustomersPage() {
   const getTierLabel = (tier: string | null | undefined) => {
     return tier?.trim() || 'No tier'
   }
+
+  // French labels for display only — matching/colors stay on the raw DB values.
+  const segFr = (s: string) => (({ VIP: 'VIP', Regular: 'Régulière', 'At Risk': 'À risque', New: 'Nouvelle', Churned: 'Perdue', Unsegmented: 'Non segmentée' } as Record<string, string>)[s] || s)
+  const tierFr = (t: string) => (({ Platinum: 'Platine', Gold: 'Or', Silver: 'Argent', Bronze: 'Bronze', 'No tier': 'Sans niveau' } as Record<string, string>)[t] || t)
 
   const getSegmentColor = (segment: string | null | undefined) => {
     const colors: Record<string, string> = {
@@ -119,9 +123,9 @@ export default function CustomersPage() {
   }
 
   const formatDate = (dateString: string | null) => {
-    if (!dateString) return 'Never'
+    if (!dateString) return 'Jamais'
     const date = new Date(dateString)
-    if (Number.isNaN(date.getTime())) return 'Never'
+    if (Number.isNaN(date.getTime())) return 'Jamais'
     return date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })
   }
 
@@ -136,25 +140,25 @@ export default function CustomersPage() {
   const atRiskCustomers = customers.filter((customer) => getSegmentLabel(customer.segment) === 'At Risk').length
 
   return (
-    <BosShell active="customers" title="Customers" crumb="Growth">
+    <BosShell active="customers" title="Clientes" crumb="Croissance">
       <div className="page-inner page-wide">
         {/* Header */}
         <div className="page-head">
           <div>
-            <h1>Customers</h1>
-            <div className="sub">Customer relationship management & segmentation</div>
+            <h1 className="serif-display">Clientes</h1>
+            <div className="sub">Relation client & segmentation</div>
           </div>
           <div className="spacer"></div>
-          <button className="btn-modern btn-secondary" onClick={handleExport}><Download className="w-4 h-4" />Export</button>
-          <button className="btn-modern btn-primary" onClick={handleAddCustomer}><UserPlus className="w-4 h-4" />Add customer</button>
+          <button className="btn-modern btn-secondary" onClick={handleExport}><Download className="w-4 h-4" />Exporter</button>
+          <button className="btn-modern btn-primary" onClick={handleAddCustomer}><UserPlus className="w-4 h-4" />Ajouter</button>
         </div>
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          <Metric icon={<UserPlus />} tone="blue" title="Total customers" value={customers.length.toString()} trend="+12 this week" />
-          <Metric icon={<DollarSign />} tone="green" title="Avg LTV" value={`${formatCurrency(avgLifetimeValue)} MAD`} />
-          <Metric icon={<TrendingUp />} tone="teal" title="VIP customers" value={vipCustomers.toString()} trend={`${((vipCustomers / (customers.length || 1)) * 100).toFixed(1)}%`} />
-          <Metric icon={<Clock />} tone="amber" title="At risk" value={atRiskCustomers.toString()} trend="Need attention" />
+          <Metric icon={<UserPlus />} tone="blue" title="Total clientes" value={customers.length.toString()} />
+          <Metric icon={<DollarSign />} tone="green" title="LTV moyenne" value={`${formatCurrency(avgLifetimeValue)} MAD`} />
+          <Metric icon={<TrendingUp />} tone="teal" title="Clientes VIP" value={vipCustomers.toString()} trend={`${((vipCustomers / (customers.length || 1)) * 100).toFixed(1)}%`} />
+          <Metric icon={<Clock />} tone="amber" title="À risque" value={atRiskCustomers.toString()} trend="À surveiller" />
         </div>
 
         {/* Filters */}
@@ -163,7 +167,7 @@ export default function CustomersPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search by name, email, phone..."
+              placeholder="Rechercher par nom, email, téléphone…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
@@ -176,7 +180,7 @@ export default function CustomersPage() {
               className={`btn-modern btn-sm ${segmentFilter === '' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setSegmentFilter('')}
             >
-              All
+              Tous
             </button>
             <button
               className={`btn-modern btn-sm ${segmentFilter === 'VIP' ? 'btn-primary' : 'btn-subtle'}`}
@@ -188,19 +192,19 @@ export default function CustomersPage() {
               className={`btn-modern btn-sm ${segmentFilter === 'Regular' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setSegmentFilter('Regular')}
             >
-              Regular
+              Régulière
             </button>
             <button
               className={`btn-modern btn-sm ${segmentFilter === 'At Risk' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setSegmentFilter('At Risk')}
             >
-              At Risk
+              À risque
             </button>
             <button
               className={`btn-modern btn-sm ${segmentFilter === 'New' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setSegmentFilter('New')}
             >
-              New
+              Nouvelle
             </button>
           </div>
 
@@ -209,25 +213,25 @@ export default function CustomersPage() {
               className={`btn-modern btn-sm ${tierFilter === '' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setTierFilter('')}
             >
-              All Tiers
+              Tous niveaux
             </button>
             <button
               className={`btn-modern btn-sm ${tierFilter === 'Platinum' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setTierFilter('Platinum')}
             >
-              Platinum
+              Platine
             </button>
             <button
               className={`btn-modern btn-sm ${tierFilter === 'Gold' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setTierFilter('Gold')}
             >
-              Gold
+              Or
             </button>
             <button
               className={`btn-modern btn-sm ${tierFilter === 'Silver' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setTierFilter('Silver')}
             >
-              Silver
+              Argent
             </button>
           </div>
         </div>
@@ -238,45 +242,45 @@ export default function CustomersPage() {
             <table className="table-modern">
               <thead>
                 <tr>
-                  <th>Customer</th>
+                  <th>Cliente</th>
                   <th>Segment</th>
-                  <th>Tier</th>
-                  <th className="r">Orders</th>
+                  <th>Niveau</th>
+                  <th className="r">Commandes</th>
                   <th className="r">LTV</th>
-                  <th className="r">Avg Order</th>
-                  <th>Last Order</th>
+                  <th className="r">Panier moyen</th>
+                  <th>Dernière commande</th>
                   <th>RFM</th>
-                  <th className="r">Churn Risk</th>
+                  <th className="r">Risque de perte</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
                     <td colSpan={9} style={{ textAlign: 'center', padding: '40px' }}>
-                      Loading customers...
+                      Chargement…
                     </td>
                   </tr>
                 ) : customers.length === 0 ? (
                   <tr>
                     <td colSpan={9} style={{ textAlign: 'center', padding: '40px' }}>
-                      No customers found
+                      Aucune cliente
                     </td>
                   </tr>
                 ) : (
                   customers.map((customer) => (
                     <tr key={customer.id} onClick={() => window.location.href = `/customers/${customer.id}`} style={{ cursor: 'pointer' }}>
                       <td>
-                        <div className="t-strong">{customer.name || 'Unnamed customer'}</div>
-                        <div className="fs11 tx-lo">{customer.email || customer.phone || 'No contact on file'}</div>
+                        <div className="t-strong">{customer.name || 'Sans nom'}</div>
+                        <div className="fs11 tx-lo">{customer.email || customer.phone || 'Aucun contact'}</div>
                       </td>
                       <td>
                         <span className={getSegmentColor(customer.segment)}>
-                          {getSegmentLabel(customer.segment)}
+                          {segFr(getSegmentLabel(customer.segment))}
                         </span>
                       </td>
                       <td>
                         <span className={getTierColor(customer.tier)}>
-                          {getTierLabel(customer.tier)}
+                          {tierFr(getTierLabel(customer.tier))}
                         </span>
                       </td>
                       <td className="r num">{toNumber(customer.ordersCount)}</td>
@@ -286,7 +290,7 @@ export default function CustomersPage() {
                         <span className="fs12 tx-lo">
                           {formatDate(customer.lastOrderDate)}
                           {toNumber(customer.daysSinceLastOrder) > 0 && (
-                            <span className="tx-lo"> ({toNumber(customer.daysSinceLastOrder)}d ago)</span>
+                            <span className="tx-lo"> ({toNumber(customer.daysSinceLastOrder)}j)</span>
                           )}
                         </span>
                       </td>
