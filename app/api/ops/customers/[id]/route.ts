@@ -60,22 +60,44 @@ export async function GET(
       LIMIT 50
     `, [customerId])
 
-    // Calculate recent metrics
+    // Real metrics from confirmed/delivered orders (the stored User columns were
+    // never populated — they showed 0/New/Bronze for everyone).
     const metricsResult = await pool.query(`
       SELECT
-        COUNT(*) as "totalOrders",
-        SUM(total) as "totalSpent",
-        AVG(total) as "avgOrderValue",
+        COUNT(*)::int as "totalOrders",
+        COALESCE(SUM(total), 0)::float as "totalSpent",
+        COALESCE(AVG(total), 0)::float as "avgOrderValue",
         MAX("createdAt") as "lastOrderDate"
       FROM "Order"
-      WHERE "userId" = $1 AND status != 'CANCELLED'
+      WHERE "userId" = $1 AND status IN ('CONFIRMED', 'DELIVERED')
     `, [customerId])
+    const m = metricsResult.rows[0]
+    const orders = Number(m.totalOrders) || 0
+    const ca = Number(m.totalSpent) || 0
+    const last = m.lastOrderDate ? new Date(m.lastOrderDate) : null
+    const daysSince = last ? Math.floor((Date.now() - last.getTime()) / 86400000) : null
+    const segment = orders === 0 ? 'New'
+      : (ca >= 1500 || orders >= 3) ? 'VIP'
+      : (daysSince != null && daysSince > 90) ? 'At Risk'
+      : 'Regular'
+    const tier = ca >= 2000 ? 'Gold' : ca >= 500 ? 'Silver' : 'Bronze'
+
+    // Override the stale stored columns with live values
+    Object.assign(customer, {
+      ordersCount: orders,
+      lifetimeValue: ca,
+      averageOrderValue: orders > 0 ? ca / orders : 0,
+      lastOrderDate: m.lastOrderDate,
+      daysSinceLastOrder: daysSince,
+      segment,
+      tier,
+    })
 
     return NextResponse.json({
       customer,
       orders: ordersResult.rows,
       activity: activityResult.rows,
-      metrics: metricsResult.rows[0],
+      metrics: m,
     })
 
   } catch (error: any) {

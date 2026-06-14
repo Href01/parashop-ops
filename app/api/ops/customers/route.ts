@@ -61,64 +61,66 @@ export async function GET(request: NextRequest) {
       paramIndex++
     }
 
-    if (churnRiskMin) {
-      conditions.push(`"churnRisk" >= $${paramIndex}`)
-      params.push(parseInt(churnRiskMin))
-      paramIndex++
-    }
-
-    if (churnRiskMax) {
-      conditions.push(`"churnRisk" <= $${paramIndex}`)
-      params.push(parseInt(churnRiskMax))
-      paramIndex++
-    }
+    void churnRiskMin; void churnRiskMax // churn not computed yet — filters dropped
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
 
-    // Valid sort columns
-    const validSorts = ['lifetimeValue', 'ordersCount', 'lastOrderDate', 'createdAt', 'name', 'churnRisk']
+    // Valid sort columns (all live-computed below)
+    const validSorts = ['lifetimeValue', 'ordersCount', 'lastOrderDate', 'createdAt', 'name']
     const sortColumn = validSorts.includes(sort) ? `"${sort}"` : '"createdAt"'
     const sortOrder = order === 'asc' ? 'ASC' : 'DESC'
 
-    // Get customers
-    const result = await pool.query(`
-      SELECT
-        id,
-        name,
-        email,
-        phone,
-        "segment",
-        "tier",
-        "ordersCount",
-        "lifetimeValue",
-        "averageOrderValue",
-        "lastOrderDate",
-        "daysSinceLastOrder",
-        points,
-        "pendingPoints",
-        "rfmScore",
-        "recencyScore",
-        "frequencyScore",
-        "monetaryScore",
-        "churnRisk",
-        "preferredCity",
-        "createdAt"
-      FROM "User"
-      ${whereClause}
-      ORDER BY ${sortColumn} ${sortOrder}
-      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
-    `, [...params, limit, offset])
+    // Real customer metrics computed live from confirmed/delivered orders.
+    // (The stored User columns ordersCount/lifetimeValue/segment were never
+    // populated — every customer showed 0/New/Bronze.)
+    const CTE = `
+      WITH agg AS (
+        SELECT "userId",
+               COUNT(*)::int AS orders,
+               COALESCE(SUM(total), 0)::float AS ca,
+               MAX("createdAt") AS last_order
+        FROM "Order"
+        WHERE status IN ('CONFIRMED', 'DELIVERED') AND "userId" IS NOT NULL
+        GROUP BY "userId"
+      ),
+      c AS (
+        SELECT u.id, u.name, u.email, u.phone, u.points, u."pendingPoints",
+               u."preferredCity", u."createdAt",
+               COALESCE(a.orders, 0) AS "ordersCount",
+               COALESCE(a.ca, 0) AS "lifetimeValue",
+               CASE WHEN COALESCE(a.orders, 0) > 0 THEN a.ca / a.orders ELSE 0 END AS "averageOrderValue",
+               a.last_order AS "lastOrderDate",
+               CASE WHEN a.last_order IS NOT NULL THEN EXTRACT(DAY FROM (now() - a.last_order))::int END AS "daysSinceLastOrder",
+               CASE
+                 WHEN COALESCE(a.orders, 0) = 0 THEN 'New'
+                 WHEN a.ca >= 1500 OR a.orders >= 3 THEN 'VIP'
+                 WHEN a.last_order < now() - INTERVAL '90 days' THEN 'At Risk'
+                 ELSE 'Regular'
+               END AS segment,
+               CASE
+                 WHEN COALESCE(a.ca, 0) >= 2000 THEN 'Gold'
+                 WHEN COALESCE(a.ca, 0) >= 500 THEN 'Silver'
+                 ELSE 'Bronze'
+               END AS tier
+        FROM "User" u
+        LEFT JOIN agg a ON a."userId" = u.id
+        WHERE u.role IS DISTINCT FROM 'ADMIN'
+      )
+    `
 
-    // Get total count
-    const countResult = await pool.query(`
-      SELECT COUNT(*) as total
-      FROM "User"
-      ${whereClause}
-    `, params)
+    const result = await pool.query(
+      `${CTE} SELECT * FROM c ${whereClause} ORDER BY ${sortColumn} ${sortOrder} LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
+      [...params, limit, offset]
+    )
+
+    const countResult = await pool.query(
+      `${CTE} SELECT COUNT(*)::int AS total FROM c ${whereClause}`,
+      params
+    )
 
     return NextResponse.json({
       customers: result.rows,
-      total: parseInt(countResult.rows[0].total),
+      total: countResult.rows[0].total,
       limit,
       offset,
     })
