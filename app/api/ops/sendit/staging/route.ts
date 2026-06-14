@@ -49,10 +49,53 @@ export async function GET() {
   return NextResponse.json({ rows: rows.rows, counts: counts.rows[0] })
 }
 
-/** POST { action: 'pull' } — pull all Sendit deliveries into staging + match (read-only on the BOS). */
+/**
+ * POST — staging actions:
+ *  { action: 'pull' }         pull all Sendit deliveries + match (read-only on BOS)
+ *  { action: 'sync-matched' } Phase 1: push Sendit truth (status/COD/fee + link)
+ *                             onto the already-matched BOS orders
+ */
 export async function POST(req: NextRequest) {
   if (!(await guard())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await req.json().catch(() => ({}))
+
+  if (body.action === 'sync-matched') {
+    try {
+      const rows = await pool.query(
+        `SELECT * FROM "SenditStaging" WHERE "matchedOrderId" IS NOT NULL AND state IN ('matched', 'mismatch')`
+      )
+      let synced = 0, statusChanged = 0
+      for (const s of rows.rows) {
+        const cur = await pool.query(`SELECT status::text AS status FROM "Order" WHERE id = $1`, [s.matchedOrderId])
+        if (cur.rows.length === 0) continue
+        const oldStatus = cur.rows[0].status
+        const mapped = mapSenditStatus(s.senditStatus)
+        // Push Sendit truth: link + status + actual COD + delivery fee
+        await pool.query(
+          `UPDATE "Order"
+           SET "senditTrackingId" = $1, "senditStatus" = $2, "deliveryStatus" = $2,
+               status = $3::"OrderStatus", "deliveryFeeCharged" = $4, total = $5
+           WHERE id = $6`,
+          [s.code, s.senditStatus, mapped, Number(s.fee) || 0, Number(s.amount) || 0, s.matchedOrderId]
+        )
+        if (mapped !== oldStatus) {
+          await pool.query(
+            `INSERT INTO "OrderStatusHistory" ("orderId","oldStatus","newStatus","source","note","createdAt")
+             VALUES ($1,$2,$3,'sendit',$4,NOW())`,
+            [s.matchedOrderId, oldStatus, mapped, `Réconciliation Sendit: ${s.senditStatus}`]
+          )
+          statusChanged++
+        }
+        await pool.query(`UPDATE "SenditStaging" SET state = 'matched', "updatedAt" = NOW() WHERE id = $1`, [s.id])
+        synced++
+      }
+      return NextResponse.json({ ok: true, synced, statusChanged })
+    } catch (e) {
+      console.error('[Sendit] sync-matched', e)
+      return NextResponse.json({ error: e instanceof Error ? e.message : 'Erreur serveur' }, { status: 500 })
+    }
+  }
+
   if (body.action !== 'pull') return NextResponse.json({ error: 'Action inconnue' }, { status: 400 })
 
   try {

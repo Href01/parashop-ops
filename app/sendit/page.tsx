@@ -45,6 +45,21 @@ export default function SenditLabPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
 
+  const syncMatched = async () => {
+    if (busy) return
+    if (!confirm('Synchroniser le statut + COD des commandes déjà liées depuis Sendit ?\n\nCela met à jour les vraies commandes (statut livré/annulé, montant COD, frais).')) return
+    setBusy(true); setError(null); setNotice(null)
+    try {
+      const res = await fetch('/api/ops/sendit/staging', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'sync-matched' }) })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || `Erreur ${res.status}`)
+      setNotice(`${d.synced} commande(s) synchronisée(s)${d.statusChanged ? ` · ${d.statusChanged} changement(s) de statut` : ''}.`)
+      load()
+      setTimeout(() => setNotice(null), 6000)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Sync impossible') }
+    finally { setBusy(false) }
+  }
+
   const promote = async (promoteIds: number[]) => {
     if (busy || promoteIds.length === 0) return
     if (!confirm(`Rendre officiel ${promoteIds.length} colis ?\n\nCela crée de vraies commandes dans le BOS.`)) return
@@ -96,9 +111,16 @@ export default function SenditLabPage() {
               Zone <b>isolée</b> : on importe les colis Sendit ici, on affecte les produits, on vérifie — <b>rien ne touche le BOS officiel</b> tant que tu n&apos;as pas cliqué « Rendre officiel ».
             </p>
           </div>
-          <button className="btn-modern btn-primary" onClick={pull} disabled={pulling} style={{ flexShrink: 0, marginTop: 4 }}>
-            <RefreshCw style={{ width: 15, height: 15 }} />{pulling ? 'Sync…' : 'Pull Sendit'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginTop: 4 }}>
+            {(counts.matched > 0 || counts.mismatch > 0) && (
+              <button className="btn-modern btn-subtle" onClick={syncMatched} disabled={busy} title="Pousse le statut + COD Sendit sur les commandes déjà liées">
+                Sync statut/COD ({counts.matched + counts.mismatch})
+              </button>
+            )}
+            <button className="btn-modern btn-primary" onClick={pull} disabled={pulling}>
+              <RefreshCw style={{ width: 15, height: 15 }} />{pulling ? 'Sync…' : 'Pull Sendit'}
+            </button>
+          </div>
         </div>
 
         {/* Counts */}
