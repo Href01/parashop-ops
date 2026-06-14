@@ -36,11 +36,15 @@ type Campaign = {
   totalUnits: number
   avgOrderValue: number
   products: any[]
+  ads: any[]
   costs: any[]
   costsByType: any[]
   posts: any[]
   orders: any[]
 }
+
+const AD_PLATFORMS = ['Meta', 'TikTok', 'Google', 'Snapchat', 'Influence', 'Autre']
+const PLATFORM_COLOR: Record<string, string> = { Meta: '#0866FF', TikTok: '#000000', Google: '#EA4335', Snapchat: '#FFFC00', Influence: 'var(--rose-bright)', Autre: 'var(--tx-lo)' }
 
 export default function CampaignDetailPage() {
   const params = useParams()
@@ -48,12 +52,12 @@ export default function CampaignDetailPage() {
 
   const [campaign, setCampaign] = useState<Campaign | null>(null)
   const [loading, setLoading] = useState(true)
-  const [showAddCost, setShowAddCost] = useState(false)
-  const [newCost, setNewCost] = useState({
-    type: 'Meta Ads',
-    platform: 'Instagram',
-    amount: 0,
-    description: '',
+  const [showAddAd, setShowAddAd] = useState(false)
+  const [newAd, setNewAd] = useState({
+    platform: 'Meta',
+    name: '',
+    spend: 0,
+    revenue: 0,
   })
 
   useEffect(() => {
@@ -75,27 +79,29 @@ export default function CampaignDetailPage() {
     }
   }
 
-  const addCost = async () => {
+  const addAd = async () => {
+    if (!newAd.spend && !newAd.revenue) return
     try {
-      await fetch(`/api/ops/campaigns/${campaignId}/costs`, {
+      const res = await fetch(`/api/ops/campaigns/${campaignId}/ads`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newCost),
+        body: JSON.stringify(newAd),
       })
-      setShowAddCost(false)
-      setNewCost({ type: 'Meta Ads', platform: 'Instagram', amount: 0, description: '' })
-      fetchCampaign() // Refresh to show new cost
+      if (!res.ok) throw new Error(`Erreur ${res.status}`)
+      setShowAddAd(false)
+      setNewAd({ platform: 'Meta', name: '', spend: 0, revenue: 0 })
+      fetchCampaign() // Refresh to show new ad line + recomputed P&L
     } catch (error) {
-      console.error('Failed to add cost:', error)
+      console.error('Failed to add ad line:', error)
     }
   }
 
-  const recalculate = async () => {
+  const deleteAd = async (adId: number) => {
     try {
-      await fetch(`/api/ops/campaigns/${campaignId}/calculate`, { method: 'POST' })
-      fetchCampaign() // Refresh to show updated metrics
+      await fetch(`/api/ops/campaigns/${campaignId}/ads/${adId}`, { method: 'DELETE' })
+      fetchCampaign()
     } catch (error) {
-      console.error('Failed to recalculate:', error)
+      console.error('Failed to delete ad line:', error)
     }
   }
 
@@ -136,46 +142,42 @@ export default function CampaignDetailPage() {
         <div className="page-head">
           <button className="btn ghost" onClick={() => window.history.back()}>
             <ArrowLeft />
-            Back
+            Retour
           </button>
           <div>
             <h1>{campaign.name}</h1>
-            <div className="sub">{campaign.description || 'Campaign details & P&L breakdown'}</div>
+            <div className="sub">{campaign.description || 'Détail & P&L de la campagne'}</div>
           </div>
           <div className="spacer"></div>
           <span className={`badge ${campaign.status === 'Active' ? 'green' : 'gray'}`}>
-            {campaign.status}
+            {campaign.status === 'Active' ? 'Active' : 'Brouillon'}
           </span>
-          <button className="btn" onClick={recalculate}>
-            <TrendingUp />
-            Recalculate metrics
-          </button>
         </div>
 
         {/* P&L Summary */}
         <div className="cstat-row">
           <PLMetric
             icon={<DollarSign />}
-            title="Revenue"
+            title="CA"
             value={formatCurrency(campaign.totalRevenue)}
             unit="MAD"
             color="green"
           />
           <PLMetric
             icon={<Receipt />}
-            title="Total costs"
+            title="Coûts totaux"
             value={formatCurrency(campaign.totalCosts)}
             unit="MAD"
             color="red"
-            subtitle={`COGS: ${formatCurrency(campaign.totalCOGS)} | Ads: ${formatCurrency(campaign.totalAdSpend)}`}
+            subtitle={`Produits: ${formatCurrency(campaign.totalCOGS)} | Pub: ${formatCurrency(campaign.totalAdSpend)}`}
           />
           <PLMetric
             icon={<TrendingUp />}
-            title="Net profit"
+            title="Profit net"
             value={formatCurrency(campaign.netProfit)}
             unit="MAD"
             color={campaign.netProfit >= 0 ? 'green' : 'red'}
-            subtitle={`Margin: ${(campaign.profitMargin || 0).toFixed(1)}%`}
+            subtitle={`Marge: ${(campaign.profitMargin || 0).toFixed(1)}%`}
           />
           <PLMetric
             icon={<Target />}
@@ -194,19 +196,19 @@ export default function CampaignDetailPage() {
             <div className="panel">
               <div className="panel-head">
                 <Receipt />
-                <h3>P&L Breakdown</h3>
+                <h3>Détail P&L</h3>
               </div>
               <div className="panel-pad">
-                <PLRow label="Revenue" value={campaign.totalRevenue} type="positive" />
+                <PLRow label="CA" value={campaign.totalRevenue} type="positive" />
                 <div style={{ borderTop: '1px solid var(--line-soft)', margin: '12px 0' }}></div>
-                <PLRow label="Cost of goods sold (COGS)" value={-campaign.totalCOGS} type="negative" />
-                <PLRow label="Gross profit" value={campaign.grossProfit} type="info" bold />
+                <PLRow label="Coût des produits (COGS)" value={-campaign.totalCOGS} type="negative" />
+                <PLRow label="Marge brute" value={campaign.grossProfit} type="info" bold />
                 <div style={{ borderTop: '1px solid var(--line-soft)', margin: '12px 0' }}></div>
-                <PLRow label="Ad spend" value={-campaign.totalAdSpend} type="negative" />
-                <PLRow label="Other costs" value={-campaign.totalOtherCosts} type="negative" />
+                <PLRow label="Dépense pub" value={-campaign.totalAdSpend} type="negative" />
+                <PLRow label="Autres coûts" value={-campaign.totalOtherCosts} type="negative" />
                 <div style={{ borderTop: '2px solid var(--line)', margin: '12px 0' }}></div>
                 <PLRow
-                  label="NET PROFIT"
+                  label="PROFIT NET"
                   value={campaign.netProfit}
                   type={campaign.netProfit >= 0 ? 'positive' : 'negative'}
                   bold
@@ -215,71 +217,49 @@ export default function CampaignDetailPage() {
               </div>
             </div>
 
-            {/* Costs */}
+            {/* Ad spend — Meta / TikTok / … (backed by AdCampaign) */}
             <div className="panel">
               <div className="panel-head">
                 <Receipt />
-                <h3>Costs</h3>
+                <h3>Dépense pub (Meta / TikTok)</h3>
                 <div className="spacer"></div>
-                <button className="btn sm primary" onClick={() => setShowAddCost(true)}>
+                <button className="btn sm primary" onClick={() => setShowAddAd(true)}>
                   <Plus />
-                  Add cost
+                  Ajouter
                 </button>
               </div>
 
-              {showAddCost && (
+              <div className="panel-pad" style={{ paddingBottom: 0 }}>
+                <p className="fs12 tx-lo" style={{ marginTop: -4 }}>
+                  Saisis ta dépense pub par plateforme. Le <b>CA rapporté</b> = ce que Meta/TikTok attribue (pixel). La sync API automatique remplira ceci plus tard.
+                </p>
+              </div>
+
+              {showAddAd && (
                 <div className="panel-pad" style={{ borderBottom: '1px solid var(--line-soft)' }}>
                   <div className="form-grid">
                     <div className="form-field">
-                      <label>Type</label>
-                      <select
-                        value={newCost.type}
-                        onChange={(e) => setNewCost({ ...newCost, type: e.target.value })}
-                      >
-                        <option>Meta Ads</option>
-                        <option>Google Ads</option>
-                        <option>TikTok Ads</option>
-                        <option>Snapchat Ads</option>
-                        <option>Influencer</option>
-                        <option>Content Creation</option>
-                        <option>Photography</option>
-                        <option>Other</option>
+                      <label>Plateforme</label>
+                      <select value={newAd.platform} onChange={(e) => setNewAd({ ...newAd, platform: e.target.value })}>
+                        {AD_PLATFORMS.map((p) => <option key={p}>{p}</option>)}
                       </select>
                     </div>
                     <div className="form-field">
-                      <label>Platform</label>
-                      <input
-                        type="text"
-                        value={newCost.platform}
-                        onChange={(e) => setNewCost({ ...newCost, platform: e.target.value })}
-                        placeholder="Instagram, Facebook, etc."
-                      />
+                      <label>Nom (optionnel)</label>
+                      <input type="text" value={newAd.name} onChange={(e) => setNewAd({ ...newAd, name: e.target.value })} placeholder="ex. Reel Ramadan boost" />
                     </div>
                     <div className="form-field">
-                      <label>Amount (MAD)</label>
-                      <input
-                        type="number"
-                        value={newCost.amount}
-                        onChange={(e) => setNewCost({ ...newCost, amount: parseFloat(e.target.value) })}
-                      />
+                      <label>Dépense (MAD)</label>
+                      <input type="number" value={newAd.spend || ''} onChange={(e) => setNewAd({ ...newAd, spend: parseFloat(e.target.value) || 0 })} placeholder="0" />
                     </div>
-                    <div className="form-field" style={{ gridColumn: '1 / -1' }}>
-                      <label>Description</label>
-                      <input
-                        type="text"
-                        value={newCost.description}
-                        onChange={(e) => setNewCost({ ...newCost, description: e.target.value })}
-                        placeholder="Instagram Stories campaign"
-                      />
+                    <div className="form-field">
+                      <label>CA rapporté (MAD)</label>
+                      <input type="number" value={newAd.revenue || ''} onChange={(e) => setNewAd({ ...newAd, revenue: parseFloat(e.target.value) || 0 })} placeholder="0" />
                     </div>
                   </div>
                   <div className="row gap8 mt12">
-                    <button className="btn primary" onClick={addCost}>
-                      Add cost
-                    </button>
-                    <button className="btn ghost" onClick={() => setShowAddCost(false)}>
-                      Cancel
-                    </button>
+                    <button className="btn primary" onClick={addAd}>Ajouter</button>
+                    <button className="btn ghost" onClick={() => setShowAddAd(false)}>Annuler</button>
                   </div>
                 </div>
               )}
@@ -288,29 +268,38 @@ export default function CampaignDetailPage() {
                 <table className="tbl">
                   <thead>
                     <tr>
-                      <th>Type</th>
-                      <th>Platform</th>
-                      <th>Description</th>
-                      <th className="r">Amount</th>
-                      <th>Date</th>
+                      <th>Plateforme</th>
+                      <th>Nom</th>
+                      <th className="r">Dépense</th>
+                      <th className="r">CA rapporté</th>
+                      <th>ROAS</th>
+                      <th></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(campaign.costs || []).map((cost: any) => (
-                      <tr key={cost.id}>
+                    {(campaign.ads || []).map((ad: any) => {
+                      const roas = Number(ad.roas) || 0
+                      return (
+                      <tr key={ad.id}>
                         <td>
-                          <span className="badge">{cost.type}</span>
+                          <span className="badge" style={{ background: `${PLATFORM_COLOR[ad.platform] || 'var(--tx-lo)'}1a`, color: PLATFORM_COLOR[ad.platform] || 'var(--tx-lo)' }}>{ad.platform}</span>
                         </td>
-                        <td>{cost.platform || '-'}</td>
-                        <td className="tx-mid fs12">{cost.description || '-'}</td>
-                        <td className="r num neg">-{formatCurrency(cost.amount)}</td>
-                        <td className="fs12 tx-lo">{formatDate(cost.date)}</td>
+                        <td className="tx-mid fs12">{ad.name || '-'}</td>
+                        <td className="r num neg">-{formatCurrency(ad.spend)}</td>
+                        <td className="r num pos">+{formatCurrency(ad.revenue)}</td>
+                        <td>
+                          <span className={`num fs12 fw600 ${roas >= 2 ? 'pos' : roas > 0 ? '' : 'neg'}`}>{roas.toFixed(1)}x</span>
+                        </td>
+                        <td className="r">
+                          <button className="btn ghost sm" onClick={() => deleteAd(ad.id)} aria-label="Supprimer" style={{ padding: '2px 6px' }}>✕</button>
+                        </td>
                       </tr>
-                    ))}
-                    {(campaign.costs || []).length === 0 && (
+                      )
+                    })}
+                    {(campaign.ads || []).length === 0 && (
                       <tr>
-                        <td colSpan={5} style={{ textAlign: 'center', padding: 20 }}>
-                          No costs added yet
+                        <td colSpan={6} style={{ textAlign: 'center', padding: 20 }} className="tx-lo fs13">
+                          Aucune dépense pub. Ajoute ta dépense Meta/TikTok pour voir le ROAS réel.
                         </td>
                       </tr>
                     )}
@@ -323,17 +312,17 @@ export default function CampaignDetailPage() {
             <div className="panel">
               <div className="panel-head">
                 <ShoppingCart />
-                <h3>Orders</h3>
+                <h3>Commandes attribuées</h3>
                 <span className="badge green">{campaign.totalOrders || 0}</span>
               </div>
               <div className="table-scroll">
                 <table className="tbl">
                   <thead>
                     <tr>
-                      <th>Order #</th>
-                      <th>Customer</th>
+                      <th>Commande</th>
+                      <th>Client</th>
                       <th className="r">Total</th>
-                      <th>Status</th>
+                      <th>Statut</th>
                       <th>Date</th>
                     </tr>
                   </thead>
@@ -357,8 +346,8 @@ export default function CampaignDetailPage() {
                     ))}
                     {(campaign.orders || []).length === 0 && (
                       <tr>
-                        <td colSpan={5} style={{ textAlign: 'center', padding: 20 }}>
-                          No orders attributed to this campaign yet
+                        <td colSpan={5} style={{ textAlign: 'center', padding: 20 }} className="tx-lo fs13">
+                          Aucune commande attribuée à cette campagne pour l&apos;instant
                         </td>
                       </tr>
                     )}
@@ -374,25 +363,25 @@ export default function CampaignDetailPage() {
             <div className="panel">
               <div className="panel-head">
                 <Calendar />
-                <h3>Campaign info</h3>
+                <h3>Infos campagne</h3>
               </div>
               <div className="panel-pad">
                 <div className="info-row">
-                  <span className="info-label">Period</span>
+                  <span className="info-label">Période</span>
                   <span className="info-value">
                     {formatDate(campaign.startDate)} - {formatDate(campaign.endDate)}
                   </span>
                 </div>
                 <div className="info-row">
-                  <span className="info-label">Total orders</span>
+                  <span className="info-label">Commandes</span>
                   <span className="info-value">{campaign.totalOrders || 0}</span>
                 </div>
                 <div className="info-row">
-                  <span className="info-label">Total units</span>
+                  <span className="info-label">Unités vendues</span>
                   <span className="info-value">{campaign.totalUnits || 0}</span>
                 </div>
                 <div className="info-row">
-                  <span className="info-label">Avg order value</span>
+                  <span className="info-label">Panier moyen</span>
                   <span className="info-value">{formatCurrency(campaign.avgOrderValue || 0)} MAD</span>
                 </div>
               </div>
@@ -434,7 +423,7 @@ export default function CampaignDetailPage() {
               <div className="panel">
                 <div className="panel-head">
                   <Package />
-                  <h3>Products</h3>
+                  <h3>Produits</h3>
                   <span className="badge">{campaign.products.length}</span>
                 </div>
                 <div className="panel-pad">

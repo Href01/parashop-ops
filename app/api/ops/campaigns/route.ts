@@ -70,9 +70,10 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // The shared storefront schema has Campaign/CampaignProduct, but not the
-    // planned ops metrics/cost tables yet. Return the UI contract with safe
-    // zero metrics so the page stays usable.
+    // Real metrics: ad spend + platform-reported revenue come from "AdCampaign"
+    // (one row per platform/ad line). Orders attributed via Order.campaignId.
+    // CA total per campaign currently uses platform-reported revenue; event
+    // time-window uplift is layered on later.
     const result = await pool.query(`
       SELECT
         c.id,
@@ -80,25 +81,30 @@ export async function GET(request: NextRequest) {
         c.slug,
         c.description,
         c.active,
+        c."eventId",
         c."startsAt" as "startDate",
         c."endsAt" as "endDate",
         c."createdAt",
         CASE WHEN c.active THEN 'Active' ELSE 'Draft' END as status,
-        0 as "totalOrders",
-        0 as "totalRevenue",
-        0 as "totalCosts",
-        0 as "totalAdSpend",
-        0 as "netProfit",
-        0 as "roi",
-        0 as "roas",
-        0 as "profitMargin",
-        (
-          SELECT COUNT(*)
-          FROM "CampaignProduct" cp
-          WHERE cp."campaignId" = c.id
-        ) as "productsCount",
-        0 as "costsCount"
+        COALESCE(ad.spend, 0)::float as "totalAdSpend",
+        COALESCE(ad.revenue, 0)::float as "totalRevenue",
+        COALESCE(ad.spend, 0)::float as "totalCosts",
+        (COALESCE(ad.revenue, 0) - COALESCE(ad.spend, 0))::float as "netProfit",
+        CASE WHEN COALESCE(ad.spend,0) > 0 THEN ((ad.revenue - ad.spend) / ad.spend * 100) ELSE 0 END::float as "roi",
+        CASE WHEN COALESCE(ad.spend,0) > 0 THEN (ad.revenue / ad.spend) ELSE 0 END::float as "roas",
+        CASE WHEN COALESCE(ad.revenue,0) > 0 THEN ((ad.revenue - ad.spend) / ad.revenue * 100) ELSE 0 END::float as "profitMargin",
+        COALESCE(ord.orders, 0)::int as "totalOrders",
+        (SELECT COUNT(*) FROM "CampaignProduct" cp WHERE cp."campaignId" = c.id) as "productsCount",
+        COALESCE(ad.lines, 0)::int as "costsCount"
       FROM "Campaign" c
+      LEFT JOIN (
+        SELECT "campaignId", SUM(spend) AS spend, SUM(revenue) AS revenue, COUNT(*) AS lines
+        FROM "AdCampaign" GROUP BY "campaignId"
+      ) ad ON ad."campaignId" = c.id
+      LEFT JOIN (
+        SELECT "campaignId", COUNT(*) AS orders
+        FROM "Order" WHERE "campaignId" IS NOT NULL GROUP BY "campaignId"
+      ) ord ON ord."campaignId" = c.id
       ${whereClause}
       ORDER BY ${sortColumn} ${sortOrder}
     `, values)

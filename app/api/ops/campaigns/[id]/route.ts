@@ -55,10 +55,65 @@ export async function GET(
       return NextResponse.json({ error: 'Campaign not found' }, { status: 404 })
     }
 
-    const campaign = {
+    const campaign: any = {
       ...campaignResult.rows[0],
       ...emptyCampaignMetrics(),
     }
+
+    // Real ad spend + platform-reported revenue from "AdCampaign"
+    const adAgg = await pool.query(
+      `SELECT COALESCE(SUM(spend),0)::float AS spend, COALESCE(SUM(revenue),0)::float AS revenue, COUNT(*)::int AS lines
+       FROM "AdCampaign" WHERE "campaignId" = $1`,
+      [campaignId]
+    )
+    const adSpend = adAgg.rows[0].spend
+    const adRevenue = adAgg.rows[0].revenue
+
+    // Real attributed orders (Order.campaignId) → revenue, units, COGS
+    const ordAgg = await pool.query(
+      `SELECT COALESCE(SUM(o.total),0)::float AS revenue,
+              COUNT(DISTINCT o.id)::int AS orders,
+              COALESCE(SUM(oi.quantity),0)::int AS units,
+              COALESCE(SUM(oi.quantity * COALESCE(p."costPrice",0)),0)::float AS cogs
+       FROM "Order" o
+       LEFT JOIN "OrderItem" oi ON oi."orderId" = o.id
+       LEFT JOIN "Product" p ON p.id = oi."productId"
+       WHERE o."campaignId" = $1 AND o.status <> 'CANCELLED'`,
+      [campaignId]
+    )
+    const oa = ordAgg.rows[0]
+    // Revenue: prefer attributed-order revenue; fall back to platform-reported
+    const totalRevenue = oa.revenue > 0 ? oa.revenue : adRevenue
+    const totalCOGS = oa.cogs
+    const grossProfit = totalRevenue - totalCOGS
+    const totalCosts = totalCOGS + adSpend
+    const netProfit = totalRevenue - totalCosts
+    Object.assign(campaign, {
+      totalRevenue,
+      totalCOGS,
+      totalAdSpend: adSpend,
+      totalOtherCosts: 0,
+      totalCosts,
+      grossProfit,
+      netProfit,
+      roas: adSpend > 0 ? adRevenue / adSpend : 0,
+      roi: totalCosts > 0 ? (netProfit / totalCosts) * 100 : 0,
+      profitMargin: totalRevenue > 0 ? (netProfit / totalRevenue) * 100 : 0,
+      totalOrders: oa.orders,
+      totalUnits: oa.units,
+      avgOrderValue: oa.orders > 0 ? totalRevenue / oa.orders : 0,
+      adLinesCount: adAgg.rows[0].lines,
+    })
+
+    // Ad lines (per platform Meta/TikTok/…)
+    const adLinesResult = await pool.query(
+      `SELECT id, name, platform, spend, revenue, roas, status,
+              to_char("startDate", 'YYYY-MM-DD') AS "startDate",
+              to_char("endDate", 'YYYY-MM-DD') AS "endDate", notes
+       FROM "AdCampaign" WHERE "campaignId" = $1 ORDER BY "startDate" NULLS LAST, "createdAt" DESC`,
+      [campaignId]
+    )
+    campaign.ads = adLinesResult.rows
 
     // Get products
     const productsResult = await pool.query(`
