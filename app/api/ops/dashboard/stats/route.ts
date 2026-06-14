@@ -16,6 +16,7 @@ interface SummaryRow {
   revenue7d: number | string | null
   revenue30d: number | string | null
   revenueWeek: number | string | null
+  revenueWeekTotal: number | string | null
   previousRevenueWeek: number | string | null
   estimatedProfitWeek: number | string | null
   previousProfitWeek: number | string | null
@@ -279,6 +280,7 @@ export async function GET(req: Request) {
           COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= ((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date - INTERVAL '6 days')::timestamp AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenue7d",
           COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= ((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date - INTERVAL '29 days')::timestamp AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenue30d",
           COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= (SELECT week_start FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenueWeek",
+          COALESCE(SUM(order_total) FILTER (WHERE "createdAt" >= (SELECT week_start FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenueWeekTotal",
           COALESCE(SUM(revenue) FILTER (
             WHERE "createdAt" >= (SELECT previous_week_start FROM bounds)
               AND "createdAt" < (SELECT week_start FROM bounds)
@@ -454,6 +456,7 @@ export async function GET(req: Request) {
     const revenue30d = toNumber(summary?.revenue30d)
     const [weeklyGoal, monthlyGoal] = await Promise.all([getWeeklyGoal(), getMonthlyGoal()])
     const revenueWeek = toNumber(summary?.revenueWeek)
+    const revenueWeekTotal = toNumber(summary?.revenueWeekTotal)
     const previousRevenueWeek = toNumber(summary?.previousRevenueWeek)
     const estimatedProfitWeek = toNumber(summary?.estimatedProfitWeek)
     const previousProfitWeek = toNumber(summary?.previousProfitWeek)
@@ -608,6 +611,7 @@ export async function GET(req: Request) {
       revenue30d,
       revenueToday,
       revenueWeek,
+      revenueWeekTotal,
       revenueDelta,
       estimatedProfit: estimatedProfitWeek,
       profitDelta,

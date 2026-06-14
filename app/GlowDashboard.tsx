@@ -8,6 +8,7 @@ interface DashboardStats {
   revenueToday: number
   revenue7d: number
   revenue30d: number
+  revenueWeekTotal: number
   weeklyGoal: number
   monthlyGoal: number
   revenueWeek: number
@@ -81,7 +82,6 @@ export default function GlowDashboard() {
   const goalWeekPct = Math.min(Math.round((stats.revenue7d / weeklyGoal) * 100), 100)
   const goalMonthPct = Math.min(Math.round((stats.revenue30d / monthlyGoal) * 100), 100)
   const series = stats.revenueSeries.slice(-14)
-  const revenue14 = series.reduce((s, p) => s + p.revenue, 0)
   const maxRev = Math.max(1, ...series.map((p) => p.revenue))
 
   const exportCsv = () => {
@@ -145,9 +145,13 @@ export default function GlowDashboard() {
           <Card>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
               <div>
-                <Label>Chiffre d&apos;affaires · {periodLabel}</Label>
+                <Label>Chiffre d&apos;affaires · {periodLabel} · hors livraison</Label>
                 <div style={{ fontSize: 38, fontWeight: 600, fontFamily: 'var(--mono)', letterSpacing: '-0.02em', color: 'var(--tx-hi)', lineHeight: 1.1 }}>
-                  {mad(revenue14)} <span style={{ fontSize: 16, color: 'var(--tx-lo)', fontWeight: 500 }}>MAD</span>
+                  {mad(stats.revenueWeek)} <span style={{ fontSize: 16, color: 'var(--tx-lo)', fontWeight: 500 }}>MAD</span>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginTop: 4 }}>
+                  Encaissé (COD, livraison incluse) : <b style={{ color: 'var(--tx-mid)' }}>{mad(stats.revenueWeekTotal)} MAD</b>
+                  <span style={{ color: 'var(--tx-faint)' }}> · livraison {mad(stats.revenueWeekTotal - stats.revenueWeek)} → Sendit</span>
                 </div>
               </div>
             </div>
