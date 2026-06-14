@@ -53,27 +53,46 @@ export async function POST(req: NextRequest) {
 
       const productsTotal = items.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 0), 0)
       const status = mapStatus(s.senditStatus)
+      const fee = Number(s.fee) || 0
+      const amount = Number(s.amount) || 0
+      const delivered = status === 'DELIVERED'
+
+      // Cost prices for COGS (so profit/margin are correct)
+      const costRes = await client.query(
+        `SELECT id, COALESCE("costPrice", 0)::float AS cost FROM "Product" WHERE id = ANY($1)`,
+        [items.map((it) => it.productId)]
+      )
+      const costOf = new Map<number, number>(costRes.rows.map((r: { id: number; cost: number }) => [r.id, r.cost]))
 
       const ord = await client.query(
         `INSERT INTO "Order"
            ("userId", total, "productsTotal", status, "paymentMethod", "sourceChannel",
             "deliveryName", "deliveryPhone", "deliveryCity", "deliveryFeeCharged",
+            "estimatedDeliveryCost", "actualDeliveryCost", "codAmount",
             "senditTrackingId", "senditStatus", "createdAt")
-         VALUES ($1, $2, $3, $4::"OrderStatus", 'COD', 'Sendit', $5, $6, $7, $8, $9, $10, COALESCE($11, NOW()))
+         VALUES ($1, $2, $3, $4::"OrderStatus", 'COD', 'Sendit', $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, NOW()))
          RETURNING id`,
         [
-          s.matchedUserId || null, Number(s.amount) || 0, productsTotal, status,
-          s.name, s.phone, s.city, Number(s.fee) || 0, s.code, s.senditStatus, s.senditCreatedAt,
+          s.matchedUserId || null, amount, productsTotal, status,
+          s.name, s.phone, s.city, fee,
+          fee, delivered ? fee : null, amount,
+          s.code, s.senditStatus, s.senditCreatedAt,
         ]
       )
       const orderId = ord.rows[0].id
 
       for (const it of items) {
+        const unitCost = costOf.get(it.productId) || 0
         await client.query(
-          `INSERT INTO "OrderItem" ("orderId", "productId", quantity, price, "pointsEarned") VALUES ($1, $2, $3, $4, 0)`,
-          [orderId, it.productId, it.quantity, it.price]
+          `INSERT INTO "OrderItem" ("orderId", "productId", quantity, price, "unitCost", "totalCost", "pointsEarned")
+           VALUES ($1, $2, $3, $4, $5, $6, 0)`,
+          [orderId, it.productId, it.quantity, it.price, unitCost, unitCost * it.quantity]
         )
       }
+
+      // Re-fire the profit trigger now that the items exist (it ran at INSERT
+      // before any item, so productsTotal/revenue/profit were computed on zero items)
+      await client.query(`UPDATE "Order" SET status = status WHERE id = $1`, [orderId])
 
       await client.query('COMMIT')
       await pool.query(`UPDATE "SenditStaging" SET promoted = true, "promotedOrderId" = $1, "updatedAt" = NOW() WHERE id = $2`, [orderId, s.id])
