@@ -204,7 +204,7 @@ export default function SenditLabPage() {
 const th: React.CSSProperties = { padding: '11px 14px', fontSize: 11, fontWeight: 600, color: 'var(--tx-lo)', textTransform: 'uppercase', letterSpacing: '0.04em' }
 const td: React.CSSProperties = { padding: '11px 14px', verticalAlign: 'top' }
 
-interface CatProduct { id: number; name: string; brand: string | null; price: number }
+interface CatProduct { id: number; name: string; brand: string | null; price: number; costPrice?: number }
 interface Assigned { productId: number; quantity: number; price: number }
 
 function AssignDrawer({ stagingId, onClose, onSaved }: { stagingId: number; onClose: () => void; onSaved: () => void }) {
@@ -240,6 +240,12 @@ function AssignDrawer({ stagingId, onClose, onSaved }: { stagingId: number; onCl
   const expected = cod - fee // products should ≈ COD − delivery
   const diff = productsTotal - expected
   const reconciled = Math.abs(diff) <= 5
+  // P&L preview (same logic as the Commandes section)
+  const costOf = (id: number) => Number(catalog.find((p) => p.id === id)?.costPrice) || 0
+  const cogs = items.reduce((s, i) => s + costOf(i.productId) * i.quantity, 0)
+  const missingCost = items.some((i) => costOf(i.productId) === 0)
+  const margin = cod - cogs - fee
+  const marginPct = cod > 0 ? (margin / cod) * 100 : 0
 
   const save = async () => {
     setSaving(true)
@@ -335,12 +341,36 @@ function AssignDrawer({ stagingId, onClose, onSaved }: { stagingId: number; onCl
               </div>
             </div>
 
+            {/* P&L preview — what the official order's economics will be */}
+            <div style={{ background: 'var(--bg-2)', borderRadius: 10, padding: 12, fontSize: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx-lo)', textTransform: 'uppercase' }}>Aperçu P&L (commande officielle)</span>
+                <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 5, background: 'var(--rose-bg)', color: 'var(--rose-bright)' }}>source : Sendit</span>
+              </div>
+              <Line label="CA (COD)" value={`${mad(cod)} MAD`} />
+              <Line label="− Coût produits (COGS)" value={`${mad(cogs)} MAD`} dim />
+              <Line label="− Livraison" value={`${mad(fee)} MAD`} dim />
+              <div style={{ borderTop: '1px solid var(--line-soft)', margin: '6px 0' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, color: margin >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                <span>Marge nette</span><span style={{ fontFamily: 'var(--mono)' }}>{mad(margin)} MAD · {marginPct.toFixed(0)}%</span>
+              </div>
+              {missingCost && <p style={{ fontSize: 11, color: 'var(--amber)', marginTop: 6 }}>⚠️ Un produit n&apos;a pas de coût (costPrice) → marge sous-estimée. Renseigne-le dans Produits.</p>}
+            </div>
+
             <button onClick={save} disabled={saving} className="btn-modern btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
               {saving ? 'Enregistrement…' : 'Enregistrer l\'affectation'}
             </button>
           </div>
         )}
       </div>
+    </div>
+  )
+}
+
+function Line({ label, value, dim }: { label: string; value: string; dim?: boolean }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', color: dim ? 'var(--tx-lo)' : 'var(--tx-mid)', marginBottom: 2 }}>
+      <span>{label}</span><span style={{ fontFamily: 'var(--mono)' }}>{value}</span>
     </div>
   )
 }

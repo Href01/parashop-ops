@@ -19,7 +19,7 @@ function tokenize(s: string): string[] {
   return norm(s).split(' ').filter((t) => t.length >= 3 && !STOP.has(t))
 }
 
-interface Cat { id: number; name: string; brand: string | null; price: number }
+interface Cat { id: number; name: string; brand: string | null; price: number; costPrice?: number }
 /** Rank catalog products against a parsed line by weighted token overlap. */
 function rankCandidates(rawName: string, catalog: Cat[]): Cat[] {
   const tokens = tokenize(rawName)
@@ -70,7 +70,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const row = rowRes.rows[0]
 
   // Load the catalog once, then rank candidates per line in JS (scored overlap)
-  const catalogRes = await pool.query(`SELECT id, name, brand, price::float AS price FROM "Product" WHERE active = true ORDER BY name LIMIT 1000`)
+  const catalogRes = await pool.query(`SELECT id, name, brand, price::float AS price, COALESCE("costPrice", 0)::float AS "costPrice" FROM "Product" WHERE active = true ORDER BY name LIMIT 1000`)
   const catalog: Cat[] = catalogRes.rows
   const suggestions = parseProductsText(row.productsText).map((line) => ({
     rawName: line.rawName,
