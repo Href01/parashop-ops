@@ -62,10 +62,12 @@ async function runSync() {
     }
     const account = rawAccount.startsWith('act_') ? rawAccount : `act_${rawAccount}`
 
+    // Recent window only — avoids importing years of old/unrelated campaigns.
+    const datePreset = process.env.META_DATE_PRESET || 'last_90d'
     const url = `${GRAPH}/${account}/insights`
       + `?level=campaign`
       + `&fields=campaign_id,campaign_name,spend,impressions,clicks,action_values`
-      + `&date_preset=maximum&time_increment=all_days&limit=200`
+      + `&date_preset=${encodeURIComponent(datePreset)}&time_increment=all_days&limit=200`
       + `&access_token=${encodeURIComponent(token)}`
 
     const res = await fetch(url, { cache: 'no-store' })
