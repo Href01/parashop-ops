@@ -70,11 +70,59 @@ export async function GET(
       content = [] // ContentItem table may not exist in some envs
     }
 
+    // Tasks linked to this product (connectivity → Work Hub)
+    let tasks: any[] = []
+    try {
+      const t = await pool.query(
+        `SELECT id, title, status, priority, owner, to_char("dueDate", 'YYYY-MM-DD') AS "dueDate"
+         FROM "Task"
+         WHERE "linkedType" = 'product' AND "linkedId" = $1
+         ORDER BY CASE priority WHEN 'URGENT' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END, "dueDate" NULLS LAST LIMIT 10`,
+        [productId]
+      )
+      tasks = t.rows
+    } catch {
+      tasks = []
+    }
+
+    // Decisions linked to this product
+    let decisions: any[] = []
+    try {
+      const d = await pool.query(
+        `SELECT id, title, decision, owner, to_char("decisionDate", 'YYYY-MM-DD') AS "decisionDate"
+         FROM "DecisionLog"
+         WHERE "linkedType" = 'product' AND "linkedId" = $1
+         ORDER BY "decisionDate" DESC NULLS LAST LIMIT 10`,
+        [productId]
+      )
+      decisions = d.rows
+    } catch {
+      decisions = []
+    }
+
+    // Experiments linked to this product
+    let experiments: any[] = []
+    try {
+      const e = await pool.query(
+        `SELECT id, name, status, channel, "successMetric"
+         FROM "GrowthExperiment"
+         WHERE "productId" = $1
+         ORDER BY CASE status WHEN 'RUNNING' THEN 0 WHEN 'PLANNED' THEN 1 ELSE 2 END LIMIT 10`,
+        [productId]
+      )
+      experiments = e.rows
+    } catch {
+      experiments = []
+    }
+
     return NextResponse.json({
       ...result.rows[0],
       recentOrders: recent.rows,
       sold: sold.rows[0],
       content,
+      tasks,
+      decisions,
+      experiments,
     })
   } catch (error) {
     console.error('Get product error:', error)

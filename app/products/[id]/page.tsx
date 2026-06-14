@@ -13,6 +13,9 @@ interface ProductDetail {
   recentOrders?: Array<{ id: number; status: string; createdAt: string; deliveryCity: string | null; sourceChannel: string | null; quantity: number; price: number | string }>
   sold?: { units: number | string; revenue: number | string }
   content?: Array<{ id: number; title: string; platform: string | null; type: string | null; status: string; dueDate: string | null }>
+  tasks?: Array<{ id: number; title: string; status: string; priority: string; owner: string | null; dueDate: string | null }>
+  decisions?: Array<{ id: number; title: string; decision: string | null; owner: string | null; decisionDate: string | null }>
+  experiments?: Array<{ id: number; name: string; status: string; channel: string | null; successMetric: string | null }>
   error?: string
 }
 
@@ -22,6 +25,12 @@ const STATUS_FR: Record<string, string> = { PENDING: 'En attente', CONFIRMED: 'C
 const STATUS_CLS: Record<string, string> = { PENDING: 'st-pending', CONFIRMED: 'st-confirmed', DELIVERED: 'st-delivered', CANCELLED: 'st-cancelled', SHIPPED: 'st-shipped' }
 const CONTENT_FR: Record<string, string> = { IDEA: 'Idée', TO_PRODUCE: 'À produire', SCHEDULED: 'Planifié', PUBLISHED: 'Publié' }
 const CONTENT_COLOR: Record<string, string> = { IDEA: 'var(--tx-lo)', TO_PRODUCE: 'var(--amber)', SCHEDULED: 'var(--blue)', PUBLISHED: 'var(--green)' }
+const TASK_STATUS_FR: Record<string, string> = { TODO: 'À faire', IN_PROGRESS: 'En cours', BLOCKED: 'Bloqué', DONE: 'Fait' }
+const TASK_STATUS_COLOR: Record<string, string> = { TODO: 'var(--tx-lo)', IN_PROGRESS: 'var(--blue)', BLOCKED: 'var(--red)', DONE: 'var(--green)' }
+const PRIO_COLOR: Record<string, string> = { URGENT: 'var(--red)', HIGH: 'var(--amber)', MEDIUM: 'var(--blue)', LOW: 'var(--tx-faint)' }
+const EXP_FR: Record<string, string> = { PLANNED: 'Planifiée', RUNNING: 'En cours', WON: 'Gagnée', LOST: 'Perdue', PAUSED: 'En pause' }
+const EXP_COLOR: Record<string, string> = { PLANNED: 'var(--tx-lo)', RUNNING: 'var(--blue)', WON: 'var(--green)', LOST: 'var(--red)', PAUSED: 'var(--amber)' }
+const fmtDate = (d: string | null) => { if (!d) return ''; const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d); if (!m) return d; const months = ['janv.','févr.','mars','avr.','mai','juin','juil.','août','sept.','oct.','nov.','déc.']; return `${parseInt(m[3],10)} ${months[parseInt(m[2],10)-1] || ''}`; }
 
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -107,6 +116,73 @@ export default function ProductDetailPage() {
                       {c.type && <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>{c.type}</span>}
                       <span style={{ fontSize: 10, fontWeight: 700, color: CONTENT_COLOR[c.status] || 'var(--tx-lo)' }}>{CONTENT_FR[c.status] || c.status}</span>
                       {c.dueDate && <span style={{ fontSize: 10, color: 'var(--tx-faint)', fontFamily: 'var(--mono)' }}>{c.dueDate.slice(8, 10)}/{c.dueDate.slice(5, 7)}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Tasks linked to this product (Work Hub) */}
+            {p.tasks && p.tasks.length > 0 && (
+              <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 18px', borderBottom: '1px solid var(--line-soft)' }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx-hi)' }}>📋 Tâches liées à ce produit</span>
+                  <span style={{ fontSize: 11, color: 'var(--tx-faint)', fontFamily: 'var(--mono)' }}>{p.tasks.length}</span>
+                  <a href="/work-hub" style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--rose-bright)', textDecoration: 'none' }}>Work Hub →</a>
+                </div>
+                <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {p.tasks.map((t) => (
+                    <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'var(--bg-2)', borderRadius: 8, borderLeft: `3px solid ${PRIO_COLOR[t.priority] || 'var(--line)'}` }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: TASK_STATUS_COLOR[t.status] || 'var(--tx-lo)', flexShrink: 0 }} />
+                      <span style={{ flex: 1, fontSize: 13, color: 'var(--tx-hi)' }}>{t.title}</span>
+                      {t.owner && <span style={{ fontSize: 11, color: 'var(--tx-lo)' }}>{t.owner}</span>}
+                      <span style={{ fontSize: 10, fontWeight: 700, color: TASK_STATUS_COLOR[t.status] || 'var(--tx-lo)' }}>{TASK_STATUS_FR[t.status] || t.status}</span>
+                      {t.dueDate && <span style={{ fontSize: 10, color: 'var(--tx-faint)', fontFamily: 'var(--mono)' }}>{fmtDate(t.dueDate)}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Decisions linked to this product */}
+            {p.decisions && p.decisions.length > 0 && (
+              <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 18px', borderBottom: '1px solid var(--line-soft)' }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx-hi)' }}>📖 Décisions sur ce produit</span>
+                  <span style={{ fontSize: 11, color: 'var(--tx-faint)', fontFamily: 'var(--mono)' }}>{p.decisions.length}</span>
+                  <a href="/work-hub" style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--rose-bright)', textDecoration: 'none' }}>Work Hub →</a>
+                </div>
+                <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {p.decisions.map((d) => (
+                    <div key={d.id} style={{ padding: '10px 12px', background: 'var(--bg-2)', borderRadius: 8 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: 'var(--tx-hi)' }}>{d.title}</span>
+                        {d.owner && <span style={{ fontSize: 11, color: 'var(--tx-lo)' }}>{d.owner}</span>}
+                        {d.decisionDate && <span style={{ fontSize: 10, color: 'var(--tx-faint)', fontFamily: 'var(--mono)' }}>{fmtDate(d.decisionDate)}</span>}
+                      </div>
+                      {d.decision && <div style={{ fontSize: 12, color: 'var(--tx-mid)' }}>{d.decision}</div>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Experiments linked to this product */}
+            {p.experiments && p.experiments.length > 0 && (
+              <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 18px', borderBottom: '1px solid var(--line-soft)' }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx-hi)' }}>🧪 Expériences sur ce produit</span>
+                  <span style={{ fontSize: 11, color: 'var(--tx-faint)', fontFamily: 'var(--mono)' }}>{p.experiments.length}</span>
+                  <a href="/work-hub" style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--rose-bright)', textDecoration: 'none' }}>Work Hub →</a>
+                </div>
+                <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {p.experiments.map((e) => (
+                    <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', background: 'var(--bg-2)', borderRadius: 8 }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: EXP_COLOR[e.status] || 'var(--tx-lo)', flexShrink: 0 }} />
+                      <span style={{ flex: 1, fontSize: 13, color: 'var(--tx-hi)' }}>{e.name}</span>
+                      {e.channel && <span style={{ fontSize: 11, color: 'var(--tx-lo)' }}>{e.channel}</span>}
+                      {e.successMetric && <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>{e.successMetric}</span>}
+                      <span style={{ fontSize: 10, fontWeight: 700, color: EXP_COLOR[e.status] || 'var(--tx-lo)' }}>{EXP_FR[e.status] || e.status}</span>
                     </div>
                   ))}
                 </div>
