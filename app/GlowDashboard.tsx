@@ -48,7 +48,19 @@ export default function GlowDashboard() {
 
   const goalPct = Math.min(Math.round((stats.revenueToday / DAILY_GOAL) * 100), 100)
   const series = stats.revenueSeries.slice(-14)
+  const revenue14 = series.reduce((s, p) => s + p.revenue, 0)
   const maxRev = Math.max(1, ...series.map((p) => p.revenue))
+
+  const exportCsv = () => {
+    const rows = [['date', 'revenue', 'profit'], ...stats.revenueSeries.map((p) => [p.date, String(p.revenue), String(p.profit)])]
+    const csv = rows.map((r) => r.join(',')).join('\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `shine-dashboard-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
   const W = 800, H = 220
   const pts = series.map((p, i) => ({
     x: series.length > 1 ? (i / (series.length - 1)) * W : 0,
@@ -71,7 +83,7 @@ export default function GlowDashboard() {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button className="btn-modern btn-secondary"><Download className="w-4 h-4" />Export</button>
+            <button className="btn-modern btn-secondary" onClick={exportCsv}><Download className="w-4 h-4" />Export</button>
             <Link href="/orders/new" className="btn-modern btn-primary" style={{ textDecoration: 'none' }}><Plus className="w-4 h-4" />Nouvelle commande</Link>
           </div>
         </div>
@@ -91,12 +103,11 @@ export default function GlowDashboard() {
           <Card>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
               <div>
-                <Label>Chiffre d&apos;affaires net · 14 jours</Label>
+                <Label>Chiffre d&apos;affaires · 14 jours</Label>
                 <div style={{ fontSize: 38, fontWeight: 600, fontFamily: 'var(--mono)', letterSpacing: '-0.02em', color: 'var(--tx-hi)', lineHeight: 1.1 }}>
-                  {mad(stats.revenueWeek)} <span style={{ fontSize: 16, color: 'var(--tx-lo)', fontWeight: 500 }}>MAD</span>
+                  {mad(revenue14)} <span style={{ fontSize: 16, color: 'var(--tx-lo)', fontWeight: 500 }}>MAD</span>
                 </div>
               </div>
-              {stats.revenueDelta != null && <DeltaPill value={stats.revenueDelta} />}
             </div>
             <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ marginTop: 8 }}>
               <defs>
