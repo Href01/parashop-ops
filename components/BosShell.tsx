@@ -13,6 +13,7 @@ import {
   Search,
   Settings,
   Sparkles,
+  Truck,
   Target,
   Users,
 } from 'lucide-react'
@@ -42,6 +43,7 @@ const sections: Array<{ label: string; items: NavItem[] }> = [
     label: 'Opérations',
     items: [
       { label: 'Commandes', href: '/orders', icon: Package },
+      { label: 'Sendit', href: '/sendit', icon: Truck },
       { label: 'Produits', href: '/products', icon: Box },
       { label: 'Stock', href: '/inventory', icon: Box },
     ],
@@ -74,7 +76,7 @@ export default function BosShell({
   crumb,
   children,
 }: {
-  active: 'dashboard' | 'intelligence' | 'orders' | 'products' | 'customers' | 'inventory' | 'campaigns' | 'ads' | 'events' | 'content' | 'work' | 'guide' | 'settings'
+  active: 'dashboard' | 'intelligence' | 'orders' | 'sendit' | 'products' | 'customers' | 'inventory' | 'campaigns' | 'ads' | 'events' | 'content' | 'work' | 'guide' | 'settings'
   title: string
   crumb: string
   children: ReactNode

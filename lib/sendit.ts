@@ -389,6 +389,57 @@ export async function getDeliveryCostEstimate(city: string, weight: number = 0.5
   return district?.price || 0
 }
 
+export interface SenditDeliveryListItem {
+  code: string
+  status: string
+  name: string
+  phone: string
+  amount: number
+  fee: number
+  city: string
+  products: string | null
+  comment: string | null
+  reference: string | null
+  createdAt: string | null
+}
+
+/**
+ * List ALL deliveries from Sendit (paginated). Read-only — used by the
+ * reconciliation lab to compare Sendit (source of truth for delivered + COD)
+ * against the BOS.
+ */
+export async function listAllSenditDeliveries(maxPages = 60): Promise<SenditDeliveryListItem[]> {
+  const token = await getAuthToken()
+  const all: SenditDeliveryListItem[] = []
+  let page = 1
+  let lastPage = 1
+  do {
+    const res = await fetch(`${SENDIT_API_URL}/deliveries?page=${page}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) throw new Error(`Failed to list deliveries: ${res.status} ${await res.text()}`)
+    const data = await res.json()
+    for (const d of (data.data || [])) {
+      all.push({
+        code: d.code,
+        status: d.status,
+        name: d.name || '',
+        phone: d.phone || '',
+        amount: Number(d.amount) || 0,
+        fee: Number(d.fee) || 0,
+        city: d.district?.name || d.district?.ville || '',
+        products: d.products || null,
+        comment: d.comment || null,
+        reference: d.reference || null,
+        createdAt: d.created_at || null,
+      })
+    }
+    lastPage = data.last_page || 1
+    page++
+  } while (page <= lastPage && page <= maxPages)
+  return all
+}
+
 /**
  * Get all districts (cities/neighborhoods) from Sendit
  */
