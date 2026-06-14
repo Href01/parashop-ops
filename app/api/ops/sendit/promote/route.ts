@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { isFounder } from '@/lib/auth'
 import pool from '@/lib/db'
+import { findOrCreateCustomer } from '@/lib/customer'
 
 /**
  * POST /api/ops/sendit/promote  { ids: number[] }
@@ -53,6 +54,8 @@ export async function POST(req: NextRequest) {
 
       const productsTotal = items.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 0), 0)
       const status = mapStatus(s.senditStatus)
+      // Always attach a customer (find by phone, else create) — no ghost customers
+      const customerId = s.matchedUserId || (await findOrCreateCustomer(client, s.name, s.phone))
       const fee = Number(s.fee) || 0
       const amount = Number(s.amount) || 0
       const delivered = status === 'DELIVERED'
@@ -73,7 +76,7 @@ export async function POST(req: NextRequest) {
          VALUES ($1, $2, $3, $4::"OrderStatus", 'COD', 'Sendit', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, COALESCE($15, NOW()))
          RETURNING id`,
         [
-          s.matchedUserId || null, amount, productsTotal, status,
+          customerId, amount, productsTotal, status,
           s.name, s.phone, s.city, fee,
           fee, delivered ? fee : null, amount,
           s.code, s.senditStatus, s.senditStatus, s.senditCreatedAt,

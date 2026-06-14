@@ -54,6 +54,19 @@ export default function CustomersPage() {
     fetchCustomers()
   }
 
+  const [linking, setLinking] = useState(false)
+  const handleBackfill = async () => {
+    if (linking) return
+    setLinking(true)
+    try {
+      const res = await fetch('/api/ops/customers/backfill', { method: 'POST' })
+      const d = await res.json().catch(() => ({}))
+      if (res.ok) { alert(`${d.linked} commande(s) liée(s) à une fiche cliente ✓`); fetchCustomers() }
+      else alert(d.error || 'Échec')
+    } catch { alert('Échec') }
+    finally { setLinking(false) }
+  }
+
   const handleExport = () => {
     const csv = [
       ['Name', 'Email', 'Phone', 'Segment', 'Tier', 'Orders', 'LTV (MAD)', 'Avg Order (MAD)', 'Last Order', 'RFM Score'],
@@ -149,6 +162,9 @@ export default function CustomersPage() {
             <div className="sub">Relation client & segmentation</div>
           </div>
           <div className="spacer"></div>
+          <button className="btn-modern btn-secondary" onClick={handleBackfill} disabled={linking} title="Lier les commandes guests (sans fiche) à une cliente">
+            <UserPlus className="w-4 h-4" />{linking ? 'Liaison…' : 'Lier les guests'}
+          </button>
           <button className="btn-modern btn-secondary" onClick={handleExport}><Download className="w-4 h-4" />Exporter</button>
           <button className="btn-modern btn-primary" onClick={handleAddCustomer}><UserPlus className="w-4 h-4" />Ajouter</button>
         </div>
