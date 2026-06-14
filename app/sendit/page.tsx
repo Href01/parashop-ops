@@ -42,6 +42,23 @@ export default function SenditLabPage() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [filter, setFilter] = useState<string>('sendit_only')
+  const [selectedId, setSelectedId] = useState<number | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const promote = async (promoteIds: number[]) => {
+    if (busy || promoteIds.length === 0) return
+    if (!confirm(`Rendre officiel ${promoteIds.length} colis ?\n\nCela crée de vraies commandes dans le BOS.`)) return
+    setBusy(true); setError(null); setNotice(null)
+    try {
+      const res = await fetch('/api/ops/sendit/promote', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: promoteIds }) })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || `Erreur ${res.status}`)
+      setNotice(`${d.promoted} commande(s) officialisée(s)${d.skipped?.length ? ` · ${d.skipped.length} ignorée(s)` : ''}.`)
+      load()
+      setTimeout(() => setNotice(null), 6000)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Promotion impossible') }
+    finally { setBusy(false) }
+  }
 
   const load = () => {
     fetch('/api/ops/sendit/staging', { cache: 'no-store' })
@@ -125,6 +142,7 @@ export default function SenditLabPage() {
                   <th style={th}>Produits (Sendit)</th>
                   <th style={th}>Statut</th>
                   <th style={th}>État</th>
+                  <th style={{ ...th, textAlign: 'right' }}>Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -144,23 +162,188 @@ export default function SenditLabPage() {
                       <td style={td}>
                         <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 5, color: b.fg, background: b.bg }}>{STATE_LABEL[r.state] || r.state}</span>
                       </td>
+                      <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        {r.promoted ? (
+                          <span style={{ fontSize: 11, color: 'var(--green)' }}>✓ officiel</span>
+                        ) : r.state === 'sendit_only' ? (
+                          <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                            <button className="btn-modern btn-sm btn-subtle" onClick={() => setSelectedId(r.id)} style={{ fontSize: 11 }}>
+                              {(r.assignedProducts?.length ?? 0) > 0 ? `✓ ${r.assignedProducts!.length} prod.` : 'Produits'}
+                            </button>
+                            {(r.assignedProducts?.length ?? 0) > 0 && (
+                              <button className="btn-modern btn-sm btn-primary" onClick={() => promote([r.id])} disabled={busy} style={{ fontSize: 11 }}>Officialiser</button>
+                            )}
+                          </div>
+                        ) : (
+                          <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>—</span>
+                        )}
+                      </td>
                     </tr>
                   )
                 })}
                 {shown.length === 0 && (
-                  <tr><td colSpan={6} style={{ textAlign: 'center', padding: 24 }} className="tx-faint">Rien dans cette catégorie</td></tr>
+                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24 }} className="tx-faint">Rien dans cette catégorie</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         )}
       </div>
+
+      {selectedId != null && (
+        <AssignDrawer
+          stagingId={selectedId}
+          onClose={() => setSelectedId(null)}
+          onSaved={() => { setSelectedId(null); load() }}
+        />
+      )}
     </BosShell>
   )
 }
 
 const th: React.CSSProperties = { padding: '11px 14px', fontSize: 11, fontWeight: 600, color: 'var(--tx-lo)', textTransform: 'uppercase', letterSpacing: '0.04em' }
 const td: React.CSSProperties = { padding: '11px 14px', verticalAlign: 'top' }
+
+interface CatProduct { id: number; name: string; brand: string | null; price: number }
+interface Assigned { productId: number; quantity: number; price: number }
+
+function AssignDrawer({ stagingId, onClose, onSaved }: { stagingId: number; onClose: () => void; onSaved: () => void }) {
+  const [row, setRow] = useState<Row | null>(null)
+  const [suggestions, setSuggestions] = useState<Array<{ rawName: string; qty: number; candidates: CatProduct[] }>>([])
+  const [catalog, setCatalog] = useState<CatProduct[]>([])
+  const [items, setItems] = useState<Assigned[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [search, setSearch] = useState('')
+
+  useEffect(() => {
+    fetch(`/api/ops/sendit/staging/${stagingId}`, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => {
+        setRow(d.row)
+        setSuggestions(Array.isArray(d.suggestions) ? d.suggestions : [])
+        setCatalog(Array.isArray(d.catalog) ? d.catalog : [])
+        setItems(Array.isArray(d.row?.assignedProducts) ? d.row.assignedProducts : [])
+      })
+      .finally(() => setLoading(false))
+  }, [stagingId])
+
+  const pName = (id: number) => catalog.find((p) => p.id === id)?.name || `#${id}`
+  const addItem = (p: CatProduct, qty = 1) => setItems((x) => x.some((i) => i.productId === p.id) ? x : [...x, { productId: p.id, quantity: qty, price: p.price }])
+  const setQty = (id: number, q: number) => setItems((x) => x.map((i) => i.productId === id ? { ...i, quantity: Math.max(1, q) } : i))
+  const setPrice = (id: number, pr: number) => setItems((x) => x.map((i) => i.productId === id ? { ...i, price: Math.max(0, pr) } : i))
+  const remove = (id: number) => setItems((x) => x.filter((i) => i.productId !== id))
+
+  const productsTotal = items.reduce((s, i) => s + i.price * i.quantity, 0)
+  const cod = Number(row?.amount) || 0
+  const fee = Number(row?.fee) || 0
+  const expected = cod - fee // products should ≈ COD − delivery
+  const diff = productsTotal - expected
+  const reconciled = Math.abs(diff) <= 5
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const res = await fetch(`/api/ops/sendit/staging/${stagingId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assignedProducts: items }) })
+      if (!res.ok) throw new Error()
+      onSaved()
+    } catch { setSaving(false) }
+  }
+
+  const filtered = search.trim().length >= 2
+    ? catalog.filter((p) => `${p.name} ${p.brand || ''}`.toLowerCase().includes(search.toLowerCase())).slice(0, 8)
+    : []
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'oklch(0.2 0.02 350 / 0.35)', zIndex: 50, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(480px, 100%)', height: '100%', background: 'var(--bg-1)', borderLeft: '1px solid var(--line)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px', borderBottom: '1px solid var(--line-soft)', position: 'sticky', top: 0, background: 'var(--bg-1)' }}>
+          <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--tx-hi)' }}>Affecter les produits</span>
+          <button onClick={onClose} aria-label="Fermer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-lo)', padding: 0 }}><X style={{ width: 18, height: 18 }} /></button>
+        </div>
+
+        {loading || !row ? (
+          <p style={{ padding: 24, fontSize: 13, color: 'var(--tx-lo)' }}>Chargement…</p>
+        ) : (
+          <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ background: 'var(--bg-2)', borderRadius: 10, padding: 12 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx-hi)' }}>{row.name} · <span style={{ fontFamily: 'var(--mono)', color: 'var(--tx-mid)' }}>{row.phone}</span></div>
+              <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginTop: 2 }}>{row.city} · COD {mad(cod)} MAD (liv. {mad(fee)})</div>
+              {row.productsText && <div style={{ fontSize: 12, color: 'var(--rose-bright)', marginTop: 6 }}>📦 Sendit : {row.productsText}</div>}
+            </div>
+
+            {/* Suggestions */}
+            {suggestions.some((s) => s.candidates.length > 0) && (
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx-lo)', textTransform: 'uppercase', marginBottom: 8 }}>💡 Suggestions (depuis le texte Sendit)</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {suggestions.map((s, i) => (
+                    <div key={i} style={{ fontSize: 12 }}>
+                      <div style={{ color: 'var(--tx-mid)', marginBottom: 3 }}>« {s.rawName} » ×{s.qty}</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                        {s.candidates.length === 0 && <span style={{ color: 'var(--tx-faint)', fontSize: 11 }}>aucune correspondance</span>}
+                        {s.candidates.map((c) => (
+                          <button key={c.id} onClick={() => addItem(c, s.qty)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--bg-2)', color: 'var(--tx-hi)', cursor: 'pointer' }}>
+                            + {c.name} <span style={{ color: 'var(--tx-faint)' }}>{mad(c.price)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Manual add */}
+            <div>
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Ajouter un produit du catalogue…" style={{ width: '100%', padding: '8px 11px', fontSize: 13, borderRadius: 8, border: '1px solid var(--line)', background: 'var(--bg-2)', color: 'var(--tx-hi)' }} />
+              {filtered.length > 0 && (
+                <div style={{ marginTop: 4, border: '1px solid var(--line-soft)', borderRadius: 8, maxHeight: 180, overflowY: 'auto' }}>
+                  {filtered.map((p) => (
+                    <button key={p.id} onClick={() => { addItem(p); setSearch('') }} style={{ display: 'block', width: '100%', textAlign: 'left', padding: '7px 10px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--tx-hi)' }}>
+                      {p.name} <span style={{ color: 'var(--tx-faint)' }}>· {p.brand} · {mad(p.price)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Assigned */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx-lo)', textTransform: 'uppercase', marginBottom: 8 }}>Produits affectés</div>
+              {items.length === 0 ? <p style={{ fontSize: 12, color: 'var(--tx-faint)' }}>Aucun produit. Utilise les suggestions ou la recherche.</p> : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {items.map((it) => (
+                    <div key={it.productId} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'var(--bg-2)', borderRadius: 8, padding: '7px 10px' }}>
+                      <span style={{ flex: 1, fontSize: 12, color: 'var(--tx-hi)' }}>{pName(it.productId)}</span>
+                      <input type="number" min={1} value={it.quantity} onChange={(e) => setQty(it.productId, parseInt(e.target.value, 10) || 1)} style={{ width: 44, fontSize: 12, padding: '3px 5px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--bg-1)', color: 'var(--tx-hi)' }} />
+                      <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>×</span>
+                      <input type="number" min={0} value={it.price} onChange={(e) => setPrice(it.productId, parseFloat(e.target.value) || 0)} style={{ width: 60, fontSize: 12, padding: '3px 5px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--bg-1)', color: 'var(--tx-hi)' }} />
+                      <button onClick={() => remove(it.productId)} aria-label="Retirer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--rose-bright)', padding: 0 }}><X style={{ width: 13, height: 13 }} /></button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Reconciliation */}
+            <div style={{ background: reconciled ? 'var(--green-bg)' : 'var(--amber-bg)', borderRadius: 10, padding: 12, fontSize: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Σ Produits</span><b style={{ fontFamily: 'var(--mono)' }}>{mad(productsTotal)} MAD</b></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--tx-lo)' }}><span>Attendu (COD − livraison)</span><span style={{ fontFamily: 'var(--mono)' }}>{mad(expected)} MAD</span></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, color: reconciled ? 'var(--green)' : 'var(--amber)', fontWeight: 600 }}>
+                <span>{reconciled ? '✓ Réconcilié' : 'Écart'}</span><span style={{ fontFamily: 'var(--mono)' }}>{diff > 0 ? '+' : ''}{mad(diff)} MAD</span>
+              </div>
+            </div>
+
+            <button onClick={save} disabled={saving} className="btn-modern btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
+              {saving ? 'Enregistrement…' : 'Enregistrer l\'affectation'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 function Tab({ label, value, active, onClick, tone }: { label: string; value: number; active: boolean; onClick: () => void; tone: string }) {
   const tones: Record<string, string> = { amber: 'var(--amber)', rose: 'var(--rose-bright)', green: 'var(--green)', blue: 'var(--blue)', gray: 'var(--tx-lo)' }

@@ -1,0 +1,91 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/app/api/auth/[...nextauth]/route'
+import { isFounder } from '@/lib/auth'
+import pool from '@/lib/db'
+
+/**
+ * POST /api/ops/sendit/promote  { ids: number[] }
+ * Promotes validated 'sendit_only' staging rows into REAL Order + OrderItem.
+ * This is the only place the lab writes to the live BOS — on explicit click.
+ * Idempotent: skips rows already promoted or with no assigned products.
+ */
+function mapStatus(s: string): string {
+  const u = (s || '').toUpperCase()
+  if (u === 'DELIVERED') return 'DELIVERED'
+  if (['CANCELED', 'CANCELLED', 'REJECTED', 'REFUSED', 'RETURNED', 'RETURN'].some((k) => u.includes(k))) return 'CANCELLED'
+  return 'CONFIRMED'
+}
+
+export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.email || !isFounder(session.user.email)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  const b = await req.json().catch(() => ({}))
+  const ids = Array.isArray(b.ids) ? b.ids.filter((n: unknown) => Number.isInteger(n)) : []
+  if (ids.length === 0) return NextResponse.json({ error: 'Aucun colis sélectionné' }, { status: 400 })
+
+  const rows = await pool.query(
+    `SELECT * FROM "SenditStaging" WHERE id = ANY($1) AND promoted = false AND state = 'sendit_only'`,
+    [ids]
+  )
+
+  let promoted = 0
+  const skipped: Array<{ id: number; reason: string }> = []
+
+  for (const s of rows.rows) {
+    const items: Array<{ productId: number; quantity: number; price: number }> = Array.isArray(s.assignedProducts) ? s.assignedProducts : []
+    if (items.length === 0) { skipped.push({ id: s.id, reason: 'pas de produits affectés' }); continue }
+
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+
+      // Safety: never create a duplicate for an already-imported tracking code
+      const dup = await client.query(`SELECT id FROM "Order" WHERE "senditTrackingId" = $1`, [s.code])
+      if (dup.rows.length > 0) {
+        await client.query('ROLLBACK')
+        await pool.query(`UPDATE "SenditStaging" SET promoted = true, "promotedOrderId" = $1, "updatedAt" = NOW() WHERE id = $2`, [dup.rows[0].id, s.id])
+        skipped.push({ id: s.id, reason: 'commande déjà existante (liée)' })
+        continue
+      }
+
+      const productsTotal = items.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 0), 0)
+      const status = mapStatus(s.senditStatus)
+
+      const ord = await client.query(
+        `INSERT INTO "Order"
+           ("userId", total, "productsTotal", status, "paymentMethod", "sourceChannel",
+            "deliveryName", "deliveryPhone", "deliveryCity", "deliveryFeeCharged",
+            "senditTrackingId", "senditStatus", "createdAt")
+         VALUES ($1, $2, $3, $4::"OrderStatus", 'COD', 'Sendit', $5, $6, $7, $8, $9, $10, COALESCE($11, NOW()))
+         RETURNING id`,
+        [
+          s.matchedUserId || null, Number(s.amount) || 0, productsTotal, status,
+          s.name, s.phone, s.city, Number(s.fee) || 0, s.code, s.senditStatus, s.senditCreatedAt,
+        ]
+      )
+      const orderId = ord.rows[0].id
+
+      for (const it of items) {
+        await client.query(
+          `INSERT INTO "OrderItem" ("orderId", "productId", quantity, price, "pointsEarned") VALUES ($1, $2, $3, $4, 0)`,
+          [orderId, it.productId, it.quantity, it.price]
+        )
+      }
+
+      await client.query('COMMIT')
+      await pool.query(`UPDATE "SenditStaging" SET promoted = true, "promotedOrderId" = $1, "updatedAt" = NOW() WHERE id = $2`, [orderId, s.id])
+      promoted++
+    } catch (e) {
+      await client.query('ROLLBACK')
+      console.error('[Sendit] promote row', s.id, e)
+      skipped.push({ id: s.id, reason: e instanceof Error ? e.message : 'erreur' })
+    } finally {
+      client.release()
+    }
+  }
+
+  return NextResponse.json({ ok: true, promoted, skipped })
+}
