@@ -4,7 +4,6 @@ import {
   Bell,
   Box,
   Calendar,
-  DollarSign,
   Flame,
   LayoutDashboard,
   HelpCircle,
@@ -32,33 +31,32 @@ interface NavItem {
 
 const sections: Array<{ label: string; items: NavItem[] }> = [
   {
-    label: 'Overview',
+    label: 'Aperçu',
     items: [
-      { label: 'Dashboard', href: '/', icon: LayoutDashboard },
+      { label: 'Tableau de bord', href: '/', icon: LayoutDashboard },
       { label: 'Focus', href: '/intelligence', icon: Target },
     ],
   },
   {
-    label: 'Operations',
+    label: 'Opérations',
     items: [
-      { label: 'Orders', href: '/orders', icon: Package },
-      { label: 'Products', href: '/products', icon: Box },
-      { label: 'Inventory', href: '/inventory', icon: Box },
+      { label: 'Commandes', href: '/orders', icon: Package },
+      { label: 'Produits', href: '/products', icon: Box },
+      { label: 'Stock', href: '/inventory', icon: Box },
     ],
   },
   {
-    label: 'Growth',
+    label: 'Croissance',
     items: [
-      { label: 'Customers', href: '/customers', icon: Users },
-      { label: 'Campaigns', href: '/campaigns', icon: Megaphone },
-      { label: 'Régie pub', href: '/ads', icon: DollarSign },
-      { label: 'Events', href: '/events', icon: Calendar },
-      { label: 'Content Hub', href: '/content', icon: Sparkles },
+      { label: 'Clients', href: '/customers', icon: Users },
+      { label: 'Campagnes', href: '/ads', icon: Megaphone },
+      { label: 'Événements', href: '/events', icon: Calendar },
+      { label: 'Contenu', href: '/content', icon: Sparkles },
     ],
   },
   {
-    label: 'Team',
-    items: [{ label: 'Work Hub', href: '/work-hub', icon: Flame }],
+    label: 'Équipe',
+    items: [{ label: 'Espace de travail', href: '/work-hub', icon: Flame }],
   },
   {
     label: 'Aide',

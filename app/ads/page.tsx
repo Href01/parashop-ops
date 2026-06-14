@@ -93,12 +93,12 @@ export default function AdsPage() {
   }
 
   return (
-    <BosShell active="ads" title="Régie pub" crumb="Croissance">
+    <BosShell active="ads" title="Campagnes" crumb="Croissance">
       <div style={{ maxWidth: 1280, margin: '0 auto', padding: '22px 24px 60px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16 }}>
           <div style={{ flex: 1 }}>
             <div className="eyebrow" style={{ marginBottom: 4 }}>PUBLICITÉ PAYANTE</div>
-            <h1 className="serif-display" style={{ fontSize: 28, lineHeight: 1.05 }}>Régie pub</h1>
+            <h1 className="serif-display" style={{ fontSize: 28, lineHeight: 1.05 }}>Campagnes</h1>
             <p style={{ fontSize: 13, color: 'var(--tx-mid)', marginTop: 7, lineHeight: 1.55, maxWidth: 640 }}>
               Tes campagnes <b>Meta</b> importées automatiquement. Relie chaque campagne à un <b>event</b> et à des <b>produits</b> — la dépense se met à jour toute seule.
             </p>
