@@ -18,7 +18,12 @@ import pool from '@/lib/db'
  * so manual entry keeps working and nothing breaks.
  */
 
-const GRAPH = `https://graph.facebook.com/${process.env.IG_GRAPH_VERSION || 'v21.0'}`
+// Works with both methods:
+//  - Instagram API with Instagram Login (simplest 2026): base graph.instagram.com,
+//    token only (IG_USER_ID optional → uses /me/media)
+//  - Facebook Login for Business: set IG_API_BASE=https://graph.facebook.com + IG_USER_ID
+const IG_BASE = (process.env.IG_API_BASE || 'https://graph.instagram.com').replace(/\/+$/, '')
+const GRAPH = `${IG_BASE}/${process.env.IG_GRAPH_VERSION || 'v21.0'}`
 
 interface IgMedia { id: string; permalink: string; media_type?: string; media_product_type?: string }
 interface IgInsightValue { name: string; values: { value: number }[] }
@@ -40,11 +45,11 @@ export async function POST(_req: NextRequest) {
     const g = await guard()
     if (!g.ok) return NextResponse.json({ error: 'Unauthorized' }, { status: g.status })
 
-    const igUserId = process.env.IG_USER_ID
+    const igUserId = process.env.IG_USER_ID // optional with Instagram Login (→ /me/media)
     const token = process.env.IG_ACCESS_TOKEN
-    if (!igUserId || !token) {
+    if (!token) {
       return NextResponse.json({
-        error: 'Instagram non configuré. Ajoute IG_USER_ID et IG_ACCESS_TOKEN dans les variables d\'environnement.',
+        error: 'Instagram non configuré. Ajoute IG_ACCESS_TOKEN (et IG_USER_ID si méthode Facebook Login) dans les variables d\'environnement.',
         configured: false,
       }, { status: 503 })
     }
@@ -64,8 +69,9 @@ export async function POST(_req: NextRequest) {
       if (r.externalId) byExternal.set(r.externalId, r.id)
     }
 
-    // 2) Fetch recent media from the IG account
-    const mediaUrl = `${GRAPH}/${igUserId}/media?fields=id,permalink,media_type,media_product_type&limit=50&access_token=${encodeURIComponent(token)}`
+    // 2) Fetch recent media from the IG account ("me" with Instagram Login, or the id with FB Login)
+    const mediaPath = igUserId ? igUserId : 'me'
+    const mediaUrl = `${GRAPH}/${mediaPath}/media?fields=id,permalink,media_type,media_product_type&limit=50&access_token=${encodeURIComponent(token)}`
     const mediaRes = await fetch(mediaUrl, { cache: 'no-store' })
     const mediaJson = await mediaRes.json()
     if (!mediaRes.ok) {
