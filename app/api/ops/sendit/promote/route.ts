@@ -69,14 +69,14 @@ export async function POST(req: NextRequest) {
            ("userId", total, "productsTotal", status, "paymentMethod", "sourceChannel",
             "deliveryName", "deliveryPhone", "deliveryCity", "deliveryFeeCharged",
             "estimatedDeliveryCost", "actualDeliveryCost", "codAmount",
-            "senditTrackingId", "senditStatus", "createdAt")
-         VALUES ($1, $2, $3, $4::"OrderStatus", 'COD', 'Sendit', $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14, NOW()))
+            "senditTrackingId", "senditStatus", "deliveryStatus", "createdAt")
+         VALUES ($1, $2, $3, $4::"OrderStatus", 'COD', 'Sendit', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, COALESCE($15, NOW()))
          RETURNING id`,
         [
           s.matchedUserId || null, amount, productsTotal, status,
           s.name, s.phone, s.city, fee,
           fee, delivered ? fee : null, amount,
-          s.code, s.senditStatus, s.senditCreatedAt,
+          s.code, s.senditStatus, s.senditStatus, s.senditCreatedAt,
         ]
       )
       const orderId = ord.rows[0].id

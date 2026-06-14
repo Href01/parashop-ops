@@ -30,8 +30,9 @@ export async function GET(
             'quantity', oi.quantity,
             'price', oi.price,
             'unitCost', oi."unitCost",
+            'costPrice', p."costPrice",
             'totalPrice', oi.price * oi.quantity,
-            'totalCost', COALESCE(oi."unitCost", 0) * oi.quantity,
+            'totalCost', COALESCE(oi."unitCost", p."costPrice", 0) * oi.quantity,
             'sku', p.sku,
             'image', p.image
           ) ORDER BY oi.id

@@ -25,17 +25,28 @@ interface DashboardStats {
 const DAILY_GOAL = 6000
 const mad = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v)
 
+const PERIODS: { label: string; days: number }[] = [
+  { label: '7j', days: 7 },
+  { label: '30j', days: 30 },
+  { label: '90j', days: 90 },
+  { label: '1 an', days: 365 },
+  { label: 'Tout', days: 3650 },
+]
+
 export default function GlowDashboard() {
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [days, setDays] = useState(30)
+  const periodLabel = PERIODS.find((p) => p.days === days)?.label || `${days}j`
 
   useEffect(() => {
-    fetch('/api/ops/dashboard/stats', { cache: 'no-store' })
+    setLoading(true)
+    fetch(`/api/ops/dashboard/stats?days=${days}`, { cache: 'no-store' })
       .then((r) => { if (!r.ok) throw new Error('fetch'); return r.json() })
       .then((d) => setStats(d))
       .catch((e) => console.error('Failed to fetch stats:', e))
       .finally(() => setLoading(false))
-  }, [])
+  }, [days])
 
   if (loading || !stats) {
     return (
@@ -85,7 +96,16 @@ export default function GlowDashboard() {
               {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · Casablanca
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 10, background: 'var(--bg-2)', border: '1px solid var(--line-soft)' }}>
+              {PERIODS.map((p) => (
+                <button key={p.days} onClick={() => setDays(p.days)} style={{
+                  fontSize: 12, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', cursor: 'pointer',
+                  background: days === p.days ? 'var(--rose-bright)' : 'transparent',
+                  color: days === p.days ? '#fff' : 'var(--tx-lo)',
+                }}>{p.label}</button>
+              ))}
+            </div>
             <button className="btn-modern btn-secondary" onClick={exportCsv}><Download className="w-4 h-4" />Export</button>
             <Link href="/orders/new" className="btn-modern btn-primary" style={{ textDecoration: 'none' }}><Plus className="w-4 h-4" />Nouvelle commande</Link>
           </div>
@@ -93,9 +113,9 @@ export default function GlowDashboard() {
 
         {/* KPI strip */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 16 }}>
-          <Kpi label="Chiffre d'affaires · 7j" value={`${mad(stats.revenueWeek)}`} unit="MAD" delta={stats.revenueDelta} accent />
+          <Kpi label={`Chiffre d'affaires · ${periodLabel}`} value={`${mad(stats.revenueWeek)}`} unit="MAD" delta={stats.revenueDelta} accent />
           <Kpi label="Profit estimé" value={mad(stats.estimatedProfit)} unit="MAD" sub={`${stats.marginPercent.toFixed(1)}% marge`} />
-          <Kpi label="Commandes · 7j" value={String(stats.ordersWeek)} />
+          <Kpi label={`Commandes · ${periodLabel}`} value={String(stats.ordersWeek)} />
           <Kpi label="Panier moyen" value={mad(stats.averageOrderValue)} unit="MAD" />
           <Kpi label="Taux de livraison" value={`${stats.deliveryRate.toFixed(0)}%`} />
           <Kpi label="ROAS" value={`${stats.roas.toFixed(1)}x`} />
@@ -106,7 +126,7 @@ export default function GlowDashboard() {
           <Card>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
               <div>
-                <Label>Chiffre d&apos;affaires · 14 jours</Label>
+                <Label>Chiffre d&apos;affaires · {periodLabel}</Label>
                 <div style={{ fontSize: 38, fontWeight: 600, fontFamily: 'var(--mono)', letterSpacing: '-0.02em', color: 'var(--tx-hi)', lineHeight: 1.1 }}>
                   {mad(revenue14)} <span style={{ fontSize: 16, color: 'var(--tx-lo)', fontWeight: 500 }}>MAD</span>
                 </div>

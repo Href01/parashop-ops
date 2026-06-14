@@ -238,7 +238,8 @@ export default function OrderDetailPage() {
 
   const totals = useMemo(() => {
     const productRevenue = order?.items?.reduce((sum, item) => sum + toNumber(item.price) * toNumber(item.quantity), 0) ?? 0
-    const productCost = order?.items?.reduce((sum, item) => sum + toNumber(item.unitCost) * toNumber(item.quantity), 0) ?? 0
+    // COGS falls back to the product's costPrice when the line's unitCost is unset
+    const productCost = order?.items?.reduce((sum, item) => sum + toNumber(item.unitCost || item.costPrice) * toNumber(item.quantity), 0) ?? 0
     const deliveryCharged = toNumber(order?.deliveryFeeCharged)
     const deliveryCost = toNumber(order?.actualDeliveryCost || order?.estimatedDeliveryCost || 0)
     const profit = toNumber(order?.estimatedProfit) || productRevenue - productCost - deliveryCost
@@ -256,7 +257,7 @@ export default function OrderDetailPage() {
       { label: 'Ville', ok: !!order?.deliveryCity },
       { label: 'Adresse de livraison', ok: !!order?.deliveryAddress },
       { label: 'Articles', ok: items.length > 0 },
-      { label: 'Coûts produits', ok: items.length > 0 && items.every((i: any) => toNumber(i.unitCost) > 0) },
+      { label: 'Coûts produits', ok: items.length > 0 && items.every((i: any) => toNumber(i.unitCost) > 0 || toNumber(i.costPrice) > 0) },
       { label: 'Frais de livraison', ok: order?.deliveryFeeCharged != null },
       { label: 'Coût livraison estimé', ok: order?.estimatedDeliveryCost != null },
       { label: 'Méthode de paiement', ok: !!order?.paymentMethod },

@@ -95,13 +95,17 @@ interface RecentOrderRow {
   sourceChannel: string | null
 }
 
-const FINANCIAL_CTE = `
+// Period-aware financial CTE. `days` = the selected window length (ending today);
+// "week_start"/"month_start" both map to range_start, "previous_week_start" to the
+// previous same-length window (kept names to avoid touching the queries below).
+function financialCte(days: number) {
+  return `
   WITH bounds AS (
     SELECT
       ((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date)::timestamp AS today_start,
-      (((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date) - INTERVAL '6 days')::timestamp AS week_start,
-      (((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date) - INTERVAL '13 days')::timestamp AS previous_week_start,
-      (((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date) - INTERVAL '29 days')::timestamp AS month_start
+      (((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date) - INTERVAL '${days - 1} days')::timestamp AS week_start,
+      (((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date) - INTERVAL '${2 * days - 1} days')::timestamp AS previous_week_start,
+      (((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date) - INTERVAL '${days - 1} days')::timestamp AS month_start
   ),
   item_costs AS (
     SELECT
@@ -152,6 +156,7 @@ const FINANCIAL_CTE = `
     LEFT JOIN item_costs ic ON ic."orderId" = o.id
   )
 `
+}
 
 function toNumber(value: unknown): number {
   if (typeof value === 'number') return Number.isFinite(value) ? value : 0
@@ -234,7 +239,7 @@ async function safeQuery<T extends QueryResultRow>(label: string, query: string)
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const session = await getServerSession(authOptions)
 
@@ -245,6 +250,11 @@ export async function GET() {
     if (!isFounder(session.user.email)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
+
+    // Selected window length in days (ending today). 'all' → a large span.
+    const daysParam = parseInt(new URL(req.url).searchParams.get('days') || '30', 10)
+    const days = Number.isFinite(daysParam) && daysParam > 0 ? Math.min(daysParam, 3650) : 30
+    const FINANCIAL_CTE = financialCte(days)
 
     const [
       summaryRows,
@@ -291,7 +301,7 @@ export async function GET() {
         ${FINANCIAL_CTE},
         days AS (
           SELECT generate_series(
-            (SELECT month_start FROM bounds),
+            GREATEST((SELECT month_start FROM bounds), (SELECT today_start FROM bounds) - INTERVAL '180 days'),
             (SELECT today_start FROM bounds),
             INTERVAL '1 day'
           ) AS day_bucket
@@ -383,7 +393,7 @@ export async function GET() {
           COALESCE(SUM(a.spend), 0)::double precision AS spend,
           COALESCE(SUM(a.revenue), 0)::double precision AS revenue
         FROM "AdCampaign" a
-        WHERE COALESCE(a."endDate", CURRENT_DATE) >= CURRENT_DATE - INTERVAL '29 days'
+        WHERE COALESCE(a."endDate", CURRENT_DATE) >= CURRENT_DATE - INTERVAL '${days - 1} days'
       `),
       safeQuery<ChannelRow>('channels', `
         ${FINANCIAL_CTE}
@@ -582,6 +592,7 @@ export async function GET() {
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
+      periodDays: days,
       dailyGoal: DAILY_REVENUE_GOAL,
       revenueToday,
       revenueWeek,
