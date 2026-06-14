@@ -161,6 +161,7 @@ export default function SenditLabPage() {
                   <th style={th}>Client</th>
                   <th style={th}>Ville</th>
                   <th style={{ ...th, textAlign: 'right' }}>COD</th>
+                  <th style={th}>Date colis</th>
                   <th style={th}>Produits (Sendit)</th>
                   <th style={th}>Statut</th>
                   <th style={th}>État</th>
@@ -179,6 +180,7 @@ export default function SenditLabPage() {
                       </td>
                       <td style={{ ...td, color: 'var(--tx-mid)' }}>{r.city || '—'}</td>
                       <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--tx-hi)' }}>{mad(r.amount)}<span style={{ fontSize: 10, color: 'var(--tx-faint)' }}> (liv. {mad(r.fee)})</span></td>
+                      <td style={{ ...td, fontSize: 12, color: 'var(--tx-lo)', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }}>{r.senditCreatedAt ? new Date(r.senditCreatedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
                       <td style={{ ...td, fontSize: 12, color: 'var(--tx-mid)', maxWidth: 260 }}>{r.productsText || <span style={{ color: 'var(--tx-faint)' }}>—</span>}</td>
                       <td style={{ ...td, fontSize: 11, color: 'var(--tx-lo)', fontFamily: 'var(--mono)' }}>{r.senditStatus}</td>
                       <td style={td}>
@@ -204,7 +206,7 @@ export default function SenditLabPage() {
                   )
                 })}
                 {shown.length === 0 && (
-                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24 }} className="tx-faint">Rien dans cette catégorie</td></tr>
+                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: 24 }} className="tx-faint">Rien dans cette catégorie</td></tr>
                 )}
               </tbody>
             </table>

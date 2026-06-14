@@ -515,7 +515,7 @@ export default function OrdersPage() {
                           </span>
                         </td>
                         <td className="r">
-                          <span className="fs12 tx-lo mono">{new Date(order.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}</span>
+                          <span className="fs12 tx-lo mono">{new Date(order.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
                         </td>
                         <td onClick={(e) => e.stopPropagation()}>
                           <button
