@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { isFounder } from '@/lib/auth'
 import pool from '@/lib/db'
+import { getInstagramToken } from '@/lib/ig-token'
 
 /**
  * POST /api/ops/content/sync-instagram
@@ -49,7 +50,7 @@ export async function POST(_req: NextRequest) {
     if (!g.ok) return NextResponse.json({ error: 'Unauthorized' }, { status: g.status })
 
     const igUserId = process.env.IG_USER_ID // optional with Instagram Login (→ /me/media)
-    const token = process.env.IG_ACCESS_TOKEN
+    const token = await getInstagramToken() // DB (auto-refreshed) → env bootstrap
     if (!token) {
       return NextResponse.json({
         error: 'Instagram non configuré. Ajoute IG_ACCESS_TOKEN (et IG_USER_ID si méthode Facebook Login) dans les variables d\'environnement.',
