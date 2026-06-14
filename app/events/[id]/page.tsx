@@ -77,6 +77,23 @@ export default function EventDetailPage() {
     }
   }
 
+  const [assigning, setAssigning] = useState(false)
+  const assignOrders = async (payload: Record<string, unknown>) => {
+    setAssigning(true)
+    try {
+      await fetch(`/api/ops/events/${eventId}/assign-orders`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      await fetchEvent()
+    } catch (error) {
+      console.error('Failed to assign orders:', error)
+    } finally {
+      setAssigning(false)
+    }
+  }
+
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('fr-MA', { maximumFractionDigits: 0 }).format(amount || 0)
   }
@@ -273,28 +290,36 @@ export default function EventDetailPage() {
             <div className="panel">
               <div className="panel-head">
                 <ShoppingCart />
-                <h3>Orders during event</h3>
+                <h3>Commandes de l&apos;event</h3>
                 <span className="badge green">{(event.orders || []).length}</span>
+                <div className="spacer"></div>
+                <button className="btn sm primary" onClick={() => assignOrders({ action: 'assign-period' })} disabled={assigning} title="Attribuer toutes les commandes de la période (hors annulées) à cet event">
+                  {assigning ? '…' : '📌 Affecter la période'}
+                </button>
+              </div>
+              <div className="panel-pad" style={{ paddingTop: 8, paddingBottom: 0 }}>
+                <p className="fs12 tx-lo" style={{ margin: 0 }}>
+                  <b>Lié</b> = commande attribuée à cet event · <b>Période</b> = tombe dans les dates mais non attribuée. Clique 📌 pour lier une commande, ✕ pour la délier.
+                </p>
               </div>
               <div className="table-scroll">
                 <table className="tbl">
                   <thead>
                     <tr>
-                      <th>Order #</th>
-                      <th>Customer</th>
+                      <th>Commande</th>
+                      <th>Client</th>
                       <th className="r">Total</th>
-                      <th>Status</th>
-                      <th>Date</th>
+                      <th>Statut</th>
+                      <th>Lien</th>
+                      <th></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {(event.orders || []).slice(0, 10).map((order: any) => (
-                      <tr
-                        key={order.id}
-                        onClick={() => (window.location.href = `/orders/${order.id}`)}
-                        style={{ cursor: 'pointer' }}
-                      >
-                        <td className="t-strong">{order.orderNumber}</td>
+                    {(event.orders || []).slice(0, 20).map((order: any) => {
+                      const linked = order.eventId === event.id
+                      return (
+                      <tr key={order.id}>
+                        <td className="t-strong" onClick={() => (window.location.href = `/orders/${order.id}`)} style={{ cursor: 'pointer' }}>{order.orderNumber}</td>
                         <td>{order.deliveryName}</td>
                         <td className="r num pos">{formatCurrency(order.total)}</td>
                         <td>
@@ -302,13 +327,23 @@ export default function EventDetailPage() {
                             {ORDER_LABEL[order.status] || order.status}
                           </span>
                         </td>
-                        <td className="fs12 tx-lo">{formatDate(order.createdAt)}</td>
+                        <td>
+                          {linked
+                            ? <span className="badge green">Lié</span>
+                            : <span className="badge gray">Période</span>}
+                        </td>
+                        <td className="r">
+                          {linked
+                            ? <button className="btn ghost sm" onClick={() => assignOrders({ action: 'unassign', orderId: order.id })} disabled={assigning} title="Délier" style={{ padding: '2px 7px' }}>✕</button>
+                            : <button className="btn ghost sm" onClick={() => assignOrders({ action: 'assign', orderIds: [order.id] })} disabled={assigning} title="Lier à cet event" style={{ padding: '2px 7px' }}>📌</button>}
+                        </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                     {(event.orders || []).length === 0 && (
                       <tr>
-                        <td colSpan={5} style={{ textAlign: 'center', padding: 20 }}>
-                          No orders during this event period yet
+                        <td colSpan={6} style={{ textAlign: 'center', padding: 20 }} className="tx-lo">
+                          Aucune commande sur cette période pour l&apos;instant
                         </td>
                       </tr>
                     )}

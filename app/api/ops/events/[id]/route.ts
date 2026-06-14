@@ -80,7 +80,7 @@ export async function GET(
 
     event.products = productsResult.rows
 
-    // Get orders during event
+    // Get orders during event (explicitly linked OR falling in the period)
     const ordersResult = await pool.query(`
       SELECT
         o.id,
@@ -88,7 +88,8 @@ export async function GET(
         o.total,
         o."createdAt",
         o.status,
-        o."deliveryName"
+        o."deliveryName",
+        o."eventId"
       FROM "Order" o
       WHERE o."eventId" = $1
         OR (o."createdAt" BETWEEN $2 AND $3)
