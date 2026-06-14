@@ -1,0 +1,5 @@
+-- Migration 018: profit = COD (products + charged delivery) − COGS − delivery cost.
+-- Charged delivery is a pass-through (collected then paid to Sendit) → it must
+-- not reduce profit; free delivery → Shine absorbs the Sendit cost. The previous
+-- estimatedProfit used revenue (products only), understating profit by the
+-- charged delivery fee. Now uses codAmount/total. (See calculate_order_profit.)

@@ -245,12 +245,16 @@ export default function OrderDetailPage() {
     const productRevenue = order?.items?.reduce((sum, item) => sum + toNumber(item.price) * toNumber(item.quantity), 0) ?? 0
     // COGS falls back to the product's costPrice when the line's unitCost is unset
     const productCost = order?.items?.reduce((sum, item) => sum + toNumber(item.unitCost || item.costPrice) * toNumber(item.quantity), 0) ?? 0
-    const deliveryCharged = toNumber(order?.deliveryFeeCharged)
+    // COD (what the customer actually paid). Delivery actually charged is derived
+    // from the real money: COD − products (so "free vs charged" isn't assumed).
+    const cod = toNumber(order?.total)
+    const deliveryCharged = Math.max(0, cod - productRevenue)
     const deliveryCost = toNumber(order?.actualDeliveryCost || order?.estimatedDeliveryCost || 0)
-    const profit = toNumber(order?.estimatedProfit) || productRevenue - productCost - deliveryCost
+    // Profit = COD − COGS − delivery cost (charged delivery nets out, free is absorbed)
+    const profit = toNumber(order?.estimatedProfit) || (cod - productCost - deliveryCost)
     const margin = toNumber(order?.marginPercent) || (productRevenue > 0 ? (profit / productRevenue) * 100 : 0)
 
-    return { productRevenue, productCost, deliveryCharged, deliveryCost, profit, margin }
+    return { productRevenue, productCost, deliveryCharged, deliveryCost, profit, margin, cod }
   }, [order])
 
   // Real data completeness (was hardcoded to 100% with all-green checks)
