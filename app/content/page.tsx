@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Trash2, X, Link2, Sparkles, AlertCircle, RefreshCw } from 'lucide-react'
+import { Plus, Trash2, X, Link2, Sparkles, AlertCircle, RefreshCw, KeyRound } from 'lucide-react'
 import BosShell from '@/components/BosShell'
 
 interface Item {
@@ -93,6 +93,19 @@ export default function ContentPage() {
       load()
       setTimeout(() => setNotice(null), 5000)
     } catch (e) { setError(e instanceof Error ? e.message : 'Sync impossible') }
+    finally { setSyncing(false) }
+  }
+
+  const refreshToken = async () => {
+    if (syncing) return
+    setSyncing(true); setNotice(null); setError(null)
+    try {
+      const res = await fetch('/api/ops/content/refresh-instagram-token')
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || `Erreur ${res.status}`)
+      setNotice(`Token Instagram rafraîchi — valable ${d.expiresInDays} jours.`)
+      setTimeout(() => setNotice(null), 5000)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Refresh impossible') }
     finally { setSyncing(false) }
   }
 
@@ -201,9 +214,14 @@ export default function ContentPage() {
               <a href="/work-hub" style={{ color: 'var(--rose-bright)', fontWeight: 600, textDecoration: 'none' }}>Work Hub</a>.
             </p>
           </div>
-          <button className="btn-modern" onClick={syncInstagram} disabled={syncing} title="Mettre à jour les stats des posts publiés depuis Instagram" style={{ flexShrink: 0, marginTop: 4 }}>
-            <RefreshCw style={{ width: 15, height: 15 }} />{syncing ? 'Sync…' : 'Sync Instagram'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginTop: 4 }}>
+            <button className="btn-modern" onClick={syncInstagram} disabled={syncing} title="Mettre à jour les stats des posts publiés depuis Instagram">
+              <RefreshCw style={{ width: 15, height: 15 }} />{syncing ? 'Sync…' : 'Sync Instagram'}
+            </button>
+            <button className="btn-modern" onClick={refreshToken} disabled={syncing} title="Prolonger le token Instagram de 60 jours" style={{ padding: '0 10px' }}>
+              <KeyRound style={{ width: 15, height: 15 }} />
+            </button>
+          </div>
         </div>
 
         {/* Sync notice */}
