@@ -73,8 +73,8 @@ export async function POST(req: NextRequest) {
         // Push Sendit truth: link + status + actual COD + delivery fee
         await pool.query(
           `UPDATE "Order"
-           SET "senditTrackingId" = $1, "senditStatus" = $2, "deliveryStatus" = $2,
-               status = $3::"OrderStatus", "deliveryFeeCharged" = $4, total = $5
+           SET "senditTrackingId" = $1::text, "senditStatus" = $2::text, "deliveryStatus" = $2::text,
+               status = $3::"OrderStatus", "deliveryFeeCharged" = $4::numeric, total = $5::numeric
            WHERE id = $6`,
           [s.code, s.senditStatus, mapped, Number(s.fee) || 0, Number(s.amount) || 0, s.matchedOrderId]
         )
