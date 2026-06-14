@@ -30,6 +30,7 @@ interface MetaInsightRow {
   impressions?: string
   clicks?: string
   action_values?: MetaAction[]
+  actions?: MetaAction[]
 }
 
 const PURCHASE_TYPES = ['omni_purchase', 'purchase', 'offsite_conversion.fb_pixel_purchase']
@@ -42,6 +43,14 @@ function purchaseValue(actions?: MetaAction[]): number {
     if (hit) return Number(hit.value) || 0
   }
   return 0
+}
+
+/** Sum of one or more action_type counts from the actions array. */
+function actionCount(actions: MetaAction[] | undefined, types: string[]): number {
+  if (!actions) return 0
+  let sum = 0
+  for (const a of actions) if (types.includes(a.action_type)) sum += Number(a.value) || 0
+  return sum
 }
 
 // Approximate fallbacks if the live FX lookup fails (rates drift slowly).
@@ -99,7 +108,7 @@ async function runSync() {
     const datePreset = process.env.META_DATE_PRESET || 'last_90d'
     const url = `${GRAPH}/${account}/insights`
       + `?level=campaign`
-      + `&fields=campaign_id,campaign_name,spend,impressions,clicks,action_values`
+      + `&fields=campaign_id,campaign_name,spend,impressions,clicks,action_values,actions`
       + `&date_preset=${encodeURIComponent(datePreset)}&time_increment=all_days&limit=200`
       + `&access_token=${encodeURIComponent(token)}`
 
@@ -117,6 +126,11 @@ async function runSync() {
       const roas = spend > 0 ? revenue / spend : 0      // ratio, unaffected by fx
       const impressions = Number(r.impressions) || 0
       const clicks = Number(r.clicks) || 0
+      // Engagement from the actions array
+      const likes = actionCount(r.actions, ['post_reaction', 'like'])
+      const comments = actionCount(r.actions, ['comment'])
+      const shares = actionCount(r.actions, ['post', 'onsite_conversion.post_save'].slice(0, 1)) // 'post' = shares
+      const saves = actionCount(r.actions, ['onsite_conversion.post_save'])
 
       const existing = await pool.query(
         `SELECT id FROM "AdCampaign" WHERE platform = 'Meta' AND "externalId" = $1`,
@@ -127,17 +141,18 @@ async function runSync() {
         await pool.query(
           `UPDATE "AdCampaign"
            SET name = $1, spend = $2, revenue = $3, roas = $4, impressions = $5, clicks = $6,
+               likes = $7, comments = $8, shares = $9, saves = $10,
                "lastSyncedAt" = NOW(), "updatedAt" = NOW()
-           WHERE id = $7`,
-          [r.campaign_name, spend, revenue, roas, impressions, clicks, existing.rows[0].id]
+           WHERE id = $11`,
+          [r.campaign_name, spend, revenue, roas, impressions, clicks, likes, comments, shares, saves, existing.rows[0].id]
         )
         updated++
       } else {
         await pool.query(
           `INSERT INTO "AdCampaign"
-             (name, platform, spend, revenue, roas, status, "externalId", impressions, clicks, "lastSyncedAt", "createdAt", "updatedAt")
-           VALUES ($1, 'Meta', $2, $3, $4, 'Active', $5, $6, $7, NOW(), NOW(), NOW())`,
-          [r.campaign_name, spend, revenue, roas, r.campaign_id, impressions, clicks]
+             (name, platform, spend, revenue, roas, status, "externalId", impressions, clicks, likes, comments, shares, saves, "lastSyncedAt", "createdAt", "updatedAt")
+           VALUES ($1, 'Meta', $2, $3, $4, 'Active', $5, $6, $7, $8, $9, $10, $11, NOW(), NOW(), NOW())`,
+          [r.campaign_name, spend, revenue, roas, r.campaign_id, impressions, clicks, likes, comments, shares, saves]
         )
         created++
       }

@@ -18,6 +18,10 @@ interface Ad {
   productIds: number[]
   impressions: number | null
   clicks: number | null
+  likes: number | null
+  saves: number | null
+  comments: number | null
+  shares: number | null
   lastSyncedAt: string | null
 }
 interface EventLite { id: number; name: string }
@@ -258,6 +262,19 @@ function AdDetailDrawer({ ad, events, products, suggestion, onClose, onPatch, pN
               <Row label="Statut" value={ad.status || '—'} />
             </div>
           </div>
+
+          {/* Engagement */}
+          {((ad.likes ?? 0) > 0 || (ad.comments ?? 0) > 0 || (ad.shares ?? 0) > 0 || (ad.saves ?? 0) > 0) && (
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx-lo)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>Engagement</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <Row label="❤ J'aime" value={mad(ad.likes ?? 0)} />
+                <Row label="💬 Commentaires" value={mad(ad.comments ?? 0)} />
+                <Row label="↪ Partages" value={mad(ad.shares ?? 0)} />
+                <Row label="🔖 Enregistrements" value={mad(ad.saves ?? 0)} />
+              </div>
+            </div>
+          )}
 
           {rev === 0 && (
             <p style={{ fontSize: 12, color: 'var(--tx-lo)', background: 'var(--bg-2)', border: '1px solid var(--line-soft)', borderRadius: 8, padding: 10, lineHeight: 1.5 }}>

@@ -20,6 +20,7 @@ export async function GET(_req: NextRequest) {
       SELECT a.id, a.name, a.platform, a.spend::float AS spend, a.revenue::float AS revenue,
              a.roas::float AS roas, a.status, a."externalId", a."eventId", e.name AS "eventName",
              COALESCE(a."productIds", '{}') AS "productIds", a.impressions, a.clicks,
+             a.likes, a.saves, a.comments, a.shares,
              a."lastSyncedAt", a."campaignId"
       FROM "AdCampaign" a
       LEFT JOIN "Event" e ON e.id = a."eventId"
