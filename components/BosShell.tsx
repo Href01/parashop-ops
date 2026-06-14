@@ -11,6 +11,7 @@ import {
   Package,
   PanelLeft,
   Search,
+  Settings,
   Sparkles,
   Target,
   Users,
@@ -60,7 +61,10 @@ const sections: Array<{ label: string; items: NavItem[] }> = [
   },
   {
     label: 'Aide',
-    items: [{ label: 'Guide', href: '/guide', icon: HelpCircle }],
+    items: [
+      { label: 'Guide', href: '/guide', icon: HelpCircle },
+      { label: 'Paramètres', href: '/settings', icon: Settings },
+    ],
   },
 ]
 
@@ -70,7 +74,7 @@ export default function BosShell({
   crumb,
   children,
 }: {
-  active: 'dashboard' | 'intelligence' | 'orders' | 'products' | 'customers' | 'inventory' | 'campaigns' | 'ads' | 'events' | 'content' | 'work' | 'guide'
+  active: 'dashboard' | 'intelligence' | 'orders' | 'products' | 'customers' | 'inventory' | 'campaigns' | 'ads' | 'events' | 'content' | 'work' | 'guide' | 'settings'
   title: string
   crumb: string
   children: ReactNode
