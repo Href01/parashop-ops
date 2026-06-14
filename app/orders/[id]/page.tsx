@@ -40,7 +40,7 @@ function toNumber(value: unknown) {
 }
 
 function formatMoney(value: unknown) {
-  return toNumber(value).toLocaleString('en-US', { maximumFractionDigits: 0 })
+  return toNumber(value).toLocaleString('fr-FR', { maximumFractionDigits: 0 })
 }
 
 export default function OrderDetailPage() {
@@ -240,11 +240,30 @@ export default function OrderDetailPage() {
     const productRevenue = order?.items?.reduce((sum, item) => sum + toNumber(item.price) * toNumber(item.quantity), 0) ?? 0
     const productCost = order?.items?.reduce((sum, item) => sum + toNumber(item.unitCost) * toNumber(item.quantity), 0) ?? 0
     const deliveryCharged = toNumber(order?.deliveryFeeCharged)
-    const deliveryCost = toNumber(order?.actualDeliveryCost || order?.estimatedDeliveryCost || 30)
+    const deliveryCost = toNumber(order?.actualDeliveryCost || order?.estimatedDeliveryCost || 0)
     const profit = toNumber(order?.estimatedProfit) || productRevenue - productCost - deliveryCost
     const margin = toNumber(order?.marginPercent) || (productRevenue > 0 ? (profit / productRevenue) * 100 : 0)
 
     return { productRevenue, productCost, deliveryCharged, deliveryCost, profit, margin }
+  }, [order])
+
+  // Real data completeness (was hardcoded to 100% with all-green checks)
+  const completeness = useMemo(() => {
+    const items = order?.items || []
+    const checks = [
+      { label: 'Nom client', ok: !!order?.deliveryName },
+      { label: 'Téléphone', ok: !!order?.deliveryPhone },
+      { label: 'Ville', ok: !!order?.deliveryCity },
+      { label: 'Adresse de livraison', ok: !!order?.deliveryAddress },
+      { label: 'Articles', ok: items.length > 0 },
+      { label: 'Coûts produits', ok: items.length > 0 && items.every((i: any) => toNumber(i.unitCost) > 0) },
+      { label: 'Frais de livraison', ok: order?.deliveryFeeCharged != null },
+      { label: 'Coût livraison estimé', ok: order?.estimatedDeliveryCost != null },
+      { label: 'Méthode de paiement', ok: !!order?.paymentMethod },
+      { label: 'Canal source', ok: !!order?.sourceChannel },
+    ]
+    const pct = Math.round((checks.filter((c) => c.ok).length / checks.length) * 100)
+    return { checks, pct }
   }, [order])
 
   if (loading) {
@@ -734,51 +753,51 @@ export default function OrderDetailPage() {
             <div className="panel">
               <div className="panel-head">
                 <Truck className="panel-head-icon" />
-                <h3>Sendit shipment</h3>
+                <h3>Livraison Sendit</h3>
                 <div className="spacer"></div>
                 <span className={`badge ${order.senditTrackingId ? 'green' : 'amber'}`}>
-                  {order.senditStatus || 'Not created'}
+                  {order.senditStatus || 'Non expédiée'}
                 </span>
               </div>
               <div className="panel-pad info-grid">
-                <Info label="Tracking number" value={order.senditTrackingId || 'No shipment yet'} mono />
-                <Info label="Barcode" value={order.senditBarcode || 'N/A'} mono />
-                <Info label="Delivery cost" value={`${formatMoney(totals.deliveryCost)} MAD`} mono />
-                <Info label="Status" value={order.senditStatus || 'Not created'} />
+                <Info label="N° de suivi" value={order.senditTrackingId || 'Pas encore expédiée'} mono />
+                <Info label="Code-barres" value={order.senditBarcode || '—'} mono />
+                <Info label="Coût livraison" value={`${formatMoney(totals.deliveryCost)} MAD`} mono />
+                <Info label="Statut" value={order.senditStatus || 'Non expédiée'} />
               </div>
             </div>
           </div>
 
           <div className="grid">
             <div className="panel">
-              <div className="panel-head"><Wallet className="panel-head-icon" /><h3>P&L breakdown</h3></div>
+              <div className="panel-head"><Wallet className="panel-head-icon" /><h3>Détail P&L</h3></div>
               <div className="panel-pad">
-                <div className="pl-row"><span className="tx-mid">Products revenue</span><span className="num">{formatMoney(totals.productRevenue)} MAD</span></div>
-                <div className="pl-row"><span className="tx-mid">Delivery charged</span><span className="num">+{formatMoney(totals.deliveryCharged)} MAD</span></div>
-                <div className="pl-row"><span className="tx-mid">Product cost</span><span className="num neg">-{formatMoney(totals.productCost)} MAD</span></div>
-                <div className="pl-row"><span className="tx-mid">Delivery cost</span><span className="num neg">-{formatMoney(totals.deliveryCost)} MAD</span></div>
-                <div className="pl-row total"><span>Net profit</span><span className={`num ${totals.profit >= 0 ? 'pos' : 'neg'}`}>{totals.profit >= 0 ? '+' : ''}{formatMoney(totals.profit)} MAD</span></div>
+                <div className="pl-row"><span className="tx-mid">CA produits</span><span className="num">{formatMoney(totals.productRevenue)} MAD</span></div>
+                <div className="pl-row"><span className="tx-mid">Livraison facturée</span><span className="num">+{formatMoney(totals.deliveryCharged)} MAD</span></div>
+                <div className="pl-row"><span className="tx-mid">Coût produits</span><span className="num neg">-{formatMoney(totals.productCost)} MAD</span></div>
+                <div className="pl-row"><span className="tx-mid">Coût livraison</span><span className="num neg">-{formatMoney(totals.deliveryCost)} MAD</span></div>
+                <div className="pl-row total"><span>Profit net</span><span className={`num ${totals.profit >= 0 ? 'pos' : 'neg'}`}>{totals.profit >= 0 ? '+' : ''}{formatMoney(totals.profit)} MAD</span></div>
                 <div className="margin-box">
                   <MarginDonut value={totals.margin} />
-                  <div><div className="label">Net margin</div><div className={`num fs22 fw600 ${totals.margin >= 25 ? 'pos' : 'neg'}`}>{totals.margin.toFixed(1)}%</div><div className="fs11 tx-lo">target 30%+</div></div>
+                  <div><div className="label">Marge nette</div><div className={`num fs22 fw600 ${totals.margin >= 25 ? 'pos' : 'neg'}`}>{totals.margin.toFixed(1)}%</div><div className="fs11 tx-lo">objectif 30%+</div></div>
                 </div>
               </div>
             </div>
 
             <div className="panel">
-              <div className="panel-head"><h3>Data completeness</h3><div className="spacer"></div><span className="num fw600 pos">100%</span></div>
+              <div className="panel-head"><h3>Complétude des données</h3><div className="spacer"></div><span className="num fw600" style={{ color: completeness.pct >= 100 ? 'var(--green)' : completeness.pct >= 70 ? 'var(--amber)' : 'var(--red)' }}>{completeness.pct}%</span></div>
               <div className="panel-pad">
-                {['Customer name', 'Phone number', 'City', 'Delivery address', 'Order items', 'Product cost prices', 'Delivery fee charged', 'Estimated delivery cost', 'Payment method', 'Source channel'].map((item) => (
-                  <div key={item} className="check-row">
-                    <span className="ci ok"><Check /></span>
-                    <span className="tx-mid">{item}</span>
+                {completeness.checks.map((c) => (
+                  <div key={c.label} className="check-row">
+                    <span className={`ci ${c.ok ? 'ok' : ''}`} style={c.ok ? undefined : { color: 'var(--red)' }}>{c.ok ? <Check /> : <X />}</span>
+                    <span className={c.ok ? 'tx-mid' : 'tx-lo'}>{c.label}</span>
                   </div>
                 ))}
               </div>
             </div>
 
             <div className="panel">
-              <div className="panel-head"><h3>Activity log</h3></div>
+              <div className="panel-head"><h3>Journal d&apos;activité</h3></div>
               <div>
                 {(order.statusHistory || []).length > 0 ? (
                   order.statusHistory.map((item: any) => (
