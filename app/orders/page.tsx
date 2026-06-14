@@ -21,6 +21,7 @@ interface OrderRow {
   sourceChannel?: string
   status: OrderStatus
   deliveryStatus?: string
+  senditStatus?: string | null
   senditTrackingId?: string | null
   revenue?: number | string | null
   estimatedProfit?: number | string | null
@@ -85,8 +86,24 @@ function completenessColor(value: number) {
   return 'var(--red)'
 }
 
-/** Real delivery label from status + Sendit data (deliveryStatus is unreliable). */
+// Real Sendit delivery states → French (so the column matches what's on Sendit).
+const SENDIT_DELIVERY: Record<string, { text: string; cls: string }> = {
+  WAREHOUSE: { text: 'Au dépôt', cls: 'st-shipped' },
+  PICKED_UP: { text: 'Ramassée', cls: 'st-shipped' },
+  IN_TRANSIT: { text: 'En transit', cls: 'st-shipped' },
+  DISTRIBUTION: { text: 'En distribution', cls: 'st-shipped' },
+  DELIVERED: { text: 'Livrée', cls: 'st-delivered' },
+  RETURNED: { text: 'Retournée', cls: 'st-returned' },
+  REJECTED: { text: 'Refusée', cls: 'st-returned' },
+  REFUSED: { text: 'Refusée', cls: 'st-returned' },
+  CANCELED: { text: 'Annulée', cls: 'st-cancelled' },
+  CANCELLED: { text: 'Annulée', cls: 'st-cancelled' },
+}
+
+/** Delivery label — shows the real Sendit status when present, else derives it. */
 function deliveryLabel(o: OrderRow): { text: string; cls: string } {
+  const ss = o.senditStatus?.toUpperCase()
+  if (ss) return SENDIT_DELIVERY[ss] || { text: o.senditStatus as string, cls: 'st-shipped' }
   if (o.status === 'DELIVERED') return { text: 'Livrée', cls: 'st-delivered' }
   if (o.status === 'CANCELLED') return { text: 'Annulée', cls: 'st-cancelled' }
   if (o.status === 'RETURNED' || o.status === 'FAILED') return { text: 'Retournée', cls: 'st-returned' }
