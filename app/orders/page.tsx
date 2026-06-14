@@ -21,10 +21,10 @@ interface OrderRow {
   sourceChannel?: string
   status: OrderStatus
   deliveryStatus?: string
+  senditTrackingId?: string | null
   revenue?: number | string | null
   estimatedProfit?: number | string | null
   marginPercent?: number | string | null
-  completenessScore?: number | string | null
   createdAt: string
   items_count?: number
   product_names?: string | null
@@ -71,13 +71,27 @@ function toNumber(value: unknown) {
 }
 
 function formatMoney(value: unknown) {
-  return toNumber(value).toLocaleString('en-US', { maximumFractionDigits: 0 })
+  return toNumber(value).toLocaleString('fr-FR', { maximumFractionDigits: 0 })
 }
 
+/** Real completeness from actual fields (the completenessScore column doesn't exist). */
+function orderCompleteness(o: OrderRow): number {
+  const checks = [!!o.deliveryName, !!o.deliveryPhone, !!o.deliveryCity, !!o.product_names]
+  return Math.round((checks.filter(Boolean).length / checks.length) * 100)
+}
 function completenessColor(value: number) {
-  if (value >= 90) return 'var(--green)'
-  if (value >= 70) return 'var(--amber)'
+  if (value >= 100) return 'var(--green)'
+  if (value >= 75) return 'var(--amber)'
   return 'var(--red)'
+}
+
+/** Real delivery label from status + Sendit data (deliveryStatus is unreliable). */
+function deliveryLabel(o: OrderRow): { text: string; cls: string } {
+  if (o.status === 'DELIVERED') return { text: 'Livrée', cls: 'st-delivered' }
+  if (o.status === 'CANCELLED') return { text: 'Annulée', cls: 'st-cancelled' }
+  if (o.status === 'RETURNED' || o.status === 'FAILED') return { text: 'Retournée', cls: 'st-returned' }
+  if (o.senditTrackingId) return { text: 'En transit', cls: 'st-shipped' }
+  return { text: 'Non expédiée', cls: 'st-pending' }
 }
 
 export default function OrdersPage() {
@@ -86,7 +100,7 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [activeFilter, setActiveFilter] = useState<OrderFilter>('all')
-  const [dateFilter, setDateFilter] = useState<DateFilter>('week')
+  const [dateFilter, setDateFilter] = useState<DateFilter>('all')
   const [currentPage, setCurrentPage] = useState(1)
 
   useEffect(() => {
@@ -190,7 +204,7 @@ export default function OrdersPage() {
     return [
       { label: 'En attente', value: count('PENDING'), color: 'var(--amber)', className: 'st-pending' },
       { label: 'Confirmées', value: count('CONFIRMED'), color: 'var(--blue)', className: 'st-confirmed' },
-      { label: 'En livraison', value: orders.filter((order) => order.deliveryStatus && order.deliveryStatus !== 'NOT_CREATED').length, color: 'var(--violet)', className: 'st-shipped' },
+      { label: 'En transit', value: orders.filter((o) => !!o.senditTrackingId && o.status !== 'DELIVERED' && o.status !== 'CANCELLED').length, color: 'var(--violet)', className: 'st-shipped' },
       { label: 'Livrées', value: count('DELIVERED'), color: 'var(--green)', className: 'st-delivered' },
       { label: 'Retournées', value: count('RETURNED') + count('FAILED'), color: 'var(--red)', className: 'st-returned' },
       { label: 'Annulées', value: count('CANCELLED'), color: 'var(--tx-mid)', className: 'st-cancelled' },
@@ -223,7 +237,7 @@ export default function OrdersPage() {
       ) {
         return false
       }
-      if (activeFilter === 'incomplete' && toNumber(order.completenessScore || 100) >= 90) return false
+      if (activeFilter === 'incomplete' && orderCompleteness(order) >= 100) return false
 
       if (dateFilter !== 'all') {
         const createdAt = new Date(order.createdAt)
@@ -345,7 +359,7 @@ export default function OrdersPage() {
                 className={`btn-modern btn-sm ${activeFilter === 'incomplete' ? 'btn-primary' : 'btn-subtle'}`}
                 onClick={() => selectFilter('incomplete')}
               >
-                Incomplètes <span className="ml-1 badge-modern badge-danger badge-sm">{orders.filter((order) => toNumber(order.completenessScore) < 90).length}</span>
+                Incomplètes <span className="ml-1 badge-modern badge-danger badge-sm">{orders.filter((order) => orderCompleteness(order) < 100).length}</span>
               </button>
             </div>
 
@@ -398,9 +412,10 @@ export default function OrdersPage() {
                   </tr>
                 ) : (
                   paginatedOrders.map((order) => {
-                    const completeness = toNumber(order.completenessScore || 100)
+                    const completeness = orderCompleteness(order)
                     const profit = toNumber(order.estimatedProfit)
                     const margin = order.marginPercent === null || order.marginPercent === undefined ? null : toNumber(order.marginPercent)
+                    const deliv = deliveryLabel(order)
 
                     return (
                       <tr
@@ -457,7 +472,7 @@ export default function OrdersPage() {
                           </span>
                         </td>
                         <td>
-                          <span className="fs12 tx-mid">{order.deliveryStatus || 'Not created'}</span>
+                          <span className={`st ${deliv.cls}`}><span className="sd"></span>{deliv.text}</span>
                         </td>
                         <td className="r">
                           <span className="num t-strong">{formatMoney(order.revenue)}</span> <span className="tx-lo fs11">MAD</span>
@@ -504,7 +519,7 @@ export default function OrdersPage() {
 
           <div className="flex items-center justify-between p-4 border-t border-gray-200 bg-gray-50">
             <span className="text-xs text-gray-600">
-              Showing <span className="font-semibold text-gray-900">{filteredOrders.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, filteredOrders.length)}</span> of {filteredOrders.length} orders
+              Affichage <span className="font-semibold text-gray-900">{filteredOrders.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, filteredOrders.length)}</span> sur {filteredOrders.length} commandes
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -514,7 +529,7 @@ export default function OrdersPage() {
                 disabled={currentPageInRange <= 1}
               >
                 <ChevronLeft className="w-4 h-4" />
-                Prev
+                Préc.
               </button>
               <button type="button" className="btn-modern btn-sm btn-primary">{currentPageInRange}/{totalPages}</button>
               <button
@@ -523,7 +538,7 @@ export default function OrdersPage() {
                 onClick={() => setCurrentPage((page) => Math.min(totalPages, Math.min(page, totalPages) + 1))}
                 disabled={currentPageInRange >= totalPages}
               >
-                Next
+                Suiv.
                 <ChevronRight className="w-4 h-4" />
               </button>
             </div>
