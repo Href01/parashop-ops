@@ -14,6 +14,9 @@ import {
   BarChart3,
 } from 'lucide-react'
 
+const ORDER_BADGE: Record<string, string> = { PENDING: 'amber', CONFIRMED: 'blue', DELIVERED: 'green', CANCELLED: 'red' }
+const ORDER_LABEL: Record<string, string> = { PENDING: 'En attente', CONFIRMED: 'Confirmée', DELIVERED: 'Livrée', CANCELLED: 'Annulée' }
+
 type Event = {
   id: number
   name: string
@@ -295,8 +298,8 @@ export default function EventDetailPage() {
                         <td>{order.deliveryName}</td>
                         <td className="r num pos">{formatCurrency(order.total)}</td>
                         <td>
-                          <span className={`badge ${order.status === 'DELIVERED' ? 'green' : 'blue'}`}>
-                            {order.status}
+                          <span className={`badge ${ORDER_BADGE[order.status] || 'gray'}`}>
+                            {ORDER_LABEL[order.status] || order.status}
                           </span>
                         </td>
                         <td className="fs12 tx-lo">{formatDate(order.createdAt)}</td>
