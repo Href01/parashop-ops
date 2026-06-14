@@ -44,6 +44,34 @@ function purchaseValue(actions?: MetaAction[]): number {
   return 0
 }
 
+// Approximate fallbacks if the live FX lookup fails (rates drift slowly).
+const FX_FALLBACK: Record<string, number> = { USD: 10, EUR: 10.8, GBP: 12.6, MAD: 1 }
+
+/**
+ * Conversion rate from the ad account's billing currency to MAD.
+ * Priority: META_FX_TO_MAD env override → live rate (open.er-api.com, no key)
+ * → approximate fallback → 1 (no conversion).
+ */
+async function fxToMad(account: string, token: string): Promise<number> {
+  const override = Number(process.env.META_FX_TO_MAD)
+  if (Number.isFinite(override) && override > 0) return override
+  try {
+    const acc = await fetch(`${GRAPH}/${account}?fields=currency&access_token=${encodeURIComponent(token)}`, { cache: 'no-store' })
+    const accJson = await acc.json()
+    const currency = (accJson?.currency || 'MAD').toUpperCase()
+    if (currency === 'MAD') return 1
+    try {
+      const fxRes = await fetch(`https://open.er-api.com/v6/latest/${currency}`, { cache: 'no-store' })
+      const fxJson = await fxRes.json()
+      const rate = Number(fxJson?.rates?.MAD)
+      if (Number.isFinite(rate) && rate > 0) return rate
+    } catch { /* fall through */ }
+    return FX_FALLBACK[currency] || 1
+  } catch {
+    return 1
+  }
+}
+
 /** Cron (Bearer CRON_SECRET) or founder session. */
 async function authorized(req: NextRequest): Promise<boolean> {
   const cronSecret = process.env.CRON_SECRET
@@ -63,6 +91,10 @@ async function runSync() {
     }
     const account = rawAccount.startsWith('act_') ? rawAccount : `act_${rawAccount}`
 
+    // The ad account bills in its own currency (often USD/EUR) but the whole BOS
+    // is in MAD. Convert spend & revenue to MAD so everything is consistent.
+    const fx = await fxToMad(account, token)
+
     // Recent window only — avoids importing years of old/unrelated campaigns.
     const datePreset = process.env.META_DATE_PRESET || 'last_90d'
     const url = `${GRAPH}/${account}/insights`
@@ -80,9 +112,9 @@ async function runSync() {
 
     let created = 0, updated = 0
     for (const r of rows) {
-      const spend = Number(r.spend) || 0
-      const revenue = purchaseValue(r.action_values)
-      const roas = spend > 0 ? revenue / spend : 0
+      const spend = (Number(r.spend) || 0) * fx       // → MAD
+      const revenue = purchaseValue(r.action_values) * fx // → MAD
+      const roas = spend > 0 ? revenue / spend : 0      // ratio, unaffected by fx
       const impressions = Number(r.impressions) || 0
       const clicks = Number(r.clicks) || 0
 
