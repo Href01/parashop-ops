@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { isFounder } from '@/lib/auth'
 import pool from '@/lib/db'
+import { getMetaToken } from '@/lib/meta-token'
 
 /**
  * POST /api/ops/ads/sync-meta
@@ -52,7 +53,7 @@ async function authorized(req: NextRequest): Promise<boolean> {
 }
 
 async function runSync() {
-    const token = process.env.META_ACCESS_TOKEN
+    const token = await getMetaToken() // DB (auto-refreshed) → env bootstrap
     const rawAccount = process.env.META_AD_ACCOUNT_ID
     if (!token || !rawAccount) {
       return NextResponse.json({

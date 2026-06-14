@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { RefreshCw, X, AlertCircle } from 'lucide-react'
+import { RefreshCw, X, AlertCircle, KeyRound } from 'lucide-react'
 import BosShell from '@/components/BosShell'
 
 interface Ad {
@@ -63,6 +63,19 @@ export default function AdsPage() {
     finally { setSyncing(false) }
   }
 
+  const refreshToken = async () => {
+    if (syncing) return
+    setSyncing(true); setError(null); setNotice(null)
+    try {
+      const res = await fetch('/api/ops/ads/refresh-meta-token')
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || `Erreur ${res.status}`)
+      setNotice(d.neverExpires ? 'Token Meta rafraîchi (System User — n\'expire jamais).' : `Token Meta rafraîchi — valable ${d.expiresInDays} jours.`)
+      setTimeout(() => setNotice(null), 5000)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Refresh impossible') }
+    finally { setSyncing(false) }
+  }
+
   const patchAd = async (id: number, patch: Record<string, unknown>) => {
     // optimistic
     setAds((prev) => prev.map((a) => (a.id === id ? { ...a, ...patch, eventName: 'eventId' in patch ? (events.find((e) => e.id === patch.eventId)?.name ?? null) : a.eventName } : a)))
@@ -90,9 +103,14 @@ export default function AdsPage() {
               Tes campagnes <b>Meta</b> importées automatiquement. Relie chaque campagne à un <b>event</b> et à des <b>produits</b> — la dépense se met à jour toute seule.
             </p>
           </div>
-          <button className="btn-modern" onClick={syncMeta} disabled={syncing} style={{ flexShrink: 0, marginTop: 4 }}>
-            <RefreshCw style={{ width: 15, height: 15 }} />{syncing ? 'Sync…' : 'Sync Meta'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginTop: 4 }}>
+            <button className="btn-modern" onClick={syncMeta} disabled={syncing}>
+              <RefreshCw style={{ width: 15, height: 15 }} />{syncing ? 'Sync…' : 'Sync Meta'}
+            </button>
+            <button className="btn-modern" onClick={refreshToken} disabled={syncing} title="Prolonger le token Meta" style={{ padding: '0 10px' }}>
+              <KeyRound style={{ width: 15, height: 15 }} />
+            </button>
+          </div>
         </div>
 
         {/* Totals */}

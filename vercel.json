@@ -7,6 +7,10 @@
     {
       "path": "/api/ops/ads/sync-meta",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/ops/ads/refresh-meta-token",
+      "schedule": "0 6 * * 3"
     }
   ]
 }
