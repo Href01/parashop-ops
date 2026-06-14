@@ -20,7 +20,6 @@ interface DashboardStats {
   pipeline: Array<{ label: string; value: number; tone: string }>
   alerts: { total: number; items: Array<{ tone: string; title: string; subtitle: string; href: string }> }
   activity: Array<{ tone: string; title: string; subtitle: string; timestamp: string }>
-  topCities?: Array<{ name: string; orders: number }>
 }
 
 const DAILY_GOAL = 6000
@@ -267,7 +266,7 @@ export default function GlowDashboard() {
                     <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx-hi)', marginBottom: 2 }}>{item.title}</div>
                     <div style={{ fontSize: 11, color: 'var(--tx-mid)' }}>{item.subtitle}</div>
                     <div style={{ fontSize: 10, color: color, marginTop: 3, fontFamily: 'var(--mono)' }}>
-                      {new Date(item.timestamp).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                      {new Date(item.timestamp).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                     </div>
                   </div>
                 )

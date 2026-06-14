@@ -186,15 +186,15 @@ function buildStreak(series: Array<{ revenue: number }>): number {
 function humanizeStatus(status: string | null): string {
   switch (status) {
     case 'PENDING':
-      return 'Pending'
+      return 'En attente'
     case 'CONFIRMED':
-      return 'Confirmed'
+      return 'Confirmée'
     case 'DELIVERED':
-      return 'Delivered'
+      return 'Livrée'
     case 'CANCELLED':
-      return 'Cancelled'
+      return 'Annulée'
     default:
-      return 'Updated'
+      return 'Mise à jour'
   }
 }
 
@@ -489,11 +489,11 @@ export async function GET() {
     }))
 
     const pipelineItems = [
-      { label: 'Pending', value: toNumber(pipeline?.pending), tone: 'amber' as Tone },
-      { label: 'Confirmed', value: toNumber(pipeline?.confirmed), tone: 'blue' as Tone },
-      { label: 'In Sendit', value: toNumber(pipeline?.sendit), tone: 'violet' as Tone },
-      { label: 'Delivered', value: toNumber(pipeline?.delivered), tone: 'green' as Tone },
-      { label: 'Cancelled', value: toNumber(pipeline?.cancelled), tone: 'red' as Tone },
+      { label: 'En attente', value: toNumber(pipeline?.pending), tone: 'amber' as Tone },
+      { label: 'Confirmées', value: toNumber(pipeline?.confirmed), tone: 'blue' as Tone },
+      { label: 'Chez Sendit', value: toNumber(pipeline?.sendit), tone: 'violet' as Tone },
+      { label: 'Livrées', value: toNumber(pipeline?.delivered), tone: 'green' as Tone },
+      { label: 'Annulées', value: toNumber(pipeline?.cancelled), tone: 'red' as Tone },
     ]
 
     const needsConfirmation = toNumber(alertCounts?.needsConfirmation)
@@ -506,42 +506,42 @@ export async function GET() {
       needsConfirmation > 0
         ? {
             tone: 'amber' as Tone,
-            title: `${needsConfirmation} orders need confirmation`,
-            subtitle: 'Pending orders are not counted as booked revenue yet',
+            title: `${needsConfirmation} commande${needsConfirmation > 1 ? 's' : ''} à confirmer`,
+            subtitle: 'Les commandes en attente ne comptent pas encore dans le CA',
             href: '/orders',
           }
         : null,
       unshippedConfirmed > 0
         ? {
             tone: 'violet' as Tone,
-            title: `${unshippedConfirmed} confirmed orders are not shipped`,
-            subtitle: 'Create Sendit shipments for confirmed orders',
+            title: `${unshippedConfirmed} commande${unshippedConfirmed > 1 ? 's' : ''} confirmée${unshippedConfirmed > 1 ? 's' : ''} non expédiée${unshippedConfirmed > 1 ? 's' : ''}`,
+            subtitle: 'Créer les expéditions Sendit pour les commandes confirmées',
             href: '/orders',
           }
         : null,
       missingCosts > 0
         ? {
             tone: 'amber' as Tone,
-            title: `${missingCosts} booked orders have incomplete cost data`,
-            subtitle: 'Profit is conservative until product cost prices are filled',
+            title: `${missingCosts} commande${missingCosts > 1 ? 's' : ''} avec coûts incomplets`,
+            subtitle: 'Le profit reste prudent tant que les coûts produits ne sont pas renseignés',
             href: '/products',
           }
         : null,
       lowStockTotal > 0
         ? {
             tone: 'red' as Tone,
-            title: `${lowStockTotal} products are low on stock`,
+            title: `${lowStockTotal} produit${lowStockTotal > 1 ? 's' : ''} en stock faible`,
             subtitle: lowStockRows
-              .map((item) => `${item.name || 'Unknown'} (${toNumber(item.stock)} left)`)
-              .join(' - '),
+              .map((item) => `${item.name || 'Inconnu'} (${toNumber(item.stock)} restant${toNumber(item.stock) > 1 ? 's' : ''})`)
+              .join(' · '),
             href: '/products',
           }
         : null,
       deliveryIssues > 0
         ? {
             tone: 'rose' as Tone,
-            title: `${deliveryIssues} cancelled orders in the last 30 days`,
-            subtitle: 'Review cancellation reasons and customer follow-up',
+            title: `${deliveryIssues} commande${deliveryIssues > 1 ? 's' : ''} annulée${deliveryIssues > 1 ? 's' : ''} (30 derniers jours)`,
+            subtitle: 'Analyser les raisons d\'annulation et le suivi client',
             href: '/orders',
           }
         : null,
@@ -551,15 +551,15 @@ export async function GET() {
       ? activityHistoryRows.map((row) => ({
           tone: toneFromStatus(row.status),
           title: row.orderNumber
-            ? `${row.orderNumber} moved to ${humanizeStatus(row.status)}`
-            : `Order moved to ${humanizeStatus(row.status)}`,
-          subtitle: row.note || row.deliveryName || 'Status change recorded',
+            ? `${row.orderNumber} → ${humanizeStatus(row.status)}`
+            : `Commande → ${humanizeStatus(row.status)}`,
+          subtitle: row.note || row.deliveryName || 'Changement de statut',
           timestamp: new Date(row.createdAt).toISOString(),
         }))
       : recentOrdersRows.map((row) => ({
           tone: toneFromStatus(row.status),
-          title: row.orderNumber ? `New order ${row.orderNumber}` : 'New order created',
-          subtitle: [row.deliveryName, row.sourceChannel].filter(Boolean).join(' - ') || 'Recent order activity',
+          title: row.orderNumber ? `Nouvelle commande ${row.orderNumber}` : 'Nouvelle commande',
+          subtitle: [row.deliveryName, row.sourceChannel].filter(Boolean).join(' · ') || 'Activité récente',
           timestamp: new Date(row.createdAt).toISOString(),
         }))
 
@@ -612,8 +612,8 @@ export async function GET() {
           : [
               {
                 tone: 'green' as Tone,
-                title: 'No urgent blockers right now',
-                subtitle: 'Orders, stock, and delivery queues look healthy',
+                title: 'Aucun blocage urgent',
+                subtitle: 'Commandes, stock et livraisons sont sains',
                 href: '/orders',
               },
             ],
