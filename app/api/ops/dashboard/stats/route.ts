@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { isFounder } from '@/lib/auth'
 import pool from '@/lib/db'
+import { getWeeklyGoal } from '@/app/api/ops/settings/goal/route'
 
 const DAILY_REVENUE_GOAL = 6000
 const BUSINESS_TIMEZONE = 'Africa/Casablanca'
@@ -12,6 +13,7 @@ type Tone = 'rose' | 'green' | 'amber' | 'blue' | 'violet' | 'red'
 
 interface SummaryRow {
   revenueToday: number | string | null
+  revenue7d: number | string | null
   revenueWeek: number | string | null
   previousRevenueWeek: number | string | null
   estimatedProfitWeek: number | string | null
@@ -273,6 +275,7 @@ export async function GET(req: Request) {
         ${FINANCIAL_CTE}
         SELECT
           COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= (SELECT today_start FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenueToday",
+          COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= ((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date - INTERVAL '6 days')::timestamp AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenue7d",
           COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= (SELECT week_start FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenueWeek",
           COALESCE(SUM(revenue) FILTER (
             WHERE "createdAt" >= (SELECT previous_week_start FROM bounds)
@@ -445,6 +448,8 @@ export async function GET(req: Request) {
     const alertCounts = alertRows[0]
 
     const revenueToday = toNumber(summary?.revenueToday)
+    const revenue7d = toNumber(summary?.revenue7d)
+    const weeklyGoal = await getWeeklyGoal()
     const revenueWeek = toNumber(summary?.revenueWeek)
     const previousRevenueWeek = toNumber(summary?.previousRevenueWeek)
     const estimatedProfitWeek = toNumber(summary?.estimatedProfitWeek)
@@ -594,6 +599,8 @@ export async function GET(req: Request) {
       generatedAt: new Date().toISOString(),
       periodDays: days,
       dailyGoal: DAILY_REVENUE_GOAL,
+      weeklyGoal,
+      revenue7d,
       revenueToday,
       revenueWeek,
       revenueDelta,

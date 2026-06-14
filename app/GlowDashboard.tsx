@@ -6,6 +6,8 @@ import Link from 'next/link'
 
 interface DashboardStats {
   revenueToday: number
+  revenue7d: number
+  weeklyGoal: number
   revenueWeek: number
   revenueDelta: number | null
   estimatedProfit: number
@@ -38,6 +40,16 @@ export default function GlowDashboard() {
   const [loading, setLoading] = useState(true)
   const [days, setDays] = useState(30)
   const periodLabel = PERIODS.find((p) => p.days === days)?.label || `${days}j`
+  const [editingGoal, setEditingGoal] = useState(false)
+  const [goalInput, setGoalInput] = useState('')
+
+  const saveGoal = async () => {
+    const v = Math.round(Number(goalInput))
+    if (!Number.isFinite(v) || v < 0) { setEditingGoal(false); return }
+    setStats((s) => s ? { ...s, weeklyGoal: v } : s)
+    setEditingGoal(false)
+    await fetch('/api/ops/settings/goal', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ weeklyGoal: v }) }).catch(() => {})
+  }
 
   useEffect(() => {
     setLoading(true)
@@ -61,6 +73,8 @@ export default function GlowDashboard() {
   }
 
   const goalPct = Math.min(Math.round((stats.revenueToday / DAILY_GOAL) * 100), 100)
+  const weeklyGoal = stats.weeklyGoal || 42000
+  const goalWeekPct = Math.min(Math.round((stats.revenue7d / weeklyGoal) * 100), 100)
   const series = stats.revenueSeries.slice(-14)
   const revenue14 = series.reduce((s, p) => s + p.revenue, 0)
   const maxRev = Math.max(1, ...series.map((p) => p.revenue))
@@ -152,16 +166,31 @@ export default function GlowDashboard() {
           </Card>
 
           <Card>
-            <Label>Objectif du jour</Label>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Label>Objectif de la semaine</Label>
+              {!editingGoal && (
+                <button onClick={() => { setGoalInput(String(weeklyGoal)); setEditingGoal(true) }} title="Modifier l'objectif" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-lo)', fontSize: 11, padding: 0 }}>✏️ modifier</button>
+              )}
+            </div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 6, marginBottom: 4 }}>
-              <span style={{ fontSize: 40, fontWeight: 700, fontFamily: 'var(--mono)', color: goalPct >= 100 ? 'var(--green)' : 'var(--rose-bright)' }}>{goalPct}%</span>
-              <span style={{ fontSize: 13, color: 'var(--tx-lo)' }}>de {mad(DAILY_GOAL)} MAD</span>
+              <span style={{ fontSize: 40, fontWeight: 700, fontFamily: 'var(--mono)', color: goalWeekPct >= 100 ? 'var(--green)' : 'var(--rose-bright)' }}>{goalWeekPct}%</span>
+              {editingGoal ? (
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ fontSize: 13, color: 'var(--tx-lo)' }}>de</span>
+                  <input autoFocus type="number" value={goalInput} onChange={(e) => setGoalInput(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') saveGoal(); if (e.key === 'Escape') setEditingGoal(false) }}
+                    style={{ width: 90, fontSize: 13, padding: '3px 6px', borderRadius: 6, border: '1px solid var(--rose-bright)', background: 'var(--bg-2)', color: 'var(--tx-hi)' }} />
+                  <button onClick={saveGoal} style={{ fontSize: 12, padding: '3px 8px', borderRadius: 6, border: 'none', background: 'var(--rose-bright)', color: '#fff', cursor: 'pointer' }}>OK</button>
+                </span>
+              ) : (
+                <span style={{ fontSize: 13, color: 'var(--tx-lo)' }}>de {mad(weeklyGoal)} MAD</span>
+              )}
             </div>
             <div style={{ height: 10, borderRadius: 6, background: 'var(--bg-3)', overflow: 'hidden', marginBottom: 6 }}>
-              <div style={{ width: `${goalPct}%`, height: '100%', borderRadius: 6, background: goalPct >= 100 ? 'var(--green)' : 'linear-gradient(90deg, var(--rose), var(--rose-bright))' }} />
+              <div style={{ width: `${goalWeekPct}%`, height: '100%', borderRadius: 6, background: goalWeekPct >= 100 ? 'var(--green)' : 'linear-gradient(90deg, var(--rose), var(--rose-bright))' }} />
             </div>
             <p style={{ fontSize: 12, color: 'var(--tx-mid)' }}>
-              <b style={{ color: 'var(--tx-hi)' }}>{mad(stats.revenueToday)} MAD</b> encaissés aujourd&apos;hui
+              <b style={{ color: 'var(--tx-hi)' }}>{mad(stats.revenue7d)} MAD</b> encaissés sur 7 jours
             </p>
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line-soft)', display: 'grid', gap: 10 }}>
               {[

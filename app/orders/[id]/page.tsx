@@ -43,6 +43,11 @@ function formatMoney(value: unknown) {
   return toNumber(value).toLocaleString('fr-FR', { maximumFractionDigits: 0 })
 }
 
+const ORDER_STATUS_FR: Record<string, string> = {
+  PENDING: 'En attente', CONFIRMED: 'Confirmée', SHIPPED: 'En livraison',
+  DELIVERED: 'Livrée', RETURNED: 'Retournée', CANCELLED: 'Annulée', FAILED: 'Échouée',
+}
+
 export default function OrderDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -330,13 +335,16 @@ export default function OrderDetailPage() {
         )}
 
         <div className="page-head detail-head">
-          <div className="row gap12">
+          <div className="row gap12" style={{ alignItems: 'center' }}>
             <h1 className="num">#{order.id}</h1>
             <span className={`st st-${order.status.toLowerCase()}`}>
               <span className="sd"></span>
-              {order.status}
+              {ORDER_STATUS_FR[order.status] || order.status}
             </span>
             <span className="badge rose">{order.sourceChannel || 'Manual'}</span>
+            <span className="t-sub fs12" style={{ color: 'var(--tx-lo)' }}>
+              {new Date(order.createdAt).toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })}
+            </span>
           </div>
           <div className="spacer"></div>
 

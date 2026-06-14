@@ -84,7 +84,7 @@ export default function CustomerDetailPage() {
                         <td><span className={`st ${STATUS_CLS[o.status] || 'st-pending'}`}><span className="sd" />{STATUS_FR[o.status] || o.status}</span></td>
                         <td className="t-sub">{o.deliveryCity || '—'}</td>
                         <td className="r num t-strong">{mad(o.total)}</td>
-                        <td className="r t-sub">{new Date(o.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}</td>
+                        <td className="r t-sub">{new Date(o.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</td>
                       </tr>
                     ))}
                   </tbody>
