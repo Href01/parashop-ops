@@ -23,7 +23,10 @@ import pool from '@/lib/db'
 //    token only (IG_USER_ID optional → uses /me/media)
 //  - Facebook Login for Business: set IG_API_BASE=https://graph.facebook.com + IG_USER_ID
 const IG_BASE = (process.env.IG_API_BASE || 'https://graph.instagram.com').replace(/\/+$/, '')
-const GRAPH = `${IG_BASE}/${process.env.IG_GRAPH_VERSION || 'v21.0'}`
+// Version optional. Default = unversioned (verified working; new apps may reject
+// old versions). Override with IG_GRAPH_VERSION=v25.0 if you ever need to pin one.
+const IG_VERSION = (process.env.IG_GRAPH_VERSION || '').replace(/^\/+|\/+$/g, '')
+const GRAPH = IG_VERSION ? `${IG_BASE}/${IG_VERSION}` : IG_BASE
 
 interface IgMedia { id: string; permalink: string; media_type?: string; media_product_type?: string }
 interface IgInsightValue { name: string; values: { value: number }[] }
