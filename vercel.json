@@ -3,6 +3,10 @@
     {
       "path": "/api/ops/content/refresh-instagram-token",
       "schedule": "0 6 * * 1"
+    },
+    {
+      "path": "/api/ops/ads/sync-meta",
+      "schedule": "0 5 * * *"
     }
   ]
 }

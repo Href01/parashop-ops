@@ -4,6 +4,7 @@ import {
   Bell,
   Box,
   Calendar,
+  DollarSign,
   Flame,
   LayoutDashboard,
   HelpCircle,
@@ -50,6 +51,7 @@ const sections: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { label: 'Customers', href: '/customers', icon: Users },
       { label: 'Campaigns', href: '/campaigns', icon: Megaphone },
+      { label: 'Régie pub', href: '/ads', icon: DollarSign },
       { label: 'Events', href: '/events', icon: Calendar },
       { label: 'Content Hub', href: '/content', icon: Sparkles },
     ],
@@ -70,7 +72,7 @@ export default function BosShell({
   crumb,
   children,
 }: {
-  active: 'dashboard' | 'intelligence' | 'orders' | 'products' | 'customers' | 'inventory' | 'campaigns' | 'events' | 'content' | 'work' | 'guide'
+  active: 'dashboard' | 'intelligence' | 'orders' | 'products' | 'customers' | 'inventory' | 'campaigns' | 'ads' | 'events' | 'content' | 'work' | 'guide'
   title: string
   crumb: string
   children: ReactNode
