@@ -20,7 +20,7 @@ interface Task {
 const LINK_HREF: Record<string, string> = { order: '/orders', product: '/products', customer: '/customers', campaign: '/campaigns' }
 const LINK_LABEL: Record<string, string> = { order: 'Cmd', product: 'Produit', customer: 'Cliente', campaign: 'Campagne' }
 
-interface Decision { id: number; title: string; decision: string | null; owner: string | null; decisionDate: string | null }
+interface Decision { id: number; title: string; decision: string | null; context: string | null; owner: string | null; decisionDate: string | null; linkedType?: string | null; linkedId?: number | null }
 interface Experiment {
   id: number
   name: string
@@ -97,6 +97,7 @@ export default function WorkHubPage() {
   const [error, setError] = useState<string | null>(null)
   const [editingExp, setEditingExp] = useState<Experiment | null>(null)
   const [editingTask, setEditingTask] = useState<Task | null>(null)
+  const [editingDec, setEditingDec] = useState<Decision | null>(null)
 
   useEffect(() => {
     const j = (r: Response) => r.json()
@@ -119,11 +120,22 @@ export default function WorkHubPage() {
   const deleteDecision = async (id: number) => {
     const prev = decisions
     setDecisions((x) => x.filter((d) => d.id !== id))
+    if (editingDec?.id === id) setEditingDec(null)
     try {
       const res = await fetch(`/api/ops/decisions/${id}`, { method: 'DELETE' })
       if (!res.ok) throw new Error(`Erreur ${res.status}`)
       setError(null)
     } catch (e) { setDecisions(prev); setError(e instanceof Error ? e.message : 'Suppression impossible') }
+  }
+  const patchDecision = async (id: number, fields: Partial<Decision>) => {
+    const prev = decisions
+    setDecisions((x) => x.map((d) => (d.id === id ? { ...d, ...fields } : d)))
+    if (editingDec?.id === id) setEditingDec((e) => (e ? { ...e, ...fields } : e))
+    try {
+      const res = await fetch(`/api/ops/decisions/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) })
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Erreur ${res.status}`) }
+      setError(null)
+    } catch (e) { setDecisions(prev); setError(e instanceof Error ? e.message : 'Mise à jour impossible') }
   }
   const createExperiment = async () => {
     if (!eName.trim()) return
@@ -360,17 +372,23 @@ export default function WorkHubPage() {
               </div>
             </div>
             {decisions.length === 0 ? (
-              <p style={{ fontSize: 12, color: 'var(--tx-faint)', textAlign: 'center', padding: '12px 0' }}>Aucune décision enregistrée.</p>
+              <p style={{ fontSize: 12, color: 'var(--tx-faint)', textAlign: 'center', padding: '12px 0' }}>Aucune décision. Note ton 1er choix important + son pourquoi.</p>
             ) : decisions.map((d) => (
-              <div key={d.id} className="wh-row" style={{ padding: '9px 0', borderBottom: '1px solid var(--line-soft)' }}>
+              <div key={d.id} className="wh-row" onClick={() => setEditingDec(d)} style={{ padding: '10px 0', borderBottom: '1px solid var(--line-soft)', cursor: 'pointer' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 2 }}>
                   <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--tx-hi)' }}>{d.title}</span>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                    {d.decisionDate && <span style={{ fontSize: 11, color: 'var(--tx-faint)', fontFamily: 'var(--mono)' }}>{new Date(d.decisionDate).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}</span>}
-                    <button onClick={() => deleteDecision(d.id)} aria-label="Supprimer" className="wh-del" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-faint)', padding: 0 }}><Trash2 style={{ width: 12, height: 12 }} /></button>
+                    {d.decisionDate && <span style={{ fontSize: 11, color: 'var(--tx-faint)', fontFamily: 'var(--mono)' }}>{fmtDate(d.decisionDate)}</span>}
+                    <button onClick={(ev) => { ev.stopPropagation(); deleteDecision(d.id) }} aria-label="Supprimer" className="wh-del" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-faint)', padding: 0 }}><Trash2 style={{ width: 12, height: 12 }} /></button>
                   </span>
                 </div>
                 {d.decision && <div style={{ fontSize: 12, color: 'var(--tx-mid)' }}>{d.decision}</div>}
+                {d.linkedType && d.linkedId && LINK_HREF[d.linkedType] && (
+                  <Link href={`${LINK_HREF[d.linkedType]}/${d.linkedId}`} onClick={(ev) => ev.stopPropagation()}
+                    style={{ display: 'inline-block', marginTop: 5, fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 20, background: 'var(--rose-bg)', color: 'var(--rose-bright)', textDecoration: 'none' }}>
+                    🔗 {LINK_LABEL[d.linkedType]} #{d.linkedId}
+                  </Link>
+                )}
               </div>
             ))}
           </div>
@@ -416,7 +434,81 @@ export default function WorkHubPage() {
       {/* Drawers */}
       {editingTask && <TaskDrawer task={editingTask} onClose={() => setEditingTask(null)} onSave={patchTask} onDelete={deleteTask} />}
       {editingExp && <ExperimentDrawer exp={editingExp} onClose={() => setEditingExp(null)} onSave={patchExp} onDelete={deleteExperiment} />}
+      {editingDec && <DecisionDrawer dec={editingDec} onClose={() => setEditingDec(null)} onSave={patchDecision} onDelete={deleteDecision} />}
     </BosShell>
+  )
+}
+
+function DecisionDrawer({ dec, onClose, onSave, onDelete }: {
+  dec: Decision
+  onClose: () => void
+  onSave: (id: number, fields: Partial<Decision>) => void
+  onDelete: (id: number) => void
+}) {
+  const [title, setTitle] = useState(dec.title)
+  const [why, setWhy] = useState(dec.decision || '')
+  const [owner, setOwner] = useState(dec.owner || 'AM')
+  const [date, setDate] = useState(dec.decisionDate || '')
+  const [linkType, setLinkType] = useState(dec.linkedType || '')
+  const [linkId, setLinkId] = useState(dec.linkedId != null ? String(dec.linkedId) : '')
+
+  const save = () => {
+    const lid = parseInt(linkId, 10)
+    onSave(dec.id, {
+      title: title.trim() || dec.title,
+      decision: why, // column is NOT NULL — always send a string ('' if empty)
+      owner,
+      decisionDate: date || null,
+      linkedType: linkType && Number.isInteger(lid) ? linkType : null,
+      linkedId: linkType && Number.isInteger(lid) ? lid : null,
+    })
+    onClose()
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'oklch(0.2 0.02 350 / 0.35)', zIndex: 50, display: 'flex', justifyContent: 'flex-end' }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(440px, 100%)', height: '100%', background: 'var(--bg-1)', borderLeft: '1px solid var(--line)', boxShadow: '-8px 0 24px oklch(0.4 0.05 350 / 0.12)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 18px', borderBottom: '1px solid var(--line-soft)', position: 'sticky', top: 0, background: 'var(--bg-1)', zIndex: 1 }}>
+          <BookOpen style={{ width: 16, height: 16, color: 'var(--rose)' }} />
+          <span style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--tx-hi)' }}>Éditer la décision</span>
+          <button onClick={onClose} aria-label="Fermer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-lo)', padding: 0 }}><X style={{ width: 18, height: 18 }} /></button>
+        </div>
+
+        <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <WField label="La décision">
+            <input value={title} onChange={(e) => setTitle(e.target.value)} style={inp({ width: '100%' })} />
+          </WField>
+          <WField label="Pourquoi (la raison)">
+            <textarea value={why} onChange={(e) => setWhy(e.target.value)} rows={3} placeholder="Le rationale derrière ce choix…" style={inp({ width: '100%', resize: 'vertical', fontFamily: 'inherit' })} />
+          </WField>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <WField label="Responsable" flex>
+              <select value={owner} onChange={(e) => setOwner(e.target.value)} style={inp({ width: '100%' })}>{OWNERS.map((o) => <option key={o}>{o}</option>)}</select>
+            </WField>
+            <WField label="Date" flex>
+              <input type="date" value={date} onChange={(e) => setDate(e.target.value)} style={inp({ width: '100%' })} />
+            </WField>
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <WField label="Lier à" flex>
+              <select value={linkType} onChange={(e) => setLinkType(e.target.value)} style={inp({ width: '100%' })}>
+                <option value="">— Rien —</option>
+                {LINK_TYPES.map((l) => <option key={l.v} value={l.v}>{l.label}</option>)}
+              </select>
+            </WField>
+            {linkType && (
+              <WField label="N°" flex>
+                <input value={linkId} onChange={(e) => setLinkId(e.target.value)} type="number" placeholder="ID" style={inp({ width: '100%' })} />
+              </WField>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
+            <button className="btn-modern btn-primary" onClick={save} style={{ flex: 1, justifyContent: 'center' }}>Enregistrer</button>
+            <button className="btn-modern" onClick={() => { onDelete(dec.id); onClose() }} style={{ color: 'var(--rose-bright)', borderColor: 'var(--rose-line)' }}><Trash2 style={{ width: 15, height: 15 }} />Supprimer</button>
+          </div>
+        </div>
+      </div>
+    </div>
   )
 }
 

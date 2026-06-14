@@ -18,7 +18,9 @@ export async function GET() {
     const g = await guard()
     if (!g.ok) return NextResponse.json({ error: 'Unauthorized' }, { status: g.status })
     const r = await pool.query(
-      `SELECT id, title, context, decision, owner, "decisionDate", "createdAt"
+      `SELECT id, title, context, decision, owner,
+              to_char("decisionDate", 'YYYY-MM-DD') AS "decisionDate",
+              "linkedType", "linkedId", "createdAt"
        FROM "DecisionLog" ORDER BY "decisionDate" DESC NULLS LAST, "createdAt" DESC LIMIT 100`
     )
     return NextResponse.json({ decisions: r.rows })
@@ -36,14 +38,16 @@ export async function POST(req: NextRequest) {
     const title = typeof b.title === 'string' ? b.title.trim() : ''
     if (!title) return NextResponse.json({ error: 'title is required' }, { status: 400 })
     const context = typeof b.context === 'string' ? b.context.slice(0, 2000) : null
-    const decision = typeof b.decision === 'string' ? b.decision.slice(0, 2000) : null
+    const decision = typeof b.decision === 'string' ? b.decision.slice(0, 2000) : '' // column is NOT NULL
     const owner = typeof b.owner === 'string' && b.owner.trim() ? b.owner.trim().slice(0, 60) : null
     const decisionDate = typeof b.decisionDate === 'string' && b.decisionDate ? b.decisionDate : new Date().toISOString().split('T')[0]
+    const linkedType = typeof b.linkedType === 'string' && b.linkedType.trim() ? b.linkedType.trim().slice(0, 40) : null
+    const linkedId = Number.isInteger(b.linkedId) ? b.linkedId : null
     const r = await pool.query(
-      `INSERT INTO "DecisionLog" (title, context, decision, owner, "decisionDate", "createdAt")
-       VALUES ($1,$2,$3,$4,$5,NOW())
-       RETURNING id, title, context, decision, owner, "decisionDate", "createdAt"`,
-      [title, context, decision, owner, decisionDate]
+      `INSERT INTO "DecisionLog" (title, context, decision, owner, "decisionDate", "linkedType", "linkedId", "createdAt")
+       VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+       RETURNING id, title, context, decision, owner, to_char("decisionDate", 'YYYY-MM-DD') AS "decisionDate", "linkedType", "linkedId", "createdAt"`,
+      [title, context, decision, owner, decisionDate, linkedType, linkedId]
     )
     return NextResponse.json({ decision: r.rows[0] }, { status: 201 })
   } catch (e) {
