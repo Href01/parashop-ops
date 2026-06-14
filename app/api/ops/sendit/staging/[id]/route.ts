@@ -9,6 +9,36 @@ async function guard() {
   return !!session?.user?.email && isFounder(session.user.email)
 }
 
+const STOP = new Set(['ml', 'les', 'des', 'pour', 'avec', 'sans', 'the', 'and', 'spray', 'creme', 'crème'])
+
+/** Lowercase, strip accents, keep alphanumerics. */
+function norm(s: string | null | undefined): string {
+  return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
+}
+function tokenize(s: string): string[] {
+  return norm(s).split(' ').filter((t) => t.length >= 3 && !STOP.has(t))
+}
+
+interface Cat { id: number; name: string; brand: string | null; price: number }
+/** Rank catalog products against a parsed line by weighted token overlap. */
+function rankCandidates(rawName: string, catalog: Cat[]): Cat[] {
+  const tokens = tokenize(rawName)
+  if (tokens.length === 0) return []
+  const scored = catalog.map((p) => {
+    const hay = norm(`${p.name} ${p.brand || ''}`)
+    const brandHay = norm(p.brand)
+    let score = 0
+    for (const t of tokens) {
+      if (hay.includes(t)) score += t.length        // longer token = more specific
+      if (brandHay.includes(t)) score += 2           // brand match bonus
+    }
+    // tie-break: prefer shorter (more specific) product names
+    return { p, score: score > 0 ? score - p.name.length / 200 : 0 }
+  }).filter((x) => x.score > 0)
+  scored.sort((a, b) => b.score - a.score)
+  return scored.slice(0, 4).map((x) => x.p)
+}
+
 /** Parse "Milk shake oil x3 + spray conditioner x2" → [{rawName, qty}]. */
 function parseProductsText(text: string | null): Array<{ rawName: string; qty: number }> {
   if (!text) return []
@@ -39,27 +69,16 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (rowRes.rows.length === 0) return NextResponse.json({ error: 'not found' }, { status: 404 })
   const row = rowRes.rows[0]
 
-  // Suggest catalog products per parsed line (fuzzy by longest token)
-  const parsed = parseProductsText(row.productsText)
-  const suggestions: Array<{ rawName: string; qty: number; candidates: any[] }> = []
-  for (const line of parsed) {
-    const tokens = line.rawName.split(/\s+/).filter((t) => t.length >= 3).sort((a, b) => b.length - a.length).slice(0, 3)
-    let candidates: any[] = []
-    if (tokens.length > 0) {
-      const conds = tokens.map((_, i) => `(p.name ILIKE $${i + 1} OR p.brand ILIKE $${i + 1})`).join(' OR ')
-      const vals = tokens.map((t) => `%${t}%`)
-      const r = await pool.query(
-        `SELECT p.id, p.name, p.brand, p.price::float AS price FROM "Product" p WHERE ${conds} LIMIT 4`,
-        vals
-      )
-      candidates = r.rows
-    }
-    suggestions.push({ rawName: line.rawName, qty: line.qty, candidates })
-  }
+  // Load the catalog once, then rank candidates per line in JS (scored overlap)
+  const catalogRes = await pool.query(`SELECT id, name, brand, price::float AS price FROM "Product" WHERE active = true ORDER BY name LIMIT 1000`)
+  const catalog: Cat[] = catalogRes.rows
+  const suggestions = parseProductsText(row.productsText).map((line) => ({
+    rawName: line.rawName,
+    qty: line.qty,
+    candidates: rankCandidates(line.rawName, catalog),
+  }))
 
-  const catalog = await pool.query(`SELECT id, name, brand, price::float AS price FROM "Product" WHERE active = true ORDER BY name LIMIT 500`)
-
-  return NextResponse.json({ row, suggestions, catalog: catalog.rows })
+  return NextResponse.json({ row, suggestions, catalog })
 }
 
 /** PATCH { assignedProducts } — save the product assignment on the staging row. */
