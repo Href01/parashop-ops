@@ -17,6 +17,10 @@ interface DashboardStats {
   revenueSeries: Array<{ date: string; label: string; revenue: number; profit: number }>
   topProducts: Array<{ productId: number | null; name: string; units: number; revenue: number }>
   channels: Array<{ name: string; revenue: number; color: string }>
+  pipeline: Array<{ label: string; value: number; tone: string }>
+  alerts: { total: number; items: Array<{ tone: string; title: string; subtitle: string; href: string }> }
+  activity: Array<{ tone: string; title: string; subtitle: string; timestamp: string }>
+  topCities?: Array<{ name: string; orders: number }>
 }
 
 const DAILY_GOAL = 6000
@@ -195,6 +199,75 @@ export default function GlowDashboard() {
                     </div>
                     <div style={{ height: 5, borderRadius: 3, background: 'var(--bg-3)', overflow: 'hidden' }}>
                       <div style={{ width: `${(c.revenue / max) * 100}%`, height: '100%', background: c.color || 'var(--rose-bright)', borderRadius: 3 }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </Card>
+        </div>
+
+        {/* Pipeline + Alerts + Activity */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, marginTop: 16 }}>
+          {/* Pipeline */}
+          <Card>
+            <Label>Pipeline des commandes · 30 jours</Label>
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {stats.pipeline.map((item, i) => {
+                const colors: Record<string, string> = { amber: 'var(--amber)', blue: 'var(--blue)', violet: 'var(--violet)', green: 'var(--green)', red: 'var(--red)', rose: 'var(--rose-bright)' }
+                return (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: 'var(--tx-mid)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 6, height: 6, borderRadius: '50%', background: colors[item.tone] || 'var(--tx-lo)' }} />
+                      {item.label}
+                    </span>
+                    <span style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--mono)', color: colors[item.tone] || 'var(--tx-hi)' }}>{item.value}</span>
+                  </div>
+                )
+              })}
+            </div>
+          </Card>
+
+          {/* Alerts */}
+          <Card>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <Label>Alertes</Label>
+              {stats.alerts.total > 0 && <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20, background: 'var(--amber-bg)', color: 'var(--amber)' }}>{stats.alerts.total}</span>}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {stats.alerts.items.length === 0 ? <Empty /> : stats.alerts.items.slice(0, 3).map((alert, i) => {
+                const colors: Record<string, { bg: string; fg: string }> = {
+                  amber: { bg: 'var(--amber-bg)', fg: 'var(--amber)' },
+                  green: { bg: 'var(--green-bg)', fg: 'var(--green)' },
+                  red: { bg: 'var(--red-bg)', fg: 'var(--red)' },
+                  rose: { bg: 'var(--rose-bg)', fg: 'var(--rose-bright)' },
+                  violet: { bg: '#f3e8ff', fg: '#7c3aed' },
+                  blue: { bg: '#dbeafe', fg: '#2563eb' },
+                }
+                const c = colors[alert.tone] || { bg: 'var(--bg-3)', fg: 'var(--tx-hi)' }
+                return (
+                  <Link key={i} href={alert.href} style={{ textDecoration: 'none', padding: 10, borderRadius: 8, background: c.bg, border: `1px solid ${c.fg}15` }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: c.fg, marginBottom: 2 }}>{alert.title}</div>
+                    <div style={{ fontSize: 11, color: 'var(--tx-mid)' }}>{alert.subtitle}</div>
+                  </Link>
+                )
+              })}
+            </div>
+          </Card>
+
+          {/* Activity */}
+          <Card>
+            <Label>Activité récente</Label>
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {stats.activity.length === 0 ? <Empty /> : stats.activity.slice(0, 5).map((item, i) => {
+                const colors: Record<string, string> = { green: 'var(--green)', blue: 'var(--blue)', amber: 'var(--amber)', red: 'var(--red)', violet: 'var(--violet)', rose: 'var(--rose-bright)' }
+                const color = colors[item.tone] || 'var(--tx-lo)'
+                return (
+                  <div key={i} style={{ paddingBottom: 8, borderBottom: i < stats.activity.length - 1 ? '1px solid var(--line-soft)' : 'none' }}>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx-hi)', marginBottom: 2 }}>{item.title}</div>
+                    <div style={{ fontSize: 11, color: 'var(--tx-mid)' }}>{item.subtitle}</div>
+                    <div style={{ fontSize: 10, color: color, marginTop: 3, fontFamily: 'var(--mono)' }}>
+                      {new Date(item.timestamp).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                     </div>
                   </div>
                 )
