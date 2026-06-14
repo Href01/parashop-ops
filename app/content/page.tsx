@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Trash2, X, Link2, Sparkles, AlertCircle } from 'lucide-react'
+import { Plus, Trash2, X, Link2, Sparkles, AlertCircle, RefreshCw } from 'lucide-react'
 import BosShell from '@/components/BosShell'
 
 interface Item {
@@ -78,7 +78,23 @@ export default function ContentPage() {
   const [editing, setEditing] = useState<Item | null>(null)
   const [products, setProducts] = useState<ProductLite[]>([])
   const [campaigns, setCampaigns] = useState<CampaignLite[]>([])
+  const [syncing, setSyncing] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
   const titleRef = useRef<HTMLInputElement>(null)
+
+  const syncInstagram = async () => {
+    if (syncing) return
+    setSyncing(true); setNotice(null); setError(null)
+    try {
+      const res = await fetch('/api/ops/content/sync-instagram', { method: 'POST' })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || `Erreur ${res.status}`)
+      setNotice(`Instagram synchronisé : ${d.updated} post(s) mis à jour.`)
+      load()
+      setTimeout(() => setNotice(null), 5000)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Sync impossible') }
+    finally { setSyncing(false) }
+  }
 
   // Lookups for chips (id → name)
   const productName = (id: number | null) => products.find((p) => p.id === id)?.name || null
@@ -175,15 +191,28 @@ export default function ContentPage() {
   return (
     <BosShell active="content" title="Content Hub" crumb="Croissance">
       <div style={{ maxWidth: 1280, margin: '0 auto', padding: '22px 24px 60px' }}>
-        <div style={{ marginBottom: 16 }}>
-          <div className="eyebrow" style={{ marginBottom: 4 }}>CALENDRIER DE CONTENU</div>
-          <h1 className="serif-display" style={{ fontSize: 28, lineHeight: 1.05 }}>Content Hub</h1>
-          <p style={{ fontSize: 13, color: 'var(--tx-mid)', marginTop: 7, lineHeight: 1.55, maxWidth: 640 }}>
-            Ton <b>calendrier éditorial social</b> — 1 carte = 1 post (Insta, TikTok, WhatsApp…). Tu planifies, produis et publies tes contenus.
-            <br />Pour les tâches, décisions et opérations internes →{' '}
-            <a href="/work-hub" style={{ color: 'var(--rose-bright)', fontWeight: 600, textDecoration: 'none' }}>Work Hub</a>.
-          </p>
+        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <div className="eyebrow" style={{ marginBottom: 4 }}>CALENDRIER DE CONTENU</div>
+            <h1 className="serif-display" style={{ fontSize: 28, lineHeight: 1.05 }}>Content Hub</h1>
+            <p style={{ fontSize: 13, color: 'var(--tx-mid)', marginTop: 7, lineHeight: 1.55, maxWidth: 640 }}>
+              Ton <b>calendrier éditorial social</b> — 1 carte = 1 post (Insta, TikTok, WhatsApp…). Tu planifies, produis et publies tes contenus.
+              <br />Pour les tâches, décisions et opérations internes →{' '}
+              <a href="/work-hub" style={{ color: 'var(--rose-bright)', fontWeight: 600, textDecoration: 'none' }}>Work Hub</a>.
+            </p>
+          </div>
+          <button className="btn-modern" onClick={syncInstagram} disabled={syncing} title="Mettre à jour les stats des posts publiés depuis Instagram" style={{ flexShrink: 0, marginTop: 4 }}>
+            <RefreshCw style={{ width: 15, height: 15 }} />{syncing ? 'Sync…' : 'Sync Instagram'}
+          </button>
         </div>
+
+        {/* Sync notice */}
+        {notice && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--green-bg)', border: '1px solid var(--green)', borderRadius: 10, padding: '10px 14px', marginBottom: 14 }}>
+            <span style={{ flex: 1, fontSize: 13, color: 'var(--tx-hi)' }}>✓ {notice}</span>
+            <button onClick={() => setNotice(null)} aria-label="Fermer" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-faint)', padding: 0 }}><X style={{ width: 14, height: 14 }} /></button>
+          </div>
+        )}
 
         {/* Error banner */}
         {error && (
