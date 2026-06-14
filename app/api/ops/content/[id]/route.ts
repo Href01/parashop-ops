@@ -46,12 +46,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         : []
       add('productIds', ids)
     }
+    // Organic post link + manual performance metrics
+    if ('permalink' in b) add('permalink', typeof b.permalink === 'string' && b.permalink.trim() ? b.permalink.trim().slice(0, 500) : null)
+    if ('externalId' in b) add('externalId', typeof b.externalId === 'string' && b.externalId.trim() ? b.externalId.trim().slice(0, 100) : null)
+    const intMetric = (v: unknown) => { const n = Number(v); return Number.isFinite(n) && n >= 0 ? Math.round(n) : null }
+    for (const m of ['reach', 'views', 'clicks', 'likes', 'saves', 'comments', 'shares'] as const) {
+      if (m in b) add(m, intMetric(b[m]))
+    }
 
     if (sets.length === 0) return NextResponse.json({ error: 'no fields to update' }, { status: 400 })
     values.push(id)
     const r = await pool.query(
       `UPDATE "ContentItem" SET ${sets.join(', ')}, "updatedAt" = NOW() WHERE id = $${values.length}
-       RETURNING id, title, type, platform, owner, status, "productId", COALESCE("productIds", '{}') AS "productIds", "campaignId", hook, caption, "assetLink", to_char("dueDate", 'YYYY-MM-DD') AS "dueDate", "scheduledAt", "publishedAt", reach, views, clicks, "attributedOrders", "salesImpact", notes, "createdAt", "updatedAt"`,
+       RETURNING id, title, type, platform, owner, status, "productId", COALESCE("productIds", '{}') AS "productIds", "campaignId", hook, caption, "assetLink", to_char("dueDate", 'YYYY-MM-DD') AS "dueDate", "scheduledAt", "publishedAt", permalink, "externalId", reach, views, clicks, likes, saves, comments, shares, "metricsSyncedAt", "attributedOrders", "salesImpact", notes, "createdAt", "updatedAt"`,
       values
     )
     if (r.rows.length === 0) return NextResponse.json({ error: 'not found' }, { status: 404 })

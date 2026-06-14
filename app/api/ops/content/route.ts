@@ -28,8 +28,9 @@ export async function GET() {
       `SELECT id, title, type, platform, owner, status, "productId",
               COALESCE("productIds", '{}') AS "productIds", "campaignId",
               hook, caption, "assetLink", to_char("dueDate", 'YYYY-MM-DD') AS "dueDate",
-              "scheduledAt", "publishedAt",
-              reach, views, clicks, "attributedOrders", "salesImpact", notes, "createdAt", "updatedAt"
+              "scheduledAt", "publishedAt", permalink, "externalId",
+              reach, views, clicks, likes, saves, comments, shares, "metricsSyncedAt",
+              "attributedOrders", "salesImpact", notes, "createdAt", "updatedAt"
        FROM "ContentItem"
        ORDER BY "dueDate" NULLS LAST, "createdAt" DESC LIMIT 200`
     )
@@ -56,7 +57,7 @@ export async function POST(req: NextRequest) {
     const r = await pool.query(
       `INSERT INTO "ContentItem" (title, type, platform, owner, status, "dueDate", "productId", "createdAt", "updatedAt")
        VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),NOW())
-       RETURNING id, title, type, platform, owner, status, "productId", COALESCE("productIds", '{}') AS "productIds", "campaignId", hook, caption, "assetLink", to_char("dueDate", 'YYYY-MM-DD') AS "dueDate", "scheduledAt", "publishedAt", reach, views, clicks, "attributedOrders", "salesImpact", notes, "createdAt", "updatedAt"`,
+       RETURNING id, title, type, platform, owner, status, "productId", COALESCE("productIds", '{}') AS "productIds", "campaignId", hook, caption, "assetLink", to_char("dueDate", 'YYYY-MM-DD') AS "dueDate", "scheduledAt", "publishedAt", permalink, "externalId", reach, views, clicks, likes, saves, comments, shares, "metricsSyncedAt", "attributedOrders", "salesImpact", notes, "createdAt", "updatedAt"`,
       [title, type, platform, owner, status, dueDate, productId]
     )
     return NextResponse.json({ item: r.rows[0] }, { status: 201 })

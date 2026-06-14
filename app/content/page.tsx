@@ -18,6 +18,16 @@ interface Item {
   productId: number | null
   productIds: number[] | null
   campaignId: number | null
+  permalink?: string | null
+  externalId?: string | null
+  reach?: number | null
+  views?: number | null
+  clicks?: number | null
+  likes?: number | null
+  saves?: number | null
+  comments?: number | null
+  shares?: number | null
+  metricsSyncedAt?: string | null
 }
 
 interface ProductLite { id: number; name: string; brand?: string | null }
@@ -36,6 +46,14 @@ const PLAT_COLOR: Record<string, string> = {
   Instagram: 'var(--c-instagram)', TikTok: 'var(--c-tiktok)', Facebook: 'var(--blue)', WhatsApp: 'var(--c-whatsapp)', Autre: 'var(--tx-faint)',
 }
 const MONTHS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.']
+
+/** Compact number: 1500 → 1,5k · 12000 → 12k. */
+function fmtNum(n: number | null | undefined): string {
+  if (n == null) return '–'
+  if (n < 1000) return String(n)
+  const k = n / 1000
+  return `${k % 1 === 0 ? k : k.toFixed(1).replace('.', ',')}k`
+}
 
 /** Format 'YYYY-MM-DD' (timezone-safe — no Date parsing). */
 function fmtDate(d: string | null): string {
@@ -253,6 +271,16 @@ export default function ContentPage() {
                               {cName && <span style={{ fontSize: 9, fontWeight: 600, padding: '2px 7px', borderRadius: 5, color: 'var(--amber)', background: 'var(--amber-bg)', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📣 {cName}</span>}
                             </div>
                           )}
+
+                          {/* Organic performance (published posts) */}
+                          {it.status === 'PUBLISHED' && (it.reach != null || it.likes != null || it.views != null) && (
+                            <div style={{ display: 'flex', gap: 10, marginTop: 9, paddingTop: 9, borderTop: '1px solid var(--line-soft)', fontSize: 10, color: 'var(--tx-lo)' }}>
+                              {it.reach != null && <span title="Portée">📡 {fmtNum(it.reach)}</span>}
+                              {it.views != null && <span title="Vues">▶ {fmtNum(it.views)}</span>}
+                              {it.likes != null && <span title="J'aime">❤ {fmtNum(it.likes)}</span>}
+                              {it.saves != null && <span title="Enregistrements">🔖 {fmtNum(it.saves)}</span>}
+                            </div>
+                          )}
                         </div>
                       )
                     })}
@@ -292,11 +320,20 @@ function EditDrawer({ item, products, campaigns, onClose, onSave, onDelete }: {
     item.productIds && item.productIds.length ? item.productIds : (item.productId != null ? [item.productId] : [])
   )
   const [campaignId, setCampaignId] = useState<string>(item.campaignId != null ? String(item.campaignId) : '')
+  // Organic post performance
+  const [permalink, setPermalink] = useState(item.permalink || '')
+  const [reach, setReach] = useState(item.reach != null ? String(item.reach) : '')
+  const [views, setViews] = useState(item.views != null ? String(item.views) : '')
+  const [likes, setLikes] = useState(item.likes != null ? String(item.likes) : '')
+  const [saves, setSaves] = useState(item.saves != null ? String(item.saves) : '')
+  const [comments, setComments] = useState(item.comments != null ? String(item.comments) : '')
+  const [shares, setShares] = useState(item.shares != null ? String(item.shares) : '')
 
   const addProduct = (id: number) => setProductIds((x) => (x.includes(id) ? x : [...x, id]))
   const removeProduct = (id: number) => setProductIds((x) => x.filter((p) => p !== id))
   const pName = (id: number) => products.find((p) => p.id === id)?.name || `#${id}`
   const available = products.filter((p) => !productIds.includes(p.id))
+  const metric = (s: string): number | null => { const n = parseInt(s, 10); return Number.isFinite(n) && n >= 0 ? n : null }
 
   const save = () => {
     onSave(item.id, {
@@ -309,6 +346,9 @@ function EditDrawer({ item, products, campaigns, onClose, onSave, onDelete }: {
       productIds,
       productId: productIds[0] ?? null, // keep legacy column in sync (first product)
       campaignId: campaignId ? parseInt(campaignId, 10) : null,
+      permalink: permalink.trim() || null,
+      reach: metric(reach), views: metric(views), likes: metric(likes),
+      saves: metric(saves), comments: metric(comments), shares: metric(shares),
     })
     onClose()
   }
@@ -383,6 +423,32 @@ function EditDrawer({ item, products, campaigns, onClose, onSave, onDelete }: {
                 {campaigns.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             </Field>
+          </div>
+
+          {/* Performance du post organique */}
+          <div style={{ borderTop: '1px solid var(--line-soft)', paddingTop: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)' }}>📊 Performance du post</span>
+              {item.metricsSyncedAt
+                ? <span style={{ fontSize: 10, color: 'var(--green)' }}>sync {fmtDate(item.metricsSyncedAt.slice(0, 10))}</span>
+                : <span style={{ fontSize: 10, color: 'var(--tx-faint)' }}>saisie manuelle</span>}
+            </div>
+            <Field label="Lien du post publié (permalink)">
+              <input value={permalink} onChange={(e) => setPermalink(e.target.value)} placeholder="https://instagram.com/p/… ou tiktok.com/@…" style={inp({ width: '100%' })} />
+            </Field>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Field label="📡 Portée" flex><input value={reach} onChange={(e) => setReach(e.target.value)} type="number" placeholder="–" style={inp({ width: '100%' })} /></Field>
+              <Field label="▶ Vues" flex><input value={views} onChange={(e) => setViews(e.target.value)} type="number" placeholder="–" style={inp({ width: '100%' })} /></Field>
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Field label="❤ J'aime" flex><input value={likes} onChange={(e) => setLikes(e.target.value)} type="number" placeholder="–" style={inp({ width: '100%' })} /></Field>
+              <Field label="🔖 Enreg." flex><input value={saves} onChange={(e) => setSaves(e.target.value)} type="number" placeholder="–" style={inp({ width: '100%' })} /></Field>
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <Field label="💬 Commentaires" flex><input value={comments} onChange={(e) => setComments(e.target.value)} type="number" placeholder="–" style={inp({ width: '100%' })} /></Field>
+              <Field label="↪ Partages" flex><input value={shares} onChange={(e) => setShares(e.target.value)} type="number" placeholder="–" style={inp({ width: '100%' })} /></Field>
+            </div>
+            <p style={{ fontSize: 11, color: 'var(--tx-faint)' }}>Saisie manuelle pour l&apos;instant. La sync auto Instagram/TikTok remplira ces chiffres.</p>
           </div>
 
           <div style={{ display: 'flex', gap: 10, marginTop: 6 }}>
