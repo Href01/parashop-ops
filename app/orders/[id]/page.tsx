@@ -253,8 +253,11 @@ export default function OrderDetailPage() {
     // Profit = COD − COGS − delivery cost (charged delivery nets out, free is absorbed)
     const profit = toNumber(order?.estimatedProfit) || (cod - productCost - deliveryCost)
     const margin = toNumber(order?.marginPercent) || (productRevenue > 0 ? (profit / productRevenue) * 100 : 0)
+    // Reconciles the breakdown to the real COD: a discount or a data gap
+    // (e.g. COD collected < products sold). Usually 0.
+    const adjustment = cod - productRevenue - deliveryCharged
 
-    return { productRevenue, productCost, deliveryCharged, deliveryCost, profit, margin, cod }
+    return { productRevenue, productCost, deliveryCharged, deliveryCost, profit, margin, cod, adjustment }
   }, [order])
 
   // Real data completeness (was hardcoded to 100% with all-green checks)
@@ -787,6 +790,9 @@ export default function OrderDetailPage() {
               <div className="panel-pad">
                 <div className="pl-row"><span className="tx-mid">CA produits</span><span className="num">{formatMoney(totals.productRevenue)} MAD</span></div>
                 <div className="pl-row"><span className="tx-mid">Livraison facturée</span><span className="num">+{formatMoney(totals.deliveryCharged)} MAD</span></div>
+                {totals.adjustment !== 0 && (
+                  <div className="pl-row"><span className="tx-mid">Remise / ajustement</span><span className="num neg">{totals.adjustment > 0 ? '+' : ''}{formatMoney(totals.adjustment)} MAD</span></div>
+                )}
                 <div className="pl-row"><span className="tx-mid">Coût produits</span><span className="num neg">-{formatMoney(totals.productCost)} MAD</span></div>
                 <div className="pl-row"><span className="tx-mid">Coût livraison</span><span className="num neg">-{formatMoney(totals.deliveryCost)} MAD</span></div>
                 <div className="pl-row total"><span>Profit net</span><span className={`num ${totals.profit >= 0 ? 'pos' : 'neg'}`}>{totals.profit >= 0 ? '+' : ''}{formatMoney(totals.profit)} MAD</span></div>
