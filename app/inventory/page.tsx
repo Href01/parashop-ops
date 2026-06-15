@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import BosShell from '@/components/BosShell'
-import { Search, AlertTriangle, Package, TrendingDown, CheckCircle, XCircle, Download } from 'lucide-react'
+import { Search, AlertTriangle, Package, TrendingDown, CheckCircle, XCircle, Download, Plus, Minus, DollarSign } from 'lucide-react'
 
 type Product = {
   id: number
@@ -40,6 +40,11 @@ export default function InventoryPage() {
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
   const [showAlerts, setShowAlerts] = useState(true)
+  const [adjustModal, setAdjustModal] = useState<{ productId: number; productName: string; currentStock: number } | null>(null)
+  const [adjustType, setAdjustType] = useState<'in' | 'out'>('in')
+  const [adjustQty, setAdjustQty] = useState('')
+  const [adjustReason, setAdjustReason] = useState('')
+  const [adjusting, setAdjusting] = useState(false)
 
   useEffect(() => {
     fetchInventory()
@@ -106,7 +111,41 @@ export default function InventoryPage() {
   }
 
   const handleAddStock = () => {
-    alert('Ajuste les niveaux de stock depuis la page Produits pour le moment.')
+    // Generic add stock - could show a product picker, for now just show message
+    alert('Sélectionne un produit dans la liste ci-dessous pour ajuster son stock.')
+  }
+
+  const openAdjustModal = (product: Product) => {
+    setAdjustModal({ productId: product.id, productName: product.name, currentStock: product.stock })
+    setAdjustType('in')
+    setAdjustQty('')
+    setAdjustReason('')
+  }
+
+  const submitAdjustment = async () => {
+    if (!adjustModal || !adjustQty || Number(adjustQty) <= 0) return
+
+    setAdjusting(true)
+    try {
+      const res = await fetch('/api/ops/inventory/movement', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: adjustModal.productId,
+          type: adjustType === 'in' ? 'Purchase' : 'Adjustment',
+          quantity: adjustType === 'in' ? Number(adjustQty) : -Number(adjustQty),
+          reason: adjustReason || (adjustType === 'in' ? 'Réapprovisionnement manuel' : 'Ajustement manuel'),
+        }),
+      })
+      if (!res.ok) throw new Error('Failed')
+      setAdjustModal(null)
+      fetchInventory() // Refresh
+    } catch (error) {
+      console.error('Failed to adjust stock:', error)
+      alert('Erreur lors de l\'ajustement')
+    } finally {
+      setAdjusting(false)
+    }
   }
 
   const getStatusColor = (status: string) => {
@@ -131,6 +170,8 @@ export default function InventoryPage() {
   const lowStockCount = products.filter(p => p.stockStatus === 'Low stock').length
   const outOfStockCount = products.filter(p => p.stockStatus === 'Out of stock').length
   const criticalAlerts = alerts.filter(a => a.severity === 'critical').length
+  const totalStockValue = products.reduce((sum, p) => sum + (p.stock * (p.costPrice || 0)), 0)
+  const formatMoney = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v)
 
   return (
     <BosShell active="inventory" title="Stock" crumb="Opérations">
@@ -147,13 +188,20 @@ export default function InventoryPage() {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
           <Metric
             icon={<Package />}
             tone="blue"
             title="Total produits"
             value={products.length.toString()}
             trend="suivis"
+          />
+          <Metric
+            icon={<DollarSign />}
+            tone="violet"
+            title="Valeur stock"
+            value={`${formatMoney(totalStockValue)}`}
+            trend="MAD (coût)"
           />
           <Metric
             icon={<AlertTriangle />}
@@ -263,34 +311,32 @@ export default function InventoryPage() {
                   <th>Produit</th>
                   <th>Statut</th>
                   <th className="r">Stock</th>
-                  <th className="r">Seuil de réappro</th>
+                  <th className="r">Seuil</th>
                   <th className="r">Ventes/sem.</th>
                   <th className="r">Jours restants</th>
                   <th>Fournisseur</th>
-                  <th className="r">Coût</th>
+                  <th className="r">Coût unit.</th>
+                  <th className="r">Valeur</th>
                   <th className="r">Alertes</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={9} style={{ textAlign: 'center', padding: '40px' }}>
+                    <td colSpan={11} style={{ textAlign: 'center', padding: '40px' }}>
                       Chargement…
                     </td>
                   </tr>
                 ) : products.length === 0 ? (
                   <tr>
-                    <td colSpan={9} style={{ textAlign: 'center', padding: '40px' }}>
+                    <td colSpan={11} style={{ textAlign: 'center', padding: '40px' }}>
                       Aucun produit
                     </td>
                   </tr>
                 ) : (
                   products.map((product) => (
-                    <tr
-                      key={product.id}
-                      onClick={() => window.location.href = `/products/${product.id}`}
-                      style={{ cursor: 'pointer' }}
-                    >
+                    <tr key={product.id}>
                       <td>
                         <div className="row gap8">
                           {product.image && (
@@ -331,13 +377,23 @@ export default function InventoryPage() {
                       <td>
                         <span className="fs12 tx-lo">{product.supplier || 'No supplier'}</span>
                       </td>
-                      <td className="r num">{product.costPrice ? `${product.costPrice} MAD` : '-'}</td>
+                      <td className="r num">{product.costPrice ? `${product.costPrice}` : '-'}</td>
+                      <td className="r num fw600">{product.costPrice ? formatMoney(product.stock * product.costPrice) : '-'}</td>
                       <td className="r">
                         {product.activeAlerts > 0 ? (
                           <span className="badge red mini-badge">{product.activeAlerts}</span>
                         ) : (
                           <span className="tx-lo">-</span>
                         )}
+                      </td>
+                      <td>
+                        <button
+                          className="btn-modern btn-sm btn-subtle"
+                          onClick={(e) => { e.stopPropagation(); openAdjustModal(product) }}
+                          style={{ whiteSpace: 'nowrap' }}
+                        >
+                          Ajuster
+                        </button>
                       </td>
                     </tr>
                   ))
@@ -346,6 +402,92 @@ export default function InventoryPage() {
             </table>
           </div>
         </div>
+
+        {/* Stock Adjustment Modal */}
+        {adjustModal && (
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 50,
+          }} onClick={() => setAdjustModal(null)}>
+            <div className="card-modern" style={{ maxWidth: 500, width: '90%' }} onClick={(e) => e.stopPropagation()}>
+              <div className="card-header">
+                <h3 className="text-lg font-semibold">Ajuster le stock</h3>
+              </div>
+              <div className="card-body">
+                <div style={{ marginBottom: 16 }}>
+                  <div className="t-strong">{adjustModal.productName}</div>
+                  <div className="fs12 tx-lo">Stock actuel : <b className="num">{adjustModal.currentStock}</b></div>
+                </div>
+
+                <div style={{ marginBottom: 16 }}>
+                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Type d'ajustement</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      className={`btn-modern btn-sm ${adjustType === 'in' ? 'btn-primary' : 'btn-subtle'}`}
+                      onClick={() => setAdjustType('in')}
+                    >
+                      <Plus className="w-4 h-4" /> Entrée
+                    </button>
+                    <button
+                      className={`btn-modern btn-sm ${adjustType === 'out' ? 'btn-primary' : 'btn-subtle'}`}
+                      onClick={() => setAdjustType('out')}
+                    >
+                      <Minus className="w-4 h-4" /> Sortie
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 16 }}>
+                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Quantité</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={adjustQty}
+                    onChange={(e) => setAdjustQty(e.target.value)}
+                    placeholder="Ex: 10"
+                    className="input-modern"
+                    style={{ width: '100%' }}
+                  />
+                  {adjustQty && (
+                    <div className="fs11 tx-lo" style={{ marginTop: 4 }}>
+                      Nouveau stock : <b className="num">{adjustType === 'in' ? adjustModal.currentStock + Number(adjustQty) : Math.max(0, adjustModal.currentStock - Number(adjustQty))}</b>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ marginBottom: 16 }}>
+                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Raison (optionnel)</label>
+                  <input
+                    type="text"
+                    value={adjustReason}
+                    onChange={(e) => setAdjustReason(e.target.value)}
+                    placeholder={adjustType === 'in' ? 'Réapprovisionnement fournisseur' : 'Produit endommagé'}
+                    className="input-modern"
+                    style={{ width: '100%' }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button className="btn-modern btn-secondary" onClick={() => setAdjustModal(null)}>
+                    Annuler
+                  </button>
+                  <button
+                    className="btn-modern btn-primary"
+                    onClick={submitAdjustment}
+                    disabled={adjusting || !adjustQty || Number(adjustQty) <= 0}
+                  >
+                    {adjusting ? 'En cours…' : 'Confirmer'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </BosShell>
   )
@@ -357,12 +499,14 @@ function Metric({ icon, tone, title, value, trend }: { icon: React.ReactNode; to
     amber: 'bg-amber-100',
     red: 'bg-red-100',
     green: 'bg-green-100',
+    violet: 'bg-purple-100',
   }
   const textColors: Record<string, string> = {
     blue: 'text-blue-600',
     amber: 'text-amber-600',
     red: 'text-red-600',
     green: 'text-green-600',
+    violet: 'text-purple-600',
   }
 
   return (

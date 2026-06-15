@@ -16,6 +16,7 @@ import {
   Truck,
   Target,
   Users,
+  Warehouse,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Link from 'next/link'
@@ -45,7 +46,7 @@ const sections: Array<{ label: string; items: NavItem[] }> = [
       { label: 'Commandes', href: '/orders', icon: Package },
       { label: 'Sendit', href: '/sendit', icon: Truck },
       { label: 'Produits', href: '/products', icon: Box },
-      { label: 'Stock', href: '/inventory', icon: Box },
+      { label: 'Stock', href: '/inventory', icon: Warehouse },
     ],
   },
   {
