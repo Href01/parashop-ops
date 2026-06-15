@@ -2711,6 +2711,43 @@ textarea.form-input {
     min-height: 40px;
   }
 
+  /* Universal page padding on phones — overrides inline-styled page
+     containers (Orders, Dashboard, Intelligence, Ads, Sendit, …) that
+     hardcode padding: 22px 24px and can't be reached by class rules. */
+  .page-glow > div {
+    padding-left: 14px !important;
+    padding-right: 14px !important;
+  }
+
+  /* Stat/KPI numbers: prevent big values overflowing in 2-col grids.
+     Two-class selectors win over single-class Tailwind utilities. */
+  .kpi-val,
+  .kpi .kpi-val {
+    font-size: 22px;
+  }
+
+  .card-body .text-3xl {
+    font-size: 22px;
+  }
+
+  .card-body .text-2xl {
+    font-size: 20px;
+  }
+
+  /* Tighter card padding on phones — 24px each side wastes half a
+     stat card on a 375px screen. */
+  .card-body {
+    padding: 14px;
+  }
+
+  .card-header {
+    padding: 14px;
+  }
+
+  .card-footer {
+    padding: 12px 14px;
+  }
+
   .form-grid {
     grid-template-columns: 1fr;
   }
