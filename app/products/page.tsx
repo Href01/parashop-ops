@@ -2,11 +2,12 @@
 
 import type { ReactNode } from 'react'
 import Link from 'next/link'
-import { ChevronLeft, ChevronRight, Download, Edit3, MoreHorizontal, Package, Percent, Plus, Search, TriangleAlert, Wallet } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, Edit3, MoreHorizontal, Package, Percent, Plus, Search, TriangleAlert, Upload, Wallet } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import BosShell from '@/components/BosShell'
 import EditCostPriceModal from './EditCostPriceModal'
 import BulkEditCostModal from './BulkEditCostModal'
+import ImportSuppliersCSV from './ImportSuppliersCSV'
 
 interface Product {
   id: number
@@ -47,6 +48,7 @@ export default function ProductsPage() {
   const [filterLowStock, setFilterLowStock] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
   const [showBulkEdit, setShowBulkEdit] = useState(false)
+  const [showImportCSV, setShowImportCSV] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
 
   useEffect(() => {
@@ -174,6 +176,10 @@ export default function ProductsPage() {
           <button type="button" className="btn-modern btn-secondary" onClick={handleBulkEditCosts}>
             <Edit3 className="w-4 h-4" />
             Coûts en masse
+          </button>
+          <button type="button" className="btn-modern btn-secondary" onClick={() => setShowImportCSV(true)}>
+            <Upload className="w-4 h-4" />
+            Import CSV
           </button>
           <button type="button" className="btn-modern btn-secondary" onClick={handleExport}>
             <Download className="w-4 h-4" />
@@ -385,6 +391,15 @@ export default function ProductsPage() {
             products={products}
             onSave={handleBulkUpdate}
             onClose={() => setShowBulkEdit(false)}
+          />
+        )}
+
+        {showImportCSV && (
+          <ImportSuppliersCSV
+            onClose={() => setShowImportCSV(false)}
+            onComplete={() => {
+              void fetchProducts()
+            }}
           />
         )}
       </div>
