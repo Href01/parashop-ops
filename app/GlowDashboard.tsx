@@ -37,14 +37,52 @@ const PERIODS: { label: string; days: number }[] = [
   { label: '1 an', days: 365 },
   { label: 'Tout', days: 3650 },
 ]
+const MONTHS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
+const isoDay = (d: Date) => d.toISOString().slice(0, 10)
+function monthRange(year: number, m0: number) {
+  return {
+    from: isoDay(new Date(Date.UTC(year, m0, 1))), to: isoDay(new Date(Date.UTC(year, m0 + 1, 0))),
+    compareFrom: isoDay(new Date(Date.UTC(year, m0 - 1, 1))), compareTo: isoDay(new Date(Date.UTC(year, m0, 0))),
+  }
+}
+function isoWeekMonday(year: number, week: number) {
+  const jan4 = new Date(Date.UTC(year, 0, 4))
+  const wk1 = new Date(jan4); wk1.setUTCDate(jan4.getUTCDate() - ((jan4.getUTCDay() + 6) % 7))
+  const mon = new Date(wk1); mon.setUTCDate(wk1.getUTCDate() + (week - 1) * 7)
+  return mon
+}
+function weekRange(year: number, week: number) {
+  const mon = isoWeekMonday(year, week)
+  const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() + 6)
+  const pMon = new Date(mon); pMon.setUTCDate(mon.getUTCDate() - 7)
+  const pSun = new Date(mon); pSun.setUTCDate(mon.getUTCDate() - 1)
+  return { from: isoDay(mon), to: isoDay(sun), compareFrom: isoDay(pMon), compareTo: isoDay(pSun) }
+}
+function getISOWeek(d: Date) {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()))
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7) + 3)
+  const firstThu = new Date(Date.UTC(date.getUTCFullYear(), 0, 4))
+  const week = 1 + Math.round(((date.getTime() - firstThu.getTime()) / 86400000 - 3 + ((firstThu.getUTCDay() + 6) % 7)) / 7)
+  return { year: date.getUTCFullYear(), week }
+}
 
 export default function GlowDashboard() {
+  const now = new Date()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [mode, setMode] = useState<'rolling' | 'month' | 'week'>('rolling')
   const [days, setDays] = useState(30)
-  const periodLabel = PERIODS.find((p) => p.days === days)?.label || `${days}j`
+  const [month, setMonth] = useState({ year: now.getFullYear(), m: now.getMonth() })
+  const iw = getISOWeek(now)
+  const [week, setWeek] = useState({ year: iw.year, w: iw.week })
   const [editingGoal, setEditingGoal] = useState<'week' | 'month' | null>(null)
   const [goalInput, setGoalInput] = useState('')
+
+  // Labels for the current selection + comparison
+  const periodLabel = mode === 'month' ? `${MONTHS_FR[month.m]} ${month.year}`
+    : mode === 'week' ? `S${week.w} ${week.year}`
+    : (PERIODS.find((p) => p.days === days)?.label || `${days}j`)
+  const compareLabel = mode === 'month' ? 'mois préc.' : mode === 'week' ? 'sem. préc.' : 'période préc.'
 
   const saveGoal = async (which: 'week' | 'month') => {
     const v = Math.round(Number(goalInput))
@@ -56,13 +94,16 @@ export default function GlowDashboard() {
   }
 
   useEffect(() => {
+    let qs = `days=${days}`
+    if (mode === 'month') { const r = monthRange(month.year, month.m); qs = `from=${r.from}&to=${r.to}&compareFrom=${r.compareFrom}&compareTo=${r.compareTo}` }
+    else if (mode === 'week') { const r = weekRange(week.year, week.w); qs = `from=${r.from}&to=${r.to}&compareFrom=${r.compareFrom}&compareTo=${r.compareTo}` }
     setLoading(true)
-    fetch(`/api/ops/dashboard/stats?days=${days}`, { cache: 'no-store' })
+    fetch(`/api/ops/dashboard/stats?${qs}`, { cache: 'no-store' })
       .then((r) => { if (!r.ok) throw new Error('fetch'); return r.json() })
       .then((d) => setStats(d))
       .catch((e) => console.error('Failed to fetch stats:', e))
       .finally(() => setLoading(false))
-  }, [days])
+  }, [mode, days, month, week])
 
   if (loading || !stats) {
     return (
@@ -79,8 +120,14 @@ export default function GlowDashboard() {
   const goalPct = Math.min(Math.round((stats.revenueToday / DAILY_GOAL) * 100), 100)
   const weeklyGoal = stats.weeklyGoal || 42000
   const monthlyGoal = stats.monthlyGoal || 180000
-  const goalWeekPct = Math.min(Math.round((stats.revenue7d / weeklyGoal) * 100), 100)
-  const goalMonthPct = Math.min(Math.round((stats.revenue30d / monthlyGoal) * 100), 100)
+  // Goals follow the selected period: in week/month mode the progress is that
+  // exact week/month's CA; otherwise the rolling last-7d / last-30d.
+  const weekRevenue = mode === 'week' ? stats.revenueWeek : stats.revenue7d
+  const monthRevenue = mode === 'month' ? stats.revenueWeek : stats.revenue30d
+  const weekGoalTitle = mode === 'week' ? `Objectif semaine S${week.w}` : 'Objectif de la semaine'
+  const monthGoalTitle = mode === 'month' ? `Objectif ${MONTHS_FR[month.m]}` : 'Objectif du mois'
+  const goalWeekPct = Math.min(Math.round((weekRevenue / weeklyGoal) * 100), 100)
+  const goalMonthPct = Math.min(Math.round((monthRevenue / monthlyGoal) * 100), 100)
   const series = stats.revenueSeries.slice(-14)
   const maxRev = Math.max(1, ...series.map((p) => p.revenue))
 
@@ -116,15 +163,42 @@ export default function GlowDashboard() {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            {/* Mode tabs */}
             <div style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 10, background: 'var(--bg-2)', border: '1px solid var(--line-soft)' }}>
-              {PERIODS.map((p) => (
-                <button key={p.days} onClick={() => setDays(p.days)} style={{
+              {([['rolling', 'Glissant'], ['month', 'Mois'], ['week', 'Semaine']] as const).map(([m, lbl]) => (
+                <button key={m} onClick={() => setMode(m)} style={{
                   fontSize: 12, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', cursor: 'pointer',
-                  background: days === p.days ? 'var(--rose-bright)' : 'transparent',
-                  color: days === p.days ? '#fff' : 'var(--tx-lo)',
-                }}>{p.label}</button>
+                  background: mode === m ? 'var(--tx-hi)' : 'transparent', color: mode === m ? 'var(--bg-1)' : 'var(--tx-lo)',
+                }}>{lbl}</button>
               ))}
             </div>
+
+            {/* Period picker (depends on mode) */}
+            {mode === 'rolling' && (
+              <div style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 10, background: 'var(--bg-2)', border: '1px solid var(--line-soft)' }}>
+                {PERIODS.map((p) => (
+                  <button key={p.days} onClick={() => setDays(p.days)} style={{
+                    fontSize: 12, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', cursor: 'pointer',
+                    background: days === p.days ? 'var(--rose-bright)' : 'transparent', color: days === p.days ? '#fff' : 'var(--tx-lo)',
+                  }}>{p.label}</button>
+                ))}
+              </div>
+            )}
+            {mode === 'month' && (
+              <Stepper
+                label={`${MONTHS_FR[month.m]} ${month.year}`}
+                onPrev={() => { const d = new Date(Date.UTC(month.year, month.m - 1, 1)); setMonth({ year: d.getUTCFullYear(), m: d.getUTCMonth() }) }}
+                onNext={() => { const d = new Date(Date.UTC(month.year, month.m + 1, 1)); setMonth({ year: d.getUTCFullYear(), m: d.getUTCMonth() }) }}
+              />
+            )}
+            {mode === 'week' && (
+              <Stepper
+                label={`Semaine ${week.w} · ${week.year}`}
+                onPrev={() => { const mon = isoWeekMonday(week.year, week.w); mon.setUTCDate(mon.getUTCDate() - 7); const i = getISOWeek(mon); setWeek({ year: i.year, w: i.week }) }}
+                onNext={() => { const mon = isoWeekMonday(week.year, week.w); mon.setUTCDate(mon.getUTCDate() + 7); const i = getISOWeek(mon); setWeek({ year: i.year, w: i.week }) }}
+              />
+            )}
+
             <button className="btn-modern btn-secondary" onClick={exportCsv}><Download className="w-4 h-4" />Export</button>
             <Link href="/orders/new" className="btn-modern btn-primary" style={{ textDecoration: 'none' }}><Plus className="w-4 h-4" />Nouvelle commande</Link>
           </div>
@@ -132,7 +206,7 @@ export default function GlowDashboard() {
 
         {/* KPI strip */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 16 }}>
-          <Kpi label={`Chiffre d'affaires · ${periodLabel}`} value={`${mad(stats.revenueWeek)}`} unit="MAD" delta={stats.revenueDelta} accent />
+          <Kpi label={`Chiffre d'affaires · ${periodLabel}`} value={`${mad(stats.revenueWeek)}`} unit="MAD" delta={stats.revenueDelta} deltaLabel={compareLabel} accent />
           <Kpi label="Profit estimé" value={mad(stats.estimatedProfit)} unit="MAD" sub={`${stats.marginPercent.toFixed(1)}% marge`} />
           <Kpi label={`Commandes · ${periodLabel}`} value={String(stats.ordersWeek)} />
           <Kpi label="Panier moyen" value={mad(stats.averageOrderValue)} unit="MAD" />
@@ -176,7 +250,7 @@ export default function GlowDashboard() {
 
           <Card>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Label>Objectif de la semaine</Label>
+              <Label>{weekGoalTitle}</Label>
               {editingGoal !== 'week' && (
                 <button onClick={() => { setGoalInput(String(weeklyGoal)); setEditingGoal('week') }} title="Modifier l'objectif hebdo" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-lo)', fontSize: 11, padding: 0 }}>✏️ modifier</button>
               )}
@@ -199,14 +273,14 @@ export default function GlowDashboard() {
               <div style={{ width: `${goalWeekPct}%`, height: '100%', borderRadius: 6, background: goalWeekPct >= 100 ? 'var(--green)' : 'linear-gradient(90deg, var(--rose), var(--rose-bright))' }} />
             </div>
             <p style={{ fontSize: 12, color: 'var(--tx-mid)' }}>
-              <b style={{ color: 'var(--tx-hi)' }}>{mad(stats.revenue7d)} MAD</b> encaissés sur 7 jours
+              <b style={{ color: 'var(--tx-hi)' }}>{mad(weekRevenue)} MAD</b> {mode === 'week' ? `· semaine S${week.w}` : 'encaissés sur 7 jours'}
             </p>
 
             {/* Monthly goal */}
             <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--line-soft)' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                 <span style={{ fontSize: 12, color: 'var(--tx-mid)' }}>
-                  Objectif du mois · <b style={{ color: goalMonthPct >= 100 ? 'var(--green)' : 'var(--tx-hi)' }}>{goalMonthPct}%</b>
+                  {monthGoalTitle} · <b style={{ color: goalMonthPct >= 100 ? 'var(--green)' : 'var(--tx-hi)' }}>{goalMonthPct}%</b>
                 </span>
                 {editingGoal === 'month' ? (
                   <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -222,7 +296,7 @@ export default function GlowDashboard() {
               <div style={{ height: 7, borderRadius: 4, background: 'var(--bg-3)', overflow: 'hidden' }}>
                 <div style={{ width: `${goalMonthPct}%`, height: '100%', borderRadius: 4, background: goalMonthPct >= 100 ? 'var(--green)' : 'var(--rose-bright)' }} />
               </div>
-              <p style={{ fontSize: 11, color: 'var(--tx-lo)', marginTop: 4 }}>{mad(stats.revenue30d)} MAD sur 30 jours</p>
+              <p style={{ fontSize: 11, color: 'var(--tx-lo)', marginTop: 4 }}>{mad(monthRevenue)} MAD {mode === 'month' ? `· ${MONTHS_FR[month.m]}` : 'sur 30 jours'}</p>
             </div>
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line-soft)', display: 'grid', gap: 10 }}>
               {[
@@ -364,6 +438,17 @@ export default function GlowDashboard() {
   )
 }
 
+function Stepper({ label, onPrev, onNext }: { label: string; onPrev: () => void; onNext: () => void }) {
+  const btn: React.CSSProperties = { border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--tx-lo)', fontSize: 16, padding: '0 6px', lineHeight: 1 }
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: 3, borderRadius: 10, background: 'var(--bg-2)', border: '1px solid var(--line-soft)' }}>
+      <button onClick={onPrev} aria-label="Précédent" style={btn}>‹</button>
+      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx-hi)', minWidth: 110, textAlign: 'center' }}>{label}</span>
+      <button onClick={onNext} aria-label="Suivant" style={btn}>›</button>
+    </div>
+  )
+}
+
 function Card({ children }: { children: React.ReactNode }) {
   return <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-lg)', padding: 18, boxShadow: 'var(--shadow-1)' }}>{children}</div>
 }
@@ -372,7 +457,7 @@ function Label({ children }: { children: React.ReactNode }) {
 }
 function Empty() { return <p style={{ fontSize: 13, color: 'var(--tx-faint)', textAlign: 'center', padding: '16px 0' }}>Pas de données.</p> }
 
-function Kpi({ label, value, unit, sub, delta, accent }: { label: string; value: string; unit?: string; sub?: string; delta?: number | null; accent?: boolean }) {
+function Kpi({ label, value, unit, sub, delta, deltaLabel, accent }: { label: string; value: string; unit?: string; sub?: string; delta?: number | null; deltaLabel?: string; accent?: boolean }) {
   return (
     <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius)', padding: 14, boxShadow: 'var(--shadow-1)' }}>
       <div style={{ fontSize: 11, color: 'var(--tx-lo)', marginBottom: 6 }}>{label}</div>
@@ -381,8 +466,9 @@ function Kpi({ label, value, unit, sub, delta, accent }: { label: string; value:
         {unit && <span style={{ fontSize: 12, color: 'var(--tx-faint)' }}>{unit}</span>}
       </div>
       {(delta != null || sub) && (
-        <div style={{ marginTop: 6 }}>
+        <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
           {delta != null ? <DeltaPill value={delta} small /> : <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>{sub}</span>}
+          {delta != null && deltaLabel && <span style={{ fontSize: 10, color: 'var(--tx-faint)' }}>vs {deltaLabel}</span>}
         </div>
       )}
     </div>

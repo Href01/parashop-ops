@@ -99,17 +99,18 @@ interface RecentOrderRow {
   sourceChannel: string | null
 }
 
-// Period-aware financial CTE. `days` = the selected window length (ending today);
-// "week_start"/"month_start" both map to range_start, "previous_week_start" to the
-// previous same-length window (kept names to avoid touching the queries below).
-function financialCte(days: number) {
+// Period-aware financial CTE. The selected range is [range_start, range_end);
+// the comparison range is [compare_start, compare_end) (previous month/week, or
+// same period last year). All dates are validated YYYY-MM-DD (no injection).
+function financialCte(from: string, to: string, cFrom: string, cTo: string) {
   return `
   WITH bounds AS (
     SELECT
       ((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date)::timestamp AS today_start,
-      (((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date) - INTERVAL '${days - 1} days')::timestamp AS week_start,
-      (((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date) - INTERVAL '${2 * days - 1} days')::timestamp AS previous_week_start,
-      (((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date) - INTERVAL '${days - 1} days')::timestamp AS month_start
+      '${from}'::timestamp AS range_start,
+      ('${to}'::date + INTERVAL '1 day')::timestamp AS range_end,
+      '${cFrom}'::timestamp AS compare_start,
+      ('${cTo}'::date + INTERVAL '1 day')::timestamp AS compare_end
   ),
   item_costs AS (
     SELECT
@@ -255,10 +256,37 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     }
 
-    // Selected window length in days (ending today). 'all' → a large span.
-    const daysParam = parseInt(new URL(req.url).searchParams.get('days') || '30', 10)
-    const days = Number.isFinite(daysParam) && daysParam > 0 ? Math.min(daysParam, 3650) : 30
-    const FINANCIAL_CTE = financialCte(days)
+    // Date range: explicit ?from&to (a month, an ISO week, …) or rolling ?days=.
+    // Comparison range: ?compareFrom&compareTo (prev month/week, last year) or
+    // the previous same-length window by default.
+    const sp = new URL(req.url).searchParams
+    const reDate = /^\d{4}-\d{2}-\d{2}$/
+    const v = (s: string | null) => (s && reDate.test(s) ? s : null)
+    const isoDay = (dt: Date) => dt.toISOString().slice(0, 10)
+
+    let from = v(sp.get('from'))
+    let to = v(sp.get('to'))
+    let compareFrom = v(sp.get('compareFrom'))
+    let compareTo = v(sp.get('compareTo'))
+
+    if (!from || !to) {
+      const dp = parseInt(sp.get('days') || '30', 10)
+      const days = Number.isFinite(dp) && dp > 0 ? Math.min(dp, 3650) : 30
+      const today = new Date()
+      to = isoDay(today)
+      const start = new Date(today)
+      start.setDate(start.getDate() - (days - 1))
+      from = isoDay(start)
+    }
+    const periodDays = Math.max(1, Math.round((Date.parse(to + 'T00:00:00Z') - Date.parse(from + 'T00:00:00Z')) / 86400000) + 1)
+    if (!compareFrom || !compareTo) {
+      const f = new Date(from + 'T00:00:00Z')
+      const cTo = new Date(f); cTo.setUTCDate(cTo.getUTCDate() - 1)
+      const cFrom = new Date(cTo); cFrom.setUTCDate(cFrom.getUTCDate() - (periodDays - 1))
+      compareFrom = isoDay(cFrom)
+      compareTo = isoDay(cTo)
+    }
+    const FINANCIAL_CTE = financialCte(from, to, compareFrom, compareTo)
 
     const [
       summaryRows,
@@ -279,37 +307,37 @@ export async function GET(req: Request) {
           COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= (SELECT today_start FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenueToday",
           COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= ((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date - INTERVAL '6 days')::timestamp AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenue7d",
           COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= ((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date - INTERVAL '29 days')::timestamp AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenue30d",
-          COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= (SELECT week_start FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenueWeek",
-          COALESCE(SUM(order_total) FILTER (WHERE "createdAt" >= (SELECT week_start FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenueWeekTotal",
+          COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenueWeek",
+          COALESCE(SUM(order_total) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenueWeekTotal",
           COALESCE(SUM(revenue) FILTER (
-            WHERE "createdAt" >= (SELECT previous_week_start FROM bounds)
-              AND "createdAt" < (SELECT week_start FROM bounds)
+            WHERE "createdAt" >= (SELECT compare_start FROM bounds)
+              AND "createdAt" < (SELECT compare_end FROM bounds)
               AND status IN ('CONFIRMED', 'DELIVERED')
           ), 0)::double precision AS "previousRevenueWeek",
-          COALESCE(SUM(profit) FILTER (WHERE "createdAt" >= (SELECT week_start FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "estimatedProfitWeek",
+          COALESCE(SUM(profit) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "estimatedProfitWeek",
           COALESCE(SUM(profit) FILTER (
-            WHERE "createdAt" >= (SELECT previous_week_start FROM bounds)
-              AND "createdAt" < (SELECT week_start FROM bounds)
+            WHERE "createdAt" >= (SELECT compare_start FROM bounds)
+              AND "createdAt" < (SELECT compare_end FROM bounds)
               AND status IN ('CONFIRMED', 'DELIVERED')
           ), 0)::double precision AS "previousProfitWeek",
           COUNT(*) FILTER (WHERE "createdAt" >= (SELECT today_start FROM bounds) AND status <> 'CANCELLED')::int AS "ordersToday",
-          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT week_start FROM bounds) AND status <> 'CANCELLED')::int AS "ordersWeek",
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status <> 'CANCELLED')::int AS "ordersWeek",
           COUNT(*) FILTER (
-            WHERE "createdAt" >= (SELECT previous_week_start FROM bounds)
-              AND "createdAt" < (SELECT week_start FROM bounds)
+            WHERE "createdAt" >= (SELECT compare_start FROM bounds)
+              AND "createdAt" < (SELECT compare_end FROM bounds)
               AND status <> 'CANCELLED'
           )::int AS "previousOrdersWeek",
-          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT week_start FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED'))::int AS "bookedOrdersWeek",
-          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT month_start FROM bounds) AND status = 'DELIVERED')::int AS "delivered30d",
-          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT month_start FROM bounds) AND status = 'CANCELLED')::int AS "cancelled30d"
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED'))::int AS "bookedOrdersWeek",
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED')::int AS "delivered30d",
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'CANCELLED')::int AS "cancelled30d"
         FROM order_financials
       `),
       safeQuery<SeriesRow>('series', `
         ${FINANCIAL_CTE},
         days AS (
           SELECT generate_series(
-            GREATEST((SELECT month_start FROM bounds), (SELECT today_start FROM bounds) - INTERVAL '180 days'),
-            (SELECT today_start FROM bounds),
+            GREATEST((SELECT range_start FROM bounds), (SELECT range_end FROM bounds) - INTERVAL '181 days'),
+            (SELECT range_end FROM bounds) - INTERVAL '1 day',
             INTERVAL '1 day'
           ) AS day_bucket
         )
@@ -331,19 +359,19 @@ export async function GET(req: Request) {
       safeQuery<PipelineRow>('pipeline', `
         ${FINANCIAL_CTE}
         SELECT
-          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT month_start FROM bounds) AND status = 'PENDING')::int AS pending,
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'PENDING')::int AS pending,
           COUNT(*) FILTER (
-            WHERE "createdAt" >= (SELECT month_start FROM bounds)
+            WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds)
               AND status = 'CONFIRMED'
               AND "senditTrackingId" IS NULL
           )::int AS confirmed,
           COUNT(*) FILTER (
-            WHERE "createdAt" >= (SELECT month_start FROM bounds)
+            WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds)
               AND "senditTrackingId" IS NOT NULL
               AND status = 'CONFIRMED'
           )::int AS sendit,
-          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT month_start FROM bounds) AND status = 'DELIVERED')::int AS delivered,
-          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT month_start FROM bounds) AND status = 'CANCELLED')::int AS cancelled
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED')::int AS delivered,
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'CANCELLED')::int AS cancelled
         FROM order_financials
       `),
       safeQuery<ProductRow>('top-products', `
@@ -356,7 +384,7 @@ export async function GET(req: Request) {
         FROM "OrderItem" oi
         INNER JOIN order_financials ofn ON ofn.id = oi."orderId"
         LEFT JOIN "Product" p ON p.id = oi."productId"
-        WHERE ofn."createdAt" >= (SELECT week_start FROM bounds)
+        WHERE ofn."createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds)
           AND ofn.status IN ('CONFIRMED', 'DELIVERED')
         GROUP BY oi."productId", p.name
         ORDER BY units DESC, revenue DESC
@@ -368,7 +396,7 @@ export async function GET(req: Request) {
           COALESCE(NULLIF(TRIM("deliveryCity"), ''), 'Unknown') AS name,
           COUNT(*)::int AS orders
         FROM order_financials
-        WHERE "createdAt" >= (SELECT week_start FROM bounds)
+        WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds)
           AND status IN ('CONFIRMED', 'DELIVERED')
         GROUP BY COALESCE(NULLIF(TRIM("deliveryCity"), ''), 'Unknown')
         ORDER BY orders DESC, name ASC
@@ -379,7 +407,7 @@ export async function GET(req: Request) {
         SELECT
           COUNT(*) FILTER (WHERE status = 'PENDING')::int AS "needsConfirmation",
           COUNT(*) FILTER (WHERE status = 'CONFIRMED' AND "senditTrackingId" IS NULL)::int AS "unshippedConfirmed",
-          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT month_start FROM bounds) AND status = 'CANCELLED')::int AS "deliveryIssues",
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'CANCELLED')::int AS "deliveryIssues",
           COUNT(*) FILTER (WHERE status IN ('CONFIRMED', 'DELIVERED') AND missing_cost_items > 0)::int AS "missingCosts"
         FROM order_financials
       `),
@@ -400,7 +428,7 @@ export async function GET(req: Request) {
           COALESCE(SUM(a.spend), 0)::double precision AS spend,
           COALESCE(SUM(a.revenue), 0)::double precision AS revenue
         FROM "AdCampaign" a
-        WHERE COALESCE(a."endDate", CURRENT_DATE) >= CURRENT_DATE - INTERVAL '${days - 1} days'
+        WHERE COALESCE(a."endDate", CURRENT_DATE) >= CURRENT_DATE - INTERVAL '${periodDays - 1} days'
       `),
       safeQuery<ChannelRow>('channels', `
         ${FINANCIAL_CTE}
@@ -417,7 +445,7 @@ export async function GET(req: Request) {
           COUNT(*)::int AS orders,
           COALESCE(SUM(revenue), 0)::double precision AS revenue
         FROM order_financials
-        WHERE "createdAt" >= (SELECT week_start FROM bounds)
+        WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds)
           AND status IN ('CONFIRMED', 'DELIVERED')
         GROUP BY 1
         ORDER BY orders DESC, revenue DESC
@@ -603,7 +631,8 @@ export async function GET(req: Request) {
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
-      periodDays: days,
+      periodDays,
+      range: { from, to, compareFrom, compareTo },
       dailyGoal: DAILY_REVENUE_GOAL,
       weeklyGoal,
       monthlyGoal,
