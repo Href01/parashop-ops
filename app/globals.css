@@ -1302,6 +1302,13 @@ body {
   }
 }
 
+/* Mobile: sidebar becomes a fixed slide-in drawer, main takes full width */
+@media (max-width: 768px) {
+  .bos-app.mobile {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 760px) {
   .page-inner {
     padding: 16px;
@@ -2665,6 +2672,43 @@ textarea.form-input {
 
   .filter-strip .btn-modern {
     flex: 1 1 auto;
+  }
+
+  /* Table ergonomics: smooth momentum scroll + tighter cells on phones */
+  .table-scroll,
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+
+  .tbl thead th,
+  .table-modern thead th {
+    padding: 8px 10px;
+    font-size: 10px;
+  }
+
+  .tbl tbody td,
+  .table-modern tbody td {
+    padding: 10px;
+    font-size: 12px;
+  }
+
+  .tbl {
+    min-width: 680px;
+  }
+
+  /* Touch targets: comfortable tap size on phones (min 40px) */
+  .btn-modern {
+    min-height: 40px;
+  }
+
+  .btn-modern.btn-sm {
+    min-height: 34px;
+  }
+
+  .btn-modern.btn-icon {
+    min-width: 40px;
+    min-height: 40px;
   }
 
   .form-grid {

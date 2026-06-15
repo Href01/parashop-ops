@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   HelpCircle,
   Megaphone,
+  Menu,
   Package,
   PanelLeft,
   Search,
@@ -17,6 +18,7 @@ import {
   Target,
   Users,
   Warehouse,
+  X,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Link from 'next/link'
@@ -84,30 +86,82 @@ export default function BosShell({
 }) {
   const [collapsed, setCollapsed] = useState(false)
   const [isNarrow, setIsNarrow] = useState(false)
-  const shellCollapsed = collapsed || isNarrow
+  const [isMobile, setIsMobile] = useState(false)
+  const [mobileOpen, setMobileOpen] = useState(false)
+  // On mobile the sidebar is a slide-in drawer that shows full labels when open.
+  const shellCollapsed = isMobile ? false : collapsed || isNarrow
   const showDesktopChrome = !isNarrow
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia('(max-width: 900px)')
-    const updateNarrowState = () => setIsNarrow(mediaQuery.matches)
+    const narrowQuery = window.matchMedia('(max-width: 900px)')
+    const mobileQuery = window.matchMedia('(max-width: 768px)')
+    const updateNarrowState = () => setIsNarrow(narrowQuery.matches)
+    const updateMobileState = () => setIsMobile(mobileQuery.matches)
 
     updateNarrowState()
-    mediaQuery.addEventListener('change', updateNarrowState)
+    updateMobileState()
+    narrowQuery.addEventListener('change', updateNarrowState)
+    mobileQuery.addEventListener('change', updateMobileState)
 
-    return () => mediaQuery.removeEventListener('change', updateNarrowState)
+    return () => {
+      narrowQuery.removeEventListener('change', updateNarrowState)
+      mobileQuery.removeEventListener('change', updateMobileState)
+    }
   }, [])
 
+  // Lock body scroll while the mobile drawer is open, and close on resize to desktop.
+  useEffect(() => {
+    if (!isMobile && mobileOpen) setMobileOpen(false)
+  }, [isMobile, mobileOpen])
+
+  useEffect(() => {
+    if (mobileOpen) {
+      document.body.style.overflow = 'hidden'
+      return () => {
+        document.body.style.overflow = ''
+      }
+    }
+  }, [mobileOpen])
+
   return (
-    <div className={`bos-app ${shellCollapsed ? 'collapsed' : ''}`}>
+    <div className={`bos-app ${shellCollapsed ? 'collapsed' : ''} ${isMobile ? 'mobile' : ''}`}>
+      {/* Backdrop for the mobile drawer */}
+      {isMobile && mobileOpen && (
+        <div
+          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'oklch(0.2 0.02 350 / 0.45)',
+            backdropFilter: 'blur(2px)',
+            zIndex: 45,
+          }}
+        />
+      )}
       <aside style={{
         background: 'var(--bg-1)',
         borderRight: '1px solid var(--line-soft)',
         display: 'flex',
         flexDirection: 'column',
-        position: 'sticky',
-        top: 0,
-        height: '100vh',
-        overflow: 'hidden'
+        overflow: 'hidden',
+        ...(isMobile
+          ? {
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              bottom: 0,
+              width: 'var(--sidebar-w)',
+              zIndex: 46,
+              transform: mobileOpen ? 'translateX(0)' : 'translateX(-100%)',
+              transition: 'transform 0.25s ease',
+              boxShadow: mobileOpen ? '0 0 40px oklch(0.2 0.02 350 / 0.25)' : 'none',
+            }
+          : {
+              position: 'sticky',
+              top: 0,
+              height: '100vh',
+            }),
       }}>
         <div style={{
           height: '56px',
@@ -141,6 +195,28 @@ export default function BosShell({
               </div>
             </div>
           )}
+          {isMobile && (
+            <button
+              type="button"
+              onClick={() => setMobileOpen(false)}
+              aria-label="Fermer le menu"
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '8px',
+                display: 'grid',
+                placeItems: 'center',
+                color: 'var(--tx-mid)',
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                flexShrink: 0,
+              }}
+              className="hover:bg-[var(--bg-2)]"
+            >
+              <X style={{ width: '18px', height: '18px', strokeWidth: 1.8 }} />
+            </button>
+          )}
         </div>
 
         <nav style={{ flex: 1, overflowY: 'auto', padding: '10px 10px 16px' }}>
@@ -169,16 +245,17 @@ export default function BosShell({
                   <Link
                     key={item.label}
                     href={item.href}
+                    onClick={() => isMobile && setMobileOpen(false)}
                     className={isActive ? 'nav-item active' : 'nav-item'}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
                       gap: '10px',
-                      padding: shellCollapsed ? '9px' : '8px 10px',
+                      padding: isMobile ? '11px 10px' : shellCollapsed ? '9px' : '8px 10px',
                       borderRadius: '8px',
                       color: isActive ? 'var(--rose)' : 'var(--tx-mid)',
                       fontWeight: isActive ? 600 : 500,
-                      fontSize: '13px',
+                      fontSize: isMobile ? '14px' : '13px',
                       position: 'relative',
                       whiteSpace: 'nowrap',
                       marginBottom: '2px',
@@ -280,23 +357,26 @@ export default function BosShell({
         }}>
           <button
             type="button"
-            onClick={() => setCollapsed((value) => !value)}
-            aria-label="Toggle sidebar"
+            onClick={() => (isMobile ? setMobileOpen((value) => !value) : setCollapsed((value) => !value))}
+            aria-label={isMobile ? 'Ouvrir le menu' : 'Toggle sidebar'}
             style={{
-              width: '30px',
-              height: '30px',
-              borderRadius: '6px',
+              width: isMobile ? '38px' : '30px',
+              height: isMobile ? '38px' : '30px',
+              borderRadius: '8px',
               display: 'grid',
               placeItems: 'center',
               color: 'var(--tx-mid)',
               background: 'transparent',
               border: 'none',
               cursor: 'pointer',
-              transition: 'all 0.12s'
+              transition: 'all 0.12s',
+              flexShrink: 0,
             }}
             className="hover:bg-[var(--bg-2)] hover:text-[var(--tx-hi)]"
           >
-            <PanelLeft style={{ width: '17px', height: '17px', strokeWidth: 1.8 }} />
+            {isMobile
+              ? <Menu style={{ width: '20px', height: '20px', strokeWidth: 1.8 }} />
+              : <PanelLeft style={{ width: '17px', height: '17px', strokeWidth: 1.8 }} />}
           </button>
           <div style={{
             flex: isNarrow ? '1 1 auto' : '0 1 auto',
