@@ -384,7 +384,7 @@ export async function GET(req: Request) {
         FROM "OrderItem" oi
         INNER JOIN order_financials ofn ON ofn.id = oi."orderId"
         LEFT JOIN "Product" p ON p.id = oi."productId"
-        WHERE ofn."createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds)
+        WHERE ofn."createdAt" >= (SELECT range_start FROM bounds) AND ofn."createdAt" < (SELECT range_end FROM bounds)
           AND ofn.status IN ('CONFIRMED', 'DELIVERED')
         GROUP BY oi."productId", p.name
         ORDER BY units DESC, revenue DESC
