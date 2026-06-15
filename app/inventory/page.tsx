@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import BosShell from '@/components/BosShell'
-import { Search, AlertTriangle, Package, TrendingDown, CheckCircle, XCircle, Download, Plus, Minus, DollarSign } from 'lucide-react'
+import { Search, AlertTriangle, Package, TrendingDown, CheckCircle, XCircle, Download, Plus, Minus, DollarSign, History, ArrowUpCircle, ArrowDownCircle } from 'lucide-react'
 
 type Product = {
   id: number
@@ -34,10 +34,27 @@ type Alert = {
   createdAt: string
 }
 
+type Movement = {
+  id: number
+  productId: number
+  productName: string
+  productBrand: string
+  type: string
+  quantity: number
+  stockBefore: number
+  stockAfter: number
+  reason: string | null
+  performedBy: string
+  createdAt: string
+}
+
 export default function InventoryPage() {
+  const [activeTab, setActiveTab] = useState<'stock' | 'history'>('stock')
   const [products, setProducts] = useState<Product[]>([])
   const [alerts, setAlerts] = useState<Alert[]>([])
+  const [movements, setMovements] = useState<Movement[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadingMovements, setLoadingMovements] = useState(false)
   const [statusFilter, setStatusFilter] = useState('')
   const [showAlerts, setShowAlerts] = useState(true)
   const [adjustModal, setAdjustModal] = useState<{ productId: number; productName: string; currentStock: number } | null>(null)
@@ -47,9 +64,13 @@ export default function InventoryPage() {
   const [adjusting, setAdjusting] = useState(false)
 
   useEffect(() => {
-    fetchInventory()
-    fetchAlerts()
-  }, [statusFilter])
+    if (activeTab === 'stock') {
+      fetchInventory()
+      fetchAlerts()
+    } else {
+      fetchMovements()
+    }
+  }, [statusFilter, activeTab])
 
   const fetchInventory = async () => {
     setLoading(true)
@@ -75,6 +96,19 @@ export default function InventoryPage() {
       setAlerts(data.alerts || [])
     } catch (error) {
       console.error('Failed to fetch alerts:', error)
+    }
+  }
+
+  const fetchMovements = async () => {
+    setLoadingMovements(true)
+    try {
+      const res = await fetch('/api/ops/inventory/movement?limit=100')
+      const data = await res.json()
+      setMovements(data.movements || [])
+    } catch (error) {
+      console.error('Failed to fetch movements:', error)
+    } finally {
+      setLoadingMovements(false)
     }
   }
 
@@ -139,7 +173,8 @@ export default function InventoryPage() {
       })
       if (!res.ok) throw new Error('Failed')
       setAdjustModal(null)
-      fetchInventory() // Refresh
+      fetchInventory() // Refresh stock
+      if (activeTab === 'history') fetchMovements() // Refresh history if active
     } catch (error) {
       console.error('Failed to adjust stock:', error)
       alert('Erreur lors de l\'ajustement')
@@ -187,6 +222,56 @@ export default function InventoryPage() {
           <button className="btn-modern btn-primary" onClick={handleAddStock}><Package className="w-4 h-4" />Ajouter</button>
         </div>
 
+        {/* Tabs */}
+        <div style={{ marginBottom: 24, borderBottom: '1px solid var(--line-soft)' }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              className={`tab-btn ${activeTab === 'stock' ? 'active' : ''}`}
+              onClick={() => setActiveTab('stock')}
+              style={{
+                padding: '10px 16px',
+                background: 'none',
+                border: 'none',
+                borderBottom: activeTab === 'stock' ? '2px solid var(--rose-bright)' : '2px solid transparent',
+                color: activeTab === 'stock' ? 'var(--tx-hi)' : 'var(--tx-mid)',
+                fontWeight: activeTab === 'stock' ? 600 : 500,
+                fontSize: 14,
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <Package style={{ width: 16, height: 16 }} />
+              Stock
+            </button>
+            <button
+              className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
+              onClick={() => setActiveTab('history')}
+              style={{
+                padding: '10px 16px',
+                background: 'none',
+                border: 'none',
+                borderBottom: activeTab === 'history' ? '2px solid var(--rose-bright)' : '2px solid transparent',
+                color: activeTab === 'history' ? 'var(--tx-hi)' : 'var(--tx-mid)',
+                fontWeight: activeTab === 'history' ? 600 : 500,
+                fontSize: 14,
+                cursor: 'pointer',
+                transition: 'all 0.15s',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+              }}
+            >
+              <History style={{ width: 16, height: 16 }} />
+              Historique
+            </button>
+          </div>
+        </div>
+
+        {activeTab === 'stock' && (
+          <>
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
           <Metric
@@ -402,6 +487,103 @@ export default function InventoryPage() {
             </table>
           </div>
         </div>
+          </>
+        )}
+
+        {/* History Tab */}
+        {activeTab === 'history' && (
+          <div className="card-modern">
+            <div className="card-header">
+              <History className="w-5 h-5" />
+              <h3 className="text-lg font-semibold">Historique des mouvements</h3>
+              <div className="flex-1"></div>
+              <span className="fs12 tx-lo">{movements.length} mouvements (100 derniers)</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="table-modern">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Produit</th>
+                    <th>Type</th>
+                    <th className="r">Quantité</th>
+                    <th className="r">Avant</th>
+                    <th className="r">Après</th>
+                    <th>Raison</th>
+                    <th>Par</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loadingMovements ? (
+                    <tr>
+                      <td colSpan={8} style={{ textAlign: 'center', padding: '40px' }}>
+                        Chargement…
+                      </td>
+                    </tr>
+                  ) : movements.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} style={{ textAlign: 'center', padding: '40px' }}>
+                        Aucun mouvement enregistré
+                      </td>
+                    </tr>
+                  ) : (
+                    movements.map((movement) => {
+                      const isIncrease = movement.quantity > 0
+                      const typeColors: Record<string, string> = {
+                        Purchase: 'badge blue',
+                        Sale: 'badge green',
+                        Adjustment: 'badge amber',
+                        Return: 'badge violet',
+                        Damage: 'badge red',
+                        Transfer: 'badge gray',
+                      }
+                      return (
+                        <tr key={movement.id}>
+                          <td className="fs12">
+                            {new Date(movement.createdAt).toLocaleDateString('fr-FR', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </td>
+                          <td>
+                            <div>
+                              <div className="t-strong fs13">{movement.productName}</div>
+                              <div className="fs11 tx-lo">{movement.productBrand}</div>
+                            </div>
+                          </td>
+                          <td>
+                            <span className={typeColors[movement.type] || 'badge'}>
+                              {movement.type}
+                            </span>
+                          </td>
+                          <td className="r">
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
+                              {isIncrease ? (
+                                <ArrowUpCircle className="w-4 h-4 text-green-600" />
+                              ) : (
+                                <ArrowDownCircle className="w-4 h-4 text-red-600" />
+                              )}
+                              <span className={`num fw600 ${isIncrease ? 'text-green-600' : 'text-red-600'}`}>
+                                {isIncrease ? '+' : ''}{movement.quantity}
+                              </span>
+                            </div>
+                          </td>
+                          <td className="r num tx-lo">{movement.stockBefore}</td>
+                          <td className="r num fw600">{movement.stockAfter}</td>
+                          <td className="fs12 tx-lo">{movement.reason || '-'}</td>
+                          <td className="fs11 tx-lo">{movement.performedBy?.split('@')[0] || '-'}</td>
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Stock Adjustment Modal */}
         {adjustModal && (
