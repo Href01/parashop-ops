@@ -122,26 +122,53 @@ export default function InventoryPage() {
   }
 
   const handleExport = () => {
-    const csv = [
-      ['Product', 'Brand', 'Stock', 'Reorder Point', 'Weekly Sales', 'Days Left', 'Status'],
-      ...products.map(p => [
-        p.name,
-        p.brand,
-        p.stock,
-        p.reorderPoint,
-        p.weeklySales || 0,
-        p.daysOfStockLeft || '∞',
-        p.stockStatus
-      ])
-    ].map(row => row.join(',')).join('\n')
+    if (activeTab === 'stock') {
+      const csv = [
+        ['Product', 'Brand', 'Stock', 'Reorder Point', 'Weekly Sales', 'Days Left', 'Status', 'Cost Price', 'Stock Value'],
+        ...products.map(p => [
+          p.name,
+          p.brand,
+          p.stock,
+          p.reorderPoint,
+          p.weeklySales || 0,
+          p.daysOfStockLeft || '∞',
+          p.stockStatus,
+          p.costPrice || 0,
+          p.costPrice ? p.stock * p.costPrice : 0
+        ])
+      ].map(row => row.join(',')).join('\n')
 
-    const blob = new Blob([csv], { type: 'text/csv' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `inventory-${new Date().toISOString().split('T')[0]}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+      const blob = new Blob([csv], { type: 'text/csv' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `inventory-${new Date().toISOString().split('T')[0]}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } else {
+      const csv = [
+        ['Date', 'Product', 'Brand', 'Type', 'Quantity', 'Stock Before', 'Stock After', 'Reason', 'Performed By'],
+        ...movements.map(m => [
+          new Date(m.createdAt).toLocaleString('fr-FR'),
+          m.productName,
+          m.productBrand,
+          m.type,
+          m.quantity,
+          m.stockBefore,
+          m.stockAfter,
+          m.reason || '',
+          m.performedBy?.split('@')[0] || ''
+        ])
+      ].map(row => row.join(',')).join('\n')
+
+      const blob = new Blob([csv], { type: 'text/csv' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `movements-${new Date().toISOString().split('T')[0]}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    }
   }
 
   const handleAddStock = () => {
@@ -207,6 +234,12 @@ export default function InventoryPage() {
   const criticalAlerts = alerts.filter(a => a.severity === 'critical').length
   const totalStockValue = products.reduce((sum, p) => sum + (p.stock * (p.costPrice || 0)), 0)
   const formatMoney = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v)
+
+  // Products running out soon (sorted by daysOfStockLeft, showing <= 14 days)
+  const runningOutSoon = products
+    .filter(p => p.daysOfStockLeft && p.daysOfStockLeft > 0 && p.daysOfStockLeft <= 14)
+    .sort((a, b) => (a.daysOfStockLeft || 999) - (b.daysOfStockLeft || 999))
+    .slice(0, 5)
 
   return (
     <BosShell active="inventory" title="Stock" crumb="Opérations">
@@ -352,6 +385,67 @@ export default function InventoryPage() {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Running Out Soon Widget */}
+        {runningOutSoon.length > 0 && (
+          <div className="card-modern mb-6" style={{ borderLeft: '4px solid var(--amber-500)' }}>
+            <div className="card-header">
+              <TrendingDown className="w-5 h-5 text-amber-600" />
+              <h3 className="text-lg font-semibold">Rupture imminente</h3>
+              <span className="badge-modern badge-warning">{runningOutSoon.length}</span>
+              <div className="flex-1"></div>
+              <span className="fs12 tx-lo">≤ 14 jours de stock</span>
+            </div>
+            <div className="card-body">
+              <div className="flex flex-col gap-3">
+                {runningOutSoon.map((product) => {
+                  const urgency = product.daysOfStockLeft! <= 3 ? 'critical' : product.daysOfStockLeft! <= 7 ? 'warning' : 'info'
+                  const urgencyColors: Record<string, string> = {
+                    critical: 'bg-red-50 border-red-200',
+                    warning: 'bg-amber-50 border-amber-200',
+                    info: 'bg-blue-50 border-blue-200',
+                  }
+                  return (
+                    <div
+                      key={product.id}
+                      className={`flex items-center justify-between p-3 rounded-lg border ${urgencyColors[urgency]}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        {product.image && (
+                          <img
+                            src={product.image}
+                            alt={product.name}
+                            className="w-10 h-10 rounded object-cover"
+                          />
+                        )}
+                        <div>
+                          <div className="font-semibold text-sm">{product.name}</div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {product.brand} • Stock: <b>{product.stock}</b> • Ventes: <b>{product.weeklySales || 0}/sem</b>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="text-right">
+                          <div className={`text-lg font-bold ${urgency === 'critical' ? 'text-red-600' : urgency === 'warning' ? 'text-amber-600' : 'text-blue-600'}`}>
+                            {product.daysOfStockLeft}j
+                          </div>
+                          <div className="text-xs text-gray-500">restants</div>
+                        </div>
+                        <button
+                          className="btn-modern btn-sm btn-primary"
+                          onClick={() => openAdjustModal(product)}
+                        >
+                          Réappro
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </div>
