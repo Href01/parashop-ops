@@ -62,6 +62,9 @@ export default function InventoryPage() {
   const [adjustQty, setAdjustQty] = useState('')
   const [adjustReason, setAdjustReason] = useState('')
   const [adjusting, setAdjusting] = useState(false)
+  const [supplierModal, setSupplierModal] = useState<{ productId: number; productName: string; currentSupplier: string | null } | null>(null)
+  const [supplierInput, setSupplierInput] = useState('')
+  const [savingSupplier, setSavingSupplier] = useState(false)
 
   useEffect(() => {
     if (activeTab === 'stock') {
@@ -207,6 +210,32 @@ export default function InventoryPage() {
       alert('Erreur lors de l\'ajustement')
     } finally {
       setAdjusting(false)
+    }
+  }
+
+  const openSupplierModal = (product: Product) => {
+    setSupplierModal({ productId: product.id, productName: product.name, currentSupplier: product.supplier })
+    setSupplierInput(product.supplier || '')
+  }
+
+  const submitSupplier = async () => {
+    if (!supplierModal || savingSupplier) return
+
+    setSavingSupplier(true)
+    try {
+      const res = await fetch(`/api/ops/products/${supplierModal.productId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ supplier: supplierInput.trim() || null }),
+      })
+      if (!res.ok) throw new Error('Failed')
+      setSupplierModal(null)
+      fetchInventory() // Refresh
+    } catch (error) {
+      console.error('Failed to update supplier:', error)
+      alert('Erreur lors de la mise à jour')
+    } finally {
+      setSavingSupplier(false)
     }
   }
 
@@ -554,7 +583,21 @@ export default function InventoryPage() {
                         )}
                       </td>
                       <td>
-                        <span className="fs12 tx-lo">{product.supplier || 'No supplier'}</span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openSupplierModal(product) }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            padding: 0,
+                            cursor: 'pointer',
+                            color: product.supplier ? 'var(--tx-lo)' : 'var(--rose-bright)',
+                            fontSize: 12,
+                            textDecoration: product.supplier ? 'none' : 'underline',
+                          }}
+                          title="Cliquer pour modifier le fournisseur"
+                        >
+                          {product.supplier || '+ Ajouter'}
+                        </button>
                       </td>
                       <td className="r num">{product.costPrice ? `${product.costPrice}` : '-'}</td>
                       <td className="r num fw600">{product.costPrice ? formatMoney(product.stock * product.costPrice) : '-'}</td>
@@ -758,6 +801,64 @@ export default function InventoryPage() {
                     disabled={adjusting || !adjustQty || Number(adjustQty) <= 0}
                   >
                     {adjusting ? 'En cours…' : 'Confirmer'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Supplier Edit Modal */}
+        {supplierModal && (
+          <div style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 50,
+          }} onClick={() => setSupplierModal(null)}>
+            <div className="card-modern" style={{ maxWidth: 450, width: '90%' }} onClick={(e) => e.stopPropagation()}>
+              <div className="card-header">
+                <h3 className="text-lg font-semibold">Modifier le fournisseur</h3>
+              </div>
+              <div className="card-body">
+                <div style={{ marginBottom: 16 }}>
+                  <div className="t-strong">{supplierModal.productName}</div>
+                  <div className="fs12 tx-lo">
+                    Fournisseur actuel : <b>{supplierModal.currentSupplier || 'Aucun'}</b>
+                  </div>
+                </div>
+
+                <div style={{ marginBottom: 16 }}>
+                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>
+                    Nom du fournisseur
+                  </label>
+                  <input
+                    type="text"
+                    value={supplierInput}
+                    onChange={(e) => setSupplierInput(e.target.value)}
+                    placeholder="Ex: Beauty Supply Morocco"
+                    className="input-modern"
+                    style={{ width: '100%' }}
+                    autoFocus
+                  />
+                  <div className="fs11 tx-lo" style={{ marginTop: 4 }}>
+                    Laissez vide pour supprimer le fournisseur
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button className="btn-modern btn-secondary" onClick={() => setSupplierModal(null)}>
+                    Annuler
+                  </button>
+                  <button
+                    className="btn-modern btn-primary"
+                    onClick={submitSupplier}
+                    disabled={savingSupplier}
+                  >
+                    {savingSupplier ? 'Enregistrement…' : 'Enregistrer'}
                   </button>
                 </div>
               </div>

@@ -28,7 +28,8 @@ export async function GET(
         image,
         description,
         stock,
-        "lowStockThreshold"
+        "lowStockThreshold",
+        supplier
       FROM "Product"
       WHERE id = $1`,
       [productId]
@@ -147,7 +148,7 @@ export async function PUT(
     const { id: productId } = await params
     const body = await request.json()
 
-    const { costPrice, lowStockThreshold } = body
+    const { costPrice, lowStockThreshold, supplier } = body
 
     // Build update query dynamically
     const updates: string[] = []
@@ -163,6 +164,12 @@ export async function PUT(
     if (lowStockThreshold !== undefined) {
       updates.push(`"lowStockThreshold" = $${paramIndex}`)
       values.push(lowStockThreshold)
+      paramIndex++
+    }
+
+    if (supplier !== undefined) {
+      updates.push(`supplier = $${paramIndex}`)
+      values.push(supplier)
       paramIndex++
     }
 

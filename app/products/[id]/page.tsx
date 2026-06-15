@@ -10,6 +10,7 @@ interface ProductDetail {
   name?: string; brand?: string; category?: string
   price?: number | string; costPrice?: number | string | null
   sku?: string; stock?: number; lowStockThreshold?: number
+  supplier?: string | null
   recentOrders?: Array<{ id: number; status: string; createdAt: string; deliveryCity: string | null; sourceChannel: string | null; quantity: number; price: number | string }>
   sold?: { units: number | string; revenue: number | string }
   content?: Array<{ id: number; title: string; platform: string | null; type: string | null; status: string; dueDate: string | null }>
@@ -37,11 +38,17 @@ export default function ProductDetailPage() {
   const [p, setP] = useState<ProductDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [cost, setCost] = useState('')
+  const [supplier, setSupplier] = useState('')
   const [saving, setSaving] = useState(false)
+  const [savingSupplier, setSavingSupplier] = useState(false)
 
   const load = () => fetch(`/api/ops/products/${id}`, { cache: 'no-store' })
     .then((r) => (r.ok ? r.json() : { error: 'not found' }))
-    .then((d) => { setP(d); setCost(d?.costPrice != null ? String(d.costPrice) : '') })
+    .then((d) => {
+      setP(d)
+      setCost(d?.costPrice != null ? String(d.costPrice) : '')
+      setSupplier(d?.supplier || '')
+    })
     .catch(() => {})
     .finally(() => setLoading(false))
 
@@ -54,6 +61,15 @@ export default function ProductDetailPage() {
     await fetch(`/api/ops/products/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ costPrice: v }) }).catch(() => {})
     await load()
     setSaving(false)
+  }
+
+  const saveSupplier = async () => {
+    if (savingSupplier) return
+    const trimmed = supplier.trim()
+    setSavingSupplier(true)
+    await fetch(`/api/ops/products/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ supplier: trimmed || null }) }).catch(() => {})
+    await load()
+    setSavingSupplier(false)
   }
 
   const price = num(p?.price)
@@ -91,6 +107,14 @@ export default function ProductDetailPage() {
                   <input value={cost} onChange={(e) => setCost(e.target.value)} type="number" placeholder="—"
                     style={{ width: '100%', background: 'var(--bg-1)', border: '1px solid var(--line)', borderRadius: 7, padding: '5px 8px', fontSize: 15, fontFamily: 'var(--mono)', color: 'var(--tx-hi)' }} />
                   <button className="btn-modern btn-primary btn-sm" onClick={saveCost} disabled={saving || !cost}>{saving ? '…' : 'OK'}</button>
+                </div>
+              </div>
+              <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius)', padding: 14, boxShadow: 'var(--shadow-1)' }}>
+                <div style={{ fontSize: 11, color: 'var(--tx-lo)', marginBottom: 6 }}>Fournisseur</div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input value={supplier} onChange={(e) => setSupplier(e.target.value)} type="text" placeholder="Nom fournisseur"
+                    style={{ width: '100%', background: 'var(--bg-1)', border: '1px solid var(--line)', borderRadius: 7, padding: '5px 8px', fontSize: 13, color: 'var(--tx-hi)' }} />
+                  <button className="btn-modern btn-primary btn-sm" onClick={saveSupplier} disabled={savingSupplier}>{savingSupplier ? '…' : 'OK'}</button>
                 </div>
               </div>
               <Stat label="Marge" value={margin == null ? '—' : `${margin.toFixed(0)}%`} accent={margin != null && margin >= 35} warn={margin != null && margin < 20} />
