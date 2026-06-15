@@ -19,7 +19,7 @@ interface DashboardStats {
   averageOrderValue: number
   deliveryRate: number
   roas: number
-  revenueSeries: Array<{ date: string; label: string; revenue: number; profit: number }>
+  revenueSeries: Array<{ date: string; label: string; revenue: number; profit: number; orders: number }>
   topProducts: Array<{ productId: number | null; name: string; units: number; revenue: number }>
   channels: Array<{ name: string; revenue: number; color: string }>
   pipeline: Array<{ label: string; value: number; tone: string }>
@@ -77,6 +77,7 @@ export default function GlowDashboard() {
   const [week, setWeek] = useState({ year: iw.year, w: iw.week })
   const [editingGoal, setEditingGoal] = useState<'week' | 'month' | null>(null)
   const [goalInput, setGoalInput] = useState('')
+  const [hoveredPoint, setHoveredPoint] = useState<number | null>(null)
 
   // Labels for the current selection + comparison
   const periodLabel = mode === 'month' ? `${MONTHS_FR[month.m]} ${month.year}`
@@ -229,7 +230,7 @@ export default function GlowDashboard() {
                 </div>
               </div>
             </div>
-            <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ marginTop: 8 }}>
+            <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ marginTop: 8 }} onMouseLeave={() => setHoveredPoint(null)}>
               <defs>
                 <linearGradient id="rev-fill" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="var(--rose-bright)" stopOpacity="0.18" />
@@ -242,6 +243,27 @@ export default function GlowDashboard() {
               {areaPath && <path d={areaPath} fill="url(#rev-fill)" />}
               {linePath && <path d={linePath} fill="none" stroke="var(--rose-bright)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}
               {pts.length > 0 && <circle cx={pts[pts.length - 1].x} cy={pts[pts.length - 1].y} r="4" fill="var(--rose-bright)" />}
+              {pts.map((p, i) => (
+                <g key={i}>
+                  {hoveredPoint === i && <circle cx={p.x} cy={p.y} r="5" fill="var(--rose-bright)" />}
+                  <circle cx={p.x} cy={p.y} r="12" fill="transparent" style={{ cursor: 'pointer' }} onMouseEnter={() => setHoveredPoint(i)} />
+                </g>
+              ))}
+              {hoveredPoint !== null && (() => {
+                const d = series[hoveredPoint]
+                const p = pts[hoveredPoint]
+                const tx = p.x > W / 2 ? p.x - 10 : p.x + 10
+                const anchor = p.x > W / 2 ? 'end' : 'start'
+                return (
+                  <g>
+                    <rect x={p.x > W / 2 ? tx - 140 : tx} y={p.y - 50} width="140" height="60" rx="6" fill="var(--bg-1)" stroke="var(--rose-bright)" strokeWidth="1.5" />
+                    <text x={p.x > W / 2 ? tx - 70 : tx + 70} y={p.y - 34} textAnchor="middle" fontSize="11" fill="var(--tx-mid)" fontWeight="600">{d.label}</text>
+                    <text x={p.x > W / 2 ? tx - 70 : tx + 70} y={p.y - 20} textAnchor="middle" fontSize="13" fill="var(--tx-hi)" fontWeight="700">{mad(d.revenue)} MAD</text>
+                    <text x={p.x > W / 2 ? tx - 70 : tx + 70} y={p.y - 6} textAnchor="middle" fontSize="10" fill={d.profit >= 0 ? 'var(--green)' : 'var(--red)'}>Profit: {mad(d.profit)} MAD</text>
+                    <text x={p.x > W / 2 ? tx - 70 : tx + 70} y={p.y + 6} textAnchor="middle" fontSize="10" fill="var(--tx-lo)">{d.orders} commande{d.orders > 1 ? 's' : ''}</text>
+                  </g>
+                )
+              })()}
             </svg>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--tx-faint)', fontFamily: 'var(--mono)', marginTop: 4 }}>
               {series.filter((_, i) => i % Math.ceil(series.length / 6 || 1) === 0).map((p, i) => <span key={i}>{p.label}</span>)}
