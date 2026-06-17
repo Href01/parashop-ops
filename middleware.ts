@@ -20,6 +20,13 @@ const FOUNDER_EMAILS = ['mekouar01@gmail.com', 'marjanhajar20@gmail.com']
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
+  // Public storefront endpoints (cross-origin, intentionally open) — bypass
+  // both the shared gate and the founder session. e.g. /api/public/districts
+  // is consumed by the shinecosmetics.ma checkout.
+  if (pathname.startsWith('/api/public')) {
+    return NextResponse.next()
+  }
+
   // Layer 1 — shared gate (skip the gate page + its endpoint)
   if (gateEnabled() && !pathname.startsWith('/gate') && !pathname.startsWith('/api/gate')) {
     const expected = await gateToken()
