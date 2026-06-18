@@ -7,7 +7,7 @@ import { useRouter } from 'next/navigation'
 import BosShell from '@/components/BosShell'
 
 type OrderStatus = 'PENDING' | 'CONFIRMED' | 'SHIPPED' | 'DELIVERED' | 'RETURNED' | 'CANCELLED' | 'FAILED'
-type OrderFilter = 'all' | 'pending' | 'no-shipment' | 'incomplete'
+type OrderFilter = 'all' | 'pending' | 'no-shipment' | 'incomplete' | 'delivered-no-review'
 type DateFilter = 'today' | 'week' | 'month' | 'all'
 
 const PAGE_SIZE = 25
@@ -122,6 +122,15 @@ export default function OrdersPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [reviewSending, setReviewSending] = useState<Set<number>>(new Set())
   const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [bulkSending, setBulkSending] = useState(false)
+
+  const showToast = (text: string, ok: boolean, ms = 3500) => {
+    setToast({ text, ok })
+    setTimeout(() => setToast(null), ms)
+  }
+  const toggleSelect = (id: number) =>
+    setSelectedIds((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
 
   useEffect(() => {
     void fetchOrders()
@@ -171,6 +180,34 @@ export default function OrdersPage() {
       setReviewSending((s) => { const n = new Set(s); n.delete(orderId); return n })
       setTimeout(() => setToast(null), 3500)
     }
+  }
+
+  const bulkRequestReview = async () => {
+    // One message per customer (dedupe by phone): the endpoint marks all of a
+    // customer's delivered orders as asked, so don't message the same number twice.
+    const seen = new Set<string>()
+    const targets = orders.filter((o) => {
+      if (!selectedIds.has(o.id) || o.status !== 'DELIVERED') return false
+      const key = o.deliveryPhone || `id:${o.id}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    if (targets.length === 0) { showToast('Aucune commande livrée sélectionnée', false); return }
+    if (!confirm(`Envoyer la demande d’avis à ${targets.length} client(s) ?`)) return
+
+    setBulkSending(true)
+    let ok = 0, fail = 0
+    for (const o of targets) {
+      try {
+        const res = await fetch(`/api/ops/orders/${o.id}/review-request`, { method: 'POST' })
+        res.ok ? ok++ : fail++
+      } catch { fail++ }
+    }
+    setBulkSending(false)
+    setSelectedIds(new Set())
+    await fetchOrders()
+    showToast(`${ok} demande(s) envoyée(s)${fail ? `, ${fail} échec(s)` : ''}`, fail === 0, 4500)
   }
 
   const updateChannel = async (orderId: number, sourceChannel: string) => {
@@ -276,6 +313,7 @@ export default function OrdersPage() {
         return false
       }
       if (activeFilter === 'incomplete' && orderCompleteness(order) >= 100) return false
+      if (activeFilter === 'delivered-no-review' && (order.status !== 'DELIVERED' || !!order.reviewRequestSentAt)) return false
 
       if (dateFilter !== 'all') {
         const createdAt = new Date(order.createdAt)
@@ -399,6 +437,13 @@ export default function OrdersPage() {
               >
                 Incomplètes <span className="ml-1 badge-modern badge-danger badge-sm">{orders.filter((order) => orderCompleteness(order) < 100).length}</span>
               </button>
+              <button
+                type="button"
+                className={`btn-modern btn-sm ${activeFilter === 'delivered-no-review' ? 'btn-primary' : 'btn-subtle'}`}
+                onClick={() => selectFilter('delivered-no-review')}
+              >
+                Avis à demander <span className="ml-1 badge-modern badge-info badge-sm">{orders.filter((o) => o.status === 'DELIVERED' && !o.reviewRequestSentAt).length}</span>
+              </button>
             </div>
 
             <button type="button" className="btn-modern btn-sm btn-secondary" onClick={resetFilters} disabled={!hasActiveFilters}>
@@ -416,7 +461,14 @@ export default function OrdersPage() {
               <thead>
                 <tr>
                   <th className="select-col">
-                    <span className="selbox"></span>
+                    <input
+                      type="checkbox"
+                      checked={paginatedOrders.length > 0 && paginatedOrders.every((o) => selectedIds.has(o.id))}
+                      onChange={(e) => {
+                        const check = e.target.checked
+                        setSelectedIds((s) => { const n = new Set(s); paginatedOrders.forEach((o) => check ? n.add(o.id) : n.delete(o.id)); return n })
+                      }}
+                    />
                   </th>
                   <th>Commande</th>
                   <th>Client</th>
@@ -463,7 +515,11 @@ export default function OrdersPage() {
                         style={{ cursor: 'pointer' }}
                       >
                         <td onClick={(e) => e.stopPropagation()}>
-                          <span className="selbox"></span>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(order.id)}
+                            onChange={() => toggleSelect(order.id)}
+                          />
                         </td>
                         <td>
                           <div className="cellstack">
@@ -598,6 +654,17 @@ export default function OrdersPage() {
           </div>
         </div>
       </div>
+
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2.5 rounded-xl shadow-lg bg-white border border-gray-200">
+          <span className="text-sm font-medium text-gray-700">{selectedIds.size} sélectionnée(s)</span>
+          <button onClick={bulkRequestReview} disabled={bulkSending} className="btn-modern btn-sm btn-primary inline-flex items-center gap-1.5">
+            {bulkSending ? <RefreshCw className="w-4 h-4 spin" /> : <Star className="w-4 h-4" />}
+            {bulkSending ? 'Envoi…' : 'Demander un avis'}
+          </button>
+          <button onClick={() => setSelectedIds(new Set())} className="btn-modern btn-sm btn-secondary">Annuler</button>
+        </div>
+      )}
 
       {toast && (
         <div
