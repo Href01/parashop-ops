@@ -4,6 +4,7 @@ import { createSenditShipment } from '@/lib/sendit'
 import { onOrderConfirmed } from '@/lib/integrations/order-hooks'
 import { getOpsSession } from '@/lib/auth'
 import { buildSenditProductsDescription, calculateCodAmount } from '@/lib/order-utils'
+import { creditOrderPoints } from '@/lib/loyalty'
 
 // GET /api/ops/orders/[id] - Get order detail
 export async function GET(
@@ -260,6 +261,17 @@ export async function PUT(
           `Status updated by ${session.user.email}`,
         ]
       )
+
+      // Credit loyalty points on delivery (any channel: site, WhatsApp,
+      // Insta, TikTok, Sendit). Idempotent — runs once per order.
+      if (status === 'DELIVERED' && oldStatusValue !== 'DELIVERED') {
+        try {
+          const r = await creditOrderPoints(pool, Number(orderId))
+          if (!r.skipped) console.log(`[loyalty] order #${orderId}: +${r.credited} pts to user ${r.userId}`)
+        } catch (e) {
+          console.error('[loyalty] credit on delivery failed:', e)
+        }
+      }
 
       // Auto-create Sendit shipment when order is confirmed
       if (status === 'CONFIRMED') {
