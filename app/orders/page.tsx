@@ -1,6 +1,6 @@
 'use client'
 
-import { ChevronDown, ChevronLeft, ChevronRight, Download, Filter, Plus, RefreshCw, Search, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Download, Filter, Plus, RefreshCw, Search, Star, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -29,6 +29,7 @@ interface OrderRow {
   createdAt: string
   items_count?: number
   product_names?: string | null
+  reviewRequestSentAt?: string | null
 }
 
 const statusLabels: Record<string, string> = {
@@ -119,6 +120,8 @@ export default function OrdersPage() {
   const [activeFilter, setActiveFilter] = useState<OrderFilter>('all')
   const [dateFilter, setDateFilter] = useState<DateFilter>('all')
   const [currentPage, setCurrentPage] = useState(1)
+  const [reviewSending, setReviewSending] = useState<Set<number>>(new Set())
+  const [toast, setToast] = useState<{ text: string; ok: boolean } | null>(null)
 
   useEffect(() => {
     void fetchOrders()
@@ -149,6 +152,24 @@ export default function OrdersPage() {
     } catch (error) {
       console.error('Delete error:', error)
       alert('Échec de la suppression de la commande')
+    }
+  }
+
+  const requestReview = async (orderId: number, e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (reviewSending.has(orderId)) return
+    setReviewSending((s) => new Set(s).add(orderId))
+    try {
+      const res = await fetch(`/api/ops/orders/${orderId}/review-request`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Échec de l’envoi')
+      setOrders((cur) => cur.map((o) => (o.id === orderId ? { ...o, reviewRequestSentAt: new Date().toISOString() } : o)))
+      setToast({ text: `Demande d’avis envoyée (#${orderId})`, ok: true })
+    } catch (err: any) {
+      setToast({ text: err.message || 'Échec de l’envoi', ok: false })
+    } finally {
+      setReviewSending((s) => { const n = new Set(s); n.delete(orderId); return n })
+      setTimeout(() => setToast(null), 3500)
     }
   }
 
@@ -518,13 +539,28 @@ export default function OrdersPage() {
                           <span className="fs12 tx-lo mono">{new Date(order.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })}</span>
                         </td>
                         <td onClick={(e) => e.stopPropagation()}>
-                          <button
-                            onClick={(e) => deleteOrder(order.id, e)}
-                            className="btn-ghost-red btn-icon-sm"
-                            title="Delete order"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center gap-1">
+                            {order.status === 'DELIVERED' && (
+                              <button
+                                onClick={(e) => requestReview(order.id, e)}
+                                disabled={reviewSending.has(order.id)}
+                                className="btn-icon-sm"
+                                title={order.reviewRequestSentAt ? 'Avis déjà demandé — cliquer pour renvoyer' : 'Demander un avis (WhatsApp)'}
+                                style={{ color: order.reviewRequestSentAt ? 'var(--green)' : '#9CA3AF', opacity: reviewSending.has(order.id) ? 0.5 : 1 }}
+                              >
+                                {reviewSending.has(order.id)
+                                  ? <RefreshCw className="w-4 h-4 spin" />
+                                  : <Star className="w-4 h-4" fill={order.reviewRequestSentAt ? 'currentColor' : 'none'} />}
+                              </button>
+                            )}
+                            <button
+                              onClick={(e) => deleteOrder(order.id, e)}
+                              className="btn-ghost-red btn-icon-sm"
+                              title="Delete order"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )
@@ -562,6 +598,16 @@ export default function OrdersPage() {
           </div>
         </div>
       </div>
+
+      {toast && (
+        <div
+          className="fixed bottom-6 right-6 z-50 px-4 py-3 rounded-xl shadow-lg text-sm font-medium text-white flex items-center gap-2"
+          style={{ background: toast.ok ? 'var(--green, #0C6B52)' : '#DC2626' }}
+        >
+          {toast.ok ? <Star className="w-4 h-4" fill="currentColor" /> : null}
+          {toast.text}
+        </div>
+      )}
     </BosShell>
   )
 }
