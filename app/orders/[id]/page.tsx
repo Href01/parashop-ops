@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowLeft, Check, Clock, Edit3, MoreHorizontal, Truck, Wallet, X, ChevronDown, RefreshCw, Package, XCircle, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Check, Clock, Edit3, MoreHorizontal, Truck, Wallet, X, ChevronDown, RefreshCw, Package, XCircle, AlertCircle, Star } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -29,6 +29,7 @@ interface Order {
   senditStatus?: string
   actualDeliveryCost?: number | string
   createdAt: string
+  reviewRequestSentAt?: string | null
   items: any[]
   statusHistory: any[]
   senditShipment: any
@@ -186,6 +187,27 @@ export default function OrderDetailPage() {
     } finally {
       setActionLoading(false)
       setShowMore(false)
+    }
+  }
+
+  async function handleReviewRequest() {
+    if (!order) return
+    const already = order.reviewRequestSentAt
+    if (already && !confirm('Une demande d’avis a déjà été envoyée à ce client. Renvoyer quand même ?')) return
+
+    setActionLoading(true)
+    setActionError('')
+    setActionSuccess('')
+    try {
+      const res = await fetch(`/api/ops/orders/${orderId}/review-request`, { method: 'POST' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Échec de l’envoi')
+      setActionSuccess(`Demande d’avis envoyée par WhatsApp ✓`)
+      await fetchOrder()
+    } catch (err: any) {
+      setActionError(err.message)
+    } finally {
+      setActionLoading(false)
     }
   }
 
@@ -610,6 +632,22 @@ export default function OrderDetailPage() {
               >
                 <Check />
                 {actionLoading ? 'Updating...' : 'Mark as Delivered'}
+              </button>
+            )}
+
+            {order.status === 'DELIVERED' && (
+              <button
+                type="button"
+                className="btn"
+                onClick={handleReviewRequest}
+                disabled={actionLoading}
+                title={order.reviewRequestSentAt ? `Déjà envoyée le ${new Date(order.reviewRequestSentAt).toLocaleDateString('fr-FR')}` : undefined}
+                style={{ background: 'var(--green-bg)', color: 'var(--green)', border: '1px solid var(--green)' }}
+              >
+                <Star />
+                {actionLoading
+                  ? 'Envoi...'
+                  : order.reviewRequestSentAt ? 'Renvoyer la demande d’avis' : 'Demander un avis'}
               </button>
             )}
 
