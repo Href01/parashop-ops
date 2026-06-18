@@ -9,11 +9,13 @@ import {
   HelpCircle,
   Megaphone,
   Menu,
+  MessageCircle,
   Package,
   PanelLeft,
   Search,
   Settings,
   Sparkles,
+  Star,
   Truck,
   Target,
   Users,
@@ -52,9 +54,16 @@ const sections: Array<{ label: string; items: NavItem[] }> = [
     ],
   },
   {
+    label: 'Relation client',
+    items: [
+      { label: 'Messages', href: '/messages', icon: MessageCircle },
+      { label: 'Avis', href: '/avis', icon: Star },
+      { label: 'Clients', href: '/customers', icon: Users },
+    ],
+  },
+  {
     label: 'Croissance',
     items: [
-      { label: 'Clients', href: '/customers', icon: Users },
       { label: 'Campagnes', href: '/ads', icon: Megaphone },
       { label: 'Événements', href: '/events', icon: Calendar },
       { label: 'Contenu', href: '/content', icon: Sparkles },
