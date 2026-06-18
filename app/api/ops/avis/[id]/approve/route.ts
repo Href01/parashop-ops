@@ -5,8 +5,9 @@ import { NextRequest, NextResponse } from 'next/server'
  *
  * Approves a review by calling the storefront API (which handles the 50 DH bonus logic).
  */
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
-  const reviewId = parseInt(params.id)
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const reviewId = parseInt(id)
   if (isNaN(reviewId)) {
     return NextResponse.json({ error: 'Invalid review ID' }, { status: 400 })
   }

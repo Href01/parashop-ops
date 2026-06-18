@@ -8,8 +8,9 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL })
  *
  * Client 360° view: unified timeline of orders, messages, reviews, points transactions.
  */
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const clientId = parseInt(params.id)
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const clientId = parseInt(id)
   if (isNaN(clientId)) {
     return NextResponse.json({ error: 'Invalid client ID' }, { status: 400 })
   }
