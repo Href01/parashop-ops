@@ -4,6 +4,7 @@ import {
   Bell,
   Box,
   Calendar,
+  ChartBar,
   Flame,
   LayoutDashboard,
   HelpCircle,
@@ -59,6 +60,7 @@ const sections: Array<{ label: string; items: NavItem[] }> = [
       { label: 'Messages', href: '/messages', icon: MessageCircle },
       { label: 'Avis', href: '/avis', icon: Star },
       { label: 'Clients', href: '/customers', icon: Users },
+      { label: 'Stats', href: '/stats', icon: ChartBar },
     ],
   },
   {
