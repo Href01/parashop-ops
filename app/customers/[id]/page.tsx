@@ -21,6 +21,17 @@ const mad = (v: unknown) => `${Math.round(num(v)).toLocaleString('fr-FR')} MAD`
 const STATUS_FR: Record<string, string> = { PENDING: 'En attente', CONFIRMED: 'Confirmée', DELIVERED: 'Livrée', CANCELLED: 'Annulée', SHIPPED: 'En livraison' }
 const STATUS_CLS: Record<string, string> = { PENDING: 'st-pending', CONFIRMED: 'st-confirmed', DELIVERED: 'st-delivered', CANCELLED: 'st-cancelled', SHIPPED: 'st-shipped' }
 
+// Deterministic avatar hue (same as Messages)
+function avatarHue(seed: string) {
+  let h = 0
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) % 360
+  return h
+}
+function initials(name: string | null) {
+  if (name) return name.trim().charAt(0).toUpperCase()
+  return 'C'
+}
+
 export default function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [data, setData] = useState<Detail | null>(null)
@@ -70,16 +81,21 @@ export default function CustomerDetailPage() {
         ) : (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 22 }}>
-              <div>
-              <h1 className="serif-display" style={{ fontSize: 30, lineHeight: 1.05 }}>{c.name || 'Sans nom'}</h1>
+              <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
+                <div style={{ width: 64, height: 64, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 26, background: `oklch(0.62 0.15 ${avatarHue(c.name || c.phone || String(c.id))})` }}>
+                  {initials(c.name)}
+                </div>
+                <div>
+              <h1 className="serif-display" style={{ fontSize: 30, lineHeight: 1.05, marginBottom: 0 }}>{c.name || 'Sans nom'}</h1>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 8, fontSize: 13, color: 'var(--tx-lo)' }}>
                 {c.email && <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Mail style={{ width: 14, height: 14 }} />{c.email}</span>}
                 {c.phone && <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Phone style={{ width: 14, height: 14 }} />{c.phone}</span>}
                 {c.city && <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><MapPin style={{ width: 14, height: 14 }} />{c.city}</span>}
               </div>
               <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                {c.segment && <span className="badge green">{c.segment}</span>}
-                {c.tier && <span className="badge amber">{c.tier}</span>}
+                {c.segment && <span className="badge-modern badge-success badge-sm">{c.segment}</span>}
+                {c.tier && <span className="badge-modern badge-warning badge-sm">{c.tier}</span>}
+              </div>
               </div>
               </div>
 
@@ -165,7 +181,10 @@ export default function CustomerDetailPage() {
                           </span>
                         </div>
                         <p style={{ fontSize: 12.5, color: 'var(--tx-mid)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {msg.body || `[${msg.type}]`}
+                          {msg.body?.startsWith('[Image]') ? '🖼️ Image' :
+                           msg.body?.startsWith('[Audio') ? '🎵 Message vocal' :
+                           msg.body?.startsWith('[Document') ? '📄 Document' :
+                           msg.body || `[${msg.type}]`}
                         </p>
                       </div>
                     ))}
@@ -188,8 +207,8 @@ export default function CustomerDetailPage() {
                           <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--tx-hi)' }}>
                             {'★'.repeat(rev.rating)}{'☆'.repeat(5 - rev.rating)}
                           </span>
-                          <span className={`badge ${rev.approved === true ? 'green' : rev.approved === false ? 'red' : 'amber'}`} style={{ fontSize: 10 }}>
-                            {rev.approved === true ? 'Publié' : rev.approved === false ? 'Rejeté' : 'En attente'}
+                          <span className={`badge-modern ${rev.approved === true ? 'badge-success' : 'badge-warning'} badge-sm`}>
+                            {rev.approved === true ? '✓ Publié' : '⏳ En attente'}
                           </span>
                         </div>
                         <p style={{ fontSize: 11.5, color: 'var(--tx-lo)', margin: '0 0 2px' }}>{rev.productName || '—'}</p>
