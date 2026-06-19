@@ -16,6 +16,7 @@ interface Message {
   body: string | null
   status: string | null
   orderId: number | null
+  mediaId: string | null
   createdAt: string
 }
 interface Conversation {
@@ -319,27 +320,42 @@ export default function MessagesPage() {
                           )}
                         </div>
                         {m.body?.startsWith('[Image]') ? (
-                          <div style={{
-                            display: 'inline-flex', alignItems: 'center', gap: 8,
-                            padding: '8px 12px', borderRadius: 8,
-                            background: out ? 'rgba(255,255,255,.15)' : 'var(--bg-2)',
-                            border: out ? '1px solid rgba(255,255,255,.2)' : '1px solid var(--line-soft)'
-                          }}>
-                            <div style={{
-                              width: 40, height: 40, borderRadius: 6,
-                              background: out ? 'rgba(255,255,255,.2)' : 'var(--bg-3)',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              fontSize: 20
-                            }}>🖼️</div>
+                          m.mediaId ? (
                             <div>
-                              <div style={{ fontSize: 12.5, fontWeight: 600, opacity: out ? 0.95 : 1 }}>Image envoyée</div>
+                              <a href={`/api/ops/media/${m.mediaId}`} target="_blank" rel="noopener noreferrer"
+                                style={{ display: 'block', maxWidth: 280, borderRadius: 12, overflow: 'hidden', border: out ? '2px solid rgba(255,255,255,.3)' : '2px solid var(--line-soft)' }}>
+                                <img src={`/api/ops/media/${m.mediaId}`} alt="Image" loading="lazy"
+                                  style={{ width: '100%', height: 'auto', display: 'block' }} />
+                              </a>
                               {m.body.replace('[Image]', '').trim() && (
-                                <div style={{ fontSize: 11.5, opacity: 0.8, marginTop: 2 }}>
+                                <div style={{ fontSize: 12.5, marginTop: 6, opacity: 0.9 }}>
                                   {m.body.replace('[Image]', '').trim()}
                                 </div>
                               )}
                             </div>
-                          </div>
+                          ) : (
+                            <div style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 8,
+                              padding: '8px 12px', borderRadius: 8,
+                              background: out ? 'rgba(255,255,255,.15)' : 'var(--bg-2)',
+                              border: out ? '1px solid rgba(255,255,255,.2)' : '1px solid var(--line-soft)'
+                            }}>
+                              <div style={{
+                                width: 40, height: 40, borderRadius: 6,
+                                background: out ? 'rgba(255,255,255,.2)' : 'var(--bg-3)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: 20
+                              }}>🖼️</div>
+                              <div>
+                                <div style={{ fontSize: 12.5, fontWeight: 600, opacity: out ? 0.95 : 1 }}>Image envoyée</div>
+                                {m.body.replace('[Image]', '').trim() && (
+                                  <div style={{ fontSize: 11.5, opacity: 0.8, marginTop: 2 }}>
+                                    {m.body.replace('[Image]', '').trim()}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )
                         ) : m.body?.startsWith('[Audio') ? (
                           <div style={{
                             display: 'inline-flex', alignItems: 'center', gap: 8,

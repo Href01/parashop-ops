@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
         m.status,
         m."waMessageId",
         m."orderId",
+        m."mediaId",
         m."createdAt",
         u.name as "userName"
       FROM "MessageLog" m
