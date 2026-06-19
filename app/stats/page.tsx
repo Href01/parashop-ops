@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { TrendingUp, Send, MousePointerClick, Star, Users, ShoppingBag } from 'lucide-react'
+import { TrendingUp, Send, MousePointerClick, Star } from 'lucide-react'
 import BosShell from '@/components/BosShell'
 
 interface Stats {
@@ -38,6 +38,13 @@ interface Stats {
   }>
 }
 
+const KPIS = [
+  { key: 'sent', label: 'Envoyées', Icon: Send, color: 'var(--blue)', bg: 'var(--blue-bg)' },
+  { key: 'clicked', label: 'Clics', Icon: MousePointerClick, color: 'var(--green)', bg: 'var(--green-bg)' },
+  { key: 'reviews', label: 'Avis laissés', Icon: Star, color: 'var(--amber)', bg: 'var(--amber-bg)' },
+  { key: 'conversion', label: 'Conversion', Icon: TrendingUp, color: 'var(--violet)', bg: 'var(--violet-bg)' },
+] as const
+
 export default function StatsPage() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [loading, setLoading] = useState(true)
@@ -59,182 +66,141 @@ export default function StatsPage() {
     }
   }
 
-  if (loading || !stats) {
-    return (
-      <BosShell active="customers" title="Statistiques" crumb="Stats">
-        <div className="p-8 text-center text-gray-400">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div>
-        </div>
-      </BosShell>
-    )
-  }
-
   const formatPercent = (n: number) => `${Math.round(n * 100)}%`
 
   return (
     <BosShell active="customers" title="Statistiques" crumb="Analytics / Avis">
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-6">
+      <div style={{ padding: '22px 24px 60px', maxWidth: 1100, margin: '0 auto' }}>
+
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, marginBottom: 22 }}>
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Analytics Avis</h1>
-            <p className="text-sm text-gray-500">
-              Performance des demandes d'avis WhatsApp
+            <h1 className="serif-display" style={{ fontSize: 26, lineHeight: 1.1, color: 'var(--tx-hi)', marginBottom: 6 }}>
+              Analytics Avis
+            </h1>
+            <p style={{ fontSize: 13.5, color: 'var(--tx-lo)' }}>
+              Performance des demandes d'avis WhatsApp — du premier envoi à l'avis publié
             </p>
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setPeriod('7d')}
-              className={`btn-modern btn-sm ${period === '7d' ? 'btn-primary' : 'btn-subtle'}`}
-            >
-              7 jours
-            </button>
-            <button
-              onClick={() => setPeriod('30d')}
-              className={`btn-modern btn-sm ${period === '30d' ? 'btn-primary' : 'btn-subtle'}`}
-            >
-              30 jours
-            </button>
+          <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+            {(['7d', '30d'] as const).map(p => (
+              <button key={p} onClick={() => setPeriod(p)} className="btn-modern btn-sm"
+                style={{
+                  background: period === p ? 'var(--green)' : 'var(--bg-2)',
+                  color: period === p ? '#fff' : 'var(--tx-mid)',
+                  border: 'none', padding: '6px 14px', fontSize: 13,
+                }}>
+                {p === '7d' ? '7 jours' : '30 jours'}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* KPIs */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                <Send className="w-5 h-5 text-blue-600" />
+        {loading || !stats ? (
+          /* Skeleton */
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 16 }}>
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="card" style={{ padding: 16, height: 96 }}>
+                <div className="skeleton-line" style={{ width: '60%', marginBottom: 10 }} />
+                <div className="skeleton-line" style={{ width: '40%', height: 22 }} />
               </div>
-              <div>
-                <p className="text-xs text-gray-500">Envoyées</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.totalSent}</p>
-              </div>
-            </div>
-            <p className="text-xs text-gray-400">
-              {stats.recentSent} derniers {period === '7d' ? '7j' : '30j'}
-            </p>
+            ))}
           </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-lg bg-green-100 flex items-center justify-center">
-                <MousePointerClick className="w-5 h-5 text-green-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Clics</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.totalClicked}</p>
-              </div>
-            </div>
-            <p className="text-xs font-semibold text-green-600">
-              {formatPercent(stats.clickRate)} taux de clic
-            </p>
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-lg bg-yellow-100 flex items-center justify-center">
-                <Star className="w-5 h-5 text-yellow-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Avis laissés</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.totalReviews}</p>
-              </div>
-            </div>
-            <p className="text-xs font-semibold text-yellow-600">
-              {formatPercent(stats.reviewRate)} taux d'avis
-            </p>
-          </div>
-
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-                <TrendingUp className="w-5 h-5 text-purple-600" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">Conversion</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {formatPercent(stats.conversionRate)}
-                </p>
-              </div>
-            </div>
-            <p className="text-xs text-gray-400">Envoi → Avis</p>
-          </div>
-        </div>
-
-        {/* Funnel */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">Entonnoir de conversion</h2>
-          <div className="space-y-3">
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-medium text-gray-700">Demandes envoyées</span>
-                <span className="text-sm font-bold text-gray-900">{stats.totalSent} (100%)</span>
-              </div>
-              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-                <div className="h-full bg-blue-500" style={{ width: '100%' }} />
-              </div>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-medium text-gray-700">Clics sur le lien</span>
-                <span className="text-sm font-bold text-gray-900">
-                  {stats.totalClicked} ({formatPercent(stats.clickRate)})
-                </span>
-              </div>
-              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-green-500"
-                  style={{ width: `${stats.clickRate * 100}%` }}
-                />
-              </div>
-            </div>
-
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <span className="text-sm font-medium text-gray-700">Avis complétés</span>
-                <span className="text-sm font-bold text-gray-900">
-                  {stats.totalReviews} ({formatPercent(stats.reviewRate)})
-                </span>
-              </div>
-              <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-yellow-500"
-                  style={{ width: `${stats.reviewRate * 100}%` }}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Top Products */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">Top produits avisés</h2>
-          {stats.topProducts.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">Aucun avis encore</p>
-          ) : (
-            <div className="space-y-3">
-              {stats.topProducts.map((p, idx) => (
-                <div key={p.productId} className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                    <span className="text-sm font-bold text-gray-600">#{idx + 1}</span>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">{p.productName}</p>
-                    <div className="flex items-center gap-3 mt-0.5">
-                      <span className="text-xs text-gray-500">{p.reviewCount} avis</span>
-                      <div className="flex items-center gap-1">
-                        <Star className="w-3 h-3 fill-yellow-400 stroke-yellow-400" />
-                        <span className="text-xs font-semibold text-gray-700">
-                          {p.avgRating.toFixed(1)}
-                        </span>
+        ) : (
+          <>
+            {/* KPIs */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 16 }}>
+              {KPIS.map(kpi => {
+                const value =
+                  kpi.key === 'sent' ? stats.totalSent :
+                  kpi.key === 'clicked' ? stats.totalClicked :
+                  kpi.key === 'reviews' ? stats.totalReviews :
+                  formatPercent(stats.conversionRate)
+                const sub =
+                  kpi.key === 'sent' ? `${stats.recentSent} sur ${period === '7d' ? '7j' : '30j'}` :
+                  kpi.key === 'clicked' ? `${formatPercent(stats.clickRate)} taux de clic` :
+                  kpi.key === 'reviews' ? `${formatPercent(stats.reviewRate)} taux d'avis` :
+                  'Envoi → Avis'
+                return (
+                  <div key={kpi.key} className="card" style={{ padding: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 10 }}>
+                      <div style={{ width: 40, height: 40, borderRadius: 10, background: kpi.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <kpi.Icon style={{ width: 19, height: 19, color: kpi.color }} />
+                      </div>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 11.5, color: 'var(--tx-lo)' }}>{kpi.label}</div>
+                        <div style={{ fontSize: 24, fontWeight: 700, color: 'var(--tx-hi)', lineHeight: 1.1 }}>{value}</div>
                       </div>
                     </div>
+                    <div style={{ fontSize: 11.5, fontWeight: 600, color: kpi.color }}>{sub}</div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
-          )}
-        </div>
+
+            {/* Funnel */}
+            <div className="card" style={{ padding: 22, marginBottom: 16 }}>
+              <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 16 }}>
+                Entonnoir de conversion
+              </h2>
+              <div style={{ display: 'grid', gap: 14 }}>
+                {[
+                  { label: 'Demandes envoyées', count: stats.totalSent, pct: 1, color: 'var(--blue)' },
+                  { label: 'Clics sur le lien', count: stats.totalClicked, pct: stats.clickRate, color: 'var(--green)' },
+                  { label: 'Avis complétés', count: stats.totalReviews, pct: stats.reviewRate, color: 'var(--amber)' },
+                ].map(step => (
+                  <div key={step.label}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--tx-mid)' }}>{step.label}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)' }}>
+                        {step.count} <span style={{ color: 'var(--tx-lo)', fontWeight: 600 }}>({formatPercent(step.pct)})</span>
+                      </span>
+                    </div>
+                    <div style={{ height: 10, background: 'var(--bg-2)', borderRadius: 999, overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${Math.max(step.pct * 100, 2)}%`, background: step.color, borderRadius: 999, transition: 'width .5s ease' }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Top Products */}
+            <div className="card" style={{ padding: 22 }}>
+              <h2 style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 16 }}>
+                Top produits avisés
+              </h2>
+              {stats.topProducts.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '28px 0' }}>
+                  <Star style={{ width: 36, height: 36, margin: '0 auto 10px', color: 'var(--tx-faint)', opacity: 0.5 }} />
+                  <p style={{ fontSize: 13.5, color: 'var(--tx-faint)' }}>Aucun avis pour le moment</p>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 12 }}>
+                  {stats.topProducts.map((p, idx) => {
+                    const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : null
+                    return (
+                      <div key={p.productId} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, fontSize: medal ? 16 : 13, fontWeight: 700, color: 'var(--tx-mid)' }}>
+                          {medal || `#${idx + 1}`}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--tx-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>{p.productName}</p>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 2 }}>
+                            <span style={{ fontSize: 11.5, color: 'var(--tx-lo)' }}>{p.reviewCount} avis</span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontSize: 11.5, fontWeight: 600, color: 'var(--amber)' }}>
+                              <Star style={{ width: 12, height: 12, fill: 'var(--amber)', stroke: 'var(--amber)' }} />
+                              {p.avgRating.toFixed(1)}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </BosShell>
   )

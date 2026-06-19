@@ -261,10 +261,29 @@ export default function ProductsPage() {
                       </td>
                     </tr>
                   ))
-                ) : products.length === 0 ? (
+                ) : paginatedProducts.length === 0 ? (
                   <tr>
                     <td colSpan={7}>
-                      <div className="empty-state">Aucun produit. Les produits du site apparaîtront ici.</div>
+                      {(() => {
+                        const isFiltered = !!search || filterMissingCost || filterLowStock
+                        return (
+                          <div style={{ textAlign: 'center', padding: '46px 20px' }}>
+                            <div style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+                              {isFiltered
+                                ? <Search style={{ width: 26, height: 26, color: 'var(--tx-faint)' }} />
+                                : <Package style={{ width: 26, height: 26, color: 'var(--tx-faint)' }} />}
+                            </div>
+                            <p style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--tx-mid)', margin: '0 0 4px' }}>
+                              {isFiltered ? 'Aucun résultat' : 'Aucun produit'}
+                            </p>
+                            <p style={{ fontSize: 13, color: 'var(--tx-faint)', margin: 0 }}>
+                              {isFiltered
+                                ? 'Essayez un autre terme de recherche ou ajustez les filtres.'
+                                : 'Les produits du site apparaîtront ici automatiquement.'}
+                            </p>
+                          </div>
+                        )
+                      })()}
                     </td>
                   </tr>
                 ) : (

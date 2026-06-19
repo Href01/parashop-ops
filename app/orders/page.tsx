@@ -495,8 +495,25 @@ export default function OrdersPage() {
                 ) : filteredOrders.length === 0 ? (
                   <tr>
                     <td colSpan={12}>
-                      <div className="empty-state">
-                        {orders.length === 0 ? 'Aucune commande pour le moment. Crée la première depuis WhatsApp, Instagram, TikTok ou par téléphone.' : 'Aucune commande ne correspond aux filtres.'}
+                      <div style={{ textAlign: 'center', padding: '46px 20px' }}>
+                        <div style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+                          {orders.length === 0
+                            ? <Plus style={{ width: 26, height: 26, color: 'var(--tx-faint)' }} />
+                            : <Filter style={{ width: 26, height: 26, color: 'var(--tx-faint)' }} />}
+                        </div>
+                        <p style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--tx-mid)', margin: '0 0 4px' }}>
+                          {orders.length === 0 ? 'Aucune commande pour le moment' : 'Aucun résultat'}
+                        </p>
+                        <p style={{ fontSize: 13, color: 'var(--tx-faint)', margin: '0 0 16px', maxWidth: 360, marginInline: 'auto' }}>
+                          {orders.length === 0
+                            ? 'Créez votre première commande depuis WhatsApp, Instagram, TikTok ou par téléphone.'
+                            : 'Aucune commande ne correspond aux filtres actuels.'}
+                        </p>
+                        {orders.length === 0 && (
+                          <Link className="btn-modern btn-primary btn-sm" href="/orders/new" style={{ display: 'inline-flex' }}>
+                            <Plus className="w-4 h-4" /> Nouvelle commande
+                          </Link>
+                        )}
                       </div>
                     </td>
                   </tr>

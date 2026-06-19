@@ -531,15 +531,25 @@ export default function InventoryPage() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr>
-                    <td colSpan={11} style={{ textAlign: 'center', padding: '40px' }}>
-                      Chargement…
-                    </td>
-                  </tr>
+                  [1, 2, 3, 4, 5].map((item) => (
+                    <tr key={item}>
+                      <td colSpan={11}>
+                        <div className="skeleton-line"></div>
+                      </td>
+                    </tr>
+                  ))
                 ) : products.length === 0 ? (
                   <tr>
-                    <td colSpan={11} style={{ textAlign: 'center', padding: '40px' }}>
-                      Aucun produit
+                    <td colSpan={11}>
+                      <div style={{ textAlign: 'center', padding: '46px 20px' }}>
+                        <div style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+                          <Package style={{ width: 26, height: 26, color: 'var(--tx-faint)' }} />
+                        </div>
+                        <p style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--tx-mid)', margin: '0 0 4px' }}>Aucun produit</p>
+                        <p style={{ fontSize: 13, color: 'var(--tx-faint)', margin: 0 }}>
+                          Les produits du catalogue apparaîtront ici avec leur niveau de stock.
+                        </p>
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -652,15 +662,25 @@ export default function InventoryPage() {
                 </thead>
                 <tbody>
                   {loadingMovements ? (
-                    <tr>
-                      <td colSpan={8} style={{ textAlign: 'center', padding: '40px' }}>
-                        Chargement…
-                      </td>
-                    </tr>
+                    [1, 2, 3].map((item) => (
+                      <tr key={item}>
+                        <td colSpan={8}>
+                          <div className="skeleton-line"></div>
+                        </td>
+                      </tr>
+                    ))
                   ) : movements.length === 0 ? (
                     <tr>
-                      <td colSpan={8} style={{ textAlign: 'center', padding: '40px' }}>
-                        Aucun mouvement enregistré
+                      <td colSpan={8}>
+                        <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                          <div style={{ width: 52, height: 52, borderRadius: 14, background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
+                            <History style={{ width: 24, height: 24, color: 'var(--tx-faint)' }} />
+                          </div>
+                          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx-mid)', margin: '0 0 4px' }}>Aucun mouvement</p>
+                          <p style={{ fontSize: 13, color: 'var(--tx-faint)', margin: 0 }}>
+                            Les entrées et sorties de stock seront tracées ici.
+                          </p>
+                        </div>
                       </td>
                     </tr>
                   ) : (
