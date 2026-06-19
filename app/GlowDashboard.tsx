@@ -70,7 +70,7 @@ export default function GlowDashboard() {
   const now = new Date()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
-  const [mode, setMode] = useState<'rolling' | 'month' | 'week'>('rolling')
+  const [mode, setMode] = useState<'rolling' | 'month' | 'week'>('month')
   const [days, setDays] = useState(30)
   const [month, setMonth] = useState({ year: now.getFullYear(), m: now.getMonth() })
   const iw = getISOWeek(now)
@@ -322,7 +322,7 @@ export default function GlowDashboard() {
             </div>
             <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line-soft)', display: 'grid', gap: 10 }}>
               {[
-                { label: 'Commandes (7j)', value: String(stats.ordersWeek) },
+                { label: `Commandes · ${periodLabel}`, value: String(stats.ordersWeek) },
                 { label: 'Panier moyen', value: `${mad(stats.averageOrderValue)} MAD` },
                 { label: 'Taux livraison', value: `${stats.deliveryRate.toFixed(0)}%` },
               ].map((m) => (
@@ -338,7 +338,7 @@ export default function GlowDashboard() {
         {/* Top products + channels (real data, previously unused) */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
           <Card>
-            <Label>Top produits · 7 jours</Label>
+            <Label>Top produits · {periodLabel}</Label>
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {stats.topProducts.length === 0 ? <Empty /> : stats.topProducts.slice(0, 6).map((p, i) => {
                 const max = stats.topProducts[0]?.revenue || 1
@@ -361,7 +361,7 @@ export default function GlowDashboard() {
           </Card>
 
           <Card>
-            <Label>Canaux de vente · 7 jours</Label>
+            <Label>Canaux de vente · {periodLabel}</Label>
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {stats.channels.length === 0 ? <Empty /> : stats.channels.slice(0, 6).map((c, i) => {
                 const max = Math.max(...stats.channels.map((x) => x.revenue), 1)
@@ -387,7 +387,7 @@ export default function GlowDashboard() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, marginTop: 16 }}>
           {/* Pipeline */}
           <Card>
-            <Label>Pipeline des commandes · 30 jours</Label>
+            <Label>Pipeline des commandes · {periodLabel}</Label>
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
               {stats.pipeline.map((item, i) => {
                 const colors: Record<string, string> = { amber: 'var(--amber)', blue: 'var(--blue)', violet: 'var(--violet)', green: 'var(--green)', red: 'var(--red)', rose: 'var(--rose-bright)' }
