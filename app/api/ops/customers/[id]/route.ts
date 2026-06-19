@@ -93,11 +93,32 @@ export async function GET(
       tier,
     })
 
+    // CRM: recent WhatsApp messages (sent + received)
+    const messagesResult = await pool.query(`
+      SELECT id, direction, type, body, status, "createdAt", "orderId"
+      FROM "MessageLog"
+      WHERE "userId" = $1
+      ORDER BY "createdAt" DESC
+      LIMIT 10
+    `, [customerId]).catch(() => ({ rows: [] }))
+
+    // CRM: reviews left by this customer
+    const reviewsResult = await pool.query(`
+      SELECT r.id, r.rating, r.comment, r.approved, r."createdAt", p.name as "productName"
+      FROM "Review" r
+      LEFT JOIN "Product" p ON p.id = r."productId"
+      WHERE r."userId" = $1
+      ORDER BY r."createdAt" DESC
+      LIMIT 10
+    `, [customerId]).catch(() => ({ rows: [] }))
+
     return NextResponse.json({
       customer,
       orders: ordersResult.rows,
       activity: activityResult.rows,
       metrics: m,
+      messages: messagesResult.rows,
+      reviews: reviewsResult.rows,
     })
 
   } catch (error: any) {

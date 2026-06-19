@@ -24,7 +24,7 @@ interface Review {
 export default function AvisPage() {
   const [reviews, setReviews] = useState<Review[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending')
+  const [filter, setFilter] = useState<'pending' | 'published' | 'all'>('pending')
   const [actionLoading, setActionLoading] = useState<number | null>(null)
 
   useEffect(() => {
@@ -60,7 +60,7 @@ export default function AvisPage() {
 
   async function handleReject(reviewId: number) {
     if (actionLoading) return
-    if (!confirm('Rejeter cet avis ? Il sera masqué et la cliente ne recevra pas les points.')) return
+    if (!confirm('Retirer cet avis de la boutique ? Il ne sera plus visible publiquement.')) return
     setActionLoading(reviewId)
     try {
       const res = await fetch(`/api/ops/avis/${reviewId}/reject`, { method: 'POST' })
@@ -74,17 +74,17 @@ export default function AvisPage() {
     }
   }
 
+  // The schema stores a boolean `approved` (default false) — there is no separate
+  // "rejected" state. So: true = Publié, anything else (false/null) = En attente.
   const filtered = reviews.filter(r => {
-    if (filter === 'pending') return r.approved === null
-    if (filter === 'approved') return r.approved === true
-    if (filter === 'rejected') return r.approved === false
+    if (filter === 'pending') return r.approved !== true
+    if (filter === 'published') return r.approved === true
     return true
   })
 
   const counts = {
-    pending: reviews.filter(r => r.approved === null).length,
-    approved: reviews.filter(r => r.approved === true).length,
-    rejected: reviews.filter(r => r.approved === false).length,
+    pending: reviews.filter(r => r.approved !== true).length,
+    published: reviews.filter(r => r.approved === true).length,
   }
 
   return (
@@ -93,7 +93,7 @@ export default function AvisPage() {
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">Modération des avis</h1>
           <p className="text-sm text-gray-500">
-            Validez ou rejetez les avis publiés par vos clientes
+            Publiez les avis de vos clientes (visibles sur la boutique une fois publiés)
           </p>
         </div>
 
@@ -102,19 +102,13 @@ export default function AvisPage() {
             onClick={() => setFilter('pending')}
             className={`btn-modern btn-sm ${filter === 'pending' ? 'btn-primary' : 'btn-subtle'}`}
           >
-            En attente <span className="ml-1 badge-modern badge-warning badge-sm">{counts.pending}</span>
+            À publier <span className="ml-1 badge-modern badge-warning badge-sm">{counts.pending}</span>
           </button>
           <button
-            onClick={() => setFilter('approved')}
-            className={`btn-modern btn-sm ${filter === 'approved' ? 'btn-primary' : 'btn-subtle'}`}
+            onClick={() => setFilter('published')}
+            className={`btn-modern btn-sm ${filter === 'published' ? 'btn-primary' : 'btn-subtle'}`}
           >
-            Approuvés <span className="ml-1 badge-modern badge-success badge-sm">{counts.approved}</span>
-          </button>
-          <button
-            onClick={() => setFilter('rejected')}
-            className={`btn-modern btn-sm ${filter === 'rejected' ? 'btn-primary' : 'btn-subtle'}`}
-          >
-            Rejetés <span className="ml-1 badge-modern badge-danger badge-sm">{counts.rejected}</span>
+            Publiés <span className="ml-1 badge-modern badge-success badge-sm">{counts.published}</span>
           </button>
           <button
             onClick={() => setFilter('all')}
@@ -151,26 +145,20 @@ export default function AvisPage() {
                         <div>
                           <div className="flex items-center gap-2 mb-1">
                             <p className="font-semibold text-gray-900">{review.userName || 'Cliente'}</p>
-                            {review.approved === true && (
+                            {review.approved === true ? (
                               <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-semibold rounded-full">
                                 ✓ Publié
                               </span>
-                            )}
-                            {review.approved === false && (
-                              <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-semibold rounded-full">
-                                ✗ Rejeté
-                              </span>
-                            )}
-                            {review.approved === null && (
+                            ) : (
                               <span className="px-2 py-0.5 bg-yellow-100 text-yellow-700 text-xs font-semibold rounded-full">
-                                ⏳ En attente
+                                ⏳ À publier
                               </span>
                             )}
                           </div>
                           <div className="flex items-center gap-3 text-xs text-gray-500">
                             {review.userPhone && <span>{review.userPhone}</span>}
                             {review.userId && (
-                              <Link href={`/clients/${review.userId}`} className="text-blue-600 hover:underline flex items-center gap-1">
+                              <Link href={`/customers/${review.userId}`} className="text-blue-600 hover:underline flex items-center gap-1">
                                 <User className="w-3 h-3" />
                                 Fiche cliente
                               </Link>
@@ -227,31 +215,32 @@ export default function AvisPage() {
                         </div>
                       )}
 
-                      {review.approved === null && (
-                        <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2">
+                        {review.approved !== true ? (
                           <button
                             onClick={() => handleApprove(review.id)}
                             disabled={actionLoading === review.id}
                             className="btn-modern btn-sm btn-success inline-flex items-center gap-1.5"
                           >
                             <CheckCircle className="w-4 h-4" />
-                            Approuver
+                            Publier l'avis
                           </button>
+                        ) : (
                           <button
                             onClick={() => handleReject(review.id)}
                             disabled={actionLoading === review.id}
-                            className="btn-modern btn-sm btn-danger inline-flex items-center gap-1.5"
+                            className="btn-modern btn-sm btn-secondary inline-flex items-center gap-1.5"
                           >
                             <XCircle className="w-4 h-4" />
-                            Rejeter
+                            Retirer de la boutique
                           </button>
-                          {review.pointsAwarded && (
-                            <span className="text-xs text-green-600 font-semibold ml-2">
-                              Points déjà crédités
-                            </span>
-                          )}
-                        </div>
-                      )}
+                        )}
+                        {review.pointsAwarded && (
+                          <span className="text-xs text-green-600 font-semibold ml-2">
+                            Points déjà crédités
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

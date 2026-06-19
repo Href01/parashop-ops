@@ -158,7 +158,7 @@ export default function ConversationPage() {
               <p className="text-sm text-gray-500">{phone}</p>
               {data?.userId && (
                 <Link
-                  href={`/clients/${data.userId}`}
+                  href={`/customers/${data.userId}`}
                   className="text-xs text-blue-600 hover:underline flex items-center gap-1 mt-1"
                 >
                   <User className="w-3 h-3" />
