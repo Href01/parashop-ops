@@ -25,6 +25,25 @@ export default function CustomerDetailPage() {
   const { id } = useParams<{ id: string }>()
   const [data, setData] = useState<Detail | null>(null)
   const [loading, setLoading] = useState(true)
+  const [sendingReward, setSendingReward] = useState(false)
+  const [rewardMsg, setRewardMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  async function sendReward() {
+    if (sendingReward) return
+    if (!confirm('Envoyer la confirmation WhatsApp des 50 DH à cette cliente ?')) return
+    setSendingReward(true)
+    setRewardMsg(null)
+    try {
+      const res = await fetch(`/api/ops/customers/${id}/send-reward`, { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) { setRewardMsg({ ok: false, text: json.error || 'Échec' }); return }
+      setRewardMsg({ ok: true, text: 'Message envoyé ✓' })
+    } catch {
+      setRewardMsg({ ok: false, text: 'Erreur réseau' })
+    } finally {
+      setSendingReward(false)
+    }
+  }
 
   useEffect(() => {
     fetch(`/api/ops/customers/${id}`, { cache: 'no-store' })
@@ -50,7 +69,8 @@ export default function CustomerDetailPage() {
           <p style={{ color: 'var(--rose-bright)' }}>Cliente introuvable.</p>
         ) : (
           <>
-            <div style={{ marginBottom: 22 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, marginBottom: 22 }}>
+              <div>
               <h1 className="serif-display" style={{ fontSize: 30, lineHeight: 1.05 }}>{c.name || 'Sans nom'}</h1>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, marginTop: 8, fontSize: 13, color: 'var(--tx-lo)' }}>
                 {c.email && <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Mail style={{ width: 14, height: 14 }} />{c.email}</span>}
@@ -60,6 +80,24 @@ export default function CustomerDetailPage() {
               <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                 {c.segment && <span className="badge green">{c.segment}</span>}
                 {c.tier && <span className="badge amber">{c.tier}</span>}
+              </div>
+              </div>
+
+              <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <button
+                  onClick={sendReward}
+                  disabled={sendingReward}
+                  className="btn-modern btn-sm btn-primary"
+                  style={{ whiteSpace: 'nowrap' }}
+                  title="Envoyer la confirmation WhatsApp des 50 DH de récompense"
+                >
+                  🎁 {sendingReward ? 'Envoi…' : 'Confirmer les 50 DH'}
+                </button>
+                {rewardMsg && (
+                  <p style={{ fontSize: 12, marginTop: 6, fontWeight: 600, color: rewardMsg.ok ? 'var(--green)' : 'var(--rose-bright)' }}>
+                    {rewardMsg.text}
+                  </p>
+                )}
               </div>
             </div>
 
