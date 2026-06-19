@@ -252,7 +252,10 @@ export default function MessagesPage() {
                     <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 2 }}>
                       <span style={{ fontSize: 12, color: 'var(--tx-lo)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
                         {conv.lastMessage.direction === 'out' && <span style={{ color: 'var(--tx-faint)' }}>Vous: </span>}
-                        {(conv.lastMessage.body || `[${conv.lastMessage.type}]`).replace(/https?:\/\/\S+/g, '🔗')}
+                        {conv.lastMessage.body?.startsWith('[Image]') ? '🖼️ Image' :
+                         conv.lastMessage.body?.startsWith('[Audio') ? '🎵 Audio' :
+                         conv.lastMessage.body?.startsWith('[Document') ? '📄 Document' :
+                         (conv.lastMessage.body || `[${conv.lastMessage.type}]`).replace(/https?:\/\/\S+/g, '🔗')}
                       </span>
                       {conv.unreadCount > 0 && (
                         <span style={{ background: 'var(--blue)', color: '#fff', fontSize: 10, fontWeight: 700, borderRadius: 999, padding: '1px 6px', flexShrink: 0 }}>{conv.unreadCount}</span>
@@ -315,9 +318,58 @@ export default function MessagesPage() {
                             </Link>
                           )}
                         </div>
-                        <p style={{ fontSize: 13.5, lineHeight: 1.45, margin: 0, whiteSpace: 'pre-wrap' }}>
-                          {m.body ? renderBody(m.body, out) : `[${m.templateName || m.type}]`}
-                        </p>
+                        {m.body?.startsWith('[Image]') ? (
+                          <div style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 8,
+                            padding: '8px 12px', borderRadius: 8,
+                            background: out ? 'rgba(255,255,255,.15)' : 'var(--bg-2)',
+                            border: out ? '1px solid rgba(255,255,255,.2)' : '1px solid var(--line-soft)'
+                          }}>
+                            <div style={{
+                              width: 40, height: 40, borderRadius: 6,
+                              background: out ? 'rgba(255,255,255,.2)' : 'var(--bg-3)',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: 20
+                            }}>🖼️</div>
+                            <div>
+                              <div style={{ fontSize: 12.5, fontWeight: 600, opacity: out ? 0.95 : 1 }}>Image envoyée</div>
+                              {m.body.replace('[Image]', '').trim() && (
+                                <div style={{ fontSize: 11.5, opacity: 0.8, marginTop: 2 }}>
+                                  {m.body.replace('[Image]', '').trim()}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : m.body?.startsWith('[Audio') ? (
+                          <div style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 8,
+                            padding: '8px 12px', borderRadius: 8,
+                            background: out ? 'rgba(255,255,255,.15)' : 'var(--bg-2)',
+                          }}>
+                            <span style={{ fontSize: 20 }}>🎵</span>
+                            <span style={{ fontSize: 12.5, fontWeight: 600 }}>Message vocal</span>
+                          </div>
+                        ) : m.body?.startsWith('[Document') ? (
+                          <div style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 8,
+                            padding: '8px 12px', borderRadius: 8,
+                            background: out ? 'rgba(255,255,255,.15)' : 'var(--bg-2)',
+                          }}>
+                            <span style={{ fontSize: 20 }}>📄</span>
+                            <div>
+                              <div style={{ fontSize: 12.5, fontWeight: 600 }}>Document</div>
+                              {m.body.includes(']') && (
+                                <div style={{ fontSize: 11.5, opacity: 0.8 }}>
+                                  {m.body.split(']')[1]?.trim() || 'Fichier'}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <p style={{ fontSize: 13.5, lineHeight: 1.45, margin: 0, whiteSpace: 'pre-wrap' }}>
+                            {m.body ? renderBody(m.body, out) : `[${m.templateName || m.type}]`}
+                          </p>
+                        )}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4, justifyContent: 'flex-end' }}>
                           <span style={{ fontSize: 10.5, opacity: 0.7 }}>{fmtTime(m.createdAt, true)}</span>
                           {out && <StatusBadge status={m.status} light />}
