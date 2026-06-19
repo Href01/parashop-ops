@@ -38,14 +38,45 @@ export async function GET(req: NextRequest) {
     )
 
     const messages = result.rows
-    const userId = messages[0]?.userId || null
-    const userName = messages[0]?.userName || null
+    const userId = messages.find((m) => m.userId)?.userId || null
+    const userName = messages.find((m) => m.userName)?.userName || null
+
+    // Customer context for the right-hand panel
+    let context: Record<string, unknown> | null = null
+    if (userId) {
+      const ctx = await pool.query(
+        `SELECT
+          u.points,
+          u.email,
+          u.city,
+          (SELECT COUNT(*) FROM "Order" WHERE "userId" = u.id)::int AS "orderCount",
+          (SELECT COALESCE(SUM(total),0) FROM "Order" WHERE "userId" = u.id AND status IN ('CONFIRMED','DELIVERED'))::float AS "totalSpent",
+          (SELECT COUNT(*) FROM "Review" WHERE "userId" = u.id)::int AS "reviewCount",
+          (SELECT status FROM "Order" WHERE "userId" = u.id ORDER BY "createdAt" DESC LIMIT 1) AS "lastOrderStatus"
+        FROM "User" u WHERE u.id = $1`,
+        [userId]
+      ).catch(() => ({ rows: [] as any[] }))
+      const c = ctx.rows[0]
+      if (c) {
+        context = {
+          points: c.points || 0,
+          pointsDh: Math.floor((c.points || 0) / 10),
+          email: c.email,
+          city: c.city,
+          orderCount: c.orderCount || 0,
+          totalSpent: c.totalSpent || 0,
+          reviewCount: c.reviewCount || 0,
+          lastOrderStatus: c.lastOrderStatus || null,
+        }
+      }
+    }
 
     return NextResponse.json({
       phone,
       userId,
       userName,
       messages,
+      context,
     })
   } catch (error) {
     console.error('[thread] Query failed:', error)
