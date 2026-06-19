@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Send, CheckCheck, Clock, AlertCircle, MessageCircle, ShoppingBag, User } from 'lucide-react'
+import { ArrowLeft, Send, Check, CheckCheck, Clock, AlertCircle, MessageCircle, ShoppingBag, User } from 'lucide-react'
 import Link from 'next/link'
 import BosShell from '@/components/BosShell'
 
@@ -87,14 +87,23 @@ export default function ConversationPage() {
     }
   }
 
-  const statusIcon = (status: string | null, direction: string) => {
+  // Explicit read-receipt badge (label + icon) for outbound messages.
+  const statusBadge = (status: string | null, direction: string) => {
     if (direction === 'in') return null
-    if (!status) return <Clock className="w-3 h-3 text-gray-400" />
-    if (status === 'failed') return <AlertCircle className="w-3 h-3 text-red-500" />
-    if (status === 'read') return <CheckCheck className="w-3 h-3 text-green-500" />
-    if (status === 'delivered') return <CheckCheck className="w-3 h-3 text-gray-500" />
-    if (status === 'sent') return <Send className="w-3 h-3 text-gray-400" />
-    return <Clock className="w-3 h-3 text-gray-400" />
+    const map: Record<string, { label: string; cls: string; Icon: typeof Check }> = {
+      read: { label: 'Vu', cls: 'text-sky-200', Icon: CheckCheck },
+      delivered: { label: 'Livré', cls: 'text-white/70', Icon: CheckCheck },
+      sent: { label: 'Envoyé', cls: 'text-white/60', Icon: Check },
+      failed: { label: 'Échec', cls: 'text-red-200', Icon: AlertCircle },
+      queued: { label: 'En attente', cls: 'text-white/50', Icon: Clock },
+    }
+    const s = map[status || 'queued'] || map.queued
+    return (
+      <span className={`inline-flex items-center gap-1 text-[11px] font-semibold ${s.cls}`}>
+        <s.Icon className="w-3.5 h-3.5" />
+        {s.label}
+      </span>
+    )
   }
 
   const formatTime = (date: string) => {
@@ -211,7 +220,7 @@ export default function ConversationPage() {
 
                     <div className="flex items-center gap-2 mt-2">
                       <span className="text-xs opacity-75">{formatTime(msg.createdAt)}</span>
-                      {statusIcon(msg.status, msg.direction)}
+                      {statusBadge(msg.status, msg.direction)}
                     </div>
                   </div>
                 </div>

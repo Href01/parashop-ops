@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { MessageCircle, Send, CheckCheck, Clock, AlertCircle, ChevronRight } from 'lucide-react'
+import { MessageCircle, Send, Check, CheckCheck, Clock, AlertCircle, ChevronRight } from 'lucide-react'
 import Link from 'next/link'
 import BosShell from '@/components/BosShell'
 
@@ -59,10 +59,24 @@ export default function MessagesPage() {
     if (direction === 'in') return <MessageCircle className="w-4 h-4 text-blue-500" />
     if (!status) return <Clock className="w-4 h-4 text-gray-400" />
     if (status === 'failed') return <AlertCircle className="w-4 h-4 text-red-500" />
-    if (status === 'read') return <CheckCheck className="w-4 h-4 text-green-500" />
+    if (status === 'read') return <CheckCheck className="w-4 h-4 text-sky-500" />
     if (status === 'delivered') return <CheckCheck className="w-4 h-4 text-gray-500" />
-    if (status === 'sent') return <Send className="w-4 h-4 text-gray-400" />
+    if (status === 'sent') return <Check className="w-4 h-4 text-gray-400" />
     return <Clock className="w-4 h-4 text-gray-400" />
+  }
+
+  // Compact read-receipt pill for the conversation list (outbound last message).
+  const statusPill = (status: string | null, direction: string) => {
+    if (direction === 'in') return null
+    const map: Record<string, { label: string; cls: string }> = {
+      read: { label: 'Vu', cls: 'bg-sky-100 text-sky-700' },
+      delivered: { label: 'Livré', cls: 'bg-gray-100 text-gray-600' },
+      sent: { label: 'Envoyé', cls: 'bg-gray-100 text-gray-500' },
+      failed: { label: 'Échec', cls: 'bg-red-100 text-red-600' },
+      queued: { label: 'En attente', cls: 'bg-gray-100 text-gray-400' },
+    }
+    const s = map[status || 'queued'] || map.queued
+    return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${s.cls}`}>{s.label}</span>
   }
 
   const formatTime = (date: string) => {
@@ -154,6 +168,7 @@ export default function MessagesPage() {
 
                   <div className="flex flex-col items-end gap-1 flex-shrink-0">
                     <p className="text-xs text-gray-400">{formatTime(conv.lastMessage.createdAt)}</p>
+                    {statusPill(conv.lastMessage.status, conv.lastMessage.direction)}
                     <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
                       {conv.messageCount} msg
                     </span>
