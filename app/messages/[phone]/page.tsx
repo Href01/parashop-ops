@@ -196,10 +196,12 @@ export default function ConversationPage() {
                   >
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs opacity-75 font-medium">
-                        {msg.type === 'otp' ? '🔐 OTP' :
+                        {msg.type === 'otp' ? '🔐 Code OTP' :
                          msg.type === 'review' ? '⭐ Demande d\'avis' :
-                         msg.type === 'reply' ? '💬 Réponse' :
-                         msg.type}
+                         msg.type === 'reply' ? (msg.direction === 'in' ? '💬 Réponse cliente' : '💬 Votre réponse') :
+                         msg.type === 'utility' ? '🎁 Récompense 50 DH' :
+                         msg.type === 'marketing' ? '📣 Marketing' :
+                         'Message'}
                       </span>
                       {msg.orderId && (
                         <Link
