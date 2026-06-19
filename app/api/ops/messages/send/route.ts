@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     const userId = userRow.rows[0]?.id
 
     // Delegate to storefront
-    const storefrontUrl = process.env.NEXT_PUBLIC_STOREFRONT_URL || 'https://www.shinecosmetics.ma'
+    const storefrontUrl = process.env.STOREFRONT_URL || 'https://www.shinecosmetics.ma'
     const res = await fetch(`${storefrontUrl}/api/whatsapp/send-message`, {
       method: 'POST',
       headers: {

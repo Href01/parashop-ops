@@ -14,7 +14,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   try {
     // Call the storefront review approval endpoint (it has the maybeGrantReviewReward logic)
-    const storefrontUrl = process.env.NEXT_PUBLIC_STOREFRONT_URL || 'https://www.shinecosmetics.ma'
+    const storefrontUrl = process.env.STOREFRONT_URL || 'https://www.shinecosmetics.ma'
     const res = await fetch(`${storefrontUrl}/api/admin/reviews/${reviewId}/approve`, {
       method: 'POST',
       headers: {
