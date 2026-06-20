@@ -180,18 +180,18 @@ export default function CustomersPage() {
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3 mb-6">
           <div className="relative flex-1 min-w-[280px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-tx-faint" />
             <input
               type="text"
               placeholder="Rechercher par nom, email, téléphone…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="w-full pl-10 pr-4 py-2 text-sm border border-line-soft rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
 
-          <div className="filter-strip inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
+          <div className="filter-strip inline-flex gap-1 p-1 bg-bg-2 rounded-lg">
             <button
               className={`btn-modern btn-sm ${segmentFilter === '' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setSegmentFilter('')}
@@ -224,7 +224,7 @@ export default function CustomersPage() {
             </button>
           </div>
 
-          <div className="filter-strip inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
+          <div className="filter-strip inline-flex gap-1 p-1 bg-bg-2 rounded-lg">
             <button
               className={`btn-modern btn-sm ${tierFilter === '' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setTierFilter('')}
@@ -352,17 +352,17 @@ function Metric({ icon, tone, title, value, trend }: { icon: React.ReactNode; to
     <div className="card-modern">
       <div className="card-body">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">{title}</p>
+          <p className="text-xs font-medium text-tx-lo uppercase tracking-wide">{title}</p>
           <div className={`w-10 h-10 rounded-lg ${bgColors[tone]} ${textColors[tone]} flex items-center justify-center`}>
             {icon}
           </div>
         </div>
 
         <div className="flex items-baseline gap-2 mb-2">
-          <p className="text-2xl font-bold text-gray-900">{value}</p>
+          <p className="text-2xl font-bold text-tx-hi">{value}</p>
         </div>
 
-        {trend && <p className="text-xs text-gray-500">{trend}</p>}
+        {trend && <p className="text-xs text-tx-faint">{trend}</p>}
       </div>
     </div>
   )

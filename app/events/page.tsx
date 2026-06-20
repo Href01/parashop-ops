@@ -97,7 +97,7 @@ export default function EventsPage() {
             <div className="sub">Ramadan, Black Friday, événements saisonniers & analyse d’impact</div>
           </div>
           <div className="spacer"></div>
-          <div className="filter-strip inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
+          <div className="filter-strip inline-flex gap-1 p-1 bg-bg-2 rounded-lg">
             <button
               className={`btn-modern btn-sm ${statusFilter === 'All' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('All')}
@@ -199,9 +199,9 @@ export default function EventsPage() {
                   <tr>
                     <td colSpan={8} style={{ textAlign: 'center', padding: '40px' }}>
                       <div className="flex flex-col items-center justify-center py-12">
-                        <Calendar className="w-12 h-12 text-gray-300 mb-4" />
-                        <p className="font-semibold text-gray-900 mb-2">Aucun événement</p>
-                        <p className="text-sm text-gray-500 mb-6">Crée ton premier événement pour suivre la performance saisonnière</p>
+                        <Calendar className="w-12 h-12 text-tx-faint mb-4" />
+                        <p className="font-semibold text-tx-hi mb-2">Aucun événement</p>
+                        <p className="text-sm text-tx-faint mb-6">Crée ton premier événement pour suivre la performance saisonnière</p>
                         <button className="btn-modern btn-primary" onClick={() => window.location.href = '/events/new'}>
                           <Plus className="w-4 h-4" />Créer un événement
                         </button>

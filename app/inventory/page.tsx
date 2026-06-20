@@ -255,7 +255,7 @@ export default function InventoryPage() {
       'warning': 'bg-amber-50 border-amber-200',
       'info': 'bg-blue-50 border-blue-200',
     }
-    return colors[severity] || 'bg-gray-50 border-gray-200'
+    return colors[severity] || 'bg-bg-2 border-line-soft'
   }
 
   const lowStockCount = products.filter(p => p.stockStatus === 'Low stock').length
@@ -394,7 +394,7 @@ export default function InventoryPage() {
                   >
                     <div>
                       <div className="font-semibold text-sm">{alert.message}</div>
-                      <div className="text-xs text-gray-500 mt-1">
+                      <div className="text-xs text-tx-faint mt-1">
                         {alert.productBrand} • {new Date(alert.createdAt).toLocaleDateString('fr-FR')}
                       </div>
                     </div>
@@ -453,7 +453,7 @@ export default function InventoryPage() {
                         )}
                         <div>
                           <div className="font-semibold text-sm">{product.name}</div>
-                          <div className="text-xs text-gray-500 mt-1">
+                          <div className="text-xs text-tx-faint mt-1">
                             {product.brand} • Stock: <b>{product.stock}</b> • Ventes: <b>{product.weeklySales || 0}/sem</b>
                           </div>
                         </div>
@@ -463,7 +463,7 @@ export default function InventoryPage() {
                           <div className={`text-lg font-bold ${urgency === 'critical' ? 'text-red-600' : urgency === 'warning' ? 'text-amber-600' : 'text-blue-600'}`}>
                             {product.daysOfStockLeft}j
                           </div>
-                          <div className="text-xs text-gray-500">restants</div>
+                          <div className="text-xs text-tx-faint">restants</div>
                         </div>
                         <button
                           className="btn-modern btn-sm btn-primary"
@@ -482,7 +482,7 @@ export default function InventoryPage() {
 
         {/* Filters */}
         <div className="mb-6">
-          <div className="filter-strip inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
+          <div className="filter-strip inline-flex gap-1 p-1 bg-bg-2 rounded-lg">
             <button
               className={`btn-modern btn-sm ${statusFilter === '' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('')}
@@ -910,17 +910,17 @@ function Metric({ icon, tone, title, value, trend }: { icon: React.ReactNode; to
     <div className="card-modern">
       <div className="card-body">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-medium text-gray-600 uppercase tracking-wide">{title}</p>
+          <p className="text-xs font-medium text-tx-lo uppercase tracking-wide">{title}</p>
           <div className={`w-10 h-10 rounded-lg ${bgColors[tone]} ${textColors[tone]} flex items-center justify-center`}>
             {icon}
           </div>
         </div>
 
         <div className="flex items-baseline gap-2 mb-2">
-          <p className="text-2xl font-bold text-gray-900">{value}</p>
+          <p className="text-2xl font-bold text-tx-hi">{value}</p>
         </div>
 
-        {trend && <p className="text-xs text-gray-500">{trend}</p>}
+        {trend && <p className="text-xs text-tx-faint">{trend}</p>}
       </div>
     </div>
   )

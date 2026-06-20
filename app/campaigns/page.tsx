@@ -85,7 +85,7 @@ export default function CampaignsPage() {
             <div className="sub">Suivi P&L réel : dépense pub, ROAS & ROI</div>
           </div>
           <div className="spacer"></div>
-          <div className="filter-strip inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
+          <div className="filter-strip inline-flex gap-1 p-1 bg-bg-2 rounded-lg">
             <button
               className={`btn-modern btn-sm ${statusFilter === 'All' ? 'btn-primary' : 'btn-subtle'}`}
               onClick={() => setStatusFilter('All')}
