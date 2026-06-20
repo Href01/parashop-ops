@@ -379,13 +379,13 @@ export default function OrdersPage() {
           {stats.map((item) => (
             <div key={item.label} className="card-modern">
               <div className="card-body">
-                <p className="text-xs font-medium text-gray-600 uppercase tracking-wide mb-2">{item.label}</p>
+                <p className="text-xs font-medium text-tx-lo uppercase tracking-wide mb-2">{item.label}</p>
                 <p className="text-3xl font-bold mb-1" style={{ color: item.color }}>
                   {item.value}
                 </p>
                 <div className="flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full" style={{ background: item.color }}></span>
-                  <span className="text-xs text-gray-500">{item.label}</span>
+                  <span className="text-xs text-tx-faint">{item.label}</span>
                 </div>
               </div>
             </div>
@@ -393,9 +393,9 @@ export default function OrdersPage() {
         </div>
 
         <div className="card-modern">
-          <div className="flex flex-wrap items-center gap-3 p-4 border-b border-gray-200">
+          <div className="flex flex-wrap items-center gap-3 p-4 border-b border-line-soft">
             <div className="relative flex-1 min-w-[240px]">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-tx-faint" />
               <input
                 type="text"
                 value={search}
@@ -404,11 +404,11 @@ export default function OrdersPage() {
                   setCurrentPage(1)
                 }}
                 placeholder="Rechercher par nom, téléphone, n°…"
-                className="w-full pl-10 pr-4 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                className="w-full pl-10 pr-4 py-2 text-sm border border-line-soft rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
 
-            <div className="filter-strip inline-flex gap-1 p-1 bg-gray-100 rounded-lg">
+            <div className="filter-strip inline-flex gap-1 p-1 bg-bg-2 rounded-lg">
               <button
                 type="button"
                 className={`btn-modern btn-sm ${activeFilter === 'all' ? 'btn-primary' : 'btn-subtle'}`}
@@ -643,9 +643,9 @@ export default function OrdersPage() {
             </table>
           </div>
 
-          <div className="flex items-center justify-between p-4 border-t border-gray-200 bg-gray-50">
-            <span className="text-xs text-gray-600">
-              Affichage <span className="font-semibold text-gray-900">{filteredOrders.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, filteredOrders.length)}</span> sur {filteredOrders.length} commandes
+          <div className="flex items-center justify-between p-4 border-t border-line-soft bg-bg-2">
+            <span className="text-xs text-tx-lo">
+              Affichage <span className="font-semibold text-tx-hi">{filteredOrders.length === 0 ? 0 : pageStart + 1}-{Math.min(pageStart + PAGE_SIZE, filteredOrders.length)}</span> sur {filteredOrders.length} commandes
             </span>
             <div className="flex items-center gap-2">
               <button
@@ -673,8 +673,8 @@ export default function OrdersPage() {
       </div>
 
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2.5 rounded-xl shadow-lg bg-white border border-gray-200">
-          <span className="text-sm font-medium text-gray-700">{selectedIds.size} sélectionnée(s)</span>
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2.5 rounded-xl shadow-lg bg-bg-1 border border-line-soft">
+          <span className="text-sm font-medium text-tx-mid">{selectedIds.size} sélectionnée(s)</span>
           <button onClick={bulkRequestReview} disabled={bulkSending} className="btn-modern btn-sm btn-primary inline-flex items-center gap-1.5">
             {bulkSending ? <RefreshCw className="w-4 h-4 spin" /> : <Star className="w-4 h-4" />}
             {bulkSending ? 'Envoi…' : 'Demander un avis'}
