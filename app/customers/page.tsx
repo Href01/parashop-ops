@@ -179,15 +179,14 @@ export default function CustomersPage() {
 
         {/* Filters */}
         <div className="flex flex-wrap items-center gap-3 mb-6">
-          <div className="relative flex-1 min-w-[280px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-tx-faint" />
+          <div className="search-box" style={{ minWidth: 280 }}>
+            <Search />
             <input
               type="text"
               placeholder="Rechercher par nom, email, téléphone…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              className="w-full pl-10 pr-4 py-2 text-sm border border-line-soft rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
             />
           </div>
 
