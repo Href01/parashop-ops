@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Download, Plus, ArrowUp, ArrowDown } from 'lucide-react'
+import { Download, Plus, ArrowUp, ArrowDown, RefreshCw } from 'lucide-react'
 import Link from 'next/link'
 
 interface DashboardStats {
@@ -21,13 +21,13 @@ interface DashboardStats {
   roas: number
   revenueSeries: Array<{ date: string; label: string; revenue: number; profit: number; orders: number }>
   topProducts: Array<{ productId: number | null; name: string; units: number; revenue: number }>
+  topCities: Array<{ name: string; orders: number }>
   channels: Array<{ name: string; revenue: number; color: string }>
   pipeline: Array<{ label: string; value: number; tone: string }>
   alerts: { total: number; items: Array<{ tone: string; title: string; subtitle: string; href: string }> }
   activity: Array<{ tone: string; title: string; subtitle: string; timestamp: string }>
 }
 
-const DAILY_GOAL = 6000
 const mad = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v)
 
 const PERIODS: { label: string; days: number }[] = [
@@ -70,6 +70,8 @@ export default function GlowDashboard() {
   const now = new Date()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [mode, setMode] = useState<'rolling' | 'month' | 'week'>('month')
   const [days, setDays] = useState(30)
   const [month, setMonth] = useState({ year: now.getFullYear(), m: now.getMonth() })
@@ -94,31 +96,41 @@ export default function GlowDashboard() {
     await fetch('/api/ops/settings/goal', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [key]: v }) }).catch(() => {})
   }
 
-  useEffect(() => {
+  function load() {
     let qs = `days=${days}`
     if (mode === 'month') { const r = monthRange(month.year, month.m); qs = `from=${r.from}&to=${r.to}&compareFrom=${r.compareFrom}&compareTo=${r.compareTo}` }
     else if (mode === 'week') { const r = weekRange(week.year, week.w); qs = `from=${r.from}&to=${r.to}&compareFrom=${r.compareFrom}&compareTo=${r.compareTo}` }
     setLoading(true)
-    fetch(`/api/ops/dashboard/stats?${qs}`, { cache: 'no-store' })
+    setError(false)
+    return fetch(`/api/ops/dashboard/stats?${qs}`, { cache: 'no-store' })
       .then((r) => { if (!r.ok) throw new Error('fetch'); return r.json() })
-      .then((d) => setStats(d))
-      .catch((e) => console.error('Failed to fetch stats:', e))
+      .then((d) => { setStats(d); setLastUpdated(new Date()) })
+      .catch((e) => { console.error('Failed to fetch stats:', e); setError(true) })
       .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, days, month, week])
 
-  if (loading || !stats) {
+  if (error && !stats) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div className="dash-spin" style={{ display: 'inline-block', width: 30, height: 30, border: '2px solid var(--rose-bright)', borderTopColor: 'transparent', borderRadius: '50%', marginBottom: 14 }} />
-          <p style={{ fontSize: 13, color: 'var(--tx-lo)' }}>Chargement…</p>
+        <div style={{ textAlign: 'center', maxWidth: 360 }}>
+          <div style={{ fontSize: 38, marginBottom: 10 }}>⚠️</div>
+          <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--tx-hi)', marginBottom: 4 }}>Impossible de charger le tableau de bord</p>
+          <p style={{ fontSize: 13, color: 'var(--tx-lo)', marginBottom: 16 }}>Une erreur est survenue côté serveur.</p>
+          <button onClick={() => load()} className="btn-modern btn-secondary" style={{ display: 'inline-flex' }}>Réessayer</button>
         </div>
-        <style jsx>{`.dash-spin{animation:spin 0.8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
     )
   }
 
-  const goalPct = Math.min(Math.round((stats.revenueToday / DAILY_GOAL) * 100), 100)
+  if (loading || !stats) {
+    return <DashboardSkeleton />
+  }
+
   const weeklyGoal = stats.weeklyGoal || 42000
   const monthlyGoal = stats.monthlyGoal || 180000
   // Goals follow the selected period: in week/month mode the progress is that
@@ -129,7 +141,9 @@ export default function GlowDashboard() {
   const monthGoalTitle = mode === 'month' ? `Objectif ${MONTHS_FR[month.m]}` : 'Objectif du mois'
   const goalWeekPct = Math.min(Math.round((weekRevenue / weeklyGoal) * 100), 100)
   const goalMonthPct = Math.min(Math.round((monthRevenue / monthlyGoal) * 100), 100)
-  const series = stats.revenueSeries.slice(-14)
+  // Plot the full selected period (was truncated to 14 points, which made the
+  // curve lie in Mois/90j/1 an mode). Cap dot density for very long ranges.
+  const series = stats.revenueSeries
   const maxRev = Math.max(1, ...series.map((p) => p.revenue))
 
   const exportCsv = () => {
@@ -200,10 +214,19 @@ export default function GlowDashboard() {
               />
             )}
 
+            <button className="btn-modern btn-secondary btn-icon" onClick={() => load()} title="Rafraîchir" aria-label="Rafraîchir" disabled={loading}>
+              <RefreshCw className="w-4 h-4" style={loading ? { animation: 'dash-spin 0.8s linear infinite' } : undefined} />
+            </button>
             <button className="btn-modern btn-secondary" onClick={exportCsv}><Download className="w-4 h-4" />Export</button>
             <Link href="/orders/new" className="btn-modern btn-primary" style={{ textDecoration: 'none' }}><Plus className="w-4 h-4" />Nouvelle commande</Link>
           </div>
         </div>
+
+        {lastUpdated && (
+          <div style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: -10, marginBottom: 14, textAlign: 'right' }}>
+            Mis à jour à {lastUpdated.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+          </div>
+        )}
 
         {/* KPI strip */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 16 }}>
@@ -450,12 +473,67 @@ export default function GlowDashboard() {
               })}
             </div>
           </Card>
+
+          {/* Top cities */}
+          <Card>
+            <Label>Top villes · {periodLabel}</Label>
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {(!stats.topCities || stats.topCities.length === 0) ? <Empty /> : stats.topCities.slice(0, 6).map((c, i) => {
+                const max = stats.topCities[0]?.orders || 1
+                return (
+                  <div key={i}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
+                      <span style={{ color: 'var(--tx-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{c.name}</span>
+                      <span style={{ color: 'var(--tx-mid)', whiteSpace: 'nowrap', marginLeft: 8 }}><b style={{ color: 'var(--tx-hi)' }}>{c.orders}</b> cmd</span>
+                    </div>
+                    <div style={{ height: 5, borderRadius: 3, background: 'var(--bg-3)', overflow: 'hidden' }}>
+                      <div style={{ width: `${(c.orders / max) * 100}%`, height: '100%', background: 'var(--blue)', borderRadius: 3 }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </Card>
         </div>
       </div>
 
       <style jsx>{`
         @media (max-width: 1100px) { .dash-hero { grid-template-columns: 1fr !important; } }
+        @keyframes dash-spin { to { transform: rotate(360deg); } }
       `}</style>
+    </div>
+  )
+}
+
+function DashboardSkeleton() {
+  return (
+    <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div style={{ maxWidth: 1480, margin: '0 auto', padding: '24px 24px 60px' }}>
+        <div className="skeleton-line" style={{ width: 220, height: 30, marginBottom: 22 }} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 16 }}>
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius)', padding: 14, boxShadow: 'var(--shadow-1)' }}>
+              <div className="skeleton-line" style={{ width: '70%', marginBottom: 10 }} />
+              <div className="skeleton-line" style={{ width: '50%', height: 22 }} />
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: 16, marginBottom: 16 }} className="dash-hero">
+          <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-lg)', padding: 18, height: 320 }}>
+            <div className="skeleton-line" style={{ width: '30%', marginBottom: 16 }} />
+            <div className="skeleton-line" style={{ width: '100%', height: 220 }} />
+          </div>
+          <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-lg)', padding: 18, height: 320 }}>
+            <div className="skeleton-line" style={{ width: '40%', marginBottom: 14 }} />
+            <div className="skeleton-line" style={{ width: '60%', height: 40, marginBottom: 14 }} />
+            <div className="skeleton-line" style={{ width: '100%', marginBottom: 8 }} />
+            <div className="skeleton-line" style={{ width: '100%' }} />
+          </div>
+        </div>
+        <style jsx>{`
+          @media (max-width: 1100px) { .dash-hero { grid-template-columns: 1fr !important; } }
+        `}</style>
+      </div>
     </div>
   )
 }

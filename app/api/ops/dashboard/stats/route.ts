@@ -178,21 +178,6 @@ function percentageChange(current: number, previous: number): number | null {
   return ((current - previous) / previous) * 100
 }
 
-function buildStreak(series: Array<{ revenue: number }>): number {
-  let streak = 0
-
-  for (let index = series.length - 1; index >= 0; index -= 1) {
-    if (series[index].revenue > 0) {
-      streak += 1
-      continue
-    }
-
-    break
-  }
-
-  return streak
-}
-
 function humanizeStatus(status: string | null): string {
   switch (status) {
     case 'PENDING':
@@ -488,7 +473,6 @@ export async function GET(req: Request) {
     const previousRevenueWeek = toNumber(summary?.previousRevenueWeek)
     const estimatedProfitWeek = toNumber(summary?.estimatedProfitWeek)
     const previousProfitWeek = toNumber(summary?.previousProfitWeek)
-    const ordersToday = toNumber(summary?.ordersToday)
     const ordersWeek = toNumber(summary?.ordersWeek)
     const previousOrdersWeek = toNumber(summary?.previousOrdersWeek)
     const bookedOrdersWeek = toNumber(summary?.bookedOrdersWeek)
@@ -509,21 +493,6 @@ export async function GET(req: Request) {
       profit: toNumber(row.profit),
       orders: toNumber(row.orders),
     }))
-
-    const deliverySeries = seriesRows.map((row) => {
-      const delivered = toNumber(row.delivered)
-      const cancelled = toNumber(row.cancelled)
-      const completed = delivered + cancelled
-
-      return {
-        date: row.day,
-        label: row.label,
-        rate: completed > 0 ? (delivered / completed) * 100 : 0,
-      }
-    })
-
-    const streakDays = buildStreak(revenueSeries)
-    const goalProgress = revenueToday > 0 ? Math.min((revenueToday / DAILY_REVENUE_GOAL) * 100, 100) : 0
 
     const topProducts = topProductRows.map((row) => ({
       productId: row.productId ?? null,
@@ -645,7 +614,6 @@ export async function GET(req: Request) {
       estimatedProfit: estimatedProfitWeek,
       profitDelta,
       marginPercent,
-      ordersToday,
       ordersWeek,
       ordersDelta,
       averageOrderValue,
@@ -653,10 +621,7 @@ export async function GET(req: Request) {
       completedDeliveryCount: completedDelivery30d,
       roas,
       adSpend: spend30d,
-      streakDays,
-      goalProgress,
       revenueSeries,
-      deliverySeries,
       pipeline: pipelineItems,
       topProducts,
       topCities,
