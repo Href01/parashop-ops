@@ -92,10 +92,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const clean = b.assignedProducts
     .filter((x: any) => Number.isInteger(x.productId) && Number(x.quantity) > 0)
     .map((x: any) => ({ productId: x.productId, quantity: Math.round(Number(x.quantity)), price: Number(x.price) || 0 }))
+  const paymentMethod = b.paymentMethod === 'VIREMENT' ? 'VIREMENT' : 'COD'
 
   const r = await pool.query(
-    `UPDATE "SenditStaging" SET "assignedProducts" = $1::jsonb, "updatedAt" = NOW() WHERE id = $2 AND promoted = false RETURNING id`,
-    [JSON.stringify(clean), id]
+    `UPDATE "SenditStaging" SET "assignedProducts" = $1::jsonb, "paymentMethod" = $2, "updatedAt" = NOW() WHERE id = $3 AND promoted = false RETURNING id`,
+    [JSON.stringify(clean), paymentMethod, id]
   )
   if (r.rows.length === 0) return NextResponse.json({ error: 'introuvable ou déjà promu' }, { status: 404 })
   return NextResponse.json({ ok: true })

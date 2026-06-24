@@ -60,6 +60,15 @@ export async function POST(req: NextRequest) {
       const amount = Number(s.amount) || 0
       const delivered = status === 'DELIVERED'
 
+      // Payment method: VIREMENT (prepaid by bank transfer) → Sendit COD is 0, but
+      // the customer paid products + delivery by transfer. Write codAmount = NULL +
+      // total = products + delivery so calculate_order_profit()'s
+      // COALESCE(codAmount, total, revenue) uses the real cash received, not 0.
+      const isVirement = (s.paymentMethod || 'COD') === 'VIREMENT'
+      const paymentMethod = isVirement ? 'VIREMENT' : 'COD'
+      const orderTotal = isVirement ? productsTotal + fee : amount
+      const codAmount = isVirement ? null : amount
+
       // Cost prices for COGS (so profit/margin are correct)
       const costRes = await client.query(
         `SELECT id, COALESCE("costPrice", 0)::float AS cost FROM "Product" WHERE id = ANY($1)`,
@@ -73,13 +82,14 @@ export async function POST(req: NextRequest) {
             "deliveryName", "deliveryPhone", "deliveryCity", "deliveryFeeCharged",
             "estimatedDeliveryCost", "actualDeliveryCost", "codAmount",
             "senditTrackingId", "senditStatus", "deliveryStatus", "createdAt")
-         VALUES ($1, $2, $3, $4::"OrderStatus", 'COD', 'Sendit', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, COALESCE($15, NOW()))
+         VALUES ($1, $2, $3, $4::"OrderStatus", $16, 'Sendit', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, COALESCE($15, NOW()))
          RETURNING id`,
         [
-          customerId, amount, productsTotal, status,
+          customerId, orderTotal, productsTotal, status,
           s.name, s.phone, s.city, fee,
-          fee, delivered ? fee : null, amount,
+          fee, delivered ? fee : null, codAmount,
           s.code, s.senditStatus, s.senditStatus, s.senditCreatedAt,
+          paymentMethod,
         ]
       )
       const orderId = ord.rows[0].id

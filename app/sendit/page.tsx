@@ -20,6 +20,7 @@ interface Row {
   matchedUserId: number | null
   matchedCustomerName: string | null
   assignedProducts: Array<{ productId: number; quantity: number; price: number }> | null
+  paymentMethod: string | null
   state: string
   promoted: boolean
   promotedOrderId: number | null
@@ -236,6 +237,7 @@ function AssignDrawer({ stagingId, onClose, onSaved }: { stagingId: number; onCl
   const [suggestions, setSuggestions] = useState<Array<{ rawName: string; qty: number; candidates: CatProduct[] }>>([])
   const [catalog, setCatalog] = useState<CatProduct[]>([])
   const [items, setItems] = useState<Assigned[]>([])
+  const [paymentMethod, setPaymentMethod] = useState<'COD' | 'VIREMENT'>('COD')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
@@ -248,6 +250,7 @@ function AssignDrawer({ stagingId, onClose, onSaved }: { stagingId: number; onCl
         setSuggestions(Array.isArray(d.suggestions) ? d.suggestions : [])
         setCatalog(Array.isArray(d.catalog) ? d.catalog : [])
         setItems(Array.isArray(d.row?.assignedProducts) ? d.row.assignedProducts : [])
+        setPaymentMethod(d.row?.paymentMethod === 'VIREMENT' ? 'VIREMENT' : 'COD')
       })
       .finally(() => setLoading(false))
   }, [stagingId])
@@ -261,20 +264,26 @@ function AssignDrawer({ stagingId, onClose, onSaved }: { stagingId: number; onCl
   const productsTotal = items.reduce((s, i) => s + i.price * i.quantity, 0)
   const cod = Number(row?.amount) || 0
   const fee = Number(row?.fee) || 0
-  const expected = cod - fee // products should ≈ COD − delivery
+  const isVirement = paymentMethod === 'VIREMENT'
+  // Cash actually received for the order: COD collected by Sendit, OR (virement)
+  // the bank transfer = products + charged delivery (the customer paid both).
+  const cashReceived = isVirement ? productsTotal + fee : cod
+  // Reconciliation only makes sense for COD (compare products to COD − delivery).
+  const expected = isVirement ? productsTotal : cod - fee
   const diff = productsTotal - expected
-  const reconciled = Math.abs(diff) <= 5
+  const reconciled = isVirement || Math.abs(diff) <= 5
   // P&L preview (same logic as the Commandes section)
   const costOf = (id: number) => Number(catalog.find((p) => p.id === id)?.costPrice) || 0
   const cogs = items.reduce((s, i) => s + costOf(i.productId) * i.quantity, 0)
   const missingCost = items.some((i) => costOf(i.productId) === 0)
-  const margin = cod - cogs - fee
-  const marginPct = cod > 0 ? (margin / cod) * 100 : 0
+  // Delivery is a pass-through (charged then paid to Sendit) → margin = cash − COGS − fee.
+  const margin = cashReceived - cogs - fee
+  const marginPct = cashReceived > 0 ? (margin / cashReceived) * 100 : 0
 
   const save = async () => {
     setSaving(true)
     try {
-      const res = await fetch(`/api/ops/sendit/staging/${stagingId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assignedProducts: items }) })
+      const res = await fetch(`/api/ops/sendit/staging/${stagingId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assignedProducts: items, paymentMethod }) })
       if (!res.ok) throw new Error()
       onSaved()
     } catch { setSaving(false) }
@@ -300,6 +309,24 @@ function AssignDrawer({ stagingId, onClose, onSaved }: { stagingId: number; onCl
               <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx-hi)' }}>{row.name} · <span style={{ fontFamily: 'var(--mono)', color: 'var(--tx-mid)' }}>{row.phone}</span></div>
               <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginTop: 2 }}>{row.city} · COD {mad(cod)} MAD (liv. {mad(fee)})</div>
               {row.productsText && <div style={{ fontSize: 12, color: 'var(--rose-bright)', marginTop: 6 }}>📦 Sendit : {row.productsText}</div>}
+            </div>
+
+            {/* Payment method — virement (prepaid) means Sendit COD = 0; profit must
+                be based on the bank transfer, not the 0 COD. */}
+            <div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx-lo)', textTransform: 'uppercase', marginBottom: 8 }}>Mode de paiement</div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {(['COD', 'VIREMENT'] as const).map((m) => (
+                  <button key={m} onClick={() => setPaymentMethod(m)} style={{
+                    flex: 1, padding: '8px 10px', fontSize: 12, fontWeight: 600, borderRadius: 8, cursor: 'pointer',
+                    border: `1px solid ${paymentMethod === m ? 'var(--green)' : 'var(--line)'}`,
+                    boxShadow: paymentMethod === m ? '0 0 0 1px var(--green)' : 'none',
+                    background: paymentMethod === m ? 'var(--green-bg)' : 'var(--bg-2)',
+                    color: paymentMethod === m ? 'var(--green)' : 'var(--tx-mid)',
+                  }}>{m === 'COD' ? '💵 COD (à la livraison)' : '🏦 Virement'}</button>
+                ))}
+              </div>
+              {isVirement && <p style={{ fontSize: 11, color: 'var(--tx-lo)', marginTop: 6 }}>Encaissé par virement : produits + livraison. COD Sendit = 0.</p>}
             </div>
 
             {/* Suggestions */}
@@ -359,10 +386,12 @@ function AssignDrawer({ stagingId, onClose, onSaved }: { stagingId: number; onCl
             {/* Reconciliation */}
             <div style={{ background: reconciled ? 'var(--green-bg)' : 'var(--amber-bg)', borderRadius: 10, padding: 12, fontSize: 12 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Σ Produits</span><b style={{ fontFamily: 'var(--mono)' }}>{mad(productsTotal)} MAD</b></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--tx-lo)' }}><span>Attendu (COD − livraison)</span><span style={{ fontFamily: 'var(--mono)' }}>{mad(expected)} MAD</span></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, color: reconciled ? 'var(--green)' : 'var(--amber)', fontWeight: 600 }}>
-                <span>{reconciled ? '✓ Réconcilié' : 'Écart'}</span><span style={{ fontFamily: 'var(--mono)' }}>{diff > 0 ? '+' : ''}{mad(diff)} MAD</span>
-              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--tx-lo)' }}><span>{isVirement ? 'Encaissé (virement, produits)' : 'Attendu (COD − livraison)'}</span><span style={{ fontFamily: 'var(--mono)' }}>{mad(expected)} MAD</span></div>
+              {!isVirement && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, color: reconciled ? 'var(--green)' : 'var(--amber)', fontWeight: 600 }}>
+                  <span>{reconciled ? '✓ Réconcilié' : 'Écart'}</span><span style={{ fontFamily: 'var(--mono)' }}>{diff > 0 ? '+' : ''}{mad(diff)} MAD</span>
+                </div>
+              )}
             </div>
 
             {/* P&L preview — what the official order's economics will be */}
@@ -371,7 +400,7 @@ function AssignDrawer({ stagingId, onClose, onSaved }: { stagingId: number; onCl
                 <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx-lo)', textTransform: 'uppercase' }}>Aperçu P&L (commande officielle)</span>
                 <span style={{ fontSize: 10, fontWeight: 600, padding: '1px 7px', borderRadius: 5, background: 'var(--rose-bg)', color: 'var(--rose-bright)' }}>source : Sendit</span>
               </div>
-              <Line label="CA (COD)" value={`${mad(cod)} MAD`} />
+              <Line label={isVirement ? 'CA (virement)' : 'CA (COD)'} value={`${mad(cashReceived)} MAD`} />
               <Line label="− Coût produits (COGS)" value={`${mad(cogs)} MAD`} dim />
               <Line label="− Livraison" value={`${mad(fee)} MAD`} dim />
               <div style={{ borderTop: '1px solid var(--line-soft)', margin: '6px 0' }} />
