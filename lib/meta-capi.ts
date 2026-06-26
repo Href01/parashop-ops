@@ -8,7 +8,7 @@ import { getMetaToken } from '@/lib/meta-token'
 //
 // Env: META_PIXEL_ID (or NEXT_PUBLIC_META_PIXEL_ID). Token comes from getMetaToken().
 
-const PIXEL_ID = process.env.META_PIXEL_ID || process.env.NEXT_PUBLIC_META_PIXEL_ID
+const PIXEL_ID = process.env.META_PIXEL_ID || process.env.NEXT_PUBLIC_META_PIXEL_ID || '1793293408300562'
 const VERSION = (process.env.META_GRAPH_VERSION || 'v21.0').replace(/^\/+|\/+$/g, '')
 const TEST_CODE = process.env.META_CAPI_TEST_CODE
 
@@ -35,7 +35,8 @@ type CapiEvent = {
 
 async function sendMetaCapi(ev: CapiEvent): Promise<void> {
   if (!PIXEL_ID) return
-  const token = await getMetaToken()
+  // Prefer an explicit CAPI token (same one as the main site); else the ad-sync token.
+  const token = process.env.META_CAPI_TOKEN || process.env.META_ACCESS_TOKEN || await getMetaToken()
   if (!token) return
   try {
     const user_data: Record<string, unknown> = {}
