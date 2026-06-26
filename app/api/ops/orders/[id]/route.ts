@@ -5,6 +5,7 @@ import { onOrderConfirmed } from '@/lib/integrations/order-hooks'
 import { getOpsSession } from '@/lib/auth'
 import { buildSenditProductsDescription, calculateCodAmount } from '@/lib/order-utils'
 import { creditOrderPoints } from '@/lib/loyalty'
+import { fireDeliveredCapi } from '@/lib/meta-capi'
 
 // GET /api/ops/orders/[id] - Get order detail
 export async function GET(
@@ -271,6 +272,8 @@ export async function PUT(
         } catch (e) {
           console.error('[loyalty] credit on delivery failed:', e)
         }
+        // Real-world "paid" signal to Meta (idempotent via capiDeliveredAt).
+        await fireDeliveredCapi(Number(orderId))
       }
 
       // Auto-create Sendit shipment when order is confirmed

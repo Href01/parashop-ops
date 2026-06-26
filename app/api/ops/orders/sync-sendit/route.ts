@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import pool from '@/lib/db'
 import { getShipmentTracking } from '@/lib/sendit'
 import { getOpsSession } from '@/lib/auth'
+import { fireDeliveredCapi } from '@/lib/meta-capi'
 
 const SENDIT_TO_ORDER_STATUS: Record<string, string> = {
   DELIVERED: 'DELIVERED',
@@ -49,6 +50,8 @@ export async function POST() {
             ) VALUES ($1, $2, $3, 'sendit', $4, NOW())`,
             [order.id, order.status, newStatus, `Sendit status synced: ${tracking.status}`]
           )
+          // Real-world "paid" signal to Meta — once, when the order is delivered.
+          if (newStatus === 'DELIVERED') await fireDeliveredCapi(order.id)
         }
 
         updated.push({ id: order.id, senditStatus: tracking.status, status: newStatus })
