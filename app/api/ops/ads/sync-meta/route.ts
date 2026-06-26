@@ -81,6 +81,48 @@ async function fxToMad(account: string, token: string): Promise<number> {
   }
 }
 
+/**
+ * Per-day spend (time_increment=1) -> "AdSpendDaily", so the analytics ROAS can sum
+ * the real spend over any period. Additive + paginated; failures are swallowed so
+ * they never break the campaign-level sync above.
+ */
+async function syncDaily(account: string, token: string, fx: number): Promise<number> {
+  const datePreset = process.env.META_DATE_PRESET || 'last_90d'
+  let url: string | null = `${GRAPH}/${account}/insights`
+    + `?level=campaign`
+    + `&fields=campaign_id,campaign_name,spend,impressions,clicks,action_values`
+    + `&date_preset=${encodeURIComponent(datePreset)}&time_increment=1&limit=300`
+    + `&access_token=${encodeURIComponent(token)}`
+
+  let upserts = 0
+  let pages = 0
+  while (url && pages < 30) {
+    const res: Response = await fetch(url, { cache: 'no-store' })
+    const json: any = await res.json()
+    if (!res.ok) break
+    const rows: Array<MetaInsightRow & { date_start?: string }> = Array.isArray(json.data) ? json.data : []
+    for (const r of rows) {
+      const date = r.date_start
+      if (!date || !r.campaign_id) continue
+      const spend = (Number(r.spend) || 0) * fx
+      const revenue = purchaseValue(r.action_values) * fx
+      await pool.query(
+        `INSERT INTO "AdSpendDaily" (date, platform, "externalId", "campaignName", spend, revenue, impressions, clicks, "updatedAt")
+         VALUES ($1, 'Meta', $2, $3, $4, $5, $6, $7, NOW())
+         ON CONFLICT (platform, "externalId", date) DO UPDATE SET
+           spend = EXCLUDED.spend, revenue = EXCLUDED.revenue,
+           impressions = EXCLUDED.impressions, clicks = EXCLUDED.clicks,
+           "campaignName" = EXCLUDED."campaignName", "updatedAt" = NOW()`,
+        [date, r.campaign_id, r.campaign_name, spend, revenue, Number(r.impressions) || 0, Number(r.clicks) || 0]
+      )
+      upserts++
+    }
+    url = json.paging?.next || null
+    pages++
+  }
+  return upserts
+}
+
 /** Cron (Bearer CRON_SECRET) or founder session. */
 async function authorized(req: NextRequest): Promise<boolean> {
   const cronSecret = process.env.CRON_SECRET
@@ -158,7 +200,11 @@ async function runSync() {
       }
     }
 
-    return NextResponse.json({ configured: true, scanned: rows.length, created, updated })
+    // Per-day spend for period-accurate ROAS — never let it break the main sync.
+    let dailyUpserts = 0
+    try { dailyUpserts = await syncDaily(account, token, fx) } catch (e) { console.error('[Ads] sync-meta daily', e) }
+
+    return NextResponse.json({ configured: true, scanned: rows.length, created, updated, dailyUpserts })
 }
 
 export async function POST(req: NextRequest) {
