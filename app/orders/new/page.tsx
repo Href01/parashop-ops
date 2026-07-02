@@ -478,9 +478,9 @@ export default function NewOrderPage() {
                     value={formData.paymentMethod}
                     onChange={(e) => setFormData({ ...formData, paymentMethod: e.target.value })}
                   >
-                    <option value="COD">💵 Cash on Delivery</option>
-                    <option value="Card">💳 Card</option>
-                    <option value="Transfer">🏦 Bank Transfer</option>
+                    <option value="COD">💵 Paiement à la livraison (COD)</option>
+                    <option value="VIREMENT">🏦 Virement bancaire</option>
+                    <option value="CARD">💳 Carte</option>
                   </select>
                 </div>
               </div>

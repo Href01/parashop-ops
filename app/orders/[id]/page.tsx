@@ -69,6 +69,7 @@ export default function OrderDetailPage() {
     deliveryCity: '',
     deliveryAddress: '',
     deliveryNotes: '',
+    paymentMethod: 'COD',
   })
 
   useEffect(() => {
@@ -88,6 +89,7 @@ export default function OrderDetailPage() {
         deliveryCity: data.deliveryCity || '',
         deliveryAddress: data.deliveryAddress || '',
         deliveryNotes: data.deliveryNotes || '',
+        paymentMethod: data.paymentMethod || 'COD',
       })
     } catch (fetchError: any) {
       setError(fetchError.message)
@@ -554,6 +556,7 @@ export default function OrderDetailPage() {
                     deliveryCity: order.deliveryCity || '',
                     deliveryAddress: order.deliveryAddress || '',
                     deliveryNotes: order.deliveryNotes || '',
+                    paymentMethod: order.paymentMethod || 'COD',
                   })
                 }}
               >
@@ -798,6 +801,19 @@ export default function OrderDetailPage() {
                         className="iv tx-mid"
                         style={{ border: '1px solid var(--bg-3)', borderRadius: '6px', padding: '4px 8px', background: 'var(--bg-0)' }}
                       />
+                    </div>
+                    <div className="info-item">
+                      <div className="il">Paiement</div>
+                      <select
+                        value={editForm.paymentMethod}
+                        onChange={(e) => setEditForm({ ...editForm, paymentMethod: e.target.value })}
+                        className="iv tx-mid"
+                        style={{ border: '1px solid var(--bg-3)', borderRadius: '6px', padding: '4px 8px', background: 'var(--bg-0)' }}
+                      >
+                        <option value="COD">💵 Paiement à la livraison (COD)</option>
+                        <option value="VIREMENT">🏦 Virement bancaire</option>
+                        <option value="CARD">💳 Carte</option>
+                      </select>
                     </div>
                   </>
                 )}

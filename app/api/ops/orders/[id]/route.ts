@@ -133,6 +133,7 @@ export async function PUT(
       notes,
       status,
       sourceChannel,
+      paymentMethod,
     } = body
 
     // Build update query dynamically
@@ -201,6 +202,32 @@ export async function PUT(
       }
       updates.push(`"sourceChannel" = $${paramIndex}`)
       values.push(sourceChannel)
+      paramIndex++
+    }
+
+    if (paymentMethod !== undefined) {
+      const pm = String(paymentMethod).toUpperCase()
+      if (!['COD', 'VIREMENT', 'CARD'].includes(pm)) {
+        return NextResponse.json({ error: 'invalid paymentMethod (COD | VIREMENT | CARD)' }, { status: 400 })
+      }
+      updates.push(`"paymentMethod" = $${paramIndex}`)
+      values.push(pm)
+      paramIndex++
+      // Recompute the cash economics so calculate_order_profit stays correct.
+      // Prepaid (VIREMENT/CARD): Sendit collects nothing -> codAmount NULL; total =
+      // the order value (products - discount + delivery), which is what was really paid.
+      // COD: codAmount = that same order value.
+      const cur = await pool.query('SELECT "productsTotal", "discountTotal", "deliveryFeeCharged" FROM "Order" WHERE id = $1', [orderId])
+      const c = cur.rows[0] || {}
+      const dfc = deliveryFeeCharged !== undefined ? Number(deliveryFeeCharged) : Number(c.deliveryFeeCharged || 0)
+      const disc = discountTotal !== undefined ? Number(discountTotal) : Number(c.discountTotal || 0)
+      const base = Math.max(0, Number(c.productsTotal || 0) - disc + dfc)
+      const prepaid = pm === 'VIREMENT' || pm === 'CARD'
+      updates.push(`total = $${paramIndex}`)
+      values.push(base)
+      paramIndex++
+      updates.push(`"codAmount" = $${paramIndex}`)
+      values.push(prepaid ? null : base)
       paramIndex++
     }
 

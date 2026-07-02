@@ -85,7 +85,7 @@ export function calculateCodAmount(paymentMethod: unknown, total: unknown): numb
   if (!Number.isFinite(amount) || amount < 0) return 0
 
   const method = typeof paymentMethod === 'string' ? paymentMethod.trim().toUpperCase() : ''
-  const prepaidMethods = new Set(['CARD', 'TRANSFER', 'PREPAID', 'BANK', 'BANK_TRANSFER'])
+  const prepaidMethods = new Set(['CARD', 'VIREMENT', 'TRANSFER', 'PREPAID', 'BANK', 'BANK_TRANSFER'])
 
   return prepaidMethods.has(method) ? 0 : amount
 }
