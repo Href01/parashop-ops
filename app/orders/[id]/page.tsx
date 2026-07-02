@@ -20,7 +20,10 @@ interface Order {
   paymentMethod?: string
   revenue?: number | string
   total?: number | string
+  codAmount?: number | string | null
   estimatedProfit?: number | string
+  finalProfit?: number | string | null
+  returnOrFailedFees?: number | string | null
   marginPercent?: number | string
   deliveryFeeCharged?: number | string
   estimatedDeliveryCost?: number | string
@@ -274,9 +277,18 @@ export default function OrderDetailPage() {
     const cod = toNumber(order?.total)
     const deliveryCharged = Math.max(0, cod - productRevenue)
     const deliveryCost = toNumber(order?.actualDeliveryCost || order?.estimatedDeliveryCost || 0)
-    // Profit = COD − COGS − delivery cost (charged delivery nets out, free is absorbed)
-    const profit = toNumber(order?.estimatedProfit) || (cod - productCost - deliveryCost)
-    const margin = toNumber(order?.marginPercent) || (productRevenue > 0 ? (profit / productRevenue) * 100 : 0)
+    // Profit = cash − COGS − delivery cost (charged delivery nets out, free is absorbed).
+    // Prefer finalProfit (real delivered profit: actual delivery cost + return fees) over
+    // estimatedProfit, so a delivered order matches the margin donut and the dashboard.
+    const has = (v: unknown) => v !== null && v !== undefined && v !== ''
+    const profit = has(order?.finalProfit)
+      ? toNumber(order?.finalProfit)
+      : has(order?.estimatedProfit)
+        ? toNumber(order?.estimatedProfit)
+        : (cod - productCost - deliveryCost)
+    const margin = has(order?.marginPercent)
+      ? toNumber(order?.marginPercent)
+      : (productRevenue > 0 ? (profit / productRevenue) * 100 : 0)
     // Reconciles the breakdown to the real COD: a discount or a data gap
     // (e.g. COD collected < products sold). Usually 0.
     const adjustment = cod - productRevenue - deliveryCharged

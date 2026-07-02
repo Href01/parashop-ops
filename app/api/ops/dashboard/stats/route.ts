@@ -17,6 +17,10 @@ interface SummaryRow {
   revenue30d: number | string | null
   revenueWeek: number | string | null
   revenueWeekTotal: number | string | null
+  revenueDelivered: number | string | null
+  revenueDeliveredTotal: number | string | null
+  profitDelivered: number | string | null
+  previousRevenueDelivered: number | string | null
   previousRevenueWeek: number | string | null
   estimatedProfitWeek: number | string | null
   previousProfitWeek: number | string | null
@@ -294,6 +298,14 @@ export async function GET(req: Request) {
           COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= ((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date - INTERVAL '29 days')::timestamp AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenue30d",
           COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenueWeek",
           COALESCE(SUM(order_total) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenueWeekTotal",
+          COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "revenueDelivered",
+          COALESCE(SUM(order_total) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "revenueDeliveredTotal",
+          COALESCE(SUM(profit) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "profitDelivered",
+          COALESCE(SUM(revenue) FILTER (
+            WHERE "createdAt" >= (SELECT compare_start FROM bounds)
+              AND "createdAt" < (SELECT compare_end FROM bounds)
+              AND status = 'DELIVERED'
+          ), 0)::double precision AS "previousRevenueDelivered",
           COALESCE(SUM(revenue) FILTER (
             WHERE "createdAt" >= (SELECT compare_start FROM bounds)
               AND "createdAt" < (SELECT compare_end FROM bounds)
@@ -470,6 +482,13 @@ export async function GET(req: Request) {
     const [weeklyGoal, monthlyGoal] = await Promise.all([getWeeklyGoal(), getMonthlyGoal()])
     const revenueWeek = toNumber(summary?.revenueWeek)
     const revenueWeekTotal = toNumber(summary?.revenueWeekTotal)
+    // Delivered-only = realized cash. revenueWeek (CONFIRMED+DELIVERED) is "expected".
+    const revenueDelivered = toNumber(summary?.revenueDelivered)
+    const revenueDeliveredTotal = toNumber(summary?.revenueDeliveredTotal)
+    const profitDelivered = toNumber(summary?.profitDelivered)
+    const previousRevenueDelivered = toNumber(summary?.previousRevenueDelivered)
+    const marginDelivered = revenueDelivered > 0 ? (profitDelivered / revenueDelivered) * 100 : 0
+    const revenueDeliveredDelta = percentageChange(revenueDelivered, previousRevenueDelivered)
     const previousRevenueWeek = toNumber(summary?.previousRevenueWeek)
     const estimatedProfitWeek = toNumber(summary?.estimatedProfitWeek)
     const previousProfitWeek = toNumber(summary?.previousProfitWeek)
@@ -610,6 +629,11 @@ export async function GET(req: Request) {
       revenueToday,
       revenueWeek,
       revenueWeekTotal,
+      revenueDelivered,
+      revenueDeliveredTotal,
+      revenueDeliveredDelta,
+      profitDelivered,
+      marginDelivered,
       revenueDelta,
       estimatedProfit: estimatedProfitWeek,
       profitDelta,

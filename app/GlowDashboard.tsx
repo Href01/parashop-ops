@@ -12,6 +12,11 @@ interface DashboardStats {
   weeklyGoal: number
   monthlyGoal: number
   revenueWeek: number
+  revenueDelivered: number
+  revenueDeliveredTotal: number
+  revenueDeliveredDelta: number | null
+  profitDelivered: number
+  marginDelivered: number
   revenueDelta: number | null
   estimatedProfit: number
   marginPercent: number
@@ -230,8 +235,9 @@ export default function GlowDashboard() {
 
         {/* KPI strip */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 16 }}>
-          <Kpi label={`Chiffre d'affaires · ${periodLabel}`} value={`${mad(stats.revenueWeek)}`} unit="MAD" delta={stats.revenueDelta} deltaLabel={compareLabel} accent />
-          <Kpi label="Profit estimé" value={mad(stats.estimatedProfit)} unit="MAD" sub={`${stats.marginPercent.toFixed(1)}% marge`} />
+          <Kpi label={`CA livré · ${periodLabel}`} value={`${mad(stats.revenueDelivered)}`} unit="MAD" delta={stats.revenueDeliveredDelta} deltaLabel={compareLabel} sub="réalisé · encaissé" accent />
+          <Kpi label={`CA attendu · ${periodLabel}`} value={`${mad(stats.revenueWeek)}`} unit="MAD" delta={stats.revenueDelta} deltaLabel={compareLabel} sub="confirmé + livré" />
+          <Kpi label="Profit livré" value={mad(stats.profitDelivered)} unit="MAD" sub={`${stats.marginDelivered.toFixed(1)}% marge`} />
           <Kpi label={`Commandes · ${periodLabel}`} value={String(stats.ordersWeek)} />
           <Kpi label="Panier moyen" value={mad(stats.averageOrderValue)} unit="MAD" />
           <Kpi label="Taux de livraison" value={`${stats.deliveryRate.toFixed(0)}%`} />
@@ -243,13 +249,24 @@ export default function GlowDashboard() {
           <Card>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
               <div>
-                <Label>Chiffre d&apos;affaires · {periodLabel} · hors livraison</Label>
+                <Label>CA livré · {periodLabel} · hors livraison</Label>
                 <div style={{ fontSize: 38, fontWeight: 600, fontFamily: 'var(--mono)', letterSpacing: '-0.02em', color: 'var(--tx-hi)', lineHeight: 1.1 }}>
-                  {mad(stats.revenueWeek)} <span style={{ fontSize: 16, color: 'var(--tx-lo)', fontWeight: 500 }}>MAD</span>
+                  {mad(stats.revenueDelivered)} <span style={{ fontSize: 16, color: 'var(--tx-lo)', fontWeight: 500 }}>MAD</span>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginTop: 4 }}>
-                  Encaissé (COD, livraison incluse) : <b style={{ color: 'var(--tx-mid)' }}>{mad(stats.revenueWeekTotal)} MAD</b>
-                  <span style={{ color: 'var(--tx-faint)' }}> · livraison {mad(stats.revenueWeekTotal - stats.revenueWeek)} → Sendit</span>
+                  Encaissé (COD, livraison incluse) : <b style={{ color: 'var(--tx-mid)' }}>{mad(stats.revenueDeliveredTotal)} MAD</b>
+                  {stats.revenueDeliveredTotal - stats.revenueDelivered > 0 && (
+                    <span style={{ color: 'var(--tx-faint)' }}> · livraison {mad(stats.revenueDeliveredTotal - stats.revenueDelivered)} → Sendit</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginTop: 2 }}>
+                  CA attendu (confirmé + livré) : <b style={{ color: 'var(--tx-mid)' }}>{mad(stats.revenueWeek)} MAD</b>
+                  {stats.revenueWeek > stats.revenueDelivered && (
+                    <span style={{ color: 'var(--tx-faint)' }}> · dont {mad(stats.revenueWeek - stats.revenueDelivered)} pas encore livré</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 4 }}>
+                  Courbe : commandes créées (CA attendu) par jour
                 </div>
               </div>
             </div>
