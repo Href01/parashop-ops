@@ -237,9 +237,14 @@ export default function GlowDashboard() {
 
         {/* KPI strip */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 16 }}>
-          <Kpi label={`CA livré · ${periodLabel}`} value={`${mad(stats.revenueDelivered)}`} unit="MAD" delta={stats.revenueDeliveredDelta} deltaLabel={compareLabel} sub="réalisé · encaissé" accent />
-          <Kpi label={`CA attendu · ${periodLabel}`} value={`${mad(stats.revenueWeek)}`} unit="MAD" delta={stats.revenueDelta} deltaLabel={compareLabel} sub="confirmé + livré" />
-          <Kpi label={`Cash reçu · ${periodLabel}`} value={mad(stats.cashReceivedDelivered)} unit="MAD" sub="encaissé − frais Sendit" />
+          <Kpi label={`CA livré · ${periodLabel}`} value={`${mad(stats.revenueDelivered)}`} unit="MAD" delta={stats.revenueDeliveredDelta} deltaLabel={compareLabel} sub="produits · réalisé" accent />
+          {Math.round(stats.revenueWeek) !== Math.round(stats.revenueDelivered) && (
+            <Kpi label={`CA attendu · ${periodLabel}`} value={`${mad(stats.revenueWeek)}`} unit="MAD" sub="confirmé, pas encore livré" />
+          )}
+          <Kpi label={`Encaissé COD · ${periodLabel}`} value={mad(stats.revenueDeliveredTotal)} unit="MAD" sub="avec livraison" />
+          {Math.round(stats.cashReceivedDelivered) !== Math.round(stats.revenueDelivered) && (
+            <Kpi label={`Cash reçu · ${periodLabel}`} value={mad(stats.cashReceivedDelivered)} unit="MAD" sub="net frais Sendit" />
+          )}
           <Kpi label="Profit livré" value={mad(stats.profitDelivered)} unit="MAD" sub={`${stats.marginDelivered.toFixed(1)}% marge`} />
           <Kpi label={`Commandes · ${periodLabel}`} value={String(stats.ordersWeek)} />
           <Kpi label="Panier moyen" value={mad(stats.averageOrderValue)} unit="MAD" />
@@ -261,12 +266,12 @@ export default function GlowDashboard() {
                   <span style={{ color: 'var(--tx-faint)' }}> − frais Sendit {mad(stats.deliveryCostDelivered)} = </span>
                   <b style={{ color: 'var(--green)' }}>cash reçu {mad(stats.cashReceivedDelivered)} MAD</b>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginTop: 2 }}>
-                  CA attendu (confirmé + livré) : <b style={{ color: 'var(--tx-mid)' }}>{mad(stats.revenueWeek)} MAD</b>
-                  {stats.revenueWeek > stats.revenueDelivered && (
+                {stats.revenueWeek > stats.revenueDelivered && (
+                  <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginTop: 2 }}>
+                    CA attendu (confirmé + livré) : <b style={{ color: 'var(--tx-mid)' }}>{mad(stats.revenueWeek)} MAD</b>
                     <span style={{ color: 'var(--tx-faint)' }}> · dont {mad(stats.revenueWeek - stats.revenueDelivered)} pas encore livré</span>
-                  )}
-                </div>
+                  </div>
+                )}
                 <div style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 4 }}>
                   Courbe : commandes créées (CA attendu) par jour
                 </div>

@@ -269,17 +269,21 @@ export default function OrderDetailPage() {
   }
 
   const totals = useMemo(() => {
-    const productRevenue = order?.items?.reduce((sum, item) => sum + toNumber(item.price) * toNumber(item.quantity), 0) ?? 0
+    // Catalogue price of the items (list price), kept only to surface any rebate.
+    const catalogProducts = order?.items?.reduce((sum, item) => sum + toNumber(item.price) * toNumber(item.quantity), 0) ?? 0
     // COGS falls back to the product's costPrice when the line's unitCost is unset
     const productCost = order?.items?.reduce((sum, item) => sum + toNumber(item.unitCost || item.costPrice) * toNumber(item.quantity), 0) ?? 0
-    // COD (what the customer actually paid). Delivery actually charged is derived
-    // from the real money: COD − products (so "free vs charged" isn't assumed).
     const cod = toNumber(order?.total)
-    const deliveryCharged = Math.max(0, cod - productRevenue)
+    // What the customer really paid for delivery, and therefore for the products:
+    // productRevenue = COD − delivery fee. This mirrors the revenue trigger, so the
+    // order matches the dashboard CA (based on paid, not catalogue).
+    const deliveryCharged = toNumber(order?.deliveryFeeCharged)
+    const productRevenue = Math.max(0, cod - deliveryCharged)
     const deliveryCost = toNumber(order?.actualDeliveryCost || order?.estimatedDeliveryCost || 0)
-    // Profit = cash − COGS − delivery cost (charged delivery nets out, free is absorbed).
-    // Prefer finalProfit (real delivered profit: actual delivery cost + return fees) over
-    // estimatedProfit, so a delivered order matches the margin donut and the dashboard.
+    // Rebate granted vs catalogue (informational; not a P&L line since we start from paid).
+    const discount = Math.max(0, catalogProducts - productRevenue)
+    // Profit = cash − COGS − delivery cost. Prefer finalProfit (real delivered profit)
+    // over estimatedProfit, so a delivered order matches the margin donut and dashboard.
     const has = (v: unknown) => v !== null && v !== undefined && v !== ''
     const profit = has(order?.finalProfit)
       ? toNumber(order?.finalProfit)
@@ -289,11 +293,8 @@ export default function OrderDetailPage() {
     const margin = has(order?.marginPercent)
       ? toNumber(order?.marginPercent)
       : (productRevenue > 0 ? (profit / productRevenue) * 100 : 0)
-    // Reconciles the breakdown to the real COD: a discount or a data gap
-    // (e.g. COD collected < products sold). Usually 0.
-    const adjustment = cod - productRevenue - deliveryCharged
 
-    return { productRevenue, productCost, deliveryCharged, deliveryCost, profit, margin, cod, adjustment }
+    return { productRevenue, catalogProducts, productCost, deliveryCharged, deliveryCost, profit, margin, cod, discount }
   }, [order])
 
   // Real data completeness (was hardcoded to 100% with all-green checks)
@@ -854,11 +855,14 @@ export default function OrderDetailPage() {
             <div className="panel">
               <div className="panel-head"><Wallet className="panel-head-icon" /><h3>Détail P&L</h3></div>
               <div className="panel-pad">
-                <div className="pl-row"><span className="tx-mid">CA produits</span><span className="num">{formatMoney(totals.productRevenue)} MAD</span></div>
-                <div className="pl-row"><span className="tx-mid">Livraison facturée</span><span className="num">+{formatMoney(totals.deliveryCharged)} MAD</span></div>
-                {totals.adjustment !== 0 && (
-                  <div className="pl-row"><span className="tx-mid">Remise / ajustement</span><span className="num neg">{totals.adjustment > 0 ? '+' : ''}{formatMoney(totals.adjustment)} MAD</span></div>
+                <div className="pl-row">
+                  <span className="tx-mid">CA produits <span className="tx-lo" style={{ fontSize: 11 }}>(payé)</span></span>
+                  <span className="num">{formatMoney(totals.productRevenue)} MAD</span>
+                </div>
+                {totals.discount > 0 && (
+                  <div className="pl-row"><span className="tx-lo" style={{ fontSize: 12 }}>dont remise / catalogue {formatMoney(totals.catalogProducts)}</span><span className="num tx-lo" style={{ fontSize: 12 }}>-{formatMoney(totals.discount)} MAD</span></div>
                 )}
+                <div className="pl-row"><span className="tx-mid">Livraison facturée</span><span className="num">+{formatMoney(totals.deliveryCharged)} MAD</span></div>
                 <div className="pl-row"><span className="tx-mid">Coût produits</span><span className="num neg">-{formatMoney(totals.productCost)} MAD</span></div>
                 <div className="pl-row"><span className="tx-mid">Coût livraison</span><span className="num neg">-{formatMoney(totals.deliveryCost)} MAD</span></div>
                 <div className="pl-row total"><span>Profit net</span><span className={`num ${totals.profit >= 0 ? 'pos' : 'neg'}`}>{totals.profit >= 0 ? '+' : ''}{formatMoney(totals.profit)} MAD</span></div>
