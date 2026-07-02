@@ -17,6 +17,8 @@ interface DashboardStats {
   revenueDeliveredDelta: number | null
   profitDelivered: number
   marginDelivered: number
+  cashReceivedDelivered: number
+  deliveryCostDelivered: number
   revenueDelta: number | null
   estimatedProfit: number
   marginPercent: number
@@ -237,6 +239,7 @@ export default function GlowDashboard() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 16 }}>
           <Kpi label={`CA livré · ${periodLabel}`} value={`${mad(stats.revenueDelivered)}`} unit="MAD" delta={stats.revenueDeliveredDelta} deltaLabel={compareLabel} sub="réalisé · encaissé" accent />
           <Kpi label={`CA attendu · ${periodLabel}`} value={`${mad(stats.revenueWeek)}`} unit="MAD" delta={stats.revenueDelta} deltaLabel={compareLabel} sub="confirmé + livré" />
+          <Kpi label={`Cash reçu · ${periodLabel}`} value={mad(stats.cashReceivedDelivered)} unit="MAD" sub="encaissé − frais Sendit" />
           <Kpi label="Profit livré" value={mad(stats.profitDelivered)} unit="MAD" sub={`${stats.marginDelivered.toFixed(1)}% marge`} />
           <Kpi label={`Commandes · ${periodLabel}`} value={String(stats.ordersWeek)} />
           <Kpi label="Panier moyen" value={mad(stats.averageOrderValue)} unit="MAD" />
@@ -254,10 +257,9 @@ export default function GlowDashboard() {
                   {mad(stats.revenueDelivered)} <span style={{ fontSize: 16, color: 'var(--tx-lo)', fontWeight: 500 }}>MAD</span>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginTop: 4 }}>
-                  Encaissé (COD, livraison incluse) : <b style={{ color: 'var(--tx-mid)' }}>{mad(stats.revenueDeliveredTotal)} MAD</b>
-                  {stats.revenueDeliveredTotal - stats.revenueDelivered > 0 && (
-                    <span style={{ color: 'var(--tx-faint)' }}> · livraison {mad(stats.revenueDeliveredTotal - stats.revenueDelivered)} → Sendit</span>
-                  )}
+                  Encaissé (COD) <b style={{ color: 'var(--tx-mid)' }}>{mad(stats.revenueDeliveredTotal)}</b>
+                  <span style={{ color: 'var(--tx-faint)' }}> − frais Sendit {mad(stats.deliveryCostDelivered)} = </span>
+                  <b style={{ color: 'var(--green)' }}>cash reçu {mad(stats.cashReceivedDelivered)} MAD</b>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginTop: 2 }}>
                   CA attendu (confirmé + livré) : <b style={{ color: 'var(--tx-mid)' }}>{mad(stats.revenueWeek)} MAD</b>

@@ -20,6 +20,8 @@ interface SummaryRow {
   revenueDelivered: number | string | null
   revenueDeliveredTotal: number | string | null
   profitDelivered: number | string | null
+  cashReceivedDelivered: number | string | null
+  deliveryCostDelivered: number | string | null
   previousRevenueDelivered: number | string | null
   previousRevenueWeek: number | string | null
   estimatedProfitWeek: number | string | null
@@ -144,6 +146,8 @@ function financialCte(from: string, to: string, cFrom: string, cTo: string) {
       o."senditStatus",
       COALESCE(o."revenue", o."productsTotal", o.total::numeric, 0)::numeric AS revenue,
       COALESCE(o.total::numeric, o."revenue", o."productsTotal", 0)::numeric AS order_total,
+      -- What Sendit actually bills you for delivery (deducted from the COD before payout).
+      COALESCE(NULLIF(o."actualDeliveryCost", 0), NULLIF(o."estimatedDeliveryCost", 0), o."deliveryFeeCharged", 0)::numeric AS delivery_cost,
       COALESCE(
         o."finalProfit",
         o."estimatedProfit",
@@ -301,6 +305,8 @@ export async function GET(req: Request) {
           COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "revenueDelivered",
           COALESCE(SUM(order_total) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "revenueDeliveredTotal",
           COALESCE(SUM(profit) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "profitDelivered",
+          COALESCE(SUM(order_total - delivery_cost) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "cashReceivedDelivered",
+          COALESCE(SUM(delivery_cost) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "deliveryCostDelivered",
           COALESCE(SUM(revenue) FILTER (
             WHERE "createdAt" >= (SELECT compare_start FROM bounds)
               AND "createdAt" < (SELECT compare_end FROM bounds)
@@ -486,6 +492,9 @@ export async function GET(req: Request) {
     const revenueDelivered = toNumber(summary?.revenueDelivered)
     const revenueDeliveredTotal = toNumber(summary?.revenueDeliveredTotal)
     const profitDelivered = toNumber(summary?.profitDelivered)
+    // Real cash you pocket: COD collected minus what Sendit keeps for delivery.
+    const cashReceivedDelivered = toNumber(summary?.cashReceivedDelivered)
+    const deliveryCostDelivered = toNumber(summary?.deliveryCostDelivered)
     const previousRevenueDelivered = toNumber(summary?.previousRevenueDelivered)
     const marginDelivered = revenueDelivered > 0 ? (profitDelivered / revenueDelivered) * 100 : 0
     const revenueDeliveredDelta = percentageChange(revenueDelivered, previousRevenueDelivered)
@@ -634,6 +643,8 @@ export async function GET(req: Request) {
       revenueDeliveredDelta,
       profitDelivered,
       marginDelivered,
+      cashReceivedDelivered,
+      deliveryCostDelivered,
       revenueDelta,
       estimatedProfit: estimatedProfitWeek,
       profitDelta,

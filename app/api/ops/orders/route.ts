@@ -47,10 +47,13 @@ export async function GET(request: NextRequest) {
       query += ` AND o."needsReview" = true`
     }
 
+    // The orders page paginates client-side over the full set, and the status
+    // cards count the loaded rows — so a low LIMIT silently truncated the list
+    // (showed "86 livrées" while the DB had 101). Load the whole (small) table.
     query += `
       GROUP BY o.id
       ORDER BY o."createdAt" DESC
-      LIMIT 100
+      LIMIT 5000
     `
 
     const result = await pool.query(query, params)
