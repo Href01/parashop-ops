@@ -91,7 +91,7 @@ function SignInForm() {
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
                 required
-                placeholder="mekouar01@gmail.com"
+                placeholder="email@exemple.com"
               />
             </div>
             <div className="field">
@@ -116,18 +116,6 @@ function SignInForm() {
             <div>
               <div className="fn-t">Founders only</div>
               <div className="fn-s">Access is restricted to whitelisted Shine Cosmetics founder accounts. Other accounts will be denied.</div>
-            </div>
-          </div>
-
-          <div className="auth-emails">
-            <div className="label auth-label">Authorized accounts</div>
-            <div className="ae-row">
-              <div className="avatar a small">AM</div>
-              <span className="mono">mekouar01@gmail.com</span>
-            </div>
-            <div className="ae-row">
-              <div className="avatar b small">MH</div>
-              <span className="mono">marjanhajar20@gmail.com</span>
             </div>
           </div>
 
