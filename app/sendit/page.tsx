@@ -183,7 +183,15 @@ export default function SenditLabPage() {
                       <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--tx-hi)' }}>{mad(r.amount)}<span style={{ fontSize: 10, color: 'var(--tx-faint)' }}> (liv. {mad(r.fee)})</span></td>
                       <td style={{ ...td, fontSize: 12, color: 'var(--tx-lo)', fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }}>{r.senditCreatedAt ? new Date(r.senditCreatedAt).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '—'}</td>
                       <td style={{ ...td, fontSize: 12, color: 'var(--tx-mid)', maxWidth: 260 }}>{r.productsText || <span style={{ color: 'var(--tx-faint)' }}>—</span>}</td>
-                      <td style={{ ...td, fontSize: 11, color: 'var(--tx-lo)', fontFamily: 'var(--mono)' }}>{r.senditStatus}</td>
+                      <td style={{ ...td, fontSize: 11, color: 'var(--tx-lo)', fontFamily: 'var(--mono)' }}>
+                        {r.senditStatus}
+                        {(() => {
+                          if (r.state !== 'matched' || r.senditStatus.toUpperCase() === 'DELIVERED' || !r.senditCreatedAt) return null
+                          const age = Math.floor((Date.now() - new Date(r.senditCreatedAt).getTime()) / (1000 * 60 * 60 * 24))
+                          if (age > 30) return <div style={{ fontSize: 10, color: 'var(--orange)', marginTop: 2 }}>⚠ Bloquée {age}j</div>
+                          return null
+                        })()}
+                      </td>
                       <td style={td}>
                         <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 5, color: b.fg, background: b.bg }}>{STATE_LABEL[r.state] || r.state}</span>
                       </td>

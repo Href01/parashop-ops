@@ -28,6 +28,7 @@ interface SummaryRow {
   previousProfitWeek: number | string | null
   ordersToday: number | string | null
   ordersWeek: number | string | null
+  ordersDelivered: number | string | null
   previousOrdersWeek: number | string | null
   bookedOrdersWeek: number | string | null
   delivered30d: number | string | null
@@ -325,6 +326,7 @@ export async function GET(req: Request) {
           ), 0)::double precision AS "previousProfitWeek",
           COUNT(*) FILTER (WHERE "createdAt" >= (SELECT today_start FROM bounds) AND status <> 'CANCELLED')::int AS "ordersToday",
           COUNT(*) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status <> 'CANCELLED')::int AS "ordersWeek",
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED')::int AS "ordersDelivered",
           COUNT(*) FILTER (
             WHERE "createdAt" >= (SELECT compare_start FROM bounds)
               AND "createdAt" < (SELECT compare_end FROM bounds)
@@ -502,6 +504,7 @@ export async function GET(req: Request) {
     const estimatedProfitWeek = toNumber(summary?.estimatedProfitWeek)
     const previousProfitWeek = toNumber(summary?.previousProfitWeek)
     const ordersWeek = toNumber(summary?.ordersWeek)
+    const ordersDelivered = toNumber(summary?.ordersDelivered)
     const previousOrdersWeek = toNumber(summary?.previousOrdersWeek)
     const bookedOrdersWeek = toNumber(summary?.bookedOrdersWeek)
     const delivered30d = toNumber(summary?.delivered30d)
@@ -650,6 +653,7 @@ export async function GET(req: Request) {
       profitDelta,
       marginPercent,
       ordersWeek,
+      ordersDelivered,
       ordersDelta,
       averageOrderValue,
       deliveryRate,

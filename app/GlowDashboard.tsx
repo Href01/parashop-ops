@@ -23,6 +23,7 @@ interface DashboardStats {
   estimatedProfit: number
   marginPercent: number
   ordersWeek: number
+  ordersDelivered: number
   averageOrderValue: number
   deliveryRate: number
   roas: number
@@ -238,9 +239,16 @@ export default function GlowDashboard() {
         {/* KPI strip */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 16 }}>
           <Kpi label={`CA livré · ${periodLabel}`} value={`${mad(stats.revenueDelivered)}`} unit="MAD" delta={stats.revenueDeliveredDelta} deltaLabel={compareLabel} sub="produits · réalisé" accent />
-          {Math.round(stats.revenueWeek) !== Math.round(stats.revenueDelivered) && (
-            <Kpi label={`CA attendu · ${periodLabel}`} value={`${mad(stats.revenueWeek)}`} unit="MAD" sub="confirmé, pas encore livré" />
-          )}
+          <Kpi
+            label={`CA attendu · ${periodLabel}`}
+            value={`${mad(stats.revenueWeek)}`}
+            unit="MAD"
+            sub={
+              stats.revenueWeek > stats.revenueDelivered
+                ? `+ ${mad(stats.revenueWeek - stats.revenueDelivered)} en cours (${stats.ordersWeek - stats.ordersDelivered} cmd)`
+                : 'toutes livrées'
+            }
+          />
           <Kpi label={`Encaissé COD · ${periodLabel}`} value={mad(stats.revenueDeliveredTotal)} unit="MAD" sub="avec livraison" />
           {Math.round(stats.cashReceivedDelivered) !== Math.round(stats.revenueDelivered) && (
             <Kpi label={`Cash reçu · ${periodLabel}`} value={mad(stats.cashReceivedDelivered)} unit="MAD" sub="net frais Sendit" />
