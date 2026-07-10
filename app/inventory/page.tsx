@@ -31,6 +31,15 @@ type Movement = {
   id: number; productId: number; productName: string; productBrand: string; type: string
   quantity: number; stockBefore: number; stockAfter: number; reason: string | null; performedBy: string; createdAt: string
 }
+type PurchaseProduct = { id: number; name: string; brand: string; supplier: string | null; stock: number; units: number; spent: number; avgCost: number | null; purchases: number; lastPurchase: string | null }
+type PurchaseRecent = { id: number; productId: number; name: string; brand: string; quantity: number; costPerUnit: number | null; totalCost: number | null; reason: string | null; notes: string | null; performedBy: string; createdAt: string }
+type PurchasesData = {
+  days: number
+  summary: { totalSpent: number; unitsPurchased: number; purchaseCount: number; productsRestocked: number }
+  byProduct: PurchaseProduct[]
+  bySupplier: { supplier: string; spent: number; units: number }[]
+  recent: PurchaseRecent[]
+}
 
 type Filter = 'all' | 'shortage' | 'low' | 'reorder' | 'demand'
 type SortKey = 'available' | 'days' | 'value' | 'sales' | 'name'
@@ -38,6 +47,8 @@ type SortKey = 'available' | 'days' | 'value' | 'sales' | 'name'
 const money = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v)
 const fmtDate = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })
 const statusFR: Record<string, string> = { 'In stock': 'En stock', 'Low stock': 'Stock bas', 'Out of stock': 'Rupture', Discontinued: 'Arrêté' }
+const sectionTitle: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }
+const emptyBox: React.CSSProperties = { padding: 22, textAlign: 'center', fontSize: 13, color: 'var(--tx-mid)', border: '1px dashed var(--line-soft)', borderRadius: 10, lineHeight: 1.6 }
 
 /** Demand-aware health: a shortage (committed > stock) outranks the forecast status. */
 function health(p: Product): { label: string; cls: string; tone: 'red' | 'amber' | 'green' } {
@@ -47,11 +58,14 @@ function health(p: Product): { label: string; cls: string; tone: 'red' | 'amber'
 }
 
 export default function InventoryPage() {
-  const [activeTab, setActiveTab] = useState<'stock' | 'ship' | 'history'>('stock')
+  const [activeTab, setActiveTab] = useState<'stock' | 'ship' | 'purchases' | 'history'>('stock')
   const [products, setProducts] = useState<Product[]>([])
   const [toShip, setToShip] = useState<ToShipOrder[]>([])
   const [summary, setSummary] = useState<Summary | null>(null)
   const [movements, setMovements] = useState<Movement[]>([])
+  const [purchases, setPurchases] = useState<PurchasesData | null>(null)
+  const [purchasesDays, setPurchasesDays] = useState(30)
+  const [loadingPurchases, setLoadingPurchases] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadingMovements, setLoadingMovements] = useState(false)
   const [filter, setFilter] = useState<Filter>('all')
@@ -63,6 +77,8 @@ export default function InventoryPage() {
   const [adjustType, setAdjustType] = useState<'in' | 'out'>('in')
   const [adjustQty, setAdjustQty] = useState('')
   const [adjustReason, setAdjustReason] = useState('')
+  const [adjustCost, setAdjustCost] = useState('')
+  const [adjustSupplier, setAdjustSupplier] = useState('')
   const [adjusting, setAdjusting] = useState(false)
   const [supplierModal, setSupplierModal] = useState<{ productId: number; productName: string; currentSupplier: string | null } | null>(null)
   const [supplierInput, setSupplierInput] = useState('')
@@ -70,9 +86,28 @@ export default function InventoryPage() {
 
   useEffect(() => {
     if (activeTab === 'history') fetchMovements()
+    else if (activeTab === 'purchases') fetchPurchases()
     else fetchInventory()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab])
+
+  useEffect(() => {
+    if (activeTab === 'purchases') fetchPurchases()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [purchasesDays])
+
+  const fetchPurchases = async () => {
+    setLoadingPurchases(true)
+    try {
+      const res = await fetch(`/api/ops/inventory/purchases?days=${purchasesDays}`, { cache: 'no-store' })
+      const data = await res.json()
+      setPurchases(res.ok ? data : null)
+    } catch (error) {
+      console.error('Failed to fetch purchases:', error)
+    } finally {
+      setLoadingPurchases(false)
+    }
+  }
 
   const fetchInventory = async () => {
     setLoading(true)
@@ -102,25 +137,30 @@ export default function InventoryPage() {
     }
   }
 
-  const openAdjustModal = (p: { id: number; name: string; stock: number }, prefill?: number) => {
+  const openAdjustModal = (p: { id: number; name: string; stock: number; costPrice?: number; supplier?: string }, prefill?: number) => {
     setAdjustModal({ productId: p.id, productName: p.name, currentStock: p.stock, prefill })
     setAdjustType('in')
     setAdjustQty(prefill ? String(prefill) : '')
     setAdjustReason('')
+    setAdjustCost(p.costPrice ? String(p.costPrice) : '')
+    setAdjustSupplier(p.supplier || '')
   }
 
   const submitAdjustment = async () => {
     if (!adjustModal || !adjustQty || Number(adjustQty) <= 0) return
     setAdjusting(true)
     try {
+      const isPurchase = adjustType === 'in'
       const res = await fetch('/api/ops/inventory/movement', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           productId: adjustModal.productId,
-          type: adjustType === 'in' ? 'Purchase' : 'Adjustment',
-          quantity: adjustType === 'in' ? Number(adjustQty) : -Number(adjustQty),
-          reason: adjustReason || (adjustType === 'in' ? 'Réapprovisionnement manuel' : 'Ajustement manuel'),
+          type: isPurchase ? 'Purchase' : 'Adjustment',
+          quantity: isPurchase ? Number(adjustQty) : -Number(adjustQty),
+          reason: adjustReason || (isPurchase ? 'Réapprovisionnement fournisseur' : 'Ajustement manuel'),
+          ...(isPurchase && adjustCost ? { costPerUnit: Number(adjustCost) } : {}),
+          ...(isPurchase && adjustSupplier.trim() ? { supplier: adjustSupplier.trim(), notes: `Fournisseur: ${adjustSupplier.trim()}` } : {}),
         }),
       })
       if (!res.ok) throw new Error('Failed')
@@ -228,6 +268,7 @@ export default function InventoryPage() {
           <div style={{ display: 'flex', gap: 4 }}>
             <TabBtn active={activeTab === 'stock'} onClick={() => setActiveTab('stock')} icon={<Package style={{ width: 16, height: 16 }} />} label="Stock & demande" />
             <TabBtn active={activeTab === 'ship'} onClick={() => setActiveTab('ship')} icon={<Truck style={{ width: 16, height: 16 }} />} label="À expédier" count={summary?.toShipOrders} />
+            <TabBtn active={activeTab === 'purchases'} onClick={() => setActiveTab('purchases')} icon={<ShoppingCart style={{ width: 16, height: 16 }} />} label="Achats" />
             <TabBtn active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<History style={{ width: 16, height: 16 }} />} label="Historique" />
           </div>
         </div>
@@ -500,6 +541,98 @@ export default function InventoryPage() {
           </div>
         )}
 
+        {/* ─────────── ACHATS ─────────── */}
+        {activeTab === 'purchases' && (
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+              <p className="fs13 tx-mid">Ce que tu as <b>acheté aux fournisseurs</b> — dépenses par produit, enregistrées via "Réappro".</p>
+              <div className="filter-strip inline-flex gap-1 p-1 bg-bg-2 rounded-lg">
+                {([[7, '7j'], [30, '30j'], [90, '90j'], [3650, 'Tout']] as [number, string][]).map(([d, label]) => (
+                  <button key={d} className={`btn-modern btn-sm ${purchasesDays === d ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setPurchasesDays(d)}>{label}</button>
+                ))}
+              </div>
+            </div>
+
+            {loadingPurchases && !purchases ? (
+              <div className="card-modern"><div className="card-body"><div className="skeleton-line" /></div></div>
+            ) : (
+              <>
+                {/* KPIs */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                  <Kpi tone="violet" icon={<DollarSign />} label="Total dépensé" value={`${money(purchases?.summary.totalSpent || 0)}`} sub="MAD sur la période" />
+                  <Kpi tone="blue" icon={<Package />} label="Unités achetées" value={String(purchases?.summary.unitsPurchased || 0)} sub="entrées de stock" />
+                  <Kpi tone="green" icon={<ShoppingCart />} label="Achats" value={String(purchases?.summary.purchaseCount || 0)} sub="opérations" />
+                  <Kpi tone="amber" icon={<Truck />} label="Produits" value={String(purchases?.summary.productsRestocked || 0)} sub="réapprovisionnés" />
+                </div>
+
+                {(purchases?.byProduct.length ?? 0) === 0 ? (
+                  <div style={emptyBox}>
+                    Aucun achat enregistré sur cette période. Utilise <b>Réappro</b> (onglet Stock, bouton Ajuster → Entrée) en saisissant le <b>coût/unité</b> et le <b>fournisseur</b> : les dépenses s'accumuleront ici.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20 }}>
+                    {/* Spend by product */}
+                    <div style={{ flex: '1 1 560px', minWidth: 320 }}>
+                      <h3 style={sectionTitle}>Dépenses par produit</h3>
+                      <div className="card-modern"><div className="overflow-x-auto">
+                        <table className="table-modern">
+                          <thead><tr><th>Produit</th><th>Fournisseur</th><th className="r">Unités</th><th className="r">Coût moy.</th><th className="r">Dépensé</th><th className="r">Dernier</th><th className="r">Stock</th></tr></thead>
+                          <tbody>
+                            {purchases!.byProduct.map((r) => (
+                              <tr key={r.id}>
+                                <td><div className="t-strong" style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={r.name}>{r.name}</div><div className="fs11 tx-lo">{r.brand}</div></td>
+                                <td className="fs12 tx-mid">{r.supplier || '—'}</td>
+                                <td className="r num fw600">{r.units}</td>
+                                <td className="r num tx-lo">{r.avgCost != null ? money(r.avgCost) : '—'}</td>
+                                <td className="r num fw600">{r.spent > 0 ? `${money(r.spent)}` : '—'}</td>
+                                <td className="r fs12 tx-lo">{r.lastPurchase ? fmtDate(r.lastPurchase) : '—'}</td>
+                                <td className="r num">{r.stock}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div></div>
+                    </div>
+
+                    {/* By supplier + recent */}
+                    <div style={{ flex: '1 1 260px', minWidth: 240 }}>
+                      <h3 style={sectionTitle}>Par fournisseur</h3>
+                      <div className="card-modern" style={{ padding: 14, marginBottom: 18 }}>
+                        {purchases!.bySupplier.map((s, i) => {
+                          const max = Math.max(1, ...purchases!.bySupplier.map((x) => x.spent))
+                          return (
+                            <div key={i} style={{ marginBottom: 10 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5, marginBottom: 3 }}>
+                                <span className="tx-mid">{s.supplier}</span>
+                                <span className="num fw600" style={{ color: 'var(--tx-hi)' }}>{money(s.spent)} MAD</span>
+                              </div>
+                              <div style={{ height: 7, background: 'var(--line-soft)', borderRadius: 4, overflow: 'hidden' }}>
+                                <div style={{ width: `${(s.spent / max) * 100}%`, height: '100%', background: 'var(--rose-bright)', borderRadius: 4 }} />
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      <h3 style={sectionTitle}>Achats récents</h3>
+                      <div className="card-modern" style={{ padding: 12 }}>
+                        {purchases!.recent.length === 0 ? <div className="fs12 tx-lo">—</div> : purchases!.recent.slice(0, 12).map((r) => (
+                          <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, padding: '5px 0', borderBottom: '1px solid var(--line-soft)' }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div className="tx-hi" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }} title={r.name}>{r.name}</div>
+                              <div className="fs11 tx-faint">{fmtDate(r.createdAt)} · +{r.quantity}</div>
+                            </div>
+                            <div className="num fw600" style={{ color: 'var(--tx-hi)', whiteSpace: 'nowrap' }}>{r.totalCost != null ? `${money(r.totalCost)}` : '—'}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         {/* ─────────── HISTORIQUE ─────────── */}
         {activeTab === 'history' && (
           <div className="card-modern">
@@ -571,6 +704,19 @@ export default function InventoryPage() {
                   <input type="number" min="1" value={adjustQty} onChange={(e) => setAdjustQty(e.target.value)} placeholder="Ex: 10" className="input-modern" style={{ width: '100%' }} />
                   {adjustQty && (<div className="fs11 tx-lo" style={{ marginTop: 4 }}>Nouveau stock : <b className="num">{adjustType === 'in' ? adjustModal.currentStock + Number(adjustQty) : Math.max(0, adjustModal.currentStock - Number(adjustQty))}</b></div>)}
                 </div>
+                {adjustType === 'in' && (
+                  <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                    <div style={{ flex: 1 }}>
+                      <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Coût / unité (MAD)</label>
+                      <input type="number" min="0" step="0.01" value={adjustCost} onChange={(e) => setAdjustCost(e.target.value)} placeholder="Ex: 45" className="input-modern" style={{ width: '100%' }} />
+                      {adjustCost && adjustQty && <div className="fs11 tx-lo" style={{ marginTop: 4 }}>Total : <b className="num">{money(Number(adjustCost) * Number(adjustQty))} MAD</b></div>}
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Fournisseur</label>
+                      <input type="text" value={adjustSupplier} onChange={(e) => setAdjustSupplier(e.target.value)} placeholder="Ex: Salerm" className="input-modern" style={{ width: '100%' }} />
+                    </div>
+                  </div>
+                )}
                 <div style={{ marginBottom: 16 }}>
                   <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Raison (optionnel)</label>
                   <input type="text" value={adjustReason} onChange={(e) => setAdjustReason(e.target.value)} placeholder={adjustType === 'in' ? 'Réapprovisionnement fournisseur' : 'Produit endommagé'} className="input-modern" style={{ width: '100%' }} />

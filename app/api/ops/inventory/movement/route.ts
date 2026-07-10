@@ -23,6 +23,7 @@ export async function POST(request: NextRequest) {
       orderId,
       supplierId,
       costPerUnit,
+      supplier, // free-text supplier name (products use a text supplier field)
       notes,
     } = body
 
@@ -101,6 +102,18 @@ export async function POST(request: NextRequest) {
       'UPDATE "Product" SET stock = $1 WHERE id = $2',
       [stockAfter, productId]
     )
+
+    // A supplier purchase keeps the product's cost, supplier and restock date fresh.
+    if (type === 'Purchase') {
+      await pool.query(
+        `UPDATE "Product" SET
+           "costPrice" = COALESCE($1, "costPrice"),
+           supplier = COALESCE(NULLIF($2, ''), supplier),
+           "lastRestockDate" = NOW()
+         WHERE id = $3`,
+        [costPerUnit ? parseFloat(costPerUnit) : null, supplier ?? null, productId]
+      )
+    }
 
     // Update stock status
     const reorderPoint = await pool.query(
