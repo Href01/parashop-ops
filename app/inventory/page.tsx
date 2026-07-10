@@ -10,13 +10,16 @@ import {
 } from 'lucide-react'
 
 type OpenOrder = { orderId: number; qty: number; customer: string; city: string | null; shipped: boolean; status: string; created: string }
+type ChannelSale = { channel: string; units: number }
 type Product = {
   id: number; name: string; brand: string; image: string; stock: number
   reorderPoint: number; reorderQuantity: number; stockStatus: string
-  supplier: string; costPrice: number; weeklySales: number; daysOfStockLeft: number
+  supplier: string; costPrice: number; weeklySales: number
   activeAlerts: number
   committed: number; toShip: number; inTransit: number; available: number
-  openOrdersCount: number; openOrders: OpenOrder[]; suggestedReorder: number
+  toShipOrders: number; openOrdersCount: number; openOrders: OpenOrder[]
+  sold30d: number; daysLeft: number | null; salesByChannel: ChannelSale[]
+  suggestedReorder: number
 }
 type ToShipItem = { productId: number; name: string; brand: string; qty: number; stock: number }
 type ToShipOrder = { id: number; customer: string; city: string; phone: string | null; status: string; created: string; units: number; canFulfill: boolean; items: ToShipItem[] }
@@ -163,8 +166,8 @@ export default function InventoryPage() {
           ...movements.map((m) => [new Date(m.createdAt).toLocaleString('fr-FR'), m.productName, m.productBrand, m.type, m.quantity, m.stockBefore, m.stockAfter, m.reason || '', m.performedBy?.split('@')[0] || '']),
         ]
       : [
-          ['Produit', 'Marque', 'Stock', 'Commandé', 'Dispo', 'Seuil', 'Ventes/sem', 'Jours', 'Statut', 'Fournisseur', 'Coût', 'Valeur', 'À recommander'],
-          ...products.map((p) => [p.name, p.brand, p.stock, p.committed, p.available, p.reorderPoint, p.weeklySales || 0, p.daysOfStockLeft || '∞', health(p).label, p.supplier || '', p.costPrice || 0, p.costPrice ? p.stock * p.costPrice : 0, p.suggestedReorder || 0]),
+          ['Produit', 'Marque', 'Stock', 'À expédier', 'Dispo', 'Seuil', 'Vendu 30j', 'Jours', 'Statut', 'Fournisseur', 'Coût', 'Valeur', 'À recommander'],
+          ...products.map((p) => [p.name, p.brand, p.stock, p.toShip, p.available, p.reorderPoint, p.sold30d, p.daysLeft ?? '∞', health(p).label, p.supplier || '', p.costPrice || 0, p.costPrice ? p.stock * p.costPrice : 0, p.suggestedReorder || 0]),
         ]
     const csv = rows.map((r) => r.join(',')).join('\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
@@ -178,9 +181,9 @@ export default function InventoryPage() {
   // Prioritised action feed — the "smart" layer telling admins what to do now.
   const urgentActions = useMemo(() => {
     return products
-      .filter((p) => p.available < 0 || p.stock === 0 || p.stock <= p.reorderPoint || (p.daysOfStockLeft > 0 && p.daysOfStockLeft <= 7))
+      .filter((p) => p.available < 0 || p.stock === 0 || p.stock <= p.reorderPoint || (p.daysLeft != null && p.daysLeft <= 7))
       .map((p) => {
-        const critical = p.available < 0 || (p.stock === 0 && p.committed > 0)
+        const critical = p.available < 0 || (p.stock === 0 && p.sold30d > 0)
         return { p, critical }
       })
       .sort((a, b) => (Number(b.critical) - Number(a.critical)) || (a.p.available - b.p.available))
@@ -199,9 +202,9 @@ export default function InventoryPage() {
     })
     const cmp: Record<SortKey, (a: Product, b: Product) => number> = {
       available: (a, b) => a.available - b.available,
-      days: (a, b) => (a.daysOfStockLeft || 9999) - (b.daysOfStockLeft || 9999),
+      days: (a, b) => (a.daysLeft ?? 9999) - (b.daysLeft ?? 9999),
       value: (a, b) => b.stock * (b.costPrice || 0) - a.stock * (a.costPrice || 0),
-      sales: (a, b) => (b.weeklySales || 0) - (a.weeklySales || 0),
+      sales: (a, b) => (b.sold30d || 0) - (a.sold30d || 0),
       name: (a, b) => a.name.localeCompare(b.name),
     }
     return [...list].sort(cmp[sortKey])
@@ -264,10 +267,10 @@ export default function InventoryPage() {
                           <div style={{ fontWeight: 600, color: 'var(--tx-hi)', fontSize: 13.5 }}>{p.name} <span className="tx-lo fw400">· {p.brand}</span></div>
                           <div style={{ fontSize: 12, color: critical ? 'var(--rose-bright)' : 'var(--amber)', marginTop: 2 }}>
                             {p.available < 0
-                              ? <>🔴 {p.committed} commandés / {p.stock} en stock — <b>manque {Math.abs(p.available)}</b>{p.openOrdersCount > 0 && <> · bloque {p.openOrdersCount} cmd</>}</>
+                              ? <>🔴 {p.toShip} à expédier / {p.stock} en stock — <b>manque {Math.abs(p.available)}</b>{p.toShipOrders > 0 && <> · {p.toShipOrders} cmd bloquée{p.toShipOrders > 1 ? 's' : ''}</>}</>
                               : p.stock === 0
-                                ? <>Rupture totale{p.committed > 0 ? <> · {p.committed} commandés en attente</> : ''}</>
-                                : <>Stock bas : {p.stock} ≤ seuil {p.reorderPoint}{p.daysOfStockLeft > 0 ? <> · ~{p.daysOfStockLeft}j restants</> : ''}</>}
+                                ? <>Rupture · {p.sold30d} vendus/30j{p.toShip > 0 ? <> · {p.toShip} à expédier</> : ''}</>
+                                : <>Stock {p.stock} ≤ seuil {p.reorderPoint}{p.daysLeft != null ? <> · ~{p.daysLeft}j restants ({p.sold30d} vendus/30j)</> : p.sold30d > 0 ? <> · {p.sold30d} vendus/30j</> : ''}</>}
                           </div>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -301,7 +304,7 @@ export default function InventoryPage() {
                 <option value="available">Trier : Dispo ↑</option>
                 <option value="days">Jours restants ↑</option>
                 <option value="value">Valeur ↓</option>
-                <option value="sales">Ventes/sem ↓</option>
+                <option value="sales">Vendu 30j ↓</option>
                 <option value="name">Nom A→Z</option>
               </select>
             </div>
@@ -315,9 +318,9 @@ export default function InventoryPage() {
                       <th>Produit</th>
                       <th>État</th>
                       <th className="r">Stock</th>
-                      <th className="r">Commandé</th>
+                      <th className="r">À exp.</th>
                       <th className="r">Dispo</th>
-                      <th className="r">Seuil</th>
+                      <th className="r">Vendu 30j</th>
                       <th className="r">Jours</th>
                       <th>Fournisseur</th>
                       <th className="r">Valeur</th>
@@ -341,21 +344,28 @@ export default function InventoryPage() {
                           <Fragment key={p.id}>
                             <tr onClick={() => setExpanded(open ? null : p.id)} style={{ cursor: 'pointer' }}>
                               <td>
-                                <div className="row gap8">
-                                  {p.image && <img src={p.image} alt={p.name} className="product-thumb" style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 4 }} />}
-                                  <div><div className="t-strong">{p.name}</div><div className="fs11 tx-lo">{p.brand}</div></div>
+                                <div className="row gap8" style={{ alignItems: 'center' }}>
+                                  {p.image && <img src={p.image} alt={p.name} className="product-thumb" style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 5, flexShrink: 0 }} />}
+                                  <div style={{ minWidth: 0 }}>
+                                    <div className="t-strong" title={p.name} style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', maxWidth: 230, lineHeight: 1.3 }}>{p.name}</div>
+                                    <div className="fs11 tx-lo">{p.brand}</div>
+                                  </div>
                                 </div>
                               </td>
                               <td><span className={h.cls}>{h.label}</span></td>
                               <td className="r"><span className={`num fw600 ${p.stock === 0 ? 'neg' : p.stock <= p.reorderPoint ? 'tx-lo' : ''}`}>{p.stock}</span></td>
                               <td className="r">
-                                {p.committed > 0
-                                  ? <span className="num fw600" style={{ color: 'var(--tx-hi)' }}>{p.committed}{p.toShip > 0 && <span className="fs11 tx-lo"> ({p.toShip} à exp.)</span>}</span>
+                                {p.toShip > 0
+                                  ? <span className="num fw600" style={{ color: p.available < 0 ? 'var(--rose-bright)' : 'var(--tx-hi)' }}>{p.toShip}</span>
                                   : <span className="tx-lo">—</span>}
                               </td>
                               <td className="r"><span className="num fw600" style={{ color: p.available < 0 ? 'var(--rose-bright)' : 'var(--tx-hi)' }}>{p.available}</span></td>
-                              <td className="r tx-lo">{p.reorderPoint}</td>
-                              <td className="r">{p.daysOfStockLeft ? <span className={`num ${p.daysOfStockLeft < 7 ? 'neg' : p.daysOfStockLeft < 14 ? 'tx-lo' : ''}`}>{p.daysOfStockLeft}j</span> : <span className="tx-lo">—</span>}</td>
+                              <td className="r">
+                                {p.sold30d > 0
+                                  ? <span className="num fw600" style={{ color: 'var(--tx-hi)' }}>{p.sold30d}</span>
+                                  : <span className="tx-lo">—</span>}
+                              </td>
+                              <td className="r">{p.daysLeft != null ? <span className={`num ${p.daysLeft < 7 ? 'neg' : p.daysLeft < 14 ? 'tx-lo' : ''}`}>{p.daysLeft}j</span> : <span className="tx-lo">—</span>}</td>
                               <td>
                                 <button onClick={(e) => { e.stopPropagation(); openSupplierModal(p) }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: p.supplier ? 'var(--tx-lo)' : 'var(--rose-bright)', fontSize: 12, textDecoration: p.supplier ? 'none' : 'underline' }} title="Modifier le fournisseur">
                                   {p.supplier || '+ Ajouter'}
@@ -364,37 +374,62 @@ export default function InventoryPage() {
                               <td className="r num fw600">{p.costPrice ? money(p.stock * p.costPrice) : '—'}</td>
                               <td className="r" style={{ whiteSpace: 'nowrap' }}>
                                 <button className="btn-modern btn-sm btn-subtle" onClick={(e) => { e.stopPropagation(); openAdjustModal(p, p.suggestedReorder || undefined) }}>Ajuster</button>
-                                {p.openOrdersCount > 0 && <ChevronDown style={{ width: 15, height: 15, marginLeft: 6, verticalAlign: 'middle', color: 'var(--tx-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />}
+                                {(p.openOrdersCount > 0 || p.sold30d > 0) && <ChevronDown style={{ width: 15, height: 15, marginLeft: 6, verticalAlign: 'middle', color: 'var(--tx-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />}
                               </td>
                             </tr>
-                            {open && (
+                            {open && (() => {
+                              const unshipped = p.openOrders.filter((o) => !o.shipped)
+                              const shipped = p.openOrders.filter((o) => o.shipped)
+                              const maxCh = Math.max(1, ...p.salesByChannel.map((c) => c.units))
+                              const weekly = p.sold30d > 0 ? Math.round((p.sold30d / 30) * 7 * 10) / 10 : 0
+                              return (
                               <tr>
-                                <td colSpan={10} style={{ background: 'var(--bg-2)', padding: '12px 16px' }}>
-                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24 }}>
-                                    <div style={{ flex: '1 1 320px', minWidth: 260 }}>
-                                      <div className="fs11 tx-faint" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Commandes qui demandent ce produit</div>
-                                      {p.openOrders.length === 0 ? (
-                                        <div className="fs12 tx-lo">Aucune commande ouverte.</div>
+                                <td colSpan={10} style={{ background: 'var(--bg-2)', padding: '14px 16px' }}>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 28 }}>
+                                    {/* Open orders — split shipped vs to-ship */}
+                                    <div style={{ flex: '1 1 300px', minWidth: 250 }}>
+                                      <div className="fs11 tx-faint" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Commandes ouvertes</div>
+                                      {unshipped.length > 0 && (
+                                        <div style={{ marginBottom: 8 }}>
+                                          <div className="fs11" style={{ color: 'var(--amber)', fontWeight: 600, marginBottom: 4 }}>À expédier ({unshipped.reduce((s, o) => s + o.qty, 0)}) — prélève du stock</div>
+                                          {unshipped.map((o, i) => <OrderLine key={i} o={o} />)}
+                                        </div>
+                                      )}
+                                      {shipped.length > 0 && (
+                                        <div>
+                                          <div className="fs11" style={{ color: 'var(--green)', fontWeight: 600, marginBottom: 4 }}>Déjà expédié ({shipped.reduce((s, o) => s + o.qty, 0)}) — parti, ne compte plus</div>
+                                          {shipped.map((o, i) => <OrderLine key={i} o={o} />)}
+                                        </div>
+                                      )}
+                                      {p.openOrders.length === 0 && <div className="fs12 tx-lo">Aucune commande ouverte.</div>}
+                                    </div>
+
+                                    {/* Sales by channel — proves multi-channel */}
+                                    <div style={{ flex: '1 1 200px', minWidth: 180 }}>
+                                      <div className="fs11 tx-faint" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Vendu 30j · {p.sold30d} unités</div>
+                                      {p.salesByChannel.length === 0 ? (
+                                        <div className="fs12 tx-lo">Aucune vente sur 30j.</div>
                                       ) : (
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                                          {p.openOrders.map((o, i) => (
-                                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, flexWrap: 'wrap' }}>
-                                              <Link href={`/orders/${o.orderId}`} style={{ fontWeight: 600, color: 'var(--tx-hi)' }}>#{o.orderId}</Link>
-                                              <span className="tx-mid">{o.customer}</span>
-                                              <span className="num" style={{ color: 'var(--tx-hi)' }}>×{o.qty}</span>
-                                              {o.shipped
-                                                ? <span className="badge green" style={{ fontSize: 10 }}>Expédié</span>
-                                                : <span className="badge amber" style={{ fontSize: 10 }}>À expédier</span>}
-                                              <span className="fs11 tx-faint">{fmtDate(o.created)}</span>
+                                          {p.salesByChannel.map((c, i) => (
+                                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+                                              <span style={{ width: 66, color: 'var(--tx-mid)' }}>{c.channel}</span>
+                                              <div style={{ flex: 1, height: 8, background: 'var(--line-soft)', borderRadius: 4, overflow: 'hidden' }}>
+                                                <div style={{ width: `${(c.units / maxCh) * 100}%`, height: '100%', background: 'var(--rose-bright)', borderRadius: 4 }} />
+                                              </div>
+                                              <span className="num fw600" style={{ width: 20, textAlign: 'right', color: 'var(--tx-hi)' }}>{c.units}</span>
                                             </div>
                                           ))}
                                         </div>
                                       )}
                                     </div>
-                                    <div style={{ flex: '0 0 auto', minWidth: 200 }}>
+
+                                    {/* Reorder panel */}
+                                    <div style={{ flex: '0 0 auto', minWidth: 190 }}>
                                       <div className="fs11 tx-faint" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Réapprovisionnement</div>
-                                      <div className="fs12 tx-mid" style={{ lineHeight: 1.7 }}>
-                                        <div>Ventes : <b>{p.weeklySales || 0}/sem</b></div>
+                                      <div className="fs12 tx-mid" style={{ lineHeight: 1.8 }}>
+                                        <div>Dispo : <b className="num">{p.available}</b> · Vélocité : <b>{weekly}/sem</b></div>
+                                        <div>Autonomie : <b>{p.daysLeft != null ? `${p.daysLeft} j` : '—'}</b> · Seuil : {p.reorderPoint}</div>
                                         <div>Fournisseur : <b>{p.supplier || '—'}</b></div>
                                         {p.suggestedReorder > 0
                                           ? <div style={{ color: 'var(--rose-bright)', marginTop: 4 }}>🔴 Recommander <b>{p.suggestedReorder}</b> unités</div>
@@ -405,7 +440,8 @@ export default function InventoryPage() {
                                   </div>
                                 </td>
                               </tr>
-                            )}
+                              )
+                            })()}
                           </Fragment>
                         )
                       })
@@ -415,7 +451,7 @@ export default function InventoryPage() {
               </div>
             </div>
             <p className="fs11 tx-faint" style={{ marginTop: 8 }}>
-              <b>Dispo = stock − commandé</b> (commandes non livrées). Négatif = tu as vendu plus que ton stock → recommander. Le stock n'est pas décrémenté automatiquement.
+              <b>Dispo = stock − à expédier</b> (commandes pas encore parties). Les colis <b>déjà expédiés</b> sont sortis du stock, ils ne comptent plus. <b>Vendu 30j</b> = ventes réelles tous canaux (Instagram, WhatsApp, Sendit, site). Le stock n'est pas décrémenté automatiquement — ajuste-le après réappro/expédition.
             </p>
           </>
         )}
@@ -572,6 +608,17 @@ export default function InventoryPage() {
         )}
       </div>
     </BosShell>
+  )
+}
+
+function OrderLine({ o }: { o: OpenOrder }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, flexWrap: 'wrap', padding: '2px 0' }}>
+      <Link href={`/orders/${o.orderId}`} style={{ fontWeight: 600, color: 'var(--tx-hi)' }}>#{o.orderId}</Link>
+      <span className="tx-mid" style={{ maxWidth: 130, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.customer}</span>
+      <span className="num" style={{ color: 'var(--tx-hi)' }}>×{o.qty}</span>
+      <span className="fs11 tx-faint">{new Date(o.created).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}</span>
+    </div>
   )
 }
 

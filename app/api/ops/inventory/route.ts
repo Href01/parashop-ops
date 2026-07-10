@@ -65,22 +65,37 @@ export async function GET(request: NextRequest) {
                  COALESCE(SUM(oi.quantity), 0)::int AS committed,
                  COALESCE(SUM(oi.quantity) FILTER (WHERE o."senditTrackingId" IS NULL), 0)::int AS to_ship,
                  COALESCE(SUM(oi.quantity) FILTER (WHERE o."senditTrackingId" IS NOT NULL), 0)::int AS in_transit,
+                 COUNT(DISTINCT o.id) FILTER (WHERE o."senditTrackingId" IS NULL)::int AS to_ship_orders,
                  COUNT(DISTINCT o.id)::int AS open_orders_count
           FROM "OrderItem" oi
           JOIN "Order" o ON o.id = oi."orderId"
           WHERE o.status IN ('PENDING', 'CONFIRMED')
+          GROUP BY oi."productId"
+        ),
+        -- Real velocity across ALL channels (Instagram, WhatsApp, Sendit, Website…),
+        -- 30-day window so low-volume products don't read as 0 like the old 7-day did.
+        sales AS (
+          SELECT oi."productId" AS pid, COALESCE(SUM(oi.quantity), 0)::int AS sold30
+          FROM "OrderItem" oi
+          JOIN "Order" o ON o.id = oi."orderId"
+          WHERE o.status IN ('CONFIRMED', 'DELIVERED')
+            AND o."createdAt" >= NOW() - INTERVAL '30 days'
           GROUP BY oi."productId"
         )
         SELECT
           p.id, p.name, p.brand, p.price, p.image, p.stock,
           p."reorderPoint", p."reorderQuantity", p."stockStatus",
           p.supplier, p."supplierSKU", p."lastRestockDate", p."costPrice",
-          p."weeklySales", p."monthlyRevenue", p."profitMargin", p."daysOfStockLeft",
+          p."weeklySales", p."monthlyRevenue", p."profitMargin",
           COALESCE(d.committed, 0) AS committed,
           COALESCE(d.to_ship, 0) AS "toShip",
           COALESCE(d.in_transit, 0) AS "inTransit",
+          COALESCE(d.to_ship_orders, 0) AS "toShipOrders",
           COALESCE(d.open_orders_count, 0) AS "openOrdersCount",
-          (p.stock - COALESCE(d.committed, 0))::int AS available,
+          COALESCE(s.sold30, 0) AS sold30d,
+          -- Available = physical stock minus what still has to be shipped. Already
+          -- shipped orders have LEFT the warehouse, so they must NOT reduce it again.
+          (p.stock - COALESCE(d.to_ship, 0))::int AS available,
           COALESCE((
             SELECT json_agg(json_build_object(
               'orderId', o.id,
@@ -95,14 +110,27 @@ export async function GET(request: NextRequest) {
             JOIN "Order" o ON o.id = oi."orderId"
             WHERE oi."productId" = p.id AND o.status IN ('PENDING', 'CONFIRMED')
           ), '[]'::json) AS "openOrders",
+          COALESCE((
+            SELECT json_agg(json_build_object('channel', ch, 'units', u) ORDER BY u DESC)
+            FROM (
+              SELECT COALESCE(NULLIF(TRIM(o."sourceChannel"), ''), 'Autre') AS ch, SUM(oi.quantity)::int AS u
+              FROM "OrderItem" oi
+              JOIN "Order" o ON o.id = oi."orderId"
+              WHERE oi."productId" = p.id
+                AND o.status IN ('CONFIRMED', 'DELIVERED')
+                AND o."createdAt" >= NOW() - INTERVAL '30 days'
+              GROUP BY 1
+            ) t
+          ), '[]'::json) AS "salesByChannel",
           (
             SELECT COUNT(*) FROM "StockAlert" sa
             WHERE sa."productId" = p.id AND sa.acknowledged = false
           ) AS "activeAlerts"
         FROM "Product" p
         LEFT JOIN demand d ON d.pid = p.id
+        LEFT JOIN sales s ON s.pid = p.id
         ${whereClause}
-        ORDER BY (p.stock - COALESCE(d.committed, 0)) ASC, COALESCE(d.committed, 0) DESC, p.stock ASC
+        ORDER BY (p.stock - COALESCE(d.to_ship, 0)) ASC, COALESCE(s.sold30, 0) DESC, p.stock ASC
         LIMIT 300
         `,
         params
@@ -133,14 +161,24 @@ export async function GET(request: NextRequest) {
     const products = productsRes.rows.map((r) => {
       const stock = Number(r.stock) || 0
       const committed = Number(r.committed) || 0
-      const available = Number(r.available)
+      const toShip = Number(r.toShip) || 0
+      const available = Number(r.available) // = stock - toShip (shipped already left)
       const reorderPoint = Number(r.reorderPoint) || 0
       const reorderQuantity = Number(r.reorderQuantity) || 0
-      // Suggested reorder: enough to cover the shortfall (open orders + get back
-      // above the reorder point), at least the configured reorder quantity.
-      const deficit = Math.max(0, committed - stock)
-      const toThreshold = Math.max(0, reorderPoint - available)
-      const suggestedReorder = deficit + toThreshold > 0 ? Math.max(reorderQuantity, deficit + toThreshold) : 0
+      const sold30d = Number(r.sold30d) || 0
+      // Live velocity from real 30-day multi-channel sales.
+      const dailyVelocity = sold30d / 30
+      const daysLeft = dailyVelocity > 0 && stock > 0 ? Math.round(available / dailyVelocity) : null
+      // Suggested reorder, velocity-driven so it stays consistent with "Vendu 30j":
+      //  - if we can't even ship what's owed → cover that gap first
+      //  - else top up to ~30 days of sales
+      //  - if no velocity but under the reorder point → fall back to the threshold
+      const owedGap = Math.max(0, toShip - stock)
+      const target30 = Math.ceil(dailyVelocity * 30)
+      let suggestedReorder = owedGap
+      if (sold30d > 0) suggestedReorder = Math.max(owedGap, target30 - available)
+      else if (stock <= reorderPoint) suggestedReorder = Math.max(owedGap, reorderQuantity, reorderPoint - stock)
+      suggestedReorder = Math.max(0, suggestedReorder)
       return {
         ...r,
         stock,
@@ -148,14 +186,17 @@ export async function GET(request: NextRequest) {
         available,
         reorderPoint,
         reorderQuantity,
-        toShip: Number(r.toShip) || 0,
+        toShip,
         inTransit: Number(r.inTransit) || 0,
+        toShipOrders: Number(r.toShipOrders) || 0,
         openOrdersCount: Number(r.openOrdersCount) || 0,
+        sold30d,
+        daysLeft,
         costPrice: r.costPrice != null ? Number(r.costPrice) : 0,
         weeklySales: Number(r.weeklySales) || 0,
-        daysOfStockLeft: r.daysOfStockLeft != null ? Number(r.daysOfStockLeft) : 0,
         activeAlerts: Number(r.activeAlerts) || 0,
         openOrders: r.openOrders || [],
+        salesByChannel: r.salesByChannel || [],
         suggestedReorder,
       }
     })
