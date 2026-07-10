@@ -451,7 +451,8 @@ export default function InventoryPage() {
               </div>
             </div>
             <p className="fs11 tx-faint" style={{ marginTop: 8 }}>
-              <b>Dispo = stock − à expédier</b> (commandes pas encore parties). Les colis <b>déjà expédiés</b> sont sortis du stock, ils ne comptent plus. <b>Vendu 30j</b> = ventes réelles tous canaux (Instagram, WhatsApp, Sendit, site). Le stock n'est pas décrémenté automatiquement — ajuste-le après réappro/expédition.
+              <b>Dispo = stock − à expédier</b> (commandes pas encore parties). <b>Vendu 30j</b> = ventes réelles tous canaux (Instagram, WhatsApp, Sendit, site).
+              {' '}Le stock se <b style={{ color: 'var(--green)' }}>décrémente automatiquement à l'expédition</b> (et revient si la commande est annulée) — n'ajuste plus le stock à la main que pour les <b>réappro fournisseur</b> et les <b>corrections physiques</b> (inventaire, casse). Chaque mouvement auto est tracé dans l'onglet Historique.
             </p>
           </>
         )}
