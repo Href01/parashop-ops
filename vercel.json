@@ -18,7 +18,7 @@
     },
     {
       "path": "/api/cron/sync-sendit",
-      "schedule": "0 */3 * * *"
+      "schedule": "0 8 * * *"
     }
   ]
 }
