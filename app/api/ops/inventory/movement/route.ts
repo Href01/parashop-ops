@@ -104,14 +104,32 @@ export async function POST(request: NextRequest) {
     )
 
     // A supplier purchase keeps the product's cost, supplier and restock date fresh.
+    // Cost uses the WEIGHTED AVERAGE (CMP): blend the existing stock's cost with
+    // the newly-purchased units, so margin reflects the real mixed cost of what's
+    // on hand and doesn't jump when the purchase price changes. The InventoryMovement
+    // above still stores the ACTUAL purchase cost (costPerUnit) for the spend report.
     if (type === 'Purchase') {
+      let newCost: number | null = null
+      if (costPerUnit) {
+        const buyCost = parseFloat(costPerUnit)
+        const buyQty = Math.abs(parseInt(quantity))
+        const oldRes = await pool.query('SELECT "costPrice"::float AS c FROM "Product" WHERE id = $1', [productId])
+        const oldCost = oldRes.rows[0]?.c
+        // No prior cost or no prior stock → the purchase cost becomes the cost.
+        if (oldCost == null || stockBefore <= 0) {
+          newCost = buyCost
+        } else {
+          newCost = (stockBefore * oldCost + buyQty * buyCost) / (stockBefore + buyQty)
+        }
+        newCost = Math.round(newCost * 100) / 100
+      }
       await pool.query(
         `UPDATE "Product" SET
            "costPrice" = COALESCE($1, "costPrice"),
            supplier = COALESCE(NULLIF($2, ''), supplier),
            "lastRestockDate" = NOW()
          WHERE id = $3`,
-        [costPerUnit ? parseFloat(costPerUnit) : null, supplier ?? null, productId]
+        [newCost, supplier ?? null, productId]
       )
     }
 

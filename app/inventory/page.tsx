@@ -73,7 +73,7 @@ export default function InventoryPage() {
   const [search, setSearch] = useState('')
   const [expanded, setExpanded] = useState<number | null>(null)
 
-  const [adjustModal, setAdjustModal] = useState<{ productId: number; productName: string; currentStock: number; prefill?: number } | null>(null)
+  const [adjustModal, setAdjustModal] = useState<{ productId: number; productName: string; currentStock: number; prefill?: number; oldCost?: number } | null>(null)
   const [adjustType, setAdjustType] = useState<'in' | 'out'>('in')
   const [adjustQty, setAdjustQty] = useState('')
   const [adjustReason, setAdjustReason] = useState('')
@@ -138,7 +138,7 @@ export default function InventoryPage() {
   }
 
   const openAdjustModal = (p: { id: number; name: string; stock: number; costPrice?: number; supplier?: string }, prefill?: number) => {
-    setAdjustModal({ productId: p.id, productName: p.name, currentStock: p.stock, prefill })
+    setAdjustModal({ productId: p.id, productName: p.name, currentStock: p.stock, prefill, oldCost: p.costPrice })
     setAdjustType('in')
     setAdjustQty(prefill ? String(prefill) : '')
     setAdjustReason('')
@@ -710,7 +710,16 @@ export default function InventoryPage() {
                     <div style={{ flex: 1 }}>
                       <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Coût / unité (MAD)</label>
                       <input type="number" min="0" step="0.01" value={adjustCost} onChange={(e) => setAdjustCost(e.target.value)} placeholder="Ex: 45" className="input-modern" style={{ width: '100%' }} />
-                      {adjustCost && adjustQty && <div className="fs11 tx-lo" style={{ marginTop: 4 }}>Total : <b className="num">{money(Number(adjustCost) * Number(adjustQty))} MAD</b></div>}
+                      {adjustCost && adjustQty && (() => {
+                        const buy = Number(adjustCost), qty = Number(adjustQty), s = adjustModal.currentStock, oc = adjustModal.oldCost
+                        const wac = (oc && s > 0) ? Math.round(((s * oc + qty * buy) / (s + qty)) * 100) / 100 : buy
+                        return (
+                          <div className="fs11 tx-lo" style={{ marginTop: 4 }}>
+                            Total : <b className="num">{money(buy * qty)} MAD</b>
+                            {oc && s > 0 && Math.abs(wac - oc) > 0.01 && <> · Coût moyen après : <b className="num" style={{ color: 'var(--tx-hi)' }}>{wac}</b> (avant {oc})</>}
+                          </div>
+                        )
+                      })()}
                     </div>
                     <div style={{ flex: 1 }}>
                       <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Fournisseur</label>
