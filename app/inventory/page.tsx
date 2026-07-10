@@ -364,7 +364,7 @@ export default function InventoryPage() {
                       <th className="r">Vendu 30j</th>
                       <th className="r">Jours</th>
                       <th>Fournisseur</th>
-                      <th className="r">Valeur</th>
+                      <th className="r" title="Valeur du stock au coût d'achat = stock × coût unitaire">Valeur (coût)</th>
                       <th />
                     </tr>
                   </thead>
@@ -493,6 +493,7 @@ export default function InventoryPage() {
             </div>
             <p className="fs11 tx-faint" style={{ marginTop: 8 }}>
               <b>Dispo = stock − à expédier</b> (commandes pas encore parties). <b>Vendu 30j</b> = ventes réelles tous canaux (Instagram, WhatsApp, Sendit, site).
+              {' '}<b>Valeur (coût)</b> = stock × coût d'achat unitaire (cash immobilisé, pas le prix de vente).
               {' '}Le stock se <b style={{ color: 'var(--green)' }}>décrémente automatiquement à l'expédition</b> (et revient si la commande est annulée) — n'ajuste plus le stock à la main que pour les <b>réappro fournisseur</b> et les <b>corrections physiques</b> (inventaire, casse). Chaque mouvement auto est tracé dans l'onglet Historique.
             </p>
           </>
