@@ -1,63 +1,62 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import BosShell from '@/components/BosShell'
-import { Search, AlertTriangle, Package, TrendingDown, CheckCircle, XCircle, Download, Plus, Minus, DollarSign, History, ArrowUpCircle, ArrowDownCircle } from 'lucide-react'
+import {
+  Search, AlertTriangle, Package, PackageCheck, TrendingDown, CheckCircle, XCircle,
+  Download, Plus, Minus, DollarSign, History, ArrowUpCircle, ArrowDownCircle,
+  Truck, ShoppingCart, ChevronRight, ChevronDown,
+} from 'lucide-react'
 
+type OpenOrder = { orderId: number; qty: number; customer: string; city: string | null; shipped: boolean; status: string; created: string }
 type Product = {
-  id: number
-  name: string
-  brand: string
-  image: string
-  stock: number
-  reorderPoint: number
-  reorderQuantity: number
-  stockStatus: string
-  supplier: string
-  costPrice: number
-  weeklySales: number
-  daysOfStockLeft: number
+  id: number; name: string; brand: string; image: string; stock: number
+  reorderPoint: number; reorderQuantity: number; stockStatus: string
+  supplier: string; costPrice: number; weeklySales: number; daysOfStockLeft: number
   activeAlerts: number
+  committed: number; toShip: number; inTransit: number; available: number
+  openOrdersCount: number; openOrders: OpenOrder[]; suggestedReorder: number
 }
-
-type Alert = {
-  id: number
-  productId: number
-  productName: string
-  productBrand: string
-  type: string
-  currentStock: number
-  threshold: number
-  message: string
-  severity: string
-  acknowledged: boolean
-  createdAt: string
+type ToShipItem = { productId: number; name: string; brand: string; qty: number; stock: number }
+type ToShipOrder = { id: number; customer: string; city: string; phone: string | null; status: string; created: string; units: number; canFulfill: boolean; items: ToShipItem[] }
+type Summary = {
+  totalProducts: number; stockValue: number; shortages: number; lowStock: number; outOfStock: number
+  toShipOrders: number; toShipUnits: number; reorderProducts: number; reorderValue: number
 }
-
 type Movement = {
-  id: number
-  productId: number
-  productName: string
-  productBrand: string
-  type: string
-  quantity: number
-  stockBefore: number
-  stockAfter: number
-  reason: string | null
-  performedBy: string
-  createdAt: string
+  id: number; productId: number; productName: string; productBrand: string; type: string
+  quantity: number; stockBefore: number; stockAfter: number; reason: string | null; performedBy: string; createdAt: string
+}
+
+type Filter = 'all' | 'shortage' | 'low' | 'reorder' | 'demand'
+type SortKey = 'available' | 'days' | 'value' | 'sales' | 'name'
+
+const money = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v)
+const fmtDate = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+const statusFR: Record<string, string> = { 'In stock': 'En stock', 'Low stock': 'Stock bas', 'Out of stock': 'Rupture', Discontinued: 'Arrêté' }
+
+/** Demand-aware health: a shortage (committed > stock) outranks the forecast status. */
+function health(p: Product): { label: string; cls: string; tone: 'red' | 'amber' | 'green' } {
+  if (p.available < 0 || p.stock === 0) return { label: 'Rupture', cls: 'badge red', tone: 'red' }
+  if (p.stock <= p.reorderPoint || p.available <= p.reorderPoint || p.stockStatus === 'Low stock') return { label: 'Stock bas', cls: 'badge amber', tone: 'amber' }
+  return { label: 'OK', cls: 'badge green', tone: 'green' }
 }
 
 export default function InventoryPage() {
-  const [activeTab, setActiveTab] = useState<'stock' | 'history'>('stock')
+  const [activeTab, setActiveTab] = useState<'stock' | 'ship' | 'history'>('stock')
   const [products, setProducts] = useState<Product[]>([])
-  const [alerts, setAlerts] = useState<Alert[]>([])
+  const [toShip, setToShip] = useState<ToShipOrder[]>([])
+  const [summary, setSummary] = useState<Summary | null>(null)
   const [movements, setMovements] = useState<Movement[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingMovements, setLoadingMovements] = useState(false)
-  const [statusFilter, setStatusFilter] = useState('')
-  const [showAlerts, setShowAlerts] = useState(true)
-  const [adjustModal, setAdjustModal] = useState<{ productId: number; productName: string; currentStock: number } | null>(null)
+  const [filter, setFilter] = useState<Filter>('all')
+  const [sortKey, setSortKey] = useState<SortKey>('available')
+  const [search, setSearch] = useState('')
+  const [expanded, setExpanded] = useState<number | null>(null)
+
+  const [adjustModal, setAdjustModal] = useState<{ productId: number; productName: string; currentStock: number; prefill?: number } | null>(null)
   const [adjustType, setAdjustType] = useState<'in' | 'out'>('in')
   const [adjustQty, setAdjustQty] = useState('')
   const [adjustReason, setAdjustReason] = useState('')
@@ -67,38 +66,23 @@ export default function InventoryPage() {
   const [savingSupplier, setSavingSupplier] = useState(false)
 
   useEffect(() => {
-    if (activeTab === 'stock') {
-      fetchInventory()
-      fetchAlerts()
-    } else {
-      fetchMovements()
-    }
-  }, [statusFilter, activeTab])
+    if (activeTab === 'history') fetchMovements()
+    else fetchInventory()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab])
 
   const fetchInventory = async () => {
     setLoading(true)
     try {
-      const params = new URLSearchParams()
-      if (statusFilter) params.append('status', statusFilter)
-      params.append('sort', 'stock')
-
-      const res = await fetch(`/api/ops/inventory?${params}`)
+      const res = await fetch('/api/ops/inventory', { cache: 'no-store' })
       const data = await res.json()
       setProducts(data.products || [])
+      setToShip(data.toShip || [])
+      setSummary(data.summary || null)
     } catch (error) {
       console.error('Failed to fetch inventory:', error)
     } finally {
       setLoading(false)
-    }
-  }
-
-  const fetchAlerts = async () => {
-    try {
-      const res = await fetch('/api/ops/inventory/alerts?acknowledged=false')
-      const data = await res.json()
-      setAlerts(data.alerts || [])
-    } catch (error) {
-      console.error('Failed to fetch alerts:', error)
     }
   }
 
@@ -115,80 +99,15 @@ export default function InventoryPage() {
     }
   }
 
-  const acknowledgeAlert = async (alertId: number) => {
-    try {
-      await fetch(`/api/ops/inventory/alerts/${alertId}`, { method: 'POST' })
-      setAlerts(alerts.filter(a => a.id !== alertId))
-    } catch (error) {
-      console.error('Failed to acknowledge alert:', error)
-    }
-  }
-
-  const handleExport = () => {
-    if (activeTab === 'stock') {
-      const csv = [
-        ['Product', 'Brand', 'Stock', 'Reorder Point', 'Weekly Sales', 'Days Left', 'Status', 'Cost Price', 'Stock Value'],
-        ...products.map(p => [
-          p.name,
-          p.brand,
-          p.stock,
-          p.reorderPoint,
-          p.weeklySales || 0,
-          p.daysOfStockLeft || '∞',
-          p.stockStatus,
-          p.costPrice || 0,
-          p.costPrice ? p.stock * p.costPrice : 0
-        ])
-      ].map(row => row.join(',')).join('\n')
-
-      const blob = new Blob([csv], { type: 'text/csv' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `inventory-${new Date().toISOString().split('T')[0]}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
-    } else {
-      const csv = [
-        ['Date', 'Product', 'Brand', 'Type', 'Quantity', 'Stock Before', 'Stock After', 'Reason', 'Performed By'],
-        ...movements.map(m => [
-          new Date(m.createdAt).toLocaleString('fr-FR'),
-          m.productName,
-          m.productBrand,
-          m.type,
-          m.quantity,
-          m.stockBefore,
-          m.stockAfter,
-          m.reason || '',
-          m.performedBy?.split('@')[0] || ''
-        ])
-      ].map(row => row.join(',')).join('\n')
-
-      const blob = new Blob([csv], { type: 'text/csv' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `movements-${new Date().toISOString().split('T')[0]}.csv`
-      a.click()
-      URL.revokeObjectURL(url)
-    }
-  }
-
-  const handleAddStock = () => {
-    // Generic add stock - could show a product picker, for now just show message
-    alert('Sélectionne un produit dans la liste ci-dessous pour ajuster son stock.')
-  }
-
-  const openAdjustModal = (product: Product) => {
-    setAdjustModal({ productId: product.id, productName: product.name, currentStock: product.stock })
+  const openAdjustModal = (p: { id: number; name: string; stock: number }, prefill?: number) => {
+    setAdjustModal({ productId: p.id, productName: p.name, currentStock: p.stock, prefill })
     setAdjustType('in')
-    setAdjustQty('')
+    setAdjustQty(prefill ? String(prefill) : '')
     setAdjustReason('')
   }
 
   const submitAdjustment = async () => {
     if (!adjustModal || !adjustQty || Number(adjustQty) <= 0) return
-
     setAdjusting(true)
     try {
       const res = await fetch('/api/ops/inventory/movement', {
@@ -203,24 +122,22 @@ export default function InventoryPage() {
       })
       if (!res.ok) throw new Error('Failed')
       setAdjustModal(null)
-      fetchInventory() // Refresh stock
-      if (activeTab === 'history') fetchMovements() // Refresh history if active
+      fetchInventory()
     } catch (error) {
       console.error('Failed to adjust stock:', error)
-      alert('Erreur lors de l\'ajustement')
+      alert("Erreur lors de l'ajustement")
     } finally {
       setAdjusting(false)
     }
   }
 
-  const openSupplierModal = (product: Product) => {
-    setSupplierModal({ productId: product.id, productName: product.name, currentSupplier: product.supplier })
-    setSupplierInput(product.supplier || '')
+  const openSupplierModal = (p: Product) => {
+    setSupplierModal({ productId: p.id, productName: p.name, currentSupplier: p.supplier })
+    setSupplierInput(p.supplier || '')
   }
 
   const submitSupplier = async () => {
     if (!supplierModal || savingSupplier) return
-
     setSavingSupplier(true)
     try {
       const res = await fetch(`/api/ops/products/${supplierModal.productId}`, {
@@ -230,7 +147,7 @@ export default function InventoryPage() {
       })
       if (!res.ok) throw new Error('Failed')
       setSupplierModal(null)
-      fetchInventory() // Refresh
+      fetchInventory()
     } catch (error) {
       console.error('Failed to update supplier:', error)
       alert('Erreur lors de la mise à jour')
@@ -239,499 +156,352 @@ export default function InventoryPage() {
     }
   }
 
-  const getStatusColor = (status: string) => {
-    const colors: Record<string, string> = {
-      'In stock': 'badge green',
-      'Low stock': 'badge amber',
-      'Out of stock': 'badge red',
-      'Discontinued': 'badge gray',
-    }
-    return colors[status] || 'badge'
+  const handleExport = () => {
+    const rows = activeTab === 'history'
+      ? [
+          ['Date', 'Produit', 'Marque', 'Type', 'Quantité', 'Avant', 'Après', 'Raison', 'Par'],
+          ...movements.map((m) => [new Date(m.createdAt).toLocaleString('fr-FR'), m.productName, m.productBrand, m.type, m.quantity, m.stockBefore, m.stockAfter, m.reason || '', m.performedBy?.split('@')[0] || '']),
+        ]
+      : [
+          ['Produit', 'Marque', 'Stock', 'Commandé', 'Dispo', 'Seuil', 'Ventes/sem', 'Jours', 'Statut', 'Fournisseur', 'Coût', 'Valeur', 'À recommander'],
+          ...products.map((p) => [p.name, p.brand, p.stock, p.committed, p.available, p.reorderPoint, p.weeklySales || 0, p.daysOfStockLeft || '∞', health(p).label, p.supplier || '', p.costPrice || 0, p.costPrice ? p.stock * p.costPrice : 0, p.suggestedReorder || 0]),
+        ]
+    const csv = rows.map((r) => r.join(',')).join('\n')
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${activeTab === 'history' ? 'mouvements' : 'stock'}-${new Date().toISOString().split('T')[0]}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
-  const getSeverityColor = (severity: string) => {
-    const colors: Record<string, string> = {
-      'critical': 'bg-red-50 border-red-200',
-      'warning': 'bg-amber-50 border-amber-200',
-      'info': 'bg-blue-50 border-blue-200',
+  // Prioritised action feed — the "smart" layer telling admins what to do now.
+  const urgentActions = useMemo(() => {
+    return products
+      .filter((p) => p.available < 0 || p.stock === 0 || p.stock <= p.reorderPoint || (p.daysOfStockLeft > 0 && p.daysOfStockLeft <= 7))
+      .map((p) => {
+        const critical = p.available < 0 || (p.stock === 0 && p.committed > 0)
+        return { p, critical }
+      })
+      .sort((a, b) => (Number(b.critical) - Number(a.critical)) || (a.p.available - b.p.available))
+      .slice(0, 6)
+  }, [products])
+
+  const rows = useMemo(() => {
+    const needle = search.trim().toLowerCase()
+    let list = products.filter((p) => {
+      if (filter === 'shortage' && p.available >= 0 && p.stock !== 0) return false
+      if (filter === 'low' && !(p.stock <= p.reorderPoint || p.stockStatus === 'Low stock')) return false
+      if (filter === 'reorder' && p.suggestedReorder <= 0) return false
+      if (filter === 'demand' && p.committed <= 0) return false
+      if (needle && !`${p.name} ${p.brand} ${p.supplier || ''}`.toLowerCase().includes(needle)) return false
+      return true
+    })
+    const cmp: Record<SortKey, (a: Product, b: Product) => number> = {
+      available: (a, b) => a.available - b.available,
+      days: (a, b) => (a.daysOfStockLeft || 9999) - (b.daysOfStockLeft || 9999),
+      value: (a, b) => b.stock * (b.costPrice || 0) - a.stock * (a.costPrice || 0),
+      sales: (a, b) => (b.weeklySales || 0) - (a.weeklySales || 0),
+      name: (a, b) => a.name.localeCompare(b.name),
     }
-    return colors[severity] || 'bg-bg-2 border-line-soft'
-  }
-
-  const lowStockCount = products.filter(p => p.stockStatus === 'Low stock').length
-  const outOfStockCount = products.filter(p => p.stockStatus === 'Out of stock').length
-  const criticalAlerts = alerts.filter(a => a.severity === 'critical').length
-  const totalStockValue = products.reduce((sum, p) => sum + (p.stock * (p.costPrice || 0)), 0)
-  const formatMoney = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v)
-
-  // Products running out soon (sorted by daysOfStockLeft, showing <= 14 days)
-  const runningOutSoon = products
-    .filter(p => p.daysOfStockLeft && p.daysOfStockLeft > 0 && p.daysOfStockLeft <= 14)
-    .sort((a, b) => (a.daysOfStockLeft || 999) - (b.daysOfStockLeft || 999))
-    .slice(0, 5)
+    return [...list].sort(cmp[sortKey])
+  }, [products, filter, sortKey, search])
 
   return (
-    <BosShell active="inventory" title="Stock" crumb="Opérations">
+    <BosShell active="inventory" title="Stock & Réappro" crumb="Opérations">
       <div className="page-inner page-wide">
         {/* Header */}
         <div className="page-head">
           <div>
-            <h1 className="serif-display">Stock</h1>
-            <div className="sub">Niveaux de stock, alertes & réapprovisionnement</div>
+            <h1 className="serif-display">Stock &amp; Réappro</h1>
+            <div className="sub">Niveaux, demande réelle des commandes & réapprovisionnement — au même endroit</div>
           </div>
-          <div className="spacer"></div>
+          <div className="spacer" />
           <button className="btn-modern btn-secondary" onClick={handleExport}><Download className="w-4 h-4" />Exporter</button>
-          <button className="btn-modern btn-primary" onClick={handleAddStock}><Package className="w-4 h-4" />Ajouter</button>
         </div>
 
         {/* Tabs */}
-        <div style={{ marginBottom: 24, borderBottom: '1px solid var(--line-soft)' }}>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              className={`tab-btn ${activeTab === 'stock' ? 'active' : ''}`}
-              onClick={() => setActiveTab('stock')}
-              style={{
-                padding: '10px 16px',
-                background: 'none',
-                border: 'none',
-                borderBottom: activeTab === 'stock' ? '2px solid var(--rose-bright)' : '2px solid transparent',
-                color: activeTab === 'stock' ? 'var(--tx-hi)' : 'var(--tx-mid)',
-                fontWeight: activeTab === 'stock' ? 600 : 500,
-                fontSize: 14,
-                cursor: 'pointer',
-                transition: 'all 0.15s',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-              }}
-            >
-              <Package style={{ width: 16, height: 16 }} />
-              Stock
-            </button>
-            <button
-              className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`}
-              onClick={() => setActiveTab('history')}
-              style={{
-                padding: '10px 16px',
-                background: 'none',
-                border: 'none',
-                borderBottom: activeTab === 'history' ? '2px solid var(--rose-bright)' : '2px solid transparent',
-                color: activeTab === 'history' ? 'var(--tx-hi)' : 'var(--tx-mid)',
-                fontWeight: activeTab === 'history' ? 600 : 500,
-                fontSize: 14,
-                cursor: 'pointer',
-                transition: 'all 0.15s',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-              }}
-            >
-              <History style={{ width: 16, height: 16 }} />
-              Historique
-            </button>
+        <div style={{ marginBottom: 22, borderBottom: '1px solid var(--line-soft)' }}>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <TabBtn active={activeTab === 'stock'} onClick={() => setActiveTab('stock')} icon={<Package style={{ width: 16, height: 16 }} />} label="Stock & demande" />
+            <TabBtn active={activeTab === 'ship'} onClick={() => setActiveTab('ship')} icon={<Truck style={{ width: 16, height: 16 }} />} label="À expédier" count={summary?.toShipOrders} />
+            <TabBtn active={activeTab === 'history'} onClick={() => setActiveTab('history')} icon={<History style={{ width: 16, height: 16 }} />} label="Historique" />
           </div>
         </div>
 
+        {/* ─────────── STOCK & DEMANDE ─────────── */}
         {activeTab === 'stock' && (
           <>
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-          <Metric
-            icon={<Package />}
-            tone="blue"
-            title="Total produits"
-            value={products.length.toString()}
-            trend="suivis"
-          />
-          <Metric
-            icon={<DollarSign />}
-            tone="violet"
-            title="Valeur stock"
-            value={`${formatMoney(totalStockValue)}`}
-            trend="MAD (coût)"
-          />
-          <Metric
-            icon={<AlertTriangle />}
-            tone="amber"
-            title="Stock bas"
-            value={lowStockCount.toString()}
-            trend="à réappro."
-          />
-          <Metric
-            icon={<XCircle />}
-            tone="red"
-            title="Rupture"
-            value={outOfStockCount.toString()}
-            trend="critique"
-          />
-          <Metric
-            icon={<CheckCircle />}
-            tone="green"
-            title="En stock"
-            value={(products.length - lowStockCount - outOfStockCount).toString()}
-            trend="OK"
-          />
-        </div>
-
-        {/* Alerts Panel */}
-        {showAlerts && alerts.length > 0 && (
-          <div className="card-modern mb-6" style={{ borderLeft: '4px solid var(--danger-500)' }}>
-            <div className="card-header">
-              <AlertTriangle className="w-5 h-5 text-red-600" />
-              <h3 className="text-lg font-semibold">Alertes de stock</h3>
-              <span className="badge-modern badge-danger">{alerts.length}</span>
-              <div className="flex-1"></div>
-              <button className="btn-modern btn-sm btn-subtle" onClick={() => setShowAlerts(false)}>
-                Tout masquer
-              </button>
+            {/* KPI strip */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
+              <Kpi tone="violet" icon={<DollarSign />} label="Valeur stock" value={`${money(summary?.stockValue || 0)}`} sub="MAD (coût)" />
+              <Kpi tone="red" icon={<XCircle />} label="Ruptures" value={String(summary?.shortages || 0)} sub="commandé > stock" alert={(summary?.shortages || 0) > 0} />
+              <Kpi tone="amber" icon={<AlertTriangle />} label="Stock bas" value={String(summary?.lowStock || 0)} sub="sous le seuil" />
+              <Kpi tone="blue" icon={<Truck />} label="À expédier" value={`${summary?.toShipOrders || 0}`} sub={`${summary?.toShipUnits || 0} articles`} />
+              <Kpi tone="green" icon={<ShoppingCart />} label="À recommander" value={String(summary?.reorderProducts || 0)} sub={`≈ ${money(summary?.reorderValue || 0)} MAD`} />
             </div>
-            <div className="card-body">
-              <div className="flex flex-col gap-3">
-                {alerts.slice(0, 5).map((alert) => (
-                  <div
-                    key={alert.id}
-                    className={`flex items-center justify-between p-3 rounded-lg border ${getSeverityColor(alert.severity)}`}
-                  >
-                    <div>
-                      <div className="font-semibold text-sm">{alert.message}</div>
-                      <div className="text-xs text-tx-faint mt-1">
-                        {alert.productBrand} • {new Date(alert.createdAt).toLocaleDateString('fr-FR')}
+
+            {/* Actions urgentes — the smart feed */}
+            {!loading && urgentActions.length > 0 && (
+              <div className="card-modern mb-5" style={{ borderLeft: '4px solid var(--rose-bright)' }}>
+                <div className="card-header">
+                  <AlertTriangle className="w-5 h-5" style={{ color: 'var(--rose-bright)' }} />
+                  <h3 className="text-lg font-semibold">Actions urgentes</h3>
+                  <span className="badge-modern badge-danger">{urgentActions.length}</span>
+                  <div className="flex-1" />
+                  <span className="fs12 tx-lo">ce qu'il faut traiter aujourd'hui</span>
+                </div>
+                <div className="card-body">
+                  <div className="flex flex-col gap-2">
+                    {urgentActions.map(({ p, critical }) => (
+                      <div key={p.id} style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+                        padding: '10px 12px', borderRadius: 10,
+                        background: critical ? 'var(--rose-bg)' : 'var(--amber-bg)',
+                        border: `1px solid ${critical ? 'var(--rose-soft, rgba(225,29,72,.2))' : 'var(--amber-soft, rgba(217,119,6,.2))'}`,
+                      }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, color: 'var(--tx-hi)', fontSize: 13.5 }}>{p.name} <span className="tx-lo fw400">· {p.brand}</span></div>
+                          <div style={{ fontSize: 12, color: critical ? 'var(--rose-bright)' : 'var(--amber)', marginTop: 2 }}>
+                            {p.available < 0
+                              ? <>🔴 {p.committed} commandés / {p.stock} en stock — <b>manque {Math.abs(p.available)}</b>{p.openOrdersCount > 0 && <> · bloque {p.openOrdersCount} cmd</>}</>
+                              : p.stock === 0
+                                ? <>Rupture totale{p.committed > 0 ? <> · {p.committed} commandés en attente</> : ''}</>
+                                : <>Stock bas : {p.stock} ≤ seuil {p.reorderPoint}{p.daysOfStockLeft > 0 ? <> · ~{p.daysOfStockLeft}j restants</> : ''}</>}
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {p.suggestedReorder > 0 && (
+                            <span style={{ fontSize: 12, color: 'var(--tx-mid)' }}>recommander <b>{p.suggestedReorder}</b>{p.supplier ? ` · ${p.supplier}` : ''}</span>
+                          )}
+                          <button className="btn-modern btn-sm btn-primary" onClick={() => openAdjustModal(p, p.suggestedReorder || undefined)} style={{ whiteSpace: 'nowrap' }}>
+                            Réappro
+                          </button>
+                        </div>
                       </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Controls */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+              <div className="filter-strip inline-flex gap-1 p-1 bg-bg-2 rounded-lg">
+                {([['all', 'Tous'], ['shortage', 'Ruptures'], ['low', 'Stock bas'], ['reorder', 'À recommander'], ['demand', 'Avec commandes']] as [Filter, string][]).map(([f, label]) => (
+                  <button key={f} className={`btn-modern btn-sm ${filter === f ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setFilter(f)}>{label}</button>
+                ))}
+              </div>
+              <div className="spacer" />
+              <div style={{ position: 'relative' }}>
+                <Search style={{ width: 15, height: 15, position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--tx-faint)' }} />
+                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Rechercher…" className="input-modern" style={{ paddingLeft: 30, width: 180, height: 34 }} />
+              </div>
+              <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)} className="input-modern" style={{ height: 34, width: 160 }}>
+                <option value="available">Trier : Dispo ↑</option>
+                <option value="days">Jours restants ↑</option>
+                <option value="value">Valeur ↓</option>
+                <option value="sales">Ventes/sem ↓</option>
+                <option value="name">Nom A→Z</option>
+              </select>
+            </div>
+
+            {/* Unified table */}
+            <div className="card-modern">
+              <div className="overflow-x-auto">
+                <table className="table-modern">
+                  <thead>
+                    <tr>
+                      <th>Produit</th>
+                      <th>État</th>
+                      <th className="r">Stock</th>
+                      <th className="r">Commandé</th>
+                      <th className="r">Dispo</th>
+                      <th className="r">Seuil</th>
+                      <th className="r">Jours</th>
+                      <th>Fournisseur</th>
+                      <th className="r">Valeur</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loading ? (
+                      [1, 2, 3, 4, 5].map((i) => (<tr key={i}><td colSpan={10}><div className="skeleton-line" /></td></tr>))
+                    ) : rows.length === 0 ? (
+                      <tr><td colSpan={10}><div style={{ textAlign: 'center', padding: '46px 20px' }}>
+                        <div style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}><Package style={{ width: 26, height: 26, color: 'var(--tx-faint)' }} /></div>
+                        <p style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--tx-mid)', margin: '0 0 4px' }}>Aucun produit</p>
+                        <p style={{ fontSize: 13, color: 'var(--tx-faint)', margin: 0 }}>Ajuste les filtres pour voir tes produits.</p>
+                      </div></td></tr>
+                    ) : (
+                      rows.map((p) => {
+                        const h = health(p)
+                        const open = expanded === p.id
+                        return (
+                          <Fragment key={p.id}>
+                            <tr onClick={() => setExpanded(open ? null : p.id)} style={{ cursor: 'pointer' }}>
+                              <td>
+                                <div className="row gap8">
+                                  {p.image && <img src={p.image} alt={p.name} className="product-thumb" style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 4 }} />}
+                                  <div><div className="t-strong">{p.name}</div><div className="fs11 tx-lo">{p.brand}</div></div>
+                                </div>
+                              </td>
+                              <td><span className={h.cls}>{h.label}</span></td>
+                              <td className="r"><span className={`num fw600 ${p.stock === 0 ? 'neg' : p.stock <= p.reorderPoint ? 'tx-lo' : ''}`}>{p.stock}</span></td>
+                              <td className="r">
+                                {p.committed > 0
+                                  ? <span className="num fw600" style={{ color: 'var(--tx-hi)' }}>{p.committed}{p.toShip > 0 && <span className="fs11 tx-lo"> ({p.toShip} à exp.)</span>}</span>
+                                  : <span className="tx-lo">—</span>}
+                              </td>
+                              <td className="r"><span className="num fw600" style={{ color: p.available < 0 ? 'var(--rose-bright)' : 'var(--tx-hi)' }}>{p.available}</span></td>
+                              <td className="r tx-lo">{p.reorderPoint}</td>
+                              <td className="r">{p.daysOfStockLeft ? <span className={`num ${p.daysOfStockLeft < 7 ? 'neg' : p.daysOfStockLeft < 14 ? 'tx-lo' : ''}`}>{p.daysOfStockLeft}j</span> : <span className="tx-lo">—</span>}</td>
+                              <td>
+                                <button onClick={(e) => { e.stopPropagation(); openSupplierModal(p) }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: p.supplier ? 'var(--tx-lo)' : 'var(--rose-bright)', fontSize: 12, textDecoration: p.supplier ? 'none' : 'underline' }} title="Modifier le fournisseur">
+                                  {p.supplier || '+ Ajouter'}
+                                </button>
+                              </td>
+                              <td className="r num fw600">{p.costPrice ? money(p.stock * p.costPrice) : '—'}</td>
+                              <td className="r" style={{ whiteSpace: 'nowrap' }}>
+                                <button className="btn-modern btn-sm btn-subtle" onClick={(e) => { e.stopPropagation(); openAdjustModal(p, p.suggestedReorder || undefined) }}>Ajuster</button>
+                                {p.openOrdersCount > 0 && <ChevronDown style={{ width: 15, height: 15, marginLeft: 6, verticalAlign: 'middle', color: 'var(--tx-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />}
+                              </td>
+                            </tr>
+                            {open && (
+                              <tr>
+                                <td colSpan={10} style={{ background: 'var(--bg-2)', padding: '12px 16px' }}>
+                                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24 }}>
+                                    <div style={{ flex: '1 1 320px', minWidth: 260 }}>
+                                      <div className="fs11 tx-faint" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Commandes qui demandent ce produit</div>
+                                      {p.openOrders.length === 0 ? (
+                                        <div className="fs12 tx-lo">Aucune commande ouverte.</div>
+                                      ) : (
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                                          {p.openOrders.map((o, i) => (
+                                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5, flexWrap: 'wrap' }}>
+                                              <Link href={`/orders/${o.orderId}`} style={{ fontWeight: 600, color: 'var(--tx-hi)' }}>#{o.orderId}</Link>
+                                              <span className="tx-mid">{o.customer}</span>
+                                              <span className="num" style={{ color: 'var(--tx-hi)' }}>×{o.qty}</span>
+                                              {o.shipped
+                                                ? <span className="badge green" style={{ fontSize: 10 }}>Expédié</span>
+                                                : <span className="badge amber" style={{ fontSize: 10 }}>À expédier</span>}
+                                              <span className="fs11 tx-faint">{fmtDate(o.created)}</span>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div style={{ flex: '0 0 auto', minWidth: 200 }}>
+                                      <div className="fs11 tx-faint" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Réapprovisionnement</div>
+                                      <div className="fs12 tx-mid" style={{ lineHeight: 1.7 }}>
+                                        <div>Ventes : <b>{p.weeklySales || 0}/sem</b></div>
+                                        <div>Fournisseur : <b>{p.supplier || '—'}</b></div>
+                                        {p.suggestedReorder > 0
+                                          ? <div style={{ color: 'var(--rose-bright)', marginTop: 4 }}>🔴 Recommander <b>{p.suggestedReorder}</b> unités</div>
+                                          : <div style={{ color: 'var(--green)', marginTop: 4 }}>✓ Stock suffisant</div>}
+                                      </div>
+                                      <button className="btn-modern btn-sm btn-primary" style={{ marginTop: 8 }} onClick={() => openAdjustModal(p, p.suggestedReorder || undefined)}>Enregistrer réappro</button>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        )
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <p className="fs11 tx-faint" style={{ marginTop: 8 }}>
+              <b>Dispo = stock − commandé</b> (commandes non livrées). Négatif = tu as vendu plus que ton stock → recommander. Le stock n'est pas décrémenté automatiquement.
+            </p>
+          </>
+        )}
+
+        {/* ─────────── À EXPÉDIER ─────────── */}
+        {activeTab === 'ship' && (
+          <div style={{ marginTop: 4 }}>
+            <p className="fs13 tx-mid" style={{ marginBottom: 14 }}>Commandes confirmées <b>pas encore remises à Sendit</b> — ce qui doit physiquement partir.</p>
+            {loading ? (
+              <div className="card-modern"><div className="card-body"><div className="skeleton-line" /></div></div>
+            ) : toShip.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '48px 20px' }} className="card-modern">
+                <PackageCheck style={{ width: 40, height: 40, color: 'var(--green)', margin: '0 auto 12px' }} />
+                <p style={{ fontSize: 15, fontWeight: 600, color: 'var(--tx-mid)' }}>Rien en attente d'expédition</p>
+                <p className="fs13 tx-faint">Toutes les commandes ouvertes ont un suivi Sendit.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {toShip.map((o) => (
+                  <div key={o.id} className="card-modern" style={{ padding: '12px 14px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+                        <Link href={`/orders/${o.id}`} style={{ fontWeight: 700, color: 'var(--tx-hi)', fontSize: 14 }}>#{o.id}</Link>
+                        <span className="fs13 tx-mid">{o.customer}</span>
+                        <span className="fs12 tx-faint">{o.city} · {fmtDate(o.created)} · {o.units} art.</span>
+                      </div>
+                      {o.canFulfill
+                        ? <span className="badge green">Stock OK</span>
+                        : <span className="badge red">⚠ Stock insuffisant</span>}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        className="btn-modern btn-sm btn-subtle"
-                        onClick={() => window.location.href = `/products/${alert.productId}`}
-                      >
-                        Voir produit
-                      </button>
-                      <button
-                        className="btn-modern btn-sm btn-secondary"
-                        onClick={() => acknowledgeAlert(alert.id)}
-                      >
-                        Acquitter
-                      </button>
+                    <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {o.items.map((it, i) => {
+                        const short = it.stock < it.qty
+                        return (
+                          <span key={i} style={{ fontSize: 12, padding: '3px 8px', borderRadius: 6, background: short ? 'var(--rose-bg)' : 'var(--bg-2)', color: short ? 'var(--rose-bright)' : 'var(--tx-mid)' }} title={short ? `Stock ${it.stock} < ${it.qty} commandé` : `Stock ${it.stock}`}>
+                            {it.name} <b>×{it.qty}</b>{short ? ` (stock ${it.stock})` : ''}
+                          </span>
+                        )
+                      })}
                     </div>
                   </div>
                 ))}
               </div>
-            </div>
+            )}
           </div>
         )}
 
-        {/* Running Out Soon Widget */}
-        {runningOutSoon.length > 0 && (
-          <div className="card-modern mb-6" style={{ borderLeft: '4px solid var(--amber-500)' }}>
-            <div className="card-header">
-              <TrendingDown className="w-5 h-5 text-amber-600" />
-              <h3 className="text-lg font-semibold">Rupture imminente</h3>
-              <span className="badge-modern badge-warning">{runningOutSoon.length}</span>
-              <div className="flex-1"></div>
-              <span className="fs12 tx-lo">≤ 14 jours de stock</span>
-            </div>
-            <div className="card-body">
-              <div className="flex flex-col gap-3">
-                {runningOutSoon.map((product) => {
-                  const urgency = product.daysOfStockLeft! <= 3 ? 'critical' : product.daysOfStockLeft! <= 7 ? 'warning' : 'info'
-                  const urgencyColors: Record<string, string> = {
-                    critical: 'bg-red-50 border-red-200',
-                    warning: 'bg-amber-50 border-amber-200',
-                    info: 'bg-blue-50 border-blue-200',
-                  }
-                  return (
-                    <div
-                      key={product.id}
-                      className={`flex items-center justify-between p-3 rounded-lg border ${urgencyColors[urgency]}`}
-                    >
-                      <div className="flex items-center gap-3">
-                        {product.image && (
-                          <img
-                            src={product.image}
-                            alt={product.name}
-                            className="w-10 h-10 rounded object-cover"
-                          />
-                        )}
-                        <div>
-                          <div className="font-semibold text-sm">{product.name}</div>
-                          <div className="text-xs text-tx-faint mt-1">
-                            {product.brand} • Stock: <b>{product.stock}</b> • Ventes: <b>{product.weeklySales || 0}/sem</b>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <div className="text-right">
-                          <div className={`text-lg font-bold ${urgency === 'critical' ? 'text-red-600' : urgency === 'warning' ? 'text-amber-600' : 'text-blue-600'}`}>
-                            {product.daysOfStockLeft}j
-                          </div>
-                          <div className="text-xs text-tx-faint">restants</div>
-                        </div>
-                        <button
-                          className="btn-modern btn-sm btn-primary"
-                          onClick={() => openAdjustModal(product)}
-                        >
-                          Réappro
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Filters */}
-        <div className="mb-6">
-          <div className="filter-strip inline-flex gap-1 p-1 bg-bg-2 rounded-lg">
-            <button
-              className={`btn-modern btn-sm ${statusFilter === '' ? 'btn-primary' : 'btn-subtle'}`}
-              onClick={() => setStatusFilter('')}
-            >
-              Tous
-            </button>
-            <button
-              className={`btn-modern btn-sm ${statusFilter === 'Low stock' ? 'btn-primary' : 'btn-subtle'}`}
-              onClick={() => setStatusFilter('Low stock')}
-            >
-              Stock bas
-            </button>
-            <button
-              className={`btn-modern btn-sm ${statusFilter === 'Out of stock' ? 'btn-primary' : 'btn-subtle'}`}
-              onClick={() => setStatusFilter('Out of stock')}
-            >
-              Rupture
-            </button>
-            <button
-              className={`btn-modern btn-sm ${statusFilter === 'In stock' ? 'btn-primary' : 'btn-subtle'}`}
-              onClick={() => setStatusFilter('In stock')}
-            >
-              En stock
-            </button>
-          </div>
-        </div>
-
-        {/* Inventory Table */}
-        <div className="card-modern">
-          <div className="overflow-x-auto">
-            <table className="table-modern">
-              <thead>
-                <tr>
-                  <th>Produit</th>
-                  <th>Statut</th>
-                  <th className="r">Stock</th>
-                  <th className="r">Seuil</th>
-                  <th className="r">Ventes/sem.</th>
-                  <th className="r">Jours restants</th>
-                  <th>Fournisseur</th>
-                  <th className="r">Coût unit.</th>
-                  <th className="r">Valeur</th>
-                  <th className="r">Alertes</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  [1, 2, 3, 4, 5].map((item) => (
-                    <tr key={item}>
-                      <td colSpan={11}>
-                        <div className="skeleton-line"></div>
-                      </td>
-                    </tr>
-                  ))
-                ) : products.length === 0 ? (
-                  <tr>
-                    <td colSpan={11}>
-                      <div style={{ textAlign: 'center', padding: '46px 20px' }}>
-                        <div style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
-                          <Package style={{ width: 26, height: 26, color: 'var(--tx-faint)' }} />
-                        </div>
-                        <p style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--tx-mid)', margin: '0 0 4px' }}>Aucun produit</p>
-                        <p style={{ fontSize: 13, color: 'var(--tx-faint)', margin: 0 }}>
-                          Les produits du catalogue apparaîtront ici avec leur niveau de stock.
-                        </p>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  products.map((product) => (
-                    <tr key={product.id}>
-                      <td>
-                        <div className="row gap8">
-                          {product.image && (
-                            <img
-                              src={product.image}
-                              alt={product.name}
-                              className="product-thumb"
-                              style={{ width: 32, height: 32, objectFit: 'cover', borderRadius: 4 }}
-                            />
-                          )}
-                          <div>
-                            <div className="t-strong">{product.name}</div>
-                            <div className="fs11 tx-lo">{product.brand}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <span className={getStatusColor(product.stockStatus)}>
-                          {({'In stock':'En stock','Low stock':'Stock bas','Out of stock':'Rupture',Discontinued:'Arrêté'} as Record<string,string>)[product.stockStatus]||product.stockStatus}
-                        </span>
-                      </td>
-                      <td className="r">
-                        <span className={`num fw600 ${product.stock === 0 ? 'neg' : product.stock <= product.reorderPoint ? 'tx-lo' : ''}`}>
-                          {product.stock}
-                        </span>
-                      </td>
-                      <td className="r tx-lo">{product.reorderPoint}</td>
-                      <td className="r num">{product.weeklySales || 0}</td>
-                      <td className="r">
-                        {product.daysOfStockLeft ? (
-                          <span className={`num ${product.daysOfStockLeft < 7 ? 'neg' : product.daysOfStockLeft < 14 ? 'tx-lo' : ''}`}>
-                            {product.daysOfStockLeft}d
-                          </span>
-                        ) : (
-                          <span className="tx-lo">-</span>
-                        )}
-                      </td>
-                      <td>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); openSupplierModal(product) }}
-                          style={{
-                            background: 'none',
-                            border: 'none',
-                            padding: 0,
-                            cursor: 'pointer',
-                            color: product.supplier ? 'var(--tx-lo)' : 'var(--rose-bright)',
-                            fontSize: 12,
-                            textDecoration: product.supplier ? 'none' : 'underline',
-                          }}
-                          title="Cliquer pour modifier le fournisseur"
-                        >
-                          {product.supplier || '+ Ajouter'}
-                        </button>
-                      </td>
-                      <td className="r num">{product.costPrice ? `${product.costPrice}` : '-'}</td>
-                      <td className="r num fw600">{product.costPrice ? formatMoney(product.stock * product.costPrice) : '-'}</td>
-                      <td className="r">
-                        {product.activeAlerts > 0 ? (
-                          <span className="badge red mini-badge">{product.activeAlerts}</span>
-                        ) : (
-                          <span className="tx-lo">-</span>
-                        )}
-                      </td>
-                      <td>
-                        <button
-                          className="btn-modern btn-sm btn-subtle"
-                          onClick={(e) => { e.stopPropagation(); openAdjustModal(product) }}
-                          style={{ whiteSpace: 'nowrap' }}
-                        >
-                          Ajuster
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-          </>
-        )}
-
-        {/* History Tab */}
+        {/* ─────────── HISTORIQUE ─────────── */}
         {activeTab === 'history' && (
           <div className="card-modern">
             <div className="card-header">
               <History className="w-5 h-5" />
               <h3 className="text-lg font-semibold">Historique des mouvements</h3>
-              <div className="flex-1"></div>
+              <div className="flex-1" />
               <span className="fs12 tx-lo">{movements.length} mouvements (100 derniers)</span>
             </div>
             <div className="overflow-x-auto">
               <table className="table-modern">
                 <thead>
                   <tr>
-                    <th>Date</th>
-                    <th>Produit</th>
-                    <th>Type</th>
-                    <th className="r">Quantité</th>
-                    <th className="r">Avant</th>
-                    <th className="r">Après</th>
-                    <th>Raison</th>
-                    <th>Par</th>
+                    <th>Date</th><th>Produit</th><th>Type</th><th className="r">Quantité</th><th className="r">Avant</th><th className="r">Après</th><th>Raison</th><th>Par</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loadingMovements ? (
-                    [1, 2, 3].map((item) => (
-                      <tr key={item}>
-                        <td colSpan={8}>
-                          <div className="skeleton-line"></div>
-                        </td>
-                      </tr>
-                    ))
+                    [1, 2, 3].map((i) => (<tr key={i}><td colSpan={8}><div className="skeleton-line" /></td></tr>))
                   ) : movements.length === 0 ? (
-                    <tr>
-                      <td colSpan={8}>
-                        <div style={{ textAlign: 'center', padding: '40px 20px' }}>
-                          <div style={{ width: 52, height: 52, borderRadius: 14, background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}>
-                            <History style={{ width: 24, height: 24, color: 'var(--tx-faint)' }} />
-                          </div>
-                          <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx-mid)', margin: '0 0 4px' }}>Aucun mouvement</p>
-                          <p style={{ fontSize: 13, color: 'var(--tx-faint)', margin: 0 }}>
-                            Les entrées et sorties de stock seront tracées ici.
-                          </p>
-                        </div>
-                      </td>
-                    </tr>
+                    <tr><td colSpan={8}><div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                      <div style={{ width: 52, height: 52, borderRadius: 14, background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}><History style={{ width: 24, height: 24, color: 'var(--tx-faint)' }} /></div>
+                      <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx-mid)', margin: '0 0 4px' }}>Aucun mouvement</p>
+                      <p style={{ fontSize: 13, color: 'var(--tx-faint)', margin: 0 }}>Les entrées et sorties de stock seront tracées ici.</p>
+                    </div></td></tr>
                   ) : (
-                    movements.map((movement) => {
-                      const isIncrease = movement.quantity > 0
-                      const typeColors: Record<string, string> = {
-                        Purchase: 'badge blue',
-                        Sale: 'badge green',
-                        Adjustment: 'badge amber',
-                        Return: 'badge violet',
-                        Damage: 'badge red',
-                        Transfer: 'badge gray',
-                      }
+                    movements.map((m) => {
+                      const up = m.quantity > 0
+                      const typeColors: Record<string, string> = { Purchase: 'badge blue', Sale: 'badge green', Adjustment: 'badge amber', Return: 'badge violet', Damage: 'badge red', Transfer: 'badge gray' }
                       return (
-                        <tr key={movement.id}>
-                          <td className="fs12">
-                            {new Date(movement.createdAt).toLocaleDateString('fr-FR', {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </td>
-                          <td>
-                            <div>
-                              <div className="t-strong fs13">{movement.productName}</div>
-                              <div className="fs11 tx-lo">{movement.productBrand}</div>
-                            </div>
-                          </td>
-                          <td>
-                            <span className={typeColors[movement.type] || 'badge'}>
-                              {movement.type}
-                            </span>
-                          </td>
-                          <td className="r">
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
-                              {isIncrease ? (
-                                <ArrowUpCircle className="w-4 h-4 text-green-600" />
-                              ) : (
-                                <ArrowDownCircle className="w-4 h-4 text-red-600" />
-                              )}
-                              <span className={`num fw600 ${isIncrease ? 'text-green-600' : 'text-red-600'}`}>
-                                {isIncrease ? '+' : ''}{movement.quantity}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="r num tx-lo">{movement.stockBefore}</td>
-                          <td className="r num fw600">{movement.stockAfter}</td>
-                          <td className="fs12 tx-lo">{movement.reason || '-'}</td>
-                          <td className="fs11 tx-lo">{movement.performedBy?.split('@')[0] || '-'}</td>
+                        <tr key={m.id}>
+                          <td className="fs12">{new Date(m.createdAt).toLocaleDateString('fr-FR', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                          <td><div><div className="t-strong fs13">{m.productName}</div><div className="fs11 tx-lo">{m.productBrand}</div></div></td>
+                          <td><span className={typeColors[m.type] || 'badge'}>{m.type}</span></td>
+                          <td className="r"><div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>{up ? <ArrowUpCircle className="w-4 h-4 text-green-600" /> : <ArrowDownCircle className="w-4 h-4 text-red-600" />}<span className={`num fw600 ${up ? 'text-green-600' : 'text-red-600'}`}>{up ? '+' : ''}{m.quantity}</span></div></td>
+                          <td className="r num tx-lo">{m.stockBefore}</td>
+                          <td className="r num fw600">{m.stockAfter}</td>
+                          <td className="fs12 tx-lo">{m.reason || '—'}</td>
+                          <td className="fs11 tx-lo">{m.performedBy?.split('@')[0] || '—'}</td>
                         </tr>
                       )
                     })
@@ -744,84 +514,33 @@ export default function InventoryPage() {
 
         {/* Stock Adjustment Modal */}
         {adjustModal && (
-          <div style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 50,
-          }} onClick={() => setAdjustModal(null)}>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={() => setAdjustModal(null)}>
             <div className="card-modern" style={{ maxWidth: 500, width: '90%' }} onClick={(e) => e.stopPropagation()}>
-              <div className="card-header">
-                <h3 className="text-lg font-semibold">Ajuster le stock</h3>
-              </div>
+              <div className="card-header"><h3 className="text-lg font-semibold">Ajuster le stock</h3></div>
               <div className="card-body">
                 <div style={{ marginBottom: 16 }}>
                   <div className="t-strong">{adjustModal.productName}</div>
                   <div className="fs12 tx-lo">Stock actuel : <b className="num">{adjustModal.currentStock}</b></div>
                 </div>
-
                 <div style={{ marginBottom: 16 }}>
                   <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Type d'ajustement</label>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      className={`btn-modern btn-sm ${adjustType === 'in' ? 'btn-primary' : 'btn-subtle'}`}
-                      onClick={() => setAdjustType('in')}
-                    >
-                      <Plus className="w-4 h-4" /> Entrée
-                    </button>
-                    <button
-                      className={`btn-modern btn-sm ${adjustType === 'out' ? 'btn-primary' : 'btn-subtle'}`}
-                      onClick={() => setAdjustType('out')}
-                    >
-                      <Minus className="w-4 h-4" /> Sortie
-                    </button>
+                    <button className={`btn-modern btn-sm ${adjustType === 'in' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setAdjustType('in')}><Plus className="w-4 h-4" /> Entrée (réappro)</button>
+                    <button className={`btn-modern btn-sm ${adjustType === 'out' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setAdjustType('out')}><Minus className="w-4 h-4" /> Sortie</button>
                   </div>
                 </div>
-
                 <div style={{ marginBottom: 16 }}>
-                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Quantité</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={adjustQty}
-                    onChange={(e) => setAdjustQty(e.target.value)}
-                    placeholder="Ex: 10"
-                    className="input-modern"
-                    style={{ width: '100%' }}
-                  />
-                  {adjustQty && (
-                    <div className="fs11 tx-lo" style={{ marginTop: 4 }}>
-                      Nouveau stock : <b className="num">{adjustType === 'in' ? adjustModal.currentStock + Number(adjustQty) : Math.max(0, adjustModal.currentStock - Number(adjustQty))}</b>
-                    </div>
-                  )}
+                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Quantité{adjustModal.prefill ? ' (suggérée)' : ''}</label>
+                  <input type="number" min="1" value={adjustQty} onChange={(e) => setAdjustQty(e.target.value)} placeholder="Ex: 10" className="input-modern" style={{ width: '100%' }} />
+                  {adjustQty && (<div className="fs11 tx-lo" style={{ marginTop: 4 }}>Nouveau stock : <b className="num">{adjustType === 'in' ? adjustModal.currentStock + Number(adjustQty) : Math.max(0, adjustModal.currentStock - Number(adjustQty))}</b></div>)}
                 </div>
-
                 <div style={{ marginBottom: 16 }}>
                   <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Raison (optionnel)</label>
-                  <input
-                    type="text"
-                    value={adjustReason}
-                    onChange={(e) => setAdjustReason(e.target.value)}
-                    placeholder={adjustType === 'in' ? 'Réapprovisionnement fournisseur' : 'Produit endommagé'}
-                    className="input-modern"
-                    style={{ width: '100%' }}
-                  />
+                  <input type="text" value={adjustReason} onChange={(e) => setAdjustReason(e.target.value)} placeholder={adjustType === 'in' ? 'Réapprovisionnement fournisseur' : 'Produit endommagé'} className="input-modern" style={{ width: '100%' }} />
                 </div>
-
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <button className="btn-modern btn-secondary" onClick={() => setAdjustModal(null)}>
-                    Annuler
-                  </button>
-                  <button
-                    className="btn-modern btn-primary"
-                    onClick={submitAdjustment}
-                    disabled={adjusting || !adjustQty || Number(adjustQty) <= 0}
-                  >
-                    {adjusting ? 'En cours…' : 'Confirmer'}
-                  </button>
+                  <button className="btn-modern btn-secondary" onClick={() => setAdjustModal(null)}>Annuler</button>
+                  <button className="btn-modern btn-primary" onClick={submitAdjustment} disabled={adjusting || !adjustQty || Number(adjustQty) <= 0}>{adjusting ? 'En cours…' : 'Confirmer'}</button>
                 </div>
               </div>
             </div>
@@ -830,56 +549,22 @@ export default function InventoryPage() {
 
         {/* Supplier Edit Modal */}
         {supplierModal && (
-          <div style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 50,
-          }} onClick={() => setSupplierModal(null)}>
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={() => setSupplierModal(null)}>
             <div className="card-modern" style={{ maxWidth: 450, width: '90%' }} onClick={(e) => e.stopPropagation()}>
-              <div className="card-header">
-                <h3 className="text-lg font-semibold">Modifier le fournisseur</h3>
-              </div>
+              <div className="card-header"><h3 className="text-lg font-semibold">Modifier le fournisseur</h3></div>
               <div className="card-body">
                 <div style={{ marginBottom: 16 }}>
                   <div className="t-strong">{supplierModal.productName}</div>
-                  <div className="fs12 tx-lo">
-                    Fournisseur actuel : <b>{supplierModal.currentSupplier || 'Aucun'}</b>
-                  </div>
+                  <div className="fs12 tx-lo">Fournisseur actuel : <b>{supplierModal.currentSupplier || 'Aucun'}</b></div>
                 </div>
-
                 <div style={{ marginBottom: 16 }}>
-                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>
-                    Nom du fournisseur
-                  </label>
-                  <input
-                    type="text"
-                    value={supplierInput}
-                    onChange={(e) => setSupplierInput(e.target.value)}
-                    placeholder="Ex: Beauty Supply Morocco"
-                    className="input-modern"
-                    style={{ width: '100%' }}
-                    autoFocus
-                  />
-                  <div className="fs11 tx-lo" style={{ marginTop: 4 }}>
-                    Laissez vide pour supprimer le fournisseur
-                  </div>
+                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Nom du fournisseur</label>
+                  <input type="text" value={supplierInput} onChange={(e) => setSupplierInput(e.target.value)} placeholder="Ex: Beauty Supply Morocco" className="input-modern" style={{ width: '100%' }} autoFocus />
+                  <div className="fs11 tx-lo" style={{ marginTop: 4 }}>Laissez vide pour supprimer le fournisseur</div>
                 </div>
-
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                  <button className="btn-modern btn-secondary" onClick={() => setSupplierModal(null)}>
-                    Annuler
-                  </button>
-                  <button
-                    className="btn-modern btn-primary"
-                    onClick={submitSupplier}
-                    disabled={savingSupplier}
-                  >
-                    {savingSupplier ? 'Enregistrement…' : 'Enregistrer'}
-                  </button>
+                  <button className="btn-modern btn-secondary" onClick={() => setSupplierModal(null)}>Annuler</button>
+                  <button className="btn-modern btn-primary" onClick={submitSupplier} disabled={savingSupplier}>{savingSupplier ? 'Enregistrement…' : 'Enregistrer'}</button>
                 </div>
               </div>
             </div>
@@ -890,38 +575,36 @@ export default function InventoryPage() {
   )
 }
 
-function Metric({ icon, tone, title, value, trend }: { icon: React.ReactNode; tone: string; title: string; value: string; trend?: string }) {
-  const bgColors: Record<string, string> = {
-    blue: 'bg-blue-100',
-    amber: 'bg-amber-100',
-    red: 'bg-red-100',
-    green: 'bg-green-100',
-    violet: 'bg-purple-100',
-  }
-  const textColors: Record<string, string> = {
-    blue: 'text-blue-600',
-    amber: 'text-amber-600',
-    red: 'text-red-600',
-    green: 'text-green-600',
-    violet: 'text-purple-600',
-  }
-
+function TabBtn({ active, onClick, icon, label, count }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string; count?: number }) {
   return (
-    <div className="card-modern">
-      <div className="card-body">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs font-medium text-tx-lo uppercase tracking-wide">{title}</p>
-          <div className={`w-10 h-10 rounded-lg ${bgColors[tone]} ${textColors[tone]} flex items-center justify-center`}>
-            {icon}
-          </div>
-        </div>
+    <button onClick={onClick} style={{
+      padding: '10px 16px', background: 'none', border: 'none',
+      borderBottom: active ? '2px solid var(--rose-bright)' : '2px solid transparent',
+      color: active ? 'var(--tx-hi)' : 'var(--tx-mid)', fontWeight: active ? 600 : 500, fontSize: 14,
+      cursor: 'pointer', transition: 'all 0.15s', display: 'flex', alignItems: 'center', gap: 6,
+    }}>
+      {icon}{label}
+      {count != null && count > 0 && <span className="badge-modern badge-danger" style={{ marginLeft: 2 }}>{count}</span>}
+    </button>
+  )
+}
 
-        <div className="flex items-baseline gap-2 mb-2">
-          <p className="text-2xl font-bold text-tx-hi">{value}</p>
-        </div>
-
-        {trend && <p className="text-xs text-tx-faint">{trend}</p>}
+function Kpi({ tone, icon, label, value, sub, alert }: { tone: 'blue' | 'amber' | 'red' | 'green' | 'violet'; icon: React.ReactNode; label: string; value: string; sub: string; alert?: boolean }) {
+  const map: Record<string, { bg: string; fg: string }> = {
+    blue: { bg: 'var(--blue-bg, #eff6ff)', fg: 'var(--blue, #2563eb)' },
+    amber: { bg: 'var(--amber-bg)', fg: 'var(--amber)' },
+    red: { bg: 'var(--rose-bg)', fg: 'var(--rose-bright)' },
+    green: { bg: 'var(--green-bg)', fg: 'var(--green)' },
+    violet: { bg: 'var(--violet-bg, #f5f3ff)', fg: 'var(--violet, #7c3aed)' },
+  }
+  const c = map[tone]
+  return (
+    <div className="card-modern" style={{ padding: 14, ...(alert ? { borderColor: 'var(--rose-bright)' } : {}) }}>
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: c.fg, background: c.bg, padding: '3px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600 }}>
+        <span style={{ display: 'inline-flex', width: 15, height: 15 }}>{icon}</span>{label}
       </div>
+      <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--tx-hi)', marginTop: 8, lineHeight: 1 }}>{value}</div>
+      <div className="fs12 tx-faint" style={{ marginTop: 3 }}>{sub}</div>
     </div>
   )
 }
