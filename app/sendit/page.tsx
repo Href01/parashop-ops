@@ -21,6 +21,9 @@ interface Row {
   matchedCustomerName: string | null
   assignedProducts: Array<{ productId: number; quantity: number; price: number }> | null
   paymentMethod: string | null
+  paidAmount: number | null
+  paidAt: string | null
+  paymentReference: string | null
   state: string
   promoted: boolean
   promotedOrderId: number | null
@@ -246,6 +249,9 @@ function AssignDrawer({ stagingId, onClose, onSaved }: { stagingId: number; onCl
   const [catalog, setCatalog] = useState<CatProduct[]>([])
   const [items, setItems] = useState<Assigned[]>([])
   const [paymentMethod, setPaymentMethod] = useState<'COD' | 'VIREMENT'>('COD')
+  const [paidAmount, setPaidAmount] = useState('')
+  const [paidAt, setPaidAt] = useState('')
+  const [paymentReference, setPaymentReference] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
@@ -259,6 +265,9 @@ function AssignDrawer({ stagingId, onClose, onSaved }: { stagingId: number; onCl
         setCatalog(Array.isArray(d.catalog) ? d.catalog : [])
         setItems(Array.isArray(d.row?.assignedProducts) ? d.row.assignedProducts : [])
         setPaymentMethod(d.row?.paymentMethod === 'VIREMENT' ? 'VIREMENT' : 'COD')
+        setPaidAmount(d.row?.paidAmount != null ? String(d.row.paidAmount) : '')
+        setPaidAt(d.row?.paidAt ? String(d.row.paidAt).slice(0, 10) : '')
+        setPaymentReference(d.row?.paymentReference || '')
       })
       .finally(() => setLoading(false))
   }, [stagingId])
@@ -275,7 +284,7 @@ function AssignDrawer({ stagingId, onClose, onSaved }: { stagingId: number; onCl
   const isVirement = paymentMethod === 'VIREMENT'
   // Cash actually received for the order: COD collected by Sendit, OR (virement)
   // the bank transfer = products + charged delivery (the customer paid both).
-  const cashReceived = isVirement ? productsTotal + fee : cod
+  const cashReceived = isVirement ? Number(paidAmount) || 0 : cod
   // Reconciliation only makes sense for COD (compare products to COD − delivery).
   const expected = isVirement ? productsTotal : cod - fee
   const diff = productsTotal - expected
@@ -291,7 +300,11 @@ function AssignDrawer({ stagingId, onClose, onSaved }: { stagingId: number; onCl
   const save = async () => {
     setSaving(true)
     try {
-      const res = await fetch(`/api/ops/sendit/staging/${stagingId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assignedProducts: items, paymentMethod }) })
+      const res = await fetch(`/api/ops/sendit/staging/${stagingId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignedProducts: items, paymentMethod, paidAmount, paidAt, paymentReference }),
+      })
       if (!res.ok) throw new Error()
       onSaved()
     } catch { setSaving(false) }
@@ -334,7 +347,26 @@ function AssignDrawer({ stagingId, onClose, onSaved }: { stagingId: number; onCl
                   }}>{m === 'COD' ? '💵 COD (à la livraison)' : '🏦 Virement'}</button>
                 ))}
               </div>
-              {isVirement && <p style={{ fontSize: 11, color: 'var(--tx-lo)', marginTop: 6 }}>Encaissé par virement : produits + livraison. COD Sendit = 0.</p>}
+              {isVirement && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 10 }}>
+                  <label style={{ fontSize: 11, color: 'var(--tx-lo)' }}>
+                    Montant reçu (MAD)
+                    <input type="number" min={0.01} step={0.01} value={paidAmount} onChange={(e) => setPaidAmount(e.target.value)} required
+                      style={{ width: '100%', marginTop: 4, padding: '7px 9px', borderRadius: 7, border: '1px solid var(--line)', background: 'var(--bg-2)', color: 'var(--tx-hi)' }} />
+                  </label>
+                  <label style={{ fontSize: 11, color: 'var(--tx-lo)' }}>
+                    Date de réception
+                    <input type="date" value={paidAt} onChange={(e) => setPaidAt(e.target.value)}
+                      style={{ width: '100%', marginTop: 4, padding: '7px 9px', borderRadius: 7, border: '1px solid var(--line)', background: 'var(--bg-2)', color: 'var(--tx-hi)' }} />
+                  </label>
+                  <label style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--tx-lo)' }}>
+                    Référence bancaire
+                    <input type="text" value={paymentReference} onChange={(e) => setPaymentReference(e.target.value)} placeholder="Référence ou note du virement"
+                      style={{ width: '100%', marginTop: 4, padding: '7px 9px', borderRadius: 7, border: '1px solid var(--line)', background: 'var(--bg-2)', color: 'var(--tx-hi)' }} />
+                  </label>
+                  <p style={{ gridColumn: '1 / -1', fontSize: 11, color: 'var(--tx-lo)' }}>COD Sendit = 0. Le dashboard utilisera uniquement ce montant bancaire confirmé.</p>
+                </div>
+              )}
             </div>
 
             {/* Suggestions */}
@@ -418,7 +450,7 @@ function AssignDrawer({ stagingId, onClose, onSaved }: { stagingId: number; onCl
               {missingCost && <p style={{ fontSize: 11, color: 'var(--amber)', marginTop: 6 }}>⚠️ Un produit n&apos;a pas de coût (costPrice) → marge sous-estimée. Renseigne-le dans Produits.</p>}
             </div>
 
-            <button onClick={save} disabled={saving} className="btn-modern btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
+            <button onClick={save} disabled={saving || (isVirement && (!(Number(paidAmount) > 0) || !paidAt))} className="btn-modern btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
               {saving ? 'Enregistrement…' : 'Enregistrer l\'affectation'}
             </button>
           </div>

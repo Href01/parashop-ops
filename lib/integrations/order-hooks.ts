@@ -51,7 +51,15 @@ export async function onOrderConfirmed(orderId: number) {
     // PART 1: REDUCE STOCK & CREATE INVENTORY MOVEMENTS
     // ================================================================
 
-    for (const item of items) {
+    // The database trigger is the primary stock writer. This hook remains as a
+    // fallback for orders that did not yet leave the warehouse, but must never
+    // apply a second Sale movement for the same order.
+    const existingSale = await client.query(
+      `SELECT 1 FROM "InventoryMovement" WHERE "orderId" = $1 AND type = 'Sale' LIMIT 1`,
+      [orderId]
+    )
+
+    for (const item of existingSale.rows.length === 0 ? items : []) {
       if (!item.productId) continue
 
       // Get current stock

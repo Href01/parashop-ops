@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import pool from '@/lib/db'
 import { createSenditShipment, getShipmentTracking } from '@/lib/sendit'
 import { getOpsSession } from '@/lib/auth'
-import { buildSenditProductsDescription, calculateCodAmount } from '@/lib/order-utils'
+import { buildSenditProductsDescription, calculateCodAmount, isPrepaidPaymentMethod } from '@/lib/order-utils'
+import { creditOrderPoints } from '@/lib/loyalty'
+import { fireDeliveredCapi } from '@/lib/meta-capi'
 
 // Create Sendit shipment for an order
 export async function POST(
@@ -96,6 +98,8 @@ export async function POST(
       package_description: productsDescription,
       notes: notes || order.notes || '',
     })
+    const districtMismatch = shipment.destination_district_id != null
+      && shipment.destination_district_id !== districtId
 
     // Update order with Sendit tracking info
     await pool.query(
@@ -120,7 +124,14 @@ export async function POST(
       `INSERT INTO "OrderStatusHistory" (
         "orderId", "oldStatus", "newStatus", note, "createdAt"
       ) VALUES ($1, $2, $3, $4, NOW())`,
-      [orderId, order.status, order.status, `Sendit shipment created: ${shipment.tracking_id}`]
+      [
+        orderId,
+        order.status,
+        order.status,
+        districtMismatch
+          ? `Sendit shipment created: ${shipment.tracking_id}; district mismatch requested=${districtId} received=${shipment.destination_district_id}`
+          : `Sendit shipment created: ${shipment.tracking_id}`,
+      ]
     )
 
     console.log(`✅ Sendit shipment created for order ${orderId}: ${shipment.tracking_id}`)
@@ -131,6 +142,9 @@ export async function POST(
       barcode: shipment.barcode,
       status: shipment.status,
       shippingCost: shipment.shipping_cost,
+      destinationDistrictId: shipment.destination_district_id,
+      destinationDistrictName: shipment.destination_district_name,
+      districtMismatch,
       estimatedDelivery: shipment.estimated_delivery_date,
     })
 
@@ -165,7 +179,7 @@ export async function GET(
 
     // Get order with tracking ID
     const orderResult = await pool.query(
-      'SELECT status, "senditTrackingId" FROM "Order" WHERE id = $1',
+      'SELECT status, "senditTrackingId", "paymentMethod" FROM "Order" WHERE id = $1',
       [orderId]
     )
 
@@ -193,14 +207,41 @@ export async function GET(
 
     const newStatus = statusMap[tracking.status]
 
-    await pool.query(
-      `UPDATE "Order"
-       SET "senditStatus" = $1,
-           "deliveryStatus" = $2,
-           status = COALESCE($3::"OrderStatus", status)
-       WHERE id = $4`,
-      [tracking.status, tracking.status, newStatus || null, orderId]
-    )
+    const prepaid = isPrepaidPaymentMethod(orderResult.rows[0].paymentMethod)
+    const amount = Number(tracking.amount) || 0
+    const fee = Number(tracking.fee) || 0
+    if (prepaid) {
+      await pool.query(
+        `UPDATE "Order"
+         SET "senditStatus" = $1, "deliveryStatus" = $1,
+             status = COALESCE($2::"OrderStatus", status),
+             "actualDeliveryCost" = $3, "codAmount" = NULL,
+             "deliveredAt" = CASE
+               WHEN $2 = 'DELIVERED' AND NULLIF($4::text, '') IS NOT NULL
+                 THEN ($4::timestamp AT TIME ZONE 'Africa/Casablanca')
+               ELSE "deliveredAt" END
+         WHERE id = $5 AND "senditTrackingId" = $6`,
+        [tracking.status, newStatus || null, fee, tracking.last_action_at || null, orderId, tracking.tracking_id]
+      )
+    } else {
+      await pool.query(
+        `UPDATE "Order"
+         SET "senditStatus" = $1, "deliveryStatus" = $1,
+             status = COALESCE($2::"OrderStatus", status),
+             "actualDeliveryCost" = $3,
+             total = CASE WHEN $4 > 0 THEN $4 ELSE total END,
+             "codAmount" = CASE WHEN $4 > 0 THEN $4 ELSE "codAmount" END,
+             "paidAmount" = CASE WHEN $2 = 'DELIVERED' AND $4 > 0 THEN $4 ELSE "paidAmount" END,
+             "paidAt" = CASE WHEN $2 = 'DELIVERED' AND NULLIF($5::text, '') IS NOT NULL
+               THEN ($5::timestamp AT TIME ZONE 'Africa/Casablanca') ELSE "paidAt" END,
+             "paymentReference" = CASE WHEN $2 = 'DELIVERED' THEN COALESCE("paymentReference", $7) ELSE "paymentReference" END,
+             "paymentStatus" = CASE WHEN $2 = 'DELIVERED' AND $4 > 0 THEN 'PAID' ELSE "paymentStatus" END,
+             "deliveredAt" = CASE WHEN $2 = 'DELIVERED' AND NULLIF($5::text, '') IS NOT NULL
+               THEN ($5::timestamp AT TIME ZONE 'Africa/Casablanca') ELSE "deliveredAt" END
+         WHERE id = $6 AND "senditTrackingId" = $7`,
+        [tracking.status, newStatus || null, fee, amount, tracking.last_action_at || null, orderId, tracking.tracking_id]
+      )
+    }
 
     if (newStatus && newStatus !== orderResult.rows[0].status) {
       // Add status history if status changed
@@ -217,6 +258,14 @@ export async function GET(
           ) VALUES ($1, $2, $3, $4, NOW())`,
           [orderId, orderResult.rows[0].status, newStatus, `Sendit status: ${tracking.status}`]
         )
+      }
+      if (newStatus === 'DELIVERED') {
+        try {
+          await creditOrderPoints(pool, Number(orderId))
+        } catch (error) {
+          console.error('[Sendit] loyalty', orderId, error)
+        }
+        await fireDeliveredCapi(Number(orderId))
       }
     }
 

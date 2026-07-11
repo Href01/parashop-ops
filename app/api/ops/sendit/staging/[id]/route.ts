@@ -93,10 +93,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     .filter((x: any) => Number.isInteger(x.productId) && Number(x.quantity) > 0)
     .map((x: any) => ({ productId: x.productId, quantity: Math.round(Number(x.quantity)), price: Number(x.price) || 0 }))
   const paymentMethod = b.paymentMethod === 'VIREMENT' ? 'VIREMENT' : 'COD'
+  const paidAmount = paymentMethod === 'VIREMENT' ? Number(b.paidAmount) : null
+  if (paymentMethod === 'VIREMENT' && (paidAmount == null || !Number.isFinite(paidAmount) || paidAmount <= 0)) {
+    return NextResponse.json({ error: 'Le montant du virement recu est requis' }, { status: 400 })
+  }
+  const paidAt = paymentMethod === 'VIREMENT' && b.paidAt ? String(b.paidAt) : null
+  if (paymentMethod === 'VIREMENT' && !paidAt) {
+    return NextResponse.json({ error: 'La date de reception du virement est requise' }, { status: 400 })
+  }
+  const paymentReference = paymentMethod === 'VIREMENT' && b.paymentReference
+    ? String(b.paymentReference).trim().slice(0, 120)
+    : null
 
   const r = await pool.query(
-    `UPDATE "SenditStaging" SET "assignedProducts" = $1::jsonb, "paymentMethod" = $2, "updatedAt" = NOW() WHERE id = $3 AND promoted = false RETURNING id`,
-    [JSON.stringify(clean), paymentMethod, id]
+    `UPDATE "SenditStaging"
+     SET "assignedProducts" = $1::jsonb,
+         "paymentMethod" = $2,
+         "paidAmount" = $3,
+         "paidAt" = $4::timestamptz,
+         "paymentReference" = $5,
+         "updatedAt" = NOW()
+     WHERE id = $6 AND promoted = false
+     RETURNING id`,
+    [JSON.stringify(clean), paymentMethod, paidAmount, paidAt, paymentReference, id]
   )
   if (r.rows.length === 0) return NextResponse.json({ error: 'introuvable ou déjà promu' }, { status: 404 })
   return NextResponse.json({ ok: true })

@@ -18,6 +18,10 @@ interface Order {
   deliveryAddress?: string
   deliveryNotes?: string
   paymentMethod?: string
+  paidAmount?: number | string | null
+  paidAt?: string | null
+  paymentReference?: string | null
+  paymentStatus?: string | null
   revenue?: number | string
   total?: number | string
   codAmount?: number | string | null
@@ -73,6 +77,9 @@ export default function OrderDetailPage() {
     deliveryAddress: '',
     deliveryNotes: '',
     paymentMethod: 'COD',
+    paidAmount: '',
+    paidAt: '',
+    paymentReference: '',
   })
 
   useEffect(() => {
@@ -93,6 +100,9 @@ export default function OrderDetailPage() {
         deliveryAddress: data.deliveryAddress || '',
         deliveryNotes: data.deliveryNotes || '',
         paymentMethod: data.paymentMethod || 'COD',
+        paidAmount: data.paidAmount != null ? String(data.paidAmount) : '',
+        paidAt: data.paidAt ? data.paidAt.slice(0, 10) : '',
+        paymentReference: data.paymentReference || '',
       })
     } catch (fetchError: any) {
       setError(fetchError.message)
@@ -250,10 +260,16 @@ export default function OrderDetailPage() {
     setActionSuccess('')
 
     try {
+      const payload: Record<string, string> = { ...editForm }
+      if (editForm.paymentMethod !== 'VIREMENT') {
+        delete payload.paidAmount
+        delete payload.paidAt
+        delete payload.paymentReference
+      }
       const res = await fetch(`/api/ops/orders/${orderId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editForm),
+        body: JSON.stringify(payload),
       })
 
       if (!res.ok) throw new Error('Failed to update order')
@@ -570,6 +586,9 @@ export default function OrderDetailPage() {
                     deliveryAddress: order.deliveryAddress || '',
                     deliveryNotes: order.deliveryNotes || '',
                     paymentMethod: order.paymentMethod || 'COD',
+                    paidAmount: order.paidAmount != null ? String(order.paidAmount) : '',
+                    paidAt: order.paidAt ? order.paidAt.slice(0, 10) : '',
+                    paymentReference: order.paymentReference || '',
                   })
                 }}
               >
@@ -756,6 +775,14 @@ export default function OrderDetailPage() {
                     <Info label="Téléphone" value={order.deliveryPhone || 'N/A'} mono />
                     <Info label="Ville" value={order.deliveryCity || 'N/A'} />
                     <Info label="Paiement" value={order.paymentMethod || 'COD'} />
+                    {order.paymentMethod === 'VIREMENT' && (
+                      <>
+                        <Info label="Montant reçu" value={order.paidAmount != null ? `${formatMoney(toNumber(order.paidAmount))} MAD` : 'Non vérifié'} mono />
+                        <Info label="Statut paiement" value={order.paymentStatus || 'UNVERIFIED'} />
+                        <Info label="Date de réception" value={order.paidAt ? new Date(order.paidAt).toLocaleDateString('fr-FR') : 'Non renseignée'} />
+                        <Info label="Référence bancaire" value={order.paymentReference || 'Non renseignée'} mono />
+                      </>
+                    )}
                     <Info label="Adresse" value={order.deliveryAddress || 'N/A'} wide />
                     <Info label="Notes de livraison" value={order.deliveryNotes || 'Aucune note'} wide muted />
                   </>
@@ -791,10 +818,6 @@ export default function OrderDetailPage() {
                         style={{ border: '1px solid var(--bg-3)', borderRadius: '6px', padding: '4px 8px', background: 'var(--bg-0)' }}
                       />
                     </div>
-                    <div className="info-item">
-                      <div className="il">Payment</div>
-                      <div className="iv">{order.paymentMethod || 'COD'}</div>
-                    </div>
                     <div className="info-item wide">
                       <div className="il">Address</div>
                       <input
@@ -828,6 +851,31 @@ export default function OrderDetailPage() {
                         <option value="CARD">💳 Carte</option>
                       </select>
                     </div>
+                    {editForm.paymentMethod === 'VIREMENT' && (
+                      <>
+                        <div className="info-item">
+                          <div className="il">Montant reçu</div>
+                          <input type="number" min="0" step="0.01" value={editForm.paidAmount}
+                            onChange={(e) => setEditForm({ ...editForm, paidAmount: e.target.value })}
+                            className="iv mono"
+                            style={{ border: '1px solid var(--bg-3)', borderRadius: '6px', padding: '4px 8px', background: 'var(--bg-0)' }} />
+                        </div>
+                        <div className="info-item">
+                          <div className="il">Date de réception</div>
+                          <input type="date" value={editForm.paidAt}
+                            onChange={(e) => setEditForm({ ...editForm, paidAt: e.target.value })}
+                            className="iv"
+                            style={{ border: '1px solid var(--bg-3)', borderRadius: '6px', padding: '4px 8px', background: 'var(--bg-0)' }} />
+                        </div>
+                        <div className="info-item wide">
+                          <div className="il">Référence bancaire</div>
+                          <input type="text" value={editForm.paymentReference}
+                            onChange={(e) => setEditForm({ ...editForm, paymentReference: e.target.value })}
+                            className="iv mono"
+                            style={{ border: '1px solid var(--bg-3)', borderRadius: '6px', padding: '4px 8px', background: 'var(--bg-0)' }} />
+                        </div>
+                      </>
+                    )}
                   </>
                 )}
               </div>

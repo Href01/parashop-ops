@@ -46,6 +46,23 @@ export interface OrderTotals {
   marginPercent: number
 }
 
+export type CanonicalPaymentMethod = 'COD' | 'VIREMENT' | 'CARD'
+
+/** Normalize legacy/UI payment labels before any financial decision. */
+export function normalizePaymentMethod(paymentMethod: unknown): CanonicalPaymentMethod {
+  const method = typeof paymentMethod === 'string' ? paymentMethod.trim().toUpperCase() : ''
+
+  if (['VIREMENT', 'TRANSFER', 'BANK', 'BANK_TRANSFER', 'PREPAID'].includes(method)) {
+    return 'VIREMENT'
+  }
+  if (['CARD', 'CARTE'].includes(method)) return 'CARD'
+  return 'COD'
+}
+
+export function isPrepaidPaymentMethod(paymentMethod: unknown): boolean {
+  return normalizePaymentMethod(paymentMethod) !== 'COD'
+}
+
 export function calculateOrderTotals(
   items: Array<{ quantity: number; price: number; costPrice?: number }>,
   deliveryFee: number,
@@ -84,10 +101,7 @@ export function calculateCodAmount(paymentMethod: unknown, total: unknown): numb
   const amount = Number(total)
   if (!Number.isFinite(amount) || amount < 0) return 0
 
-  const method = typeof paymentMethod === 'string' ? paymentMethod.trim().toUpperCase() : ''
-  const prepaidMethods = new Set(['CARD', 'VIREMENT', 'TRANSFER', 'PREPAID', 'BANK', 'BANK_TRANSFER'])
-
-  return prepaidMethods.has(method) ? 0 : amount
+  return isPrepaidPaymentMethod(paymentMethod) ? 0 : amount
 }
 
 /**

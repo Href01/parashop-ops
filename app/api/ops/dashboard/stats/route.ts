@@ -36,6 +36,7 @@ interface SummaryRow {
   // Realized (attributed by DELIVERY date, not creation date) — reconciles with Sendit cashflow.
   realizedRevenue: number | string | null
   realizedEncaisse: number | string | null
+  realizedBank: number | string | null
   realizedCash: number | string | null
   realizedProfit: number | string | null
   realizedDeliveryCost: number | string | null
@@ -157,6 +158,22 @@ function financialCte(from: string, to: string, cFrom: string, cTo: string) {
       o."senditStatus",
       COALESCE(o."revenue", o."productsTotal", o.total::numeric, 0)::numeric AS revenue,
       COALESCE(o.total::numeric, o."revenue", o."productsTotal", 0)::numeric AS order_total,
+      CASE
+        WHEN UPPER(COALESCE(o."paymentMethod", 'COD')) IN ('VIREMENT', 'TRANSFER', 'CARD') THEN
+          CASE WHEN o."paymentStatus" IN ('PAID', 'PARTIAL') THEN COALESCE(o."paidAmount", 0) ELSE 0 END
+        ELSE COALESCE(o."paidAmount", o.total::numeric, 0)
+      END::numeric AS cash_collected,
+      CASE
+        WHEN UPPER(COALESCE(o."paymentMethod", 'COD')) NOT IN ('VIREMENT', 'TRANSFER', 'CARD')
+          THEN COALESCE(o."paidAmount", o.total::numeric, 0)
+        ELSE 0
+      END::numeric AS cod_collected,
+      CASE
+        WHEN UPPER(COALESCE(o."paymentMethod", 'COD')) IN ('VIREMENT', 'TRANSFER', 'CARD')
+             AND o."paymentStatus" IN ('PAID', 'PARTIAL')
+          THEN COALESCE(o."paidAmount", 0)
+        ELSE 0
+      END::numeric AS bank_collected,
       -- What Sendit actually bills you for delivery (deducted from the COD before payout).
       COALESCE(NULLIF(o."actualDeliveryCost", 0), NULLIF(o."estimatedDeliveryCost", 0), o."deliveryFeeCharged", 0)::numeric AS delivery_cost,
       COALESCE(
@@ -350,8 +367,9 @@ export async function GET(req: Request) {
           -- cash Sendit actually collected in the window (a parcel created in June but
           -- delivered in July lands in July here, unlike the createdAt-based fields above).
           COALESCE(SUM(revenue) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedRevenue",
-          COALESCE(SUM(order_total) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedEncaisse",
-          COALESCE(SUM(order_total - delivery_cost) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedCash",
+          COALESCE(SUM(cod_collected) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedEncaisse",
+          COALESCE(SUM(bank_collected) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedBank",
+          COALESCE(SUM(cash_collected - delivery_cost) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedCash",
           COALESCE(SUM(profit) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedProfit",
           COALESCE(SUM(delivery_cost) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedDeliveryCost",
           COUNT(*) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED')::int AS "realizedOrders",
@@ -557,6 +575,7 @@ export async function GET(req: Request) {
     // numbers reconcile with what Sendit actually collected in the window.
     const realizedRevenue = toNumber(summary?.realizedRevenue)
     const realizedEncaisse = toNumber(summary?.realizedEncaisse)
+    const realizedBank = toNumber(summary?.realizedBank)
     const realizedCash = toNumber(summary?.realizedCash)
     const realizedProfit = toNumber(summary?.realizedProfit)
     const realizedOrders = toNumber(summary?.realizedOrders)
@@ -745,6 +764,7 @@ export async function GET(req: Request) {
       realized: {
         revenue: realizedRevenue,
         encaisse: realizedEncaisse,
+        bank: realizedBank,
         cash: realizedCash,
         profit: realizedProfit,
         margin: realizedMargin,

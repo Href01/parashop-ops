@@ -48,6 +48,9 @@ export default function NewOrderPage() {
     deliveryAddress: '',
     deliveryNotes: '',
     paymentMethod: 'COD',
+    paidAmount: '',
+    paidAt: '',
+    paymentReference: '',
     notes: '',
     confirmImmediately: true,
     discount: 0,
@@ -149,6 +152,9 @@ export default function NewOrderPage() {
         deliveryAddress: formData.deliveryAddress,
         deliveryNotes: formData.deliveryNotes,
         paymentMethod: formData.paymentMethod,
+        paidAmount: formData.paymentMethod === 'VIREMENT' ? formData.paidAmount : undefined,
+        paidAt: formData.paymentMethod === 'VIREMENT' ? formData.paidAt : undefined,
+        paymentReference: formData.paymentMethod === 'VIREMENT' ? formData.paymentReference : undefined,
         notes: formData.notes,
         confirmImmediately: formData.confirmImmediately,
         items: selectedItems,
@@ -484,6 +490,30 @@ export default function NewOrderPage() {
                   </select>
                 </div>
               </div>
+
+              {formData.paymentMethod === 'VIREMENT' && (
+                <div className="form-grid-2 mb16">
+                  <div className="form-field">
+                    <label className="form-label">Montant reçu (MAD)</label>
+                    <input type="number" min="0.01" step="0.01" className="form-input"
+                      value={formData.paidAmount}
+                      onChange={(e) => setFormData({ ...formData, paidAmount: e.target.value })}
+                      required />
+                  </div>
+                  <div className="form-field">
+                    <label className="form-label">Date de réception</label>
+                    <input type="date" className="form-input" value={formData.paidAt}
+                      onChange={(e) => setFormData({ ...formData, paidAt: e.target.value })}
+                      required />
+                  </div>
+                  <div className="form-field" style={{ gridColumn: '1 / -1' }}>
+                    <label className="form-label">Référence bancaire</label>
+                    <input type="text" className="form-input" value={formData.paymentReference}
+                      onChange={(e) => setFormData({ ...formData, paymentReference: e.target.value })}
+                      placeholder="Référence ou note du virement" />
+                  </div>
+                </div>
+              )}
 
               <div className="form-field mb16">
                 <label className="form-label">

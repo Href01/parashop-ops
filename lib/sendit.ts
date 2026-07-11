@@ -86,12 +86,19 @@ interface SenditShipmentResponse {
   status: string
   estimated_delivery_date?: string
   shipping_cost: number
+  destination_district_id?: number
+  destination_district_name?: string
   message?: string
 }
 
 interface SenditTrackingResponse {
   tracking_id: string
   status: string
+  amount: number
+  fee: number
+  last_action_at?: string
+  destination_district_id?: number
+  destination_district_name?: string
   status_history: Array<{
     status: string
     location: string
@@ -286,6 +293,8 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
       barcode: data.data.code,
       status: data.data.status,
       shipping_cost: data.data.fee,
+      destination_district_id: Number(data.data.district?.id) || undefined,
+      destination_district_name: data.data.district?.name || undefined,
       message: data.message,
     }
 
@@ -329,6 +338,11 @@ export async function getShipmentTracking(trackingId: string): Promise<SenditTra
     return {
       tracking_id: data.data.code,
       status: data.data.status,
+      amount: Number(data.data.amount) || 0,
+      fee: Number(data.data.fee) || 0,
+      last_action_at: data.data.last_action_at || undefined,
+      destination_district_id: Number(data.data.district?.id) || undefined,
+      destination_district_name: data.data.district?.name || undefined,
       status_history: (data.data.audits || []).map((audit) => ({
         status: audit.data?.status || audit.event || data.data.status,
         location: audit.data?.district ? String(audit.data.district) : '',
@@ -401,6 +415,7 @@ export interface SenditDeliveryListItem {
   comment: string | null
   reference: string | null
   createdAt: string | null
+  lastActionAt: string | null
 }
 
 /**
@@ -432,6 +447,7 @@ export async function listAllSenditDeliveries(maxPages = 60): Promise<SenditDeli
         comment: d.comment || null,
         reference: d.reference || null,
         createdAt: d.created_at || null,
+        lastActionAt: d.last_action_at || null,
       })
     }
     lastPage = data.last_page || 1
@@ -454,7 +470,7 @@ export async function getAllDistricts(): Promise<SenditDistrict[]> {
 
     // Fetch all pages
     do {
-      const response = await fetch(`${SENDIT_API_URL}/districts?page=${currentPage}`, {
+      const response = await fetch(`${SENDIT_API_URL}/districts?page=${currentPage}&pickup-district=${PICKUP_DISTRICT_ID}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },

@@ -23,6 +23,7 @@ interface DashboardStats {
   realized: {
     revenue: number
     encaisse: number
+    bank: number
     cash: number
     profit: number
     margin: number
@@ -225,7 +226,7 @@ export default function GlowDashboard() {
   // what Sendit actually collected in the period. A safe fallback to the cohort
   // numbers keeps old cached payloads (no `realized` field) from crashing.
   const R = stats.realized ?? {
-    revenue: stats.revenueDelivered, encaisse: stats.revenueDeliveredTotal,
+    revenue: stats.revenueDelivered, encaisse: stats.revenueDeliveredTotal, bank: 0,
     cash: stats.cashReceivedDelivered, profit: stats.profitDelivered,
     margin: stats.marginDelivered, orders: stats.ordersDelivered, revenueDelta: stats.revenueDeliveredDelta,
   }
@@ -352,6 +353,9 @@ export default function GlowDashboard() {
             }
           />
           <Kpi label={`Encaissé COD · ${periodLabel}`} value={mad(dEncaisse)} unit="MAD" sub={`avec livraison · ${basisSub}`} />
+          {byDeliv && R.bank > 0 && (
+            <Kpi label={`Virements reçus · ${periodLabel}`} value={mad(R.bank)} unit="MAD" sub="paiements vérifiés" />
+          )}
           {Math.round(dCash) !== Math.round(dRevenue) && (
             <Kpi label={`Cash reçu · ${periodLabel}`} value={mad(dCash)} unit="MAD" sub={`net frais Sendit · ${basisSub}`} />
           )}

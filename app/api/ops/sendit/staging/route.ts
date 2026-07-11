@@ -3,15 +3,16 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { isFounder } from '@/lib/auth'
 import pool from '@/lib/db'
-import { listAllSenditDeliveries } from '@/lib/sendit'
+import { creditOrderPoints } from '@/lib/loyalty'
+import { fireDeliveredCapi } from '@/lib/meta-capi'
+import { isPrepaidPaymentMethod } from '@/lib/order-utils'
+import { getShipmentTracking, listAllSenditDeliveries } from '@/lib/sendit'
 
 async function guard() {
   const session = await getServerSession(authOptions)
-  if (!session?.user?.email || !isFounder(session.user.email)) return false
-  return true
+  return !!session?.user?.email && isFounder(session.user.email)
 }
 
-/** Normalize a Moroccan phone to its 9-digit core for matching. */
 function phoneKey(p: string | null | undefined): string {
   let d = (p || '').replace(/\D/g, '')
   if (d.startsWith('212')) d = d.slice(3)
@@ -19,20 +20,26 @@ function phoneKey(p: string | null | undefined): string {
   return d.slice(-9)
 }
 
-function mapSenditStatus(s: string): string {
-  const u = (s || '').toUpperCase()
-  if (u === 'DELIVERED') return 'DELIVERED'
-  if (['CANCELED', 'CANCELLED', 'REJECTED', 'REFUSED', 'RETURNED', 'RETURN'].some((k) => u.includes(k))) return 'CANCELLED'
-  return 'CONFIRMED' // warehouse / in-transit / pending pickup
+function referenceKey(value: unknown): string {
+  return typeof value === 'string' ? value.trim().toUpperCase() : ''
 }
 
-/** GET — current staging rows + summary counts (read-only). */
+function mapSenditStatus(status: string): string {
+  const value = String(status || '').toUpperCase()
+  if (value === 'DELIVERED') return 'DELIVERED'
+  if (['CANCELED', 'CANCELLED', 'REJECTED', 'REFUSED', 'RETURNED', 'RETURN'].includes(value)) return 'CANCELLED'
+  return 'CONFIRMED'
+}
+
 export async function GET() {
   if (!(await guard())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const rows = await pool.query(`
     SELECT id, code, "senditStatus", name, phone, city, amount::float AS amount, fee::float AS fee,
            "productsText", reference, "senditCreatedAt", "matchedOrderId", "matchedUserId",
-           "matchedCustomerName", "assignedProducts", state, promoted, "promotedOrderId", "pulledAt"
+           "matchedCustomerName", "assignedProducts", "paymentMethod",
+           "paidAmount"::float AS "paidAmount", "paidAt", "paymentReference", state, promoted,
+           "promotedOrderId", "pulledAt"
     FROM "SenditStaging"
     ORDER BY promoted ASC, "senditCreatedAt" DESC NULLS LAST
   `)
@@ -43,18 +50,17 @@ export async function GET() {
       COUNT(*) FILTER (WHERE state = 'matched')::int AS matched,
       COUNT(*) FILTER (WHERE state = 'mismatch')::int AS mismatch,
       COUNT(*) FILTER (WHERE promoted)::int AS promoted,
-      COUNT(*) FILTER (WHERE "assignedProducts" IS NOT NULL AND jsonb_array_length("assignedProducts") > 0 AND NOT promoted)::int AS ready
+      COUNT(*) FILTER (
+        WHERE "assignedProducts" IS NOT NULL
+          AND jsonb_array_length("assignedProducts") > 0
+          AND NOT promoted
+      )::int AS ready
     FROM "SenditStaging"
   `)
+
   return NextResponse.json({ rows: rows.rows, counts: counts.rows[0] })
 }
 
-/**
- * POST — staging actions:
- *  { action: 'pull' }         pull all Sendit deliveries + match (read-only on BOS)
- *  { action: 'sync-matched' } Phase 1: push Sendit truth (status/COD/fee + link)
- *                             onto the already-matched BOS orders
- */
 export async function POST(req: NextRequest) {
   if (!(await guard())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await req.json().catch(() => ({}))
@@ -62,37 +68,133 @@ export async function POST(req: NextRequest) {
   if (body.action === 'sync-matched') {
     try {
       const rows = await pool.query(
-        `SELECT * FROM "SenditStaging" WHERE "matchedOrderId" IS NOT NULL AND state IN ('matched', 'mismatch')`
+        `SELECT * FROM "SenditStaging"
+         WHERE "matchedOrderId" IS NOT NULL
+           AND state IN ('matched', 'mismatch')`
       )
-      let synced = 0, statusChanged = 0
-      for (const s of rows.rows) {
-        const cur = await pool.query(`SELECT status::text AS status FROM "Order" WHERE id = $1`, [s.matchedOrderId])
-        if (cur.rows.length === 0) continue
-        const oldStatus = cur.rows[0].status
-        const mapped = mapSenditStatus(s.senditStatus)
-        // Push Sendit truth: link + status + actual COD + delivery fee
-        await pool.query(
-          `UPDATE "Order"
-           SET "senditTrackingId" = $1::text, "senditStatus" = $2::text, "deliveryStatus" = $2::text,
-               status = $3::"OrderStatus", "deliveryFeeCharged" = $4::numeric, total = $5::numeric
-           WHERE id = $6`,
-          [s.code, s.senditStatus, mapped, Number(s.fee) || 0, Number(s.amount) || 0, s.matchedOrderId]
+
+      let synced = 0
+      let statusChanged = 0
+      let skipped = 0
+
+      for (const staging of rows.rows) {
+        const currentResult = await pool.query(
+          `SELECT id, status::text AS status, "paymentMethod", "senditTrackingId", "orderNumber"
+           FROM "Order" WHERE id = $1`,
+          [staging.matchedOrderId]
         )
+        const current = currentResult.rows[0]
+        if (!current) { skipped++; continue }
+
+        const exactTracking = current.senditTrackingId === staging.code
+        const exactReference = !current.senditTrackingId && [current.orderNumber, `ORD-${current.id}`]
+          .map(referenceKey)
+          .includes(referenceKey(staging.reference))
+        const promotedOwner = staging.promotedOrderId === current.id
+
+        // Never replace an existing tracking from a phone-only or ambiguous match.
+        if (!exactTracking && !exactReference && !promotedOwner) {
+          skipped++
+          await pool.query(
+            `UPDATE "SenditStaging" SET state = 'mismatch', "updatedAt" = NOW() WHERE id = $1`,
+            [staging.id]
+          )
+          continue
+        }
+
+        const oldStatus = current.status
+        let senditStatus = String(staging.senditStatus || '').toUpperCase()
+        let amount = Number(staging.amount) || 0
+        let fee = Number(staging.fee) || 0
+        let deliveredAt: string | null = null
+
+        if (senditStatus === 'DELIVERED' && oldStatus !== 'DELIVERED') {
+          const live = await getShipmentTracking(staging.code)
+          senditStatus = String(live.status || '').toUpperCase()
+          amount = Number(live.amount) || amount
+          fee = Number(live.fee) || fee
+          deliveredAt = live.last_action_at || null
+        }
+
+        const mapped = mapSenditStatus(senditStatus)
+        const prepaid = isPrepaidPaymentMethod(current.paymentMethod)
+
+        if (prepaid) {
+          await pool.query(
+            `UPDATE "Order"
+             SET "senditTrackingId" = COALESCE("senditTrackingId", $1),
+                 "senditStatus" = $2,
+                 "deliveryStatus" = $2,
+                 status = $3::"OrderStatus",
+                 "actualDeliveryCost" = $4,
+                 "codAmount" = NULL,
+                 "deliveredAt" = CASE
+                   WHEN $3 = 'DELIVERED' AND NULLIF($5::text, '') IS NOT NULL
+                     THEN ($5::timestamp AT TIME ZONE 'Africa/Casablanca')
+                   ELSE "deliveredAt"
+                 END
+             WHERE id = $6`,
+            [staging.code, senditStatus, mapped, fee, deliveredAt, current.id]
+          )
+        } else {
+          await pool.query(
+            `UPDATE "Order"
+             SET "senditTrackingId" = COALESCE("senditTrackingId", $1),
+                 "senditStatus" = $2,
+                 "deliveryStatus" = $2,
+                 status = $3::"OrderStatus",
+                 "actualDeliveryCost" = $4,
+                 total = CASE WHEN $5 > 0 THEN $5 ELSE total END,
+                 "codAmount" = CASE WHEN $5 > 0 THEN $5 ELSE "codAmount" END,
+                 "paidAmount" = CASE WHEN $3 = 'DELIVERED' AND $5 > 0 THEN $5 ELSE "paidAmount" END,
+                 "paidAt" = CASE
+                   WHEN $3 = 'DELIVERED' AND NULLIF($6::text, '') IS NOT NULL
+                     THEN ($6::timestamp AT TIME ZONE 'Africa/Casablanca')
+                   ELSE "paidAt"
+                 END,
+                 "paymentReference" = CASE WHEN $3 = 'DELIVERED' THEN COALESCE("paymentReference", $1) ELSE "paymentReference" END,
+                 "paymentStatus" = CASE WHEN $3 = 'DELIVERED' AND $5 > 0 THEN 'PAID' ELSE "paymentStatus" END,
+                 "deliveredAt" = CASE
+                   WHEN $3 = 'DELIVERED' AND NULLIF($6::text, '') IS NOT NULL
+                     THEN ($6::timestamp AT TIME ZONE 'Africa/Casablanca')
+                   ELSE "deliveredAt"
+                 END
+             WHERE id = $7`,
+            [staging.code, senditStatus, mapped, fee, amount, deliveredAt, current.id]
+          )
+        }
+
         if (mapped !== oldStatus) {
           await pool.query(
-            `INSERT INTO "OrderStatusHistory" ("orderId","oldStatus","newStatus","source","note","createdAt")
-             VALUES ($1,$2,$3,'sendit',$4,NOW())`,
-            [s.matchedOrderId, oldStatus, mapped, `Réconciliation Sendit: ${s.senditStatus}`]
+            `INSERT INTO "OrderStatusHistory" ("orderId", "oldStatus", "newStatus", "source", "note", "createdAt")
+             VALUES ($1, $2, $3, 'sendit', $4, NOW())`,
+            [current.id, oldStatus, mapped, `Reconciliation Sendit: ${senditStatus}`]
           )
           statusChanged++
+
+          if (mapped === 'DELIVERED') {
+            try {
+              await creditOrderPoints(pool, current.id)
+            } catch (error) {
+              console.error('[Sendit] loyalty', current.id, error)
+            }
+            await fireDeliveredCapi(current.id)
+          }
         }
-        await pool.query(`UPDATE "SenditStaging" SET state = 'matched', "updatedAt" = NOW() WHERE id = $1`, [s.id])
+
+        await pool.query(
+          `UPDATE "SenditStaging"
+           SET state = 'matched', "senditStatus" = $1, amount = $2, fee = $3, "updatedAt" = NOW()
+           WHERE id = $4`,
+          [senditStatus, amount, fee, staging.id]
+        )
         synced++
       }
-      return NextResponse.json({ ok: true, synced, statusChanged })
-    } catch (e) {
-      console.error('[Sendit] sync-matched', e)
-      return NextResponse.json({ error: e instanceof Error ? e.message : 'Erreur serveur' }, { status: 500 })
+
+      return NextResponse.json({ ok: true, synced, statusChanged, skipped })
+    } catch (error) {
+      console.error('[Sendit] sync-matched', error)
+      return NextResponse.json({ error: error instanceof Error ? error.message : 'Erreur serveur' }, { status: 500 })
     }
   }
 
@@ -100,32 +202,55 @@ export async function POST(req: NextRequest) {
 
   try {
     const deliveries = await listAllSenditDeliveries()
+    const orders = await pool.query(
+      `SELECT id, "orderNumber", "senditTrackingId", status::text AS status FROM "Order"`
+    )
+    const promoted = await pool.query(
+      `SELECT code, "promotedOrderId" FROM "SenditStaging"
+       WHERE promoted = true AND "promotedOrderId" IS NOT NULL`
+    )
+    const users = await pool.query(
+      `SELECT id, name, phone FROM "User" WHERE role IS DISTINCT FROM 'ADMIN' AND phone IS NOT NULL`
+    )
 
-    // Load BOS orders + users once (read-only) for matching
-    const orders = await pool.query(`SELECT id, "senditTrackingId", "deliveryPhone", status::text AS status, "deliveryName" FROM "Order"`)
-    const users = await pool.query(`SELECT id, name, phone FROM "User" WHERE role IS DISTINCT FROM 'ADMIN' AND phone IS NOT NULL`)
+    const orderById = new Map<number, any>()
     const byTracking = new Map<string, any>()
-    const ordersByPhone = new Map<string, any>()
-    for (const o of orders.rows) {
-      if (o.senditTrackingId) byTracking.set(o.senditTrackingId, o)
-      const k = phoneKey(o.deliveryPhone)
-      if (k && !ordersByPhone.has(k)) ordersByPhone.set(k, o)
+    const referenceCandidates = new Map<string, any[]>()
+    for (const order of orders.rows) {
+      orderById.set(order.id, order)
+      if (order.senditTrackingId) byTracking.set(order.senditTrackingId, order)
+      for (const key of [referenceKey(order.orderNumber), referenceKey(`ORD-${order.id}`)]) {
+        if (!key) continue
+        const candidates = referenceCandidates.get(key) || []
+        candidates.push(order)
+        referenceCandidates.set(key, candidates)
+      }
     }
+
+    const promotedOwnerByCode = new Map<string, any>()
+    for (const row of promoted.rows) {
+      const owner = orderById.get(row.promotedOrderId)
+      if (owner) promotedOwnerByCode.set(row.code, owner)
+    }
+
     const usersByPhone = new Map<string, any>()
-    for (const u of users.rows) {
-      const k = phoneKey(u.phone)
-      if (k && !usersByPhone.has(k)) usersByPhone.set(k, u)
+    for (const user of users.rows) {
+      const key = phoneKey(user.phone)
+      if (key && !usersByPhone.has(key)) usersByPhone.set(key, user)
     }
 
-    let inserted = 0, updated = 0
-    for (const d of deliveries) {
-      const pk = phoneKey(d.phone)
-      const matchedOrder = byTracking.get(d.code) || ordersByPhone.get(pk) || null
-      const matchedUser = usersByPhone.get(pk) || null
-      const mapped = mapSenditStatus(d.status)
-      const state = !matchedOrder ? 'sendit_only' : (mapped === matchedOrder.status ? 'matched' : 'mismatch')
+    let inserted = 0
+    let updated = 0
+    for (const delivery of deliveries) {
+      const refMatches = referenceCandidates.get(referenceKey(delivery.reference)) || []
+      const matchedOrder = promotedOwnerByCode.get(delivery.code)
+        || byTracking.get(delivery.code)
+        || (refMatches.length === 1 ? refMatches[0] : null)
+      const matchedUser = usersByPhone.get(phoneKey(delivery.phone)) || null
+      const mapped = mapSenditStatus(delivery.status)
+      const state = !matchedOrder ? 'sendit_only' : mapped === matchedOrder.status ? 'matched' : 'mismatch'
 
-      const r = await pool.query(
+      const result = await pool.query(
         `INSERT INTO "SenditStaging"
            (code, "senditStatus", name, phone, "phoneKey", city, amount, fee, "productsText", reference,
             "senditCreatedAt", "matchedOrderId", "matchedUserId", "matchedCustomerName", state, "pulledAt", "updatedAt")
@@ -134,22 +259,30 @@ export async function POST(req: NextRequest) {
            "senditStatus" = EXCLUDED."senditStatus", name = EXCLUDED.name, phone = EXCLUDED.phone,
            "phoneKey" = EXCLUDED."phoneKey", city = EXCLUDED.city, amount = EXCLUDED.amount, fee = EXCLUDED.fee,
            "productsText" = EXCLUDED."productsText", reference = EXCLUDED.reference,
-           "senditCreatedAt" = EXCLUDED."senditCreatedAt", "matchedOrderId" = EXCLUDED."matchedOrderId",
-           "matchedUserId" = EXCLUDED."matchedUserId", "matchedCustomerName" = EXCLUDED."matchedCustomerName",
+           "senditCreatedAt" = EXCLUDED."senditCreatedAt",
+           "matchedOrderId" = CASE
+             WHEN "SenditStaging".promoted AND "SenditStaging"."promotedOrderId" IS NOT NULL
+               THEN "SenditStaging"."promotedOrderId"
+             ELSE EXCLUDED."matchedOrderId"
+           END,
+           "matchedUserId" = EXCLUDED."matchedUserId",
+           "matchedCustomerName" = EXCLUDED."matchedCustomerName",
            state = CASE WHEN "SenditStaging".promoted THEN "SenditStaging".state ELSE EXCLUDED.state END,
            "pulledAt" = NOW(), "updatedAt" = NOW()
          RETURNING (xmax = 0) AS inserted`,
         [
-          d.code, d.status, d.name, d.phone, pk, d.city, d.amount, d.fee, d.products, d.reference,
-          d.createdAt || null, matchedOrder?.id || null, matchedUser?.id || null, matchedUser?.name || null, state,
+          delivery.code, delivery.status, delivery.name, delivery.phone, phoneKey(delivery.phone), delivery.city,
+          delivery.amount, delivery.fee, delivery.products, delivery.reference, delivery.createdAt || null,
+          matchedOrder?.id || null, matchedUser?.id || null, matchedUser?.name || null, state,
         ]
       )
-      if (r.rows[0]?.inserted) inserted++; else updated++
+      if (result.rows[0]?.inserted) inserted++
+      else updated++
     }
 
     return NextResponse.json({ ok: true, pulled: deliveries.length, inserted, updated })
-  } catch (e) {
-    console.error('[Sendit] staging pull', e)
-    return NextResponse.json({ error: e instanceof Error ? e.message : 'Erreur serveur' }, { status: 500 })
+  } catch (error) {
+    console.error('[Sendit] staging pull', error)
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Erreur serveur' }, { status: 500 })
   }
 }

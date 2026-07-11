@@ -2,19 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { isFounder } from '@/lib/auth'
-import pool from '@/lib/db'
 import { findOrCreateCustomer } from '@/lib/customer'
+import pool from '@/lib/db'
+import { creditOrderPoints } from '@/lib/loyalty'
+import { fireDeliveredCapi } from '@/lib/meta-capi'
+import { isPrepaidPaymentMethod, normalizePaymentMethod } from '@/lib/order-utils'
+import { getShipmentTracking } from '@/lib/sendit'
 
-/**
- * POST /api/ops/sendit/promote  { ids: number[] }
- * Promotes validated 'sendit_only' staging rows into REAL Order + OrderItem.
- * This is the only place the lab writes to the live BOS — on explicit click.
- * Idempotent: skips rows already promoted or with no assigned products.
- */
-function mapStatus(s: string): string {
-  const u = (s || '').toUpperCase()
-  if (u === 'DELIVERED') return 'DELIVERED'
-  if (['CANCELED', 'CANCELLED', 'REJECTED', 'REFUSED', 'RETURNED', 'RETURN'].some((k) => u.includes(k))) return 'CANCELLED'
+function mapStatus(status: string): string {
+  const value = String(status || '').toUpperCase()
+  if (value === 'DELIVERED') return 'DELIVERED'
+  if (['CANCELED', 'CANCELLED', 'REJECTED', 'REFUSED', 'RETURNED', 'RETURN'].includes(value)) return 'CANCELLED'
   return 'CONFIRMED'
 }
 
@@ -23,97 +21,161 @@ export async function POST(req: NextRequest) {
   if (!session?.user?.email || !isFounder(session.user.email)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
-  const b = await req.json().catch(() => ({}))
-  const ids = Array.isArray(b.ids) ? b.ids.filter((n: unknown) => Number.isInteger(n)) : []
-  if (ids.length === 0) return NextResponse.json({ error: 'Aucun colis sélectionné' }, { status: 400 })
+
+  const body = await req.json().catch(() => ({}))
+  const ids = Array.isArray(body.ids) ? body.ids.filter((id: unknown) => Number.isInteger(id)) : []
+  if (ids.length === 0) return NextResponse.json({ error: 'Aucun colis selectionne' }, { status: 400 })
 
   const rows = await pool.query(
-    `SELECT * FROM "SenditStaging" WHERE id = ANY($1) AND promoted = false AND state = 'sendit_only'`,
+    `SELECT * FROM "SenditStaging"
+     WHERE id = ANY($1) AND promoted = false AND state = 'sendit_only'`,
     [ids]
   )
 
   let promoted = 0
   const skipped: Array<{ id: number; reason: string }> = []
 
-  for (const s of rows.rows) {
-    const items: Array<{ productId: number; quantity: number; price: number }> = Array.isArray(s.assignedProducts) ? s.assignedProducts : []
-    if (items.length === 0) { skipped.push({ id: s.id, reason: 'pas de produits affectés' }); continue }
+  for (const staging of rows.rows) {
+    const items: Array<{ productId: number; quantity: number; price: number }> = Array.isArray(staging.assignedProducts)
+      ? staging.assignedProducts
+      : []
+    if (items.length === 0) {
+      skipped.push({ id: staging.id, reason: 'pas de produits affectes' })
+      continue
+    }
+
+    const productsTotal = items.reduce(
+      (sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0),
+      0
+    )
+    const status = mapStatus(staging.senditStatus)
+    const paymentMethod = normalizePaymentMethod(staging.paymentMethod)
+    const prepaid = isPrepaidPaymentMethod(paymentMethod)
+    const bankPaidAmount = Number(staging.paidAmount) || 0
+    if (prepaid && (bankPaidAmount <= 0 || !staging.paidAt)) {
+      skipped.push({ id: staging.id, reason: 'montant et date du virement requis' })
+      continue
+    }
+    let fee = Number(staging.fee) || 0
+    let amount = Number(staging.amount) || 0
+    let deliveredAt: string | null = null
+
+    if (status === 'DELIVERED') {
+      try {
+        const live = await getShipmentTracking(staging.code)
+        fee = Number(live.fee) || fee
+        amount = Number(live.amount) || amount
+        deliveredAt = live.last_action_at || null
+      } catch (error) {
+        skipped.push({ id: staging.id, reason: error instanceof Error ? error.message : 'tracking Sendit indisponible' })
+        continue
+      }
+    }
+
+    // The courier fee is a cost. The customer delivery charge is inferred from
+    // the assigned product prices and must not reuse the courier-fee column.
+    const orderTotal = prepaid ? bankPaidAmount : amount
+    const deliveryFeeCharged = Math.max(orderTotal - productsTotal, 0)
+    const codAmount = prepaid ? null : amount
+    const verifiedPaidAmount = prepaid ? bankPaidAmount : status === 'DELIVERED' ? amount : null
+    const verifiedPaidAt = prepaid ? staging.paidAt : status === 'DELIVERED' ? deliveredAt : null
+    const paymentReference = prepaid ? staging.paymentReference : staging.code
+    const paymentStatus = verifiedPaidAmount != null ? 'PAID' : 'PENDING'
 
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
 
-      // Safety: never create a duplicate for an already-imported tracking code
-      const dup = await client.query(`SELECT id FROM "Order" WHERE "senditTrackingId" = $1`, [s.code])
-      if (dup.rows.length > 0) {
+      const duplicate = await client.query(
+        `SELECT id FROM "Order" WHERE "senditTrackingId" = $1`,
+        [staging.code]
+      )
+      if (duplicate.rows.length > 0) {
         await client.query('ROLLBACK')
-        await pool.query(`UPDATE "SenditStaging" SET promoted = true, "promotedOrderId" = $1, "updatedAt" = NOW() WHERE id = $2`, [dup.rows[0].id, s.id])
-        skipped.push({ id: s.id, reason: 'commande déjà existante (liée)' })
+        await pool.query(
+          `UPDATE "SenditStaging"
+           SET promoted = true, "promotedOrderId" = $1, "matchedOrderId" = $1,
+               state = 'matched', "updatedAt" = NOW()
+           WHERE id = $2`,
+          [duplicate.rows[0].id, staging.id]
+        )
+        skipped.push({ id: staging.id, reason: 'commande deja existante (liee)' })
         continue
       }
 
-      const productsTotal = items.reduce((sum, it) => sum + (Number(it.price) || 0) * (Number(it.quantity) || 0), 0)
-      const status = mapStatus(s.senditStatus)
-      // Always attach a customer (find by phone, else create) — no ghost customers
-      const customerId = s.matchedUserId || (await findOrCreateCustomer(client, s.name, s.phone))
-      const fee = Number(s.fee) || 0
-      const amount = Number(s.amount) || 0
+      const customerId = staging.matchedUserId
+        || await findOrCreateCustomer(client, staging.name, staging.phone)
       const delivered = status === 'DELIVERED'
 
-      // Payment method: VIREMENT (prepaid by bank transfer) → Sendit COD is 0, but
-      // the customer paid products + delivery by transfer. Write codAmount = NULL +
-      // total = products + delivery so calculate_order_profit()'s
-      // COALESCE(codAmount, total, revenue) uses the real cash received, not 0.
-      const isVirement = (s.paymentMethod || 'COD') === 'VIREMENT'
-      const paymentMethod = isVirement ? 'VIREMENT' : 'COD'
-      const orderTotal = isVirement ? productsTotal + fee : amount
-      const codAmount = isVirement ? null : amount
-
-      // Cost prices for COGS (so profit/margin are correct)
-      const costRes = await client.query(
-        `SELECT id, COALESCE("costPrice", 0)::float AS cost FROM "Product" WHERE id = ANY($1)`,
-        [items.map((it) => it.productId)]
+      const costResult = await client.query(
+        `SELECT id, COALESCE("costPrice", 0)::float AS cost
+         FROM "Product" WHERE id = ANY($1)`,
+        [items.map((item) => item.productId)]
       )
-      const costOf = new Map<number, number>(costRes.rows.map((r: { id: number; cost: number }) => [r.id, r.cost]))
+      const costByProduct = new Map<number, number>(
+        costResult.rows.map((row: { id: number; cost: number }) => [row.id, row.cost])
+      )
 
-      const ord = await client.query(
+      const orderResult = await client.query(
         `INSERT INTO "Order"
            ("userId", total, "productsTotal", status, "paymentMethod", "sourceChannel",
             "deliveryName", "deliveryPhone", "deliveryCity", "deliveryFeeCharged",
             "estimatedDeliveryCost", "actualDeliveryCost", "codAmount",
-            "senditTrackingId", "senditStatus", "deliveryStatus", "createdAt")
-         VALUES ($1, $2, $3, $4::"OrderStatus", $16, 'Sendit', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, COALESCE($15, NOW()))
+            "senditTrackingId", "senditStatus", "deliveryStatus", "createdAt", "deliveredAt",
+            "paidAmount", "paidAt", "paymentReference", "paymentStatus")
+         VALUES
+           ($1, $2, $3, $4::"OrderStatus", $16, 'Sendit',
+            $5, $6, $7, $8, $9, $10, $11,
+            $12, $13, $14, COALESCE($15, NOW()),
+            CASE WHEN NULLIF($17::text, '') IS NOT NULL
+              THEN ($17::timestamp AT TIME ZONE 'Africa/Casablanca') ELSE NULL END,
+            $18, $19::timestamptz, $20, $21)
          RETURNING id`,
         [
           customerId, orderTotal, productsTotal, status,
-          s.name, s.phone, s.city, fee,
+          staging.name, staging.phone, staging.city, deliveryFeeCharged,
           fee, delivered ? fee : null, codAmount,
-          s.code, s.senditStatus, s.senditStatus, s.senditCreatedAt,
-          paymentMethod,
+          staging.code, staging.senditStatus, staging.senditStatus, staging.senditCreatedAt,
+          paymentMethod, deliveredAt,
+          verifiedPaidAmount, verifiedPaidAt, paymentReference, paymentStatus,
         ]
       )
-      const orderId = ord.rows[0].id
+      const orderId = orderResult.rows[0].id
 
-      for (const it of items) {
-        const unitCost = costOf.get(it.productId) || 0
+      for (const item of items) {
+        const unitCost = costByProduct.get(item.productId) || 0
         await client.query(
-          `INSERT INTO "OrderItem" ("orderId", "productId", quantity, price, "unitCost", "totalCost", "pointsEarned")
+          `INSERT INTO "OrderItem"
+             ("orderId", "productId", quantity, price, "unitCost", "totalCost", "pointsEarned")
            VALUES ($1, $2, $3, $4, $5, $6, 0)`,
-          [orderId, it.productId, it.quantity, it.price, unitCost, unitCost * it.quantity]
+          [orderId, item.productId, item.quantity, item.price, unitCost, unitCost * item.quantity]
         )
       }
 
-      // Re-fire the profit trigger now that the items exist (it ran at INSERT
-      // before any item, so productsTotal/revenue/profit were computed on zero items)
       await client.query(`UPDATE "Order" SET status = status WHERE id = $1`, [orderId])
-
       await client.query('COMMIT')
-      await pool.query(`UPDATE "SenditStaging" SET promoted = true, "promotedOrderId" = $1, "updatedAt" = NOW() WHERE id = $2`, [orderId, s.id])
+
+      await pool.query(
+        `UPDATE "SenditStaging"
+         SET promoted = true, "promotedOrderId" = $1, "matchedOrderId" = $1,
+             state = 'matched', fee = $2, amount = $3, "updatedAt" = NOW()
+         WHERE id = $4`,
+        [orderId, fee, amount, staging.id]
+      )
+
+      if (delivered) {
+        try {
+          await creditOrderPoints(pool, orderId)
+        } catch (error) {
+          console.error('[Sendit] loyalty after promotion', orderId, error)
+        }
+        await fireDeliveredCapi(orderId)
+      }
       promoted++
-    } catch (e) {
+    } catch (error) {
       await client.query('ROLLBACK')
-      console.error('[Sendit] promote row', s.id, e)
-      skipped.push({ id: s.id, reason: e instanceof Error ? e.message : 'erreur' })
+      console.error('[Sendit] promote row', staging.id, error)
+      skipped.push({ id: staging.id, reason: error instanceof Error ? error.message : 'erreur' })
     } finally {
       client.release()
     }

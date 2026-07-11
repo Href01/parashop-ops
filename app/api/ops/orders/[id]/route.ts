@@ -134,6 +134,9 @@ export async function PUT(
       status,
       sourceChannel,
       paymentMethod,
+      paidAmount,
+      paidAt,
+      paymentReference,
     } = body
 
     // Build update query dynamically
@@ -228,6 +231,33 @@ export async function PUT(
       paramIndex++
       updates.push(`"codAmount" = $${paramIndex}`)
       values.push(prepaid ? null : base)
+      paramIndex++
+    }
+
+    if (paidAmount !== undefined) {
+      const paid = Number(paidAmount)
+      if (!Number.isFinite(paid) || paid < 0) {
+        return NextResponse.json({ error: 'invalid paidAmount' }, { status: 400 })
+      }
+      const totalResult = await pool.query('SELECT total FROM "Order" WHERE id = $1', [orderId])
+      const orderTotal = Number(totalResult.rows[0]?.total) || 0
+      updates.push(`"paidAmount" = $${paramIndex}`)
+      values.push(paid)
+      paramIndex++
+      updates.push(`"paymentStatus" = $${paramIndex}`)
+      values.push(paid <= 0 ? 'UNVERIFIED' : paid + 0.01 >= orderTotal ? 'PAID' : 'PARTIAL')
+      paramIndex++
+    }
+
+    if (paidAt !== undefined) {
+      updates.push(`"paidAt" = $${paramIndex}::timestamptz`)
+      values.push(paidAt || null)
+      paramIndex++
+    }
+
+    if (paymentReference !== undefined) {
+      updates.push(`"paymentReference" = $${paramIndex}`)
+      values.push(String(paymentReference || '').trim().slice(0, 120) || null)
       paramIndex++
     }
 
@@ -348,6 +378,8 @@ export async function PUT(
                 package_description: productsDesc,
                 notes: order.notes || '',
               })
+              const districtMismatch = shipment.destination_district_id != null
+                && shipment.destination_district_id !== Number(order.senditDistrictId)
 
               // Update order with Sendit tracking info (keep status as CONFIRMED)
               await pool.query(
@@ -371,8 +403,19 @@ export async function PUT(
                 `INSERT INTO "OrderStatusHistory" (
                   "orderId", "oldStatus", "newStatus", "source", "note", "createdAt"
                 ) VALUES ($1, $2, $3, 'auto', $4, NOW())`,
-                [orderId, 'CONFIRMED', 'CONFIRMED', `Sendit shipment created: ${shipment.tracking_id}`]
+                [
+                  orderId,
+                  'CONFIRMED',
+                  'CONFIRMED',
+                  districtMismatch
+                    ? `Sendit shipment created: ${shipment.tracking_id}; district mismatch requested=${order.senditDistrictId} received=${shipment.destination_district_id}`
+                    : `Sendit shipment created: ${shipment.tracking_id}`,
+                ]
               )
+
+              if (districtMismatch) {
+                senditWarning = `Sendit destination mismatch: expected district #${order.senditDistrictId}, received ${shipment.destination_district_name || `#${shipment.destination_district_id}`}. Verify before pickup.`
+              }
 
               console.log(`✅ Sendit shipment created: ${shipment.tracking_id}`)
             } else {

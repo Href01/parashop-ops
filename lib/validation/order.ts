@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { normalizePaymentMethod } from '@/lib/order-utils'
 
 /**
  * Phone number validation and formatting
@@ -47,7 +48,13 @@ export const CreateOrderSchema = z.object({
   senditDistrictId: z.number().int().positive().optional(), // Sendit district chosen by customer
 
   // Payment
-  paymentMethod: z.enum(['COD', 'Card', 'Transfer']),
+  paymentMethod: z.preprocess(
+    normalizePaymentMethod,
+    z.enum(['COD', 'VIREMENT', 'CARD'])
+  ),
+  paidAmount: NonNegativeNumberSchema.optional(),
+  paidAt: z.string().date().optional(),
+  paymentReference: z.string().trim().max(120).optional(),
 
   // Items
   items: z.array(z.object({
@@ -65,6 +72,15 @@ export const CreateOrderSchema = z.object({
   promoCode: z.string().optional(),
   notes: z.string().optional(),
   confirmImmediately: z.boolean().default(false),
+}).superRefine((data, ctx) => {
+  if (data.paymentMethod === 'VIREMENT') {
+    if (!(Number(data.paidAmount) > 0)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['paidAmount'], message: 'Bank transfer amount is required' })
+    }
+    if (!data.paidAt) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['paidAt'], message: 'Bank transfer date is required' })
+    }
+  }
 }).transform(data => {
   // Calculate total server-side to prevent manipulation
   const productsTotal = data.items.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0)

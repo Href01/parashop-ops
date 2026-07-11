@@ -33,11 +33,11 @@ type CapiEvent = {
   contents?: Array<{ id: string | number; quantity: number }>
 }
 
-async function sendMetaCapi(ev: CapiEvent): Promise<void> {
-  if (!PIXEL_ID) return
+async function sendMetaCapi(ev: CapiEvent): Promise<boolean> {
+  if (!PIXEL_ID) return false
   // Prefer an explicit CAPI token (same one as the main site); else the ad-sync token.
   const token = process.env.META_CAPI_TOKEN || process.env.META_ACCESS_TOKEN || await getMetaToken()
-  if (!token) return
+  if (!token) return false
   try {
     const user_data: Record<string, unknown> = {}
     const ph = hashPhone(ev.phone); if (ph) user_data.ph = [ph]
@@ -68,9 +68,14 @@ async function sendMetaCapi(ev: CapiEvent): Promise<void> {
       `https://graph.facebook.com/${VERSION}/${PIXEL_ID}/events?access_token=${encodeURIComponent(token)}`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: ctrl.signal }
     ).finally(() => clearTimeout(t))
-    if (!res.ok) console.error('[CAPI delivered]', res.status, (await res.text()).slice(0, 200))
+    if (!res.ok) {
+      console.error('[CAPI delivered]', res.status, (await res.text()).slice(0, 200))
+      return false
+    }
+    return true
   } catch (e) {
     console.error('[CAPI delivered]', e instanceof Error ? e.message : e)
+    return false
   }
 }
 
@@ -86,14 +91,14 @@ export async function fireDeliveredCapi(orderId: number): Promise<void> {
     const claim = await pool.query(
       `UPDATE "Order" SET "capiDeliveredAt" = NOW()
        WHERE id = $1 AND status = 'DELIVERED' AND "capiDeliveredAt" IS NULL
-       RETURNING total, "codAmount", "deliveryPhone", "deliveryCity"`,
+       RETURNING total, "codAmount", "deliveryPhone", "deliveryCity", "capiDeliveredAt"`,
       [orderId]
     )
     if (claim.rows.length === 0) return
     const o = claim.rows[0]
     const items = await pool.query(`SELECT "productId", quantity FROM "OrderItem" WHERE "orderId" = $1`, [orderId])
     const value = Number(o.codAmount ?? o.total) || 0
-    await sendMetaCapi({
+    const sent = await sendMetaCapi({
       eventName: 'Delivered',
       eventId: `delivered_${orderId}`,
       phone: o.deliveryPhone,
@@ -103,6 +108,12 @@ export async function fireDeliveredCapi(orderId: number): Promise<void> {
       contentIds: items.rows.map((i: { productId: number }) => i.productId),
       contents: items.rows.map((i: { productId: number; quantity: number }) => ({ id: i.productId, quantity: i.quantity })),
     })
+    if (!sent) {
+      await pool.query(
+        `UPDATE "Order" SET "capiDeliveredAt" = NULL WHERE id = $1 AND "capiDeliveredAt" = $2`,
+        [orderId, o.capiDeliveredAt]
+      )
+    }
   } catch (e) {
     console.error('[CAPI delivered] fire', e instanceof Error ? e.message : e)
   }
