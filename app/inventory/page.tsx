@@ -6,7 +6,7 @@ import BosShell from '@/components/BosShell'
 import {
   Search, AlertTriangle, Package, PackageCheck, TrendingDown, CheckCircle, XCircle,
   Download, Plus, Minus, DollarSign, History, ArrowUpCircle, ArrowDownCircle,
-  Truck, ShoppingCart, ChevronRight, ChevronDown,
+  Truck, ShoppingCart, ChevronRight, ChevronDown, Trash2,
 } from 'lucide-react'
 
 type OpenOrder = { orderId: number; qty: number; customer: string; city: string | null; shipped: boolean; status: string; created: string }
@@ -106,6 +106,25 @@ export default function InventoryPage() {
       console.error('Failed to fetch purchases:', error)
     } finally {
       setLoadingPurchases(false)
+    }
+  }
+
+  const [deletingId, setDeletingId] = useState<number | null>(null)
+  // Undo a manual movement (test/mistaken purchase or adjustment): reverses the
+  // stock it applied, then refreshes the affected views.
+  const deleteMovement = async (id: number, label: string) => {
+    if (!confirm(`Supprimer ce mouvement (${label}) ?\nLe stock ajouté par ce mouvement sera annulé.`)) return
+    setDeletingId(id)
+    try {
+      const res = await fetch(`/api/ops/inventory/movement/${id}`, { method: 'DELETE' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Échec de la suppression')
+      // Refresh whichever lists are loaded so the row disappears and stock updates.
+      await Promise.all([fetchPurchases(), fetchMovements(), fetchInventory()])
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Échec de la suppression')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -617,12 +636,20 @@ export default function InventoryPage() {
                       <h3 style={sectionTitle}>Achats récents</h3>
                       <div className="card-modern" style={{ padding: 12 }}>
                         {purchases!.recent.length === 0 ? <div className="fs12 tx-lo">—</div> : purchases!.recent.slice(0, 12).map((r) => (
-                          <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: 12, padding: '5px 0', borderBottom: '1px solid var(--line-soft)' }}>
-                            <div style={{ minWidth: 0 }}>
+                          <div key={r.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, fontSize: 12, padding: '5px 0', borderBottom: '1px solid var(--line-soft)' }}>
+                            <div style={{ minWidth: 0, flex: 1 }}>
                               <div className="tx-hi" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 160 }} title={r.name}>{r.name}</div>
                               <div className="fs11 tx-faint">{fmtDate(r.createdAt)} · +{r.quantity}</div>
                             </div>
                             <div className="num fw600" style={{ color: 'var(--tx-hi)', whiteSpace: 'nowrap' }}>{r.totalCost != null ? `${money(r.totalCost)}` : '—'}</div>
+                            <button
+                              onClick={() => deleteMovement(r.id, `${r.name} · +${r.quantity}`)}
+                              disabled={deletingId === r.id}
+                              title="Supprimer cet achat (annule le stock ajouté)"
+                              style={{ display: 'flex', alignItems: 'center', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--tx-faint)', padding: 4, opacity: deletingId === r.id ? 0.4 : 1 }}
+                            >
+                              <Trash2 style={{ width: 14, height: 14 }} />
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -647,14 +674,14 @@ export default function InventoryPage() {
               <table className="table-modern">
                 <thead>
                   <tr>
-                    <th>Date</th><th>Produit</th><th>Type</th><th className="r">Quantité</th><th className="r">Avant</th><th className="r">Après</th><th>Raison</th><th>Par</th>
+                    <th>Date</th><th>Produit</th><th>Type</th><th className="r">Quantité</th><th className="r">Avant</th><th className="r">Après</th><th>Raison</th><th>Par</th><th></th>
                   </tr>
                 </thead>
                 <tbody>
                   {loadingMovements ? (
-                    [1, 2, 3].map((i) => (<tr key={i}><td colSpan={8}><div className="skeleton-line" /></td></tr>))
+                    [1, 2, 3].map((i) => (<tr key={i}><td colSpan={9}><div className="skeleton-line" /></td></tr>))
                   ) : movements.length === 0 ? (
-                    <tr><td colSpan={8}><div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                    <tr><td colSpan={9}><div style={{ textAlign: 'center', padding: '40px 20px' }}>
                       <div style={{ width: 52, height: 52, borderRadius: 14, background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }}><History style={{ width: 24, height: 24, color: 'var(--tx-faint)' }} /></div>
                       <p style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx-mid)', margin: '0 0 4px' }}>Aucun mouvement</p>
                       <p style={{ fontSize: 13, color: 'var(--tx-faint)', margin: 0 }}>Les entrées et sorties de stock seront tracées ici.</p>
@@ -673,6 +700,20 @@ export default function InventoryPage() {
                           <td className="r num fw600">{m.stockAfter}</td>
                           <td className="fs12 tx-lo">{m.reason || '—'}</td>
                           <td className="fs11 tx-lo">{m.performedBy?.split('@')[0] || '—'}</td>
+                          <td className="r">
+                            {['Purchase', 'Adjustment', 'Damage', 'Transfer'].includes(m.type) ? (
+                              <button
+                                onClick={() => deleteMovement(m.id, `${m.productName} · ${m.quantity > 0 ? '+' : ''}${m.quantity}`)}
+                                disabled={deletingId === m.id}
+                                title="Supprimer ce mouvement (annule le stock appliqué)"
+                                style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--tx-faint)', padding: 4, opacity: deletingId === m.id ? 0.4 : 1 }}
+                              >
+                                <Trash2 style={{ width: 14, height: 14 }} />
+                              </button>
+                            ) : (
+                              <span className="fs11 tx-faint" title="Mouvement automatique (commande) — non supprimable">—</span>
+                            )}
+                          </td>
                         </tr>
                       )
                     })
