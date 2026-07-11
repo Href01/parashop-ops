@@ -303,6 +303,7 @@ export async function GET(req: Request) {
       channelRows,
       activityHistoryRows,
       recentOrdersRows,
+      pnlRows,
     ] = await Promise.all([
       safeQuery<SummaryRow>('summary', `
         ${FINANCIAL_CTE}
@@ -497,6 +498,21 @@ export async function GET(req: Request) {
         ORDER BY o."createdAt" DESC
         LIMIT 6
       `),
+      // P&L inputs for the period [from, to]: supplier purchase cash-out, ad spend,
+      // logged operating expenses, and the packaging per-parcel rate.
+      safeQuery<{ purchaseSpend: number; adSpend: number; opex: number; opexPackaging: number; packagingRate: number }>('pnl', `
+        SELECT
+          (SELECT COALESCE(SUM("totalCost"),0) FROM "InventoryMovement"
+             WHERE type='Purchase' AND "totalCost" IS NOT NULL
+               AND "createdAt" >= '${from}'::date AND "createdAt" < ('${to}'::date + INTERVAL '1 day'))::double precision AS "purchaseSpend",
+          (SELECT COALESCE(SUM(spend),0) FROM "AdSpendDaily"
+             WHERE date >= '${from}'::date AND date <= '${to}'::date)::double precision AS "adSpend",
+          (SELECT COALESCE(SUM(amount),0) FROM "OperatingExpense"
+             WHERE "date" >= '${from}'::date AND "date" <= '${to}'::date)::double precision AS "opex",
+          (SELECT COALESCE(SUM(amount),0) FROM "OperatingExpense"
+             WHERE category='Emballage' AND "date" >= '${from}'::date AND "date" <= '${to}'::date)::double precision AS "opexPackaging",
+          (SELECT COALESCE(value::numeric,0) FROM "AppSetting" WHERE key='packaging_cost_per_parcel')::double precision AS "packagingRate"
+      `),
     ])
 
     const summary = summaryRows[0]
@@ -541,6 +557,40 @@ export async function GET(req: Request) {
     const previousRealizedRevenue = toNumber(summary?.previousRealizedRevenue)
     const realizedMargin = realizedRevenue > 0 ? (realizedProfit / realizedRevenue) * 100 : 0
     const realizedRevenueDelta = percentageChange(realizedRevenue, previousRealizedRevenue)
+
+    // ---- Period P&L: Rentabilité (accrual) + Trésorerie (cash) ----
+    const pnlRow = pnlRows[0]
+    const purchaseSpend = toNumber(pnlRow?.purchaseSpend)
+    const adSpendPnl = toNumber(pnlRow?.adSpend)
+    const opex = toNumber(pnlRow?.opex)
+    const packagingRate = toNumber(pnlRow?.packagingRate)
+    // Emballage on the margin side is accrued per delivered parcel (realized orders).
+    const packagingAccrued = realizedOrders * packagingRate
+    // Rentabilité: profit on delivered sales (already net of COGS + Sendit delivery),
+    // then minus accrued packaging and ad spend.
+    const profitNet = realizedProfit - packagingAccrued - adSpendPnl
+    // Trésorerie: cash collected (net Sendit) minus all cash out in the period.
+    const cashNet = realizedCash - purchaseSpend - adSpendPnl - opex
+    const pnl = {
+      rentabilite: {
+        caLivre: realizedRevenue,
+        profitLivre: realizedProfit, // net COGS + livraison
+        margeLivree: realizedMargin,
+        pub: adSpendPnl,
+        emballage: packagingAccrued,
+        net: profitNet,
+        marginPct: realizedRevenue > 0 ? (profitNet / realizedRevenue) * 100 : 0,
+      },
+      tresorerie: {
+        encaisse: realizedCash,
+        achats: purchaseSpend,
+        pub: adSpendPnl,
+        frais: opex,
+        net: cashNet,
+      },
+      packagingRate,
+      deliveredParcels: realizedOrders,
+    }
     const marginPercent = revenueWeek > 0 ? (estimatedProfitWeek / revenueWeek) * 100 : 0
     const revenueDelta = percentageChange(revenueWeek, previousRevenueWeek)
     const profitDelta = percentageChange(estimatedProfitWeek, previousProfitWeek)
@@ -688,6 +738,7 @@ export async function GET(req: Request) {
         orders: realizedOrders,
         revenueDelta: realizedRevenueDelta,
       },
+      pnl,
       revenueDelta,
       estimatedProfit: estimatedProfitWeek,
       profitDelta,

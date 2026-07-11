@@ -56,13 +56,17 @@ export async function GET(request: NextRequest) {
       ),
       pool.query(
         `SELECT
-           COALESCE(SUM("totalCost"), 0)::float AS "totalSpent",
-           COALESCE(SUM(quantity), 0)::int AS "unitsPurchased",
-           COUNT(*)::int AS "purchaseCount",
-           COUNT(DISTINCT "productId")::int AS "productsRestocked"
-         FROM "InventoryMovement"
-         WHERE type = 'Purchase' AND "totalCost" IS NOT NULL AND "totalCost" > 0
-           AND "createdAt" >= NOW() - ($1 || ' days')::interval`,
+           COALESCE(SUM(im."totalCost"), 0)::float AS "totalSpent",
+           COALESCE(SUM(im.quantity), 0)::int AS "unitsPurchased",
+           -- "Commandes" = distinct supplier + day (one Salerm order of 5 products is
+           -- ONE commande, not 5). Line items live in "Achats récents".
+           COUNT(DISTINCT (COALESCE(p.supplier, '—') || '#' || (im."createdAt")::date::text))::int AS "purchaseCount",
+           COUNT(*)::int AS "lineCount",
+           COUNT(DISTINCT im."productId")::int AS "productsRestocked"
+         FROM "InventoryMovement" im
+         LEFT JOIN "Product" p ON p.id = im."productId"
+         WHERE im.type = 'Purchase' AND im."totalCost" IS NOT NULL AND im."totalCost" > 0
+           AND im."createdAt" >= NOW() - ($1 || ' days')::interval`,
         [String(days)]
       ),
     ])

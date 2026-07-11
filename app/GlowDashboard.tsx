@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Download, Plus, ArrowUp, ArrowDown, RefreshCw } from 'lucide-react'
+import { Download, Plus, ArrowUp, ArrowDown, RefreshCw, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 
 interface DashboardStats {
@@ -28,6 +28,12 @@ interface DashboardStats {
     margin: number
     orders: number
     revenueDelta: number | null
+  }
+  pnl?: {
+    rentabilite: { caLivre: number; profitLivre: number; margeLivree: number; pub: number; emballage: number; net: number; marginPct: number }
+    tresorerie: { encaisse: number; achats: number; pub: number; frais: number; net: number }
+    packagingRate: number
+    deliveredParcels: number
   }
   revenueDelta: number | null
   estimatedProfit: number
@@ -101,6 +107,12 @@ export default function GlowDashboard() {
   // Accounting basis for the delivered/cash cards: 'delivered' = by delivery date
   // (réalisé, reconciles with Sendit) · 'created' = by order-creation date (cohorte).
   const [basis, setBasis] = useState<'delivered' | 'created'>('delivered')
+  // Operating expenses module (packaging, cartons, external ads, misc) + packaging rate.
+  const [showExpenses, setShowExpenses] = useState(false)
+  const [expenses, setExpenses] = useState<{ expenses: Array<{ id: number; date: string; category: string; label: string | null; amount: number }>; summary: { total: number; byCategory: Array<{ category: string; total: number; n: number }> }; packagingRate: number } | null>(null)
+  const [expForm, setExpForm] = useState({ date: '', category: 'Emballage', label: '', amount: '' })
+  const [rateInput, setRateInput] = useState('')
+  const [savingExp, setSavingExp] = useState(false)
 
   // Labels for the current selection + comparison
   const periodLabel = mode === 'month' ? `${MONTHS_FR[month.m]} ${month.year}`
@@ -134,6 +146,37 @@ export default function GlowDashboard() {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, days, month, week])
+
+  // Current selected period as {from,to} — reused for the expenses module.
+  const periodParams = () => {
+    if (mode === 'month') { const r = monthRange(month.year, month.m); return { from: r.from, to: r.to } }
+    if (mode === 'week') { const r = weekRange(week.year, week.w); return { from: r.from, to: r.to } }
+    const to = isoDay(now); const f = new Date(now); f.setDate(f.getDate() - (days - 1)); return { from: isoDay(f), to }
+  }
+  const loadExpenses = async () => {
+    const { from, to } = periodParams()
+    const res = await fetch(`/api/ops/expenses?from=${from}&to=${to}`, { cache: 'no-store' })
+    if (res.ok) { const d = await res.json(); setExpenses(d); setRateInput(String(d.packagingRate || '')) }
+  }
+  const openExpenses = () => { setShowExpenses(true); loadExpenses() }
+  const addExpense = async () => {
+    if (!(Number(expForm.amount) > 0)) return
+    setSavingExp(true)
+    try {
+      const res = await fetch('/api/ops/expenses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(expForm) })
+      if (!res.ok) throw new Error()
+      setExpForm({ date: '', category: 'Emballage', label: '', amount: '' })
+      await Promise.all([loadExpenses(), load()])
+    } catch { alert("Échec de l'ajout") } finally { setSavingExp(false) }
+  }
+  const deleteExpense = async (id: number) => {
+    await fetch(`/api/ops/expenses/${id}`, { method: 'DELETE' })
+    await Promise.all([loadExpenses(), load()])
+  }
+  const saveRate = async () => {
+    await fetch('/api/ops/expenses', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ packagingRate: Number(rateInput) || 0 }) })
+    await Promise.all([loadExpenses(), load()])
+  }
 
   if (error && !stats) {
     return (
@@ -308,6 +351,40 @@ export default function GlowDashboard() {
           <Kpi label="Taux de livraison" value={`${stats.deliveryRate.toFixed(0)}%`} sub="livrées / résolues · création" />
           <Kpi label="ROAS" value={`${stats.roas.toFixed(1)}x`} />
         </div>
+
+        {/* Résultat de la période: Rentabilité + Trésorerie */}
+        {stats.pnl && (() => {
+          const r = stats.pnl.rentabilite, t = stats.pnl.tresorerie
+          return (
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
+                <div>
+                  <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx-hi)' }}>Résultat · {periodLabel}</h3>
+                  <p style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 2 }}>Rentabilité = marge sur ventes livrées · Trésorerie = cash réel entré/sorti sur la période</p>
+                </div>
+                <button className="btn-modern btn-secondary" onClick={openExpenses}>Dépenses & emballage</button>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }} className="dash-hero">
+                <div className="card-modern" style={{ padding: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }}>🔵 Rentabilité <span style={{ fontWeight: 500, color: 'var(--tx-faint)', fontSize: 11 }}>· ventes livrées</span></div>
+                  <PnlRow label="CA livré" value={r.caLivre} />
+                  <PnlRow label="Profit livré" sub={`net produits + livraison · ${r.margeLivree.toFixed(0)}%`} value={r.profitLivre} muted />
+                  <PnlRow label="Pub" value={-r.pub} neg />
+                  <PnlRow label={`Emballage`} sub={`${stats.pnl.deliveredParcels} colis × ${stats.pnl.packagingRate} DH`} value={-r.emballage} neg />
+                  <PnlRow label="Profit net" value={r.net} total pct={r.marginPct} />
+                </div>
+                <div className="card-modern" style={{ padding: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }}>🟢 Trésorerie <span style={{ fontWeight: 500, color: 'var(--tx-faint)', fontSize: 11 }}>· cash réel</span></div>
+                  <PnlRow label="Cash encaissé" sub="COD livré, net frais Sendit" value={t.encaisse} />
+                  <PnlRow label="Achats fournisseur" value={-t.achats} neg />
+                  <PnlRow label="Pub" value={-t.pub} neg />
+                  <PnlRow label="Dépenses (emballage & frais)" value={-t.frais} neg />
+                  <PnlRow label="Cash net généré" value={t.net} total />
+                </div>
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Chart + goal */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: 16, marginBottom: 16 }} className="dash-hero">
@@ -578,6 +655,57 @@ export default function GlowDashboard() {
         </div>
       </div>
 
+      {showExpenses && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60, padding: 16 }} onClick={() => setShowExpenses(false)}>
+          <div className="card-modern" style={{ maxWidth: 560, width: '100%', maxHeight: '90vh', overflow: 'auto' }} onClick={(e) => e.stopPropagation()}>
+            <div className="card-header"><h3 className="text-lg font-semibold">Dépenses &amp; emballage · {periodLabel}</h3><div className="flex-1" /><button onClick={() => setShowExpenses(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', fontSize: 20, color: 'var(--tx-lo)' }}>×</button></div>
+            <div className="card-body">
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, marginBottom: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Coût emballage / colis (MAD)</label>
+                  <input type="number" min="0" step="0.5" value={rateInput} onChange={(e) => setRateInput(e.target.value)} placeholder="Ex: 6" className="input-modern" style={{ width: '100%' }} />
+                </div>
+                <button className="btn-modern btn-secondary" onClick={saveRate}>Enregistrer</button>
+              </div>
+              <p className="fs11 tx-faint" style={{ marginBottom: 16, paddingBottom: 16, borderBottom: '1px solid var(--line-soft)' }}>Emballage estimé dans la <b>Rentabilité</b> = colis livrés × ce taux. Les dépenses réelles ci-dessous (cash) comptent dans la <b>Trésorerie</b>.</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                <div>
+                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Catégorie</label>
+                  <select value={expForm.category} onChange={(e) => setExpForm({ ...expForm, category: e.target.value })} className="input-modern" style={{ width: '100%' }}>
+                    {['Emballage', 'Pub', 'Livraison', 'Salaire', 'Loyer', 'Divers'].map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Montant (MAD)</label>
+                  <input type="number" min="0" step="0.01" value={expForm.amount} onChange={(e) => setExpForm({ ...expForm, amount: e.target.value })} placeholder="Ex: 180" className="input-modern" style={{ width: '100%' }} />
+                </div>
+                <div>
+                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Date</label>
+                  <input type="date" value={expForm.date} onChange={(e) => setExpForm({ ...expForm, date: e.target.value })} className="input-modern" style={{ width: '100%' }} />
+                </div>
+                <div>
+                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Libellé (optionnel)</label>
+                  <input type="text" value={expForm.label} onChange={(e) => setExpForm({ ...expForm, label: e.target.value })} placeholder="Ex: cartons" className="input-modern" style={{ width: '100%' }} />
+                </div>
+              </div>
+              <button className="btn-modern btn-primary" onClick={addExpense} disabled={savingExp || !(Number(expForm.amount) > 0)} style={{ width: '100%', marginBottom: 16 }}>{savingExp ? 'Ajout…' : 'Ajouter la dépense'}</button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <span className="fs12 tx-mid fw600">Dépenses de la période</span>
+                <span className="fs12 num fw600">{expenses ? mad(expenses.summary.total) : 0} MAD</span>
+              </div>
+              {expenses && expenses.expenses.length > 0 ? expenses.expenses.map((e) => (
+                <div key={e.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--line-soft)', fontSize: 12 }}>
+                  <span className="badge gray" style={{ fontSize: 10 }}>{e.category}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}><div className="tx-hi" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.label || e.category}</div><div className="fs11 tx-faint">{e.date}</div></div>
+                  <span className="num fw600 tx-hi">{mad(e.amount)}</span>
+                  <button onClick={() => deleteExpense(e.id)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--tx-faint)', padding: 4 }}><Trash2 style={{ width: 14, height: 14 }} /></button>
+                </div>
+              )) : <p className="fs12 tx-faint" style={{ textAlign: 'center', padding: '12px 0' }}>Aucune dépense sur la période.</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
       <style jsx>{`
         @media (max-width: 1100px) { .dash-hero { grid-template-columns: 1fr !important; } }
         @keyframes dash-spin { to { transform: rotate(360deg); } }
@@ -637,6 +765,23 @@ function Label({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--tx-lo)', fontWeight: 600 }}>{children}</div>
 }
 function Empty() { return <p style={{ fontSize: 13, color: 'var(--tx-faint)', textAlign: 'center', padding: '16px 0' }}>Pas de données.</p> }
+
+function PnlRow({ label, value, sub, neg, muted, total, pct }: { label: string; value: number; sub?: string; neg?: boolean; muted?: boolean; total?: boolean; pct?: number }) {
+  const fmt = (v: number) => `${v < 0 ? '−' : ''}${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(Math.abs(v))}`
+  const color = total ? (value >= 0 ? 'var(--green)' : 'var(--red, #dc2626)') : neg ? 'var(--tx-mid)' : muted ? 'var(--tx-mid)' : 'var(--tx-hi)'
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, padding: total ? '10px 0 0' : '4px 0', marginTop: total ? 4 : 0, borderTop: total ? '1px solid var(--line-soft)' : undefined }}>
+      <div style={{ minWidth: 0 }}>
+        <span style={{ fontSize: total ? 13 : 12.5, fontWeight: total ? 700 : 500, color: total ? 'var(--tx-hi)' : 'var(--tx-mid)' }}>{label}</span>
+        {sub && <span style={{ fontSize: 10.5, color: 'var(--tx-faint)', marginLeft: 6 }}>{sub}</span>}
+      </div>
+      <span className="num" style={{ fontSize: total ? 16 : 13, fontWeight: total ? 700 : 600, color, whiteSpace: 'nowrap' }}>
+        {fmt(value)}<span style={{ fontSize: 10, color: 'var(--tx-faint)', marginLeft: 3 }}>MAD</span>
+        {total && pct !== undefined && <span style={{ fontSize: 11, color: 'var(--tx-faint)', marginLeft: 6 }}>{pct.toFixed(0)}%</span>}
+      </span>
+    </div>
+  )
+}
 
 function Kpi({ label, value, unit, sub, delta, deltaLabel, accent }: { label: string; value: string; unit?: string; sub?: string; delta?: number | null; deltaLabel?: string; accent?: boolean }) {
   return (

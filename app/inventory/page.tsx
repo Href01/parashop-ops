@@ -35,7 +35,7 @@ type PurchaseProduct = { id: number; name: string; brand: string; supplier: stri
 type PurchaseRecent = { id: number; productId: number; name: string; brand: string; quantity: number; costPerUnit: number | null; totalCost: number | null; reason: string | null; notes: string | null; performedBy: string; createdAt: string }
 type PurchasesData = {
   days: number
-  summary: { totalSpent: number; unitsPurchased: number; purchaseCount: number; productsRestocked: number }
+  summary: { totalSpent: number; unitsPurchased: number; purchaseCount: number; lineCount: number; productsRestocked: number }
   byProduct: PurchaseProduct[]
   bySupplier: { supplier: string; spent: number; units: number }[]
   recent: PurchaseRecent[]
@@ -607,7 +607,7 @@ export default function InventoryPage() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
                   <Kpi tone="violet" icon={<DollarSign />} label="Total dépensé" value={`${money(purchases?.summary.totalSpent || 0)}`} sub="MAD sur la période" />
                   <Kpi tone="blue" icon={<Package />} label="Unités achetées" value={String(purchases?.summary.unitsPurchased || 0)} sub="entrées de stock" />
-                  <Kpi tone="green" icon={<ShoppingCart />} label="Achats" value={String(purchases?.summary.purchaseCount || 0)} sub="opérations" />
+                  <Kpi tone="green" icon={<ShoppingCart />} label="Commandes" value={String(purchases?.summary.purchaseCount || 0)} sub={`${purchases?.summary.lineCount || 0} lignes d'achat`} />
                   <Kpi tone="amber" icon={<Truck />} label="Produits" value={String(purchases?.summary.productsRestocked || 0)} sub="réapprovisionnés" />
                 </div>
 
