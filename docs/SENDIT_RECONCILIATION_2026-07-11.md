@@ -62,13 +62,15 @@ delivered CA. The UI now labels it as CA rather than cash collected.
 
 ## Database protection
 
-- `004_payment_reconciliation.sql` adds payment amount, date, reference, and status facts.
-- `005_sendit_invariants.sql` enforces unique tracking ownership, unique promoted ownership,
+- `027_payment_reconciliation.sql` adds payment amount, date, reference, and status facts.
+- `028_sendit_invariants.sql` enforces unique tracking ownership, unique promoted ownership,
   consistent promoted links, valid payment statuses, and non-negative paid amounts.
-- `006_sendit_cash_ledger.sql` stores the Sendit last-action timestamp and indexes the
+- `029_sendit_cash_ledger.sql` stores the Sendit last-action timestamp and indexes the
   creation/delivery dimensions used by cash reporting.
 
-All three migrations were applied to production on 2026-07-11.
+All three migrations were applied to production on 2026-07-11. (They were originally
+authored as `prisma/migrations/004..006`; renumbered to `migrations/027..029` when the
+two migration folders were consolidated into a single ordered sequence.)
 
 ## Verification
 
