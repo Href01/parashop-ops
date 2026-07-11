@@ -19,6 +19,16 @@ interface DashboardStats {
   marginDelivered: number
   cashReceivedDelivered: number
   deliveryCostDelivered: number
+  // Realized cash — delivered metrics attributed by DELIVERY date (reconciles with Sendit).
+  realized: {
+    revenue: number
+    encaisse: number
+    cash: number
+    profit: number
+    margin: number
+    orders: number
+    revenueDelta: number | null
+  }
   revenueDelta: number | null
   estimatedProfit: number
   marginPercent: number
@@ -88,6 +98,9 @@ export default function GlowDashboard() {
   const [editingGoal, setEditingGoal] = useState<'week' | 'month' | null>(null)
   const [goalInput, setGoalInput] = useState('')
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null)
+  // Accounting basis for the delivered/cash cards: 'delivered' = by delivery date
+  // (réalisé, reconciles with Sendit) · 'created' = by order-creation date (cohorte).
+  const [basis, setBasis] = useState<'delivered' | 'created'>('delivered')
 
   // Labels for the current selection + comparison
   const periodLabel = mode === 'month' ? `${MONTHS_FR[month.m]} ${month.year}`
@@ -153,6 +166,25 @@ export default function GlowDashboard() {
   // curve lie in Mois/90j/1 an mode). Cap dot density for very long ranges.
   const series = stats.revenueSeries
   const maxRev = Math.max(1, ...series.map((p) => p.revenue))
+
+  // Delivered/cash cards switch between the realized (by delivery date) and the
+  // cohort (by creation date) basis. Realized is the default — it reconciles with
+  // what Sendit actually collected in the period. A safe fallback to the cohort
+  // numbers keeps old cached payloads (no `realized` field) from crashing.
+  const R = stats.realized ?? {
+    revenue: stats.revenueDelivered, encaisse: stats.revenueDeliveredTotal,
+    cash: stats.cashReceivedDelivered, profit: stats.profitDelivered,
+    margin: stats.marginDelivered, orders: stats.ordersDelivered, revenueDelta: stats.revenueDeliveredDelta,
+  }
+  const byDeliv = basis === 'delivered'
+  const dRevenue = byDeliv ? R.revenue : stats.revenueDelivered
+  const dRevenueDelta = byDeliv ? R.revenueDelta : stats.revenueDeliveredDelta
+  const dEncaisse = byDeliv ? R.encaisse : stats.revenueDeliveredTotal
+  const dCash = byDeliv ? R.cash : stats.cashReceivedDelivered
+  const dProfit = byDeliv ? R.profit : stats.profitDelivered
+  const dMargin = byDeliv ? R.margin : stats.marginDelivered
+  const dOrders = byDeliv ? R.orders : stats.ordersDelivered
+  const basisSub = byDeliv ? 'par date de livraison' : 'par date de création'
 
   const exportCsv = () => {
     const rows = [['date', 'revenue', 'profit'], ...stats.revenueSeries.map((p) => [p.date, String(p.revenue), String(p.profit)])]
@@ -236,27 +268,44 @@ export default function GlowDashboard() {
           </div>
         )}
 
+        {/* Basis toggle: how the delivered/cash cards attribute a period. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+          <div style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 10, background: 'var(--bg-2)', border: '1px solid var(--line-soft)' }}>
+            {([['delivered', 'Cash réalisé (livraison)'], ['created', 'Cohorte (création)']] as const).map(([b, lbl]) => (
+              <button key={b} onClick={() => setBasis(b)} style={{
+                fontSize: 12, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', cursor: 'pointer',
+                background: basis === b ? 'var(--tx-hi)' : 'transparent', color: basis === b ? 'var(--bg-1)' : 'var(--tx-lo)',
+              }}>{lbl}</button>
+            ))}
+          </div>
+          <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>
+            {byDeliv
+              ? 'Compté au mois de livraison — se réconcilie avec le cash Sendit du mois.'
+              : 'Compté au mois de création de la commande — utile pour suivre une cohorte.'}
+          </span>
+        </div>
+
         {/* KPI strip */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 16 }}>
-          <Kpi label={`CA livré · ${periodLabel}`} value={`${mad(stats.revenueDelivered)}`} unit="MAD" delta={stats.revenueDeliveredDelta} deltaLabel={compareLabel} sub="produits · réalisé" accent />
+          <Kpi label={`CA livré · ${periodLabel}`} value={`${mad(dRevenue)}`} unit="MAD" delta={dRevenueDelta} deltaLabel={compareLabel} sub={`produits · ${basisSub}`} accent />
           <Kpi
             label={`CA attendu · ${periodLabel}`}
             value={`${mad(stats.revenueWeek)}`}
             unit="MAD"
             sub={
               stats.revenueWeek > stats.revenueDelivered
-                ? `+ ${mad(stats.revenueWeek - stats.revenueDelivered)} en cours (${stats.ordersWeek - stats.ordersDelivered} cmd)`
-                : 'toutes livrées'
+                ? `+ ${mad(stats.revenueWeek - stats.revenueDelivered)} en cours (${stats.ordersWeek - stats.ordersDelivered} cmd) · création`
+                : 'toutes livrées · création'
             }
           />
-          <Kpi label={`Encaissé COD · ${periodLabel}`} value={mad(stats.revenueDeliveredTotal)} unit="MAD" sub="avec livraison" />
-          {Math.round(stats.cashReceivedDelivered) !== Math.round(stats.revenueDelivered) && (
-            <Kpi label={`Cash reçu · ${periodLabel}`} value={mad(stats.cashReceivedDelivered)} unit="MAD" sub="net frais Sendit" />
+          <Kpi label={`Encaissé COD · ${periodLabel}`} value={mad(dEncaisse)} unit="MAD" sub={`avec livraison · ${basisSub}`} />
+          {Math.round(dCash) !== Math.round(dRevenue) && (
+            <Kpi label={`Cash reçu · ${periodLabel}`} value={mad(dCash)} unit="MAD" sub={`net frais Sendit · ${basisSub}`} />
           )}
-          <Kpi label="Profit livré" value={mad(stats.profitDelivered)} unit="MAD" sub={`${stats.marginDelivered.toFixed(1)}% marge`} />
-          <Kpi label={`Commandes · ${periodLabel}`} value={String(stats.ordersWeek)} />
+          <Kpi label="Profit livré" value={mad(dProfit)} unit="MAD" sub={`${dMargin.toFixed(1)}% marge · ${basisSub}`} />
+          <Kpi label={byDeliv ? `Livrées · ${periodLabel}` : `Commandes · ${periodLabel}`} value={String(byDeliv ? dOrders : stats.ordersWeek)} sub={byDeliv ? basisSub : 'créées, hors annulées'} />
           <Kpi label="Panier moyen" value={mad(stats.averageOrderValue)} unit="MAD" />
-          <Kpi label="Taux de livraison" value={`${stats.deliveryRate.toFixed(0)}%`} />
+          <Kpi label="Taux de livraison" value={`${stats.deliveryRate.toFixed(0)}%`} sub="livrées / résolues · création" />
           <Kpi label="ROAS" value={`${stats.roas.toFixed(1)}x`} />
         </div>
 
@@ -265,14 +314,14 @@ export default function GlowDashboard() {
           <Card>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
               <div>
-                <Label>CA livré · {periodLabel} · hors livraison</Label>
+                <Label>CA livré · {periodLabel} · hors livraison · {basisSub}</Label>
                 <div style={{ fontSize: 38, fontWeight: 600, fontFamily: 'var(--mono)', letterSpacing: '-0.02em', color: 'var(--tx-hi)', lineHeight: 1.1 }}>
-                  {mad(stats.revenueDelivered)} <span style={{ fontSize: 16, color: 'var(--tx-lo)', fontWeight: 500 }}>MAD</span>
+                  {mad(dRevenue)} <span style={{ fontSize: 16, color: 'var(--tx-lo)', fontWeight: 500 }}>MAD</span>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginTop: 4 }}>
-                  Encaissé (COD) <b style={{ color: 'var(--tx-mid)' }}>{mad(stats.revenueDeliveredTotal)}</b>
-                  <span style={{ color: 'var(--tx-faint)' }}> − frais Sendit {mad(stats.deliveryCostDelivered)} = </span>
-                  <b style={{ color: 'var(--green)' }}>cash reçu {mad(stats.cashReceivedDelivered)} MAD</b>
+                  Encaissé (COD) <b style={{ color: 'var(--tx-mid)' }}>{mad(dEncaisse)}</b>
+                  <span style={{ color: 'var(--tx-faint)' }}> − frais Sendit {mad(dEncaisse - dCash)} = </span>
+                  <b style={{ color: 'var(--green)' }}>cash reçu {mad(dCash)} MAD</b>
                 </div>
                 {stats.revenueWeek > stats.revenueDelivered && (
                   <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginTop: 2 }}>

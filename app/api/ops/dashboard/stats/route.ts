@@ -33,6 +33,14 @@ interface SummaryRow {
   bookedOrdersWeek: number | string | null
   delivered30d: number | string | null
   cancelled30d: number | string | null
+  // Realized (attributed by DELIVERY date, not creation date) — reconciles with Sendit cashflow.
+  realizedRevenue: number | string | null
+  realizedEncaisse: number | string | null
+  realizedCash: number | string | null
+  realizedProfit: number | string | null
+  realizedDeliveryCost: number | string | null
+  realizedOrders: number | string | null
+  previousRealizedRevenue: number | string | null
 }
 
 interface SeriesRow {
@@ -137,6 +145,7 @@ function financialCte(from: string, to: string, cFrom: string, cTo: string) {
       o.id,
       o.status::text AS status,
       o."createdAt",
+      o."deliveredAt",
       COALESCE(o."orderNumber", CONCAT('Order #', o.id)) AS "orderNumber",
       o."deliveryName",
       o."deliveryCity",
@@ -334,7 +343,17 @@ export async function GET(req: Request) {
           )::int AS "previousOrdersWeek",
           COUNT(*) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED'))::int AS "bookedOrdersWeek",
           COUNT(*) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED')::int AS "delivered30d",
-          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'CANCELLED')::int AS "cancelled30d"
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'CANCELLED')::int AS "cancelled30d",
+          -- Realized = attributed by DELIVERY date (deliveredAt), so it matches the
+          -- cash Sendit actually collected in the window (a parcel created in June but
+          -- delivered in July lands in July here, unlike the createdAt-based fields above).
+          COALESCE(SUM(revenue) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedRevenue",
+          COALESCE(SUM(order_total) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedEncaisse",
+          COALESCE(SUM(order_total - delivery_cost) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedCash",
+          COALESCE(SUM(profit) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedProfit",
+          COALESCE(SUM(delivery_cost) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedDeliveryCost",
+          COUNT(*) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED')::int AS "realizedOrders",
+          COALESCE(SUM(revenue) FILTER (WHERE "deliveredAt" >= (SELECT compare_start FROM bounds) AND "deliveredAt" < (SELECT compare_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "previousRealizedRevenue"
         FROM order_financials
       `),
       safeQuery<SeriesRow>('series', `
@@ -511,6 +530,17 @@ export async function GET(req: Request) {
     const cancelled30d = toNumber(summary?.cancelled30d)
     const completedDelivery30d = delivered30d + cancelled30d
     const deliveryRate = completedDelivery30d > 0 ? (delivered30d / completedDelivery30d) * 100 : 0
+
+    // Realized cash — same delivered metrics but attributed by DELIVERY date, so the
+    // numbers reconcile with what Sendit actually collected in the window.
+    const realizedRevenue = toNumber(summary?.realizedRevenue)
+    const realizedEncaisse = toNumber(summary?.realizedEncaisse)
+    const realizedCash = toNumber(summary?.realizedCash)
+    const realizedProfit = toNumber(summary?.realizedProfit)
+    const realizedOrders = toNumber(summary?.realizedOrders)
+    const previousRealizedRevenue = toNumber(summary?.previousRealizedRevenue)
+    const realizedMargin = realizedRevenue > 0 ? (realizedProfit / realizedRevenue) * 100 : 0
+    const realizedRevenueDelta = percentageChange(realizedRevenue, previousRealizedRevenue)
     const marginPercent = revenueWeek > 0 ? (estimatedProfitWeek / revenueWeek) * 100 : 0
     const revenueDelta = percentageChange(revenueWeek, previousRevenueWeek)
     const profitDelta = percentageChange(estimatedProfitWeek, previousProfitWeek)
@@ -648,6 +678,16 @@ export async function GET(req: Request) {
       marginDelivered,
       cashReceivedDelivered,
       deliveryCostDelivered,
+      // Realized-by-delivery-date block (reconciles with Sendit cashflow).
+      realized: {
+        revenue: realizedRevenue,
+        encaisse: realizedEncaisse,
+        cash: realizedCash,
+        profit: realizedProfit,
+        margin: realizedMargin,
+        orders: realizedOrders,
+        revenueDelta: realizedRevenueDelta,
+      },
       revenueDelta,
       estimatedProfit: estimatedProfitWeek,
       profitDelta,
