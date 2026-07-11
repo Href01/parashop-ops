@@ -700,7 +700,11 @@ export async function GET(req: Request) {
 
     const spend30d = toNumber(roasRows[0]?.spend)
     const adRevenue30d = toNumber(roasRows[0]?.revenue)
-    const roas = spend30d > 0 ? adRevenue30d / spend30d : 0
+    // Pixel ROAS is ~0 for boosted posts (Meta attributes no purchase), so the true
+    // pixel ROAS is useless here. Show a BLENDED ROAS / MER instead = delivered CA ÷
+    // ad spend for the period — a real marketing-efficiency number. null when no spend.
+    const roas = spend30d > 0 ? realizedRevenue / spend30d : null
+    const pixelRoas = spend30d > 0 ? adRevenue30d / spend30d : 0
     // Freshness: the last day for which Meta ad spend is synced. Meta finalises with a
     // 1–2 day lag, so the tail of the current period can still be empty.
     const adDataThrough = roasRows[0]?.throughDate || null

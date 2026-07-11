@@ -42,7 +42,7 @@ interface DashboardStats {
   ordersDelivered: number
   averageOrderValue: number
   deliveryRate: number
-  roas: number
+  roas: number | null
   adDataThrough?: string | null
   revenueSeries: Array<{ date: string; label: string; revenue: number; profit: number; orders: number }>
   topProducts: Array<{ productId: number | null; name: string; units: number; revenue: number }>
@@ -65,9 +65,18 @@ const PERIODS: { label: string; days: number }[] = [
 const MONTHS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
 const isoDay = (d: Date) => d.toISOString().slice(0, 10)
 function monthRange(year: number, m0: number) {
+  const now = new Date()
+  const isCurrent = year === now.getUTCFullYear() && m0 === now.getUTCMonth()
+  const monthLastDay = new Date(Date.UTC(year, m0 + 1, 0)).getUTCDate()
+  // For the CURRENT month, stop at today and compare the SAME elapsed days of the
+  // previous month — otherwise a partial month always looks down vs a full one.
+  const elapsedDay = isCurrent ? now.getUTCDate() : monthLastDay
+  const prevMonthLastDay = new Date(Date.UTC(year, m0, 0)).getUTCDate()
   return {
-    from: isoDay(new Date(Date.UTC(year, m0, 1))), to: isoDay(new Date(Date.UTC(year, m0 + 1, 0))),
-    compareFrom: isoDay(new Date(Date.UTC(year, m0 - 1, 1))), compareTo: isoDay(new Date(Date.UTC(year, m0, 0))),
+    from: isoDay(new Date(Date.UTC(year, m0, 1))),
+    to: isoDay(new Date(Date.UTC(year, m0, elapsedDay))),
+    compareFrom: isoDay(new Date(Date.UTC(year, m0 - 1, 1))),
+    compareTo: isoDay(new Date(Date.UTC(year, m0 - 1, Math.min(elapsedDay, prevMonthLastDay)))),
   }
 }
 function isoWeekMonday(year: number, week: number) {
@@ -348,9 +357,9 @@ export default function GlowDashboard() {
           )}
           <Kpi label="Profit livré" value={mad(dProfit)} unit="MAD" sub={`${dMargin.toFixed(1)}% marge · ${basisSub}`} />
           <Kpi label={byDeliv ? `Livrées · ${periodLabel}` : `Commandes · ${periodLabel}`} value={String(byDeliv ? dOrders : stats.ordersWeek)} sub={byDeliv ? basisSub : 'créées, hors annulées'} />
-          <Kpi label="Panier moyen" value={mad(stats.averageOrderValue)} unit="MAD" />
+          <Kpi label="Panier moyen" value={mad(byDeliv && dOrders > 0 ? dRevenue / dOrders : stats.averageOrderValue)} unit="MAD" sub={byDeliv ? 'CA livré / livrées' : 'CA / commandes'} />
           <Kpi label="Taux de livraison" value={`${stats.deliveryRate.toFixed(0)}%`} sub="livrées / résolues · création" />
-          <Kpi label="ROAS" value={`${stats.roas.toFixed(1)}x`} />
+          <Kpi label="ROAS global" value={stats.roas != null ? `${stats.roas.toFixed(1)}x` : '—'} sub="CA livré ÷ pub" />
         </div>
 
         {/* Résultat de la période: Rentabilité + Trésorerie */}
