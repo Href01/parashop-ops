@@ -43,6 +43,7 @@ interface DashboardStats {
   averageOrderValue: number
   deliveryRate: number
   roas: number
+  adDataThrough?: string | null
   revenueSeries: Array<{ date: string; label: string; revenue: number; profit: number; orders: number }>
   topProducts: Array<{ productId: number | null; name: string; units: number; revenue: number }>
   topCities: Array<{ name: string; orders: number }>
@@ -361,6 +362,18 @@ export default function GlowDashboard() {
                 <div>
                   <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx-hi)' }}>Résultat · {periodLabel}</h3>
                   <p style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 2 }}>Rentabilité = marge sur ventes livrées · Trésorerie = cash réel entré/sorti sur la période</p>
+                  {(() => {
+                    const { from, to } = periodParams()
+                    const through = stats.adDataThrough
+                    if (!through || through < from) return null // period entirely before any ad data
+                    // Warn only if the sync is behind Meta's normal ~2-day lag within this period.
+                    const lagCutoff = isoDay(new Date(now.getTime() - 2 * 86400000))
+                    const target = to < lagCutoff ? to : lagCutoff
+                    if (through < target) {
+                      return <p style={{ fontSize: 11, color: '#b45309', marginTop: 3 }}>⚠ Pub Meta synchronisée jusqu&apos;au {through} seulement — les jours suivants manquent. Lance une sync sur <b>Ads</b>, et saisis la pub hors-Meta (TikTok…) dans Dépenses.</p>
+                    }
+                    return null
+                  })()}
                 </div>
                 <button className="btn-modern btn-secondary" onClick={openExpenses}>Dépenses & emballage</button>
               </div>

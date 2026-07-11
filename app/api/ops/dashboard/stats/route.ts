@@ -90,6 +90,7 @@ interface LowStockRow {
 interface RoasRow {
   spend: number | string | null
   revenue: number | string | null
+  throughDate: string | null
 }
 
 interface ChannelRow {
@@ -449,11 +450,16 @@ export async function GET(req: Request) {
         LIMIT 3
       `),
       safeQuery<RoasRow>('roas', `
+        -- Period-accurate ad spend from the DAILY table. The old query summed
+        -- AdCampaign.spend (cumulative all-time) filtered by endDate — but every
+        -- campaign has endDate NULL, so it always returned the full lifetime spend
+        -- regardless of the selected period ("depuis le début" bug).
         SELECT
-          COALESCE(SUM(a.spend), 0)::double precision AS spend,
-          COALESCE(SUM(a.revenue), 0)::double precision AS revenue
-        FROM "AdCampaign" a
-        WHERE COALESCE(a."endDate", CURRENT_DATE) >= CURRENT_DATE - INTERVAL '${periodDays - 1} days'
+          COALESCE(SUM(spend), 0)::double precision AS spend,
+          COALESCE(SUM(revenue), 0)::double precision AS revenue,
+          MAX(date)::text AS "throughDate"
+        FROM "AdSpendDaily"
+        WHERE date >= '${from}'::date AND date <= '${to}'::date
       `),
       safeQuery<ChannelRow>('channels', `
         ${FINANCIAL_CTE}
@@ -695,6 +701,9 @@ export async function GET(req: Request) {
     const spend30d = toNumber(roasRows[0]?.spend)
     const adRevenue30d = toNumber(roasRows[0]?.revenue)
     const roas = spend30d > 0 ? adRevenue30d / spend30d : 0
+    // Freshness: the last day for which Meta ad spend is synced. Meta finalises with a
+    // 1–2 day lag, so the tail of the current period can still be empty.
+    const adDataThrough = roasRows[0]?.throughDate || null
     const channelOrderTotal = channelRows.reduce((sum, row) => sum + toNumber(row.orders), 0)
     const channels = channelRows.map((row) => {
       const name = row.name || 'Unknown'
@@ -751,6 +760,7 @@ export async function GET(req: Request) {
       completedDeliveryCount: completedDelivery30d,
       roas,
       adSpend: spend30d,
+      adDataThrough,
       revenueSeries,
       pipeline: pipelineItems,
       topProducts,
