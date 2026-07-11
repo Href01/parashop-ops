@@ -35,6 +35,8 @@ export default function AdsPage() {
   const [events, setEvents] = useState<EventLite[]>([])
   const [products, setProducts] = useState<ProductLite[]>([])
   const [totals, setTotals] = useState({ spend: 0, revenue: 0, roas: 0 })
+  const [adsDays, setAdsDays] = useState(30)
+  const [dataThrough, setDataThrough] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [syncing, setSyncing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -42,14 +44,17 @@ export default function AdsPage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
 
   const load = () => {
-    fetch('/api/ops/ads', { cache: 'no-store' })
+    fetch(`/api/ops/ads?days=${adsDays}`, { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : { ads: [], totals: {} }))
-      .then((d) => { setAds(Array.isArray(d.ads) ? d.ads : []); if (d.totals) setTotals(d.totals) })
+      .then((d) => { setAds(Array.isArray(d.ads) ? d.ads : []); if (d.totals) setTotals(d.totals); setDataThrough(d.dataThrough || null) })
       .catch(() => setError('Chargement impossible'))
       .finally(() => setLoading(false))
   }
   useEffect(() => {
     load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adsDays])
+  useEffect(() => {
     fetch('/api/ops/events', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : { events: [] })).then((d) => setEvents(Array.isArray(d.events) ? d.events : [])).catch(() => {})
     fetch('/api/ops/products', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : [])).then((d) => setProducts(Array.isArray(d) ? d : [])).catch(() => {})
   }, [])
@@ -119,12 +124,27 @@ export default function AdsPage() {
           </div>
         </div>
 
+        {/* Period selector */}
+        <div style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 10, background: 'var(--bg-2)', border: '1px solid var(--line-soft)', marginBottom: 10 }}>
+          {([[7, '7 j'], [30, '30 j'], [90, '90 j'], [3650, 'Tout']] as const).map(([d, lbl]) => (
+            <button key={d} onClick={() => setAdsDays(d)} style={{
+              fontSize: 12, fontWeight: 600, padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer',
+              background: adsDays === d ? 'var(--rose-bright)' : 'transparent', color: adsDays === d ? '#fff' : 'var(--tx-lo)',
+            }}>{lbl}</button>
+          ))}
+        </div>
+
         {/* Totals */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 10 }}>
-          <Stat label="Dépense totale" value={`${mad(totals.spend)} MAD`} />
+          <Stat label={`Dépense · ${adsDays === 3650 ? 'tout' : adsDays + ' j'}`} value={`${mad(totals.spend)} MAD`} />
           <Stat label="CA Meta (pixel)" value={totals.revenue > 0 ? `${mad(totals.revenue)} MAD` : '—'} />
           <Stat label="ROAS Meta (pixel)" value={totals.revenue > 0 ? `${totals.roas.toFixed(1)}x` : '—'} accent />
         </div>
+        {dataThrough && (
+          <p style={{ fontSize: 11, color: 'var(--tx-faint)', marginBottom: 10 }}>
+            Pub Meta synchronisée jusqu&apos;au <b>{dataThrough}</b> (Meta finalise avec ~1-2j de délai).
+          </p>
+        )}
         <p style={{ fontSize: 12, color: 'var(--tx-lo)', marginBottom: 16, lineHeight: 1.5 }}>
           💡 Le <b>CA pixel</b> est souvent <b>0</b> pour les posts boostés / trafic / engagement (Meta n&apos;y attribue pas d&apos;achats). Ton <b>vrai ROAS</b> = CA de l&apos;<b>event</b> ÷ dépense → relie tes campagnes à un event pour le voir.
         </p>
