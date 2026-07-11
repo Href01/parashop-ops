@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Download, Plus, ArrowUp, ArrowDown, RefreshCw, Trash2 } from 'lucide-react'
+import { AlertTriangle, Download, Plus, ArrowUp, ArrowDown, RefreshCw, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 
 interface DashboardStats {
@@ -30,7 +30,13 @@ interface DashboardStats {
     profit: number
     margin: number
     orders: number
+    matchedOrders?: number
     revenueDelta: number | null
+  }
+  sendit?: {
+    lastPulledAt: string | null
+    created: { cod: number; fees: number; bank: number; cash: number; orders: number; unmatchedOrders: number; unmatchedCod: number }
+    delivered: { cod: number; fees: number; bank: number; cash: number; orders: number; unmatchedOrders: number; unmatchedCod: number }
   }
   pnl?: {
     rentabilite: { caLivre: number; profitLivre: number; margeLivree: number; pub: number; emballage: number; net: number; marginPct: number }
@@ -56,7 +62,7 @@ interface DashboardStats {
   activity: Array<{ tone: string; title: string; subtitle: string; timestamp: string }>
 }
 
-const mad = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v)
+const mad = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(v)
 
 const PERIODS: { label: string; days: number }[] = [
   { label: '7j', days: 7 },
@@ -155,6 +161,26 @@ export default function GlowDashboard() {
       .finally(() => setLoading(false))
   }
 
+  async function refreshSendit() {
+    setLoading(true)
+    setError(false)
+    try {
+      for (const action of ['pull', 'sync-matched']) {
+        const response = await fetch('/api/ops/sendit/staging', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action }),
+        })
+        if (!response.ok) throw new Error(`Sendit ${action} failed`)
+      }
+      await load()
+    } catch (error) {
+      console.error('Failed to refresh Sendit:', error)
+      setError(true)
+      setLoading(false)
+    }
+  }
+
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -233,14 +259,19 @@ export default function GlowDashboard() {
     margin: stats.marginDelivered, orders: stats.ordersDelivered, revenueDelta: stats.revenueDeliveredDelta,
   }
   const byDeliv = basis === 'delivered'
+  const senditBasis = byDeliv ? stats.sendit?.delivered : stats.sendit?.created
   const dRevenue = byDeliv ? R.revenue : stats.revenueDelivered
   const dRevenueDelta = byDeliv ? R.revenueDelta : stats.revenueDeliveredDelta
-  const dEncaisse = byDeliv ? R.encaisse : (stats.codReceivedDelivered ?? stats.revenueDeliveredTotal)
-  const dBank = byDeliv ? R.bank : (stats.bankReceivedDelivered ?? 0)
-  const dCash = byDeliv ? R.cash : stats.cashReceivedDelivered
+  const dEncaisse = senditBasis?.cod ?? (byDeliv ? R.encaisse : (stats.codReceivedDelivered ?? stats.revenueDeliveredTotal))
+  const dBank = senditBasis?.bank ?? (byDeliv ? R.bank : (stats.bankReceivedDelivered ?? 0))
+  const dFees = senditBasis?.fees ?? Math.max(0, dEncaisse + dBank - (byDeliv ? R.cash : stats.cashReceivedDelivered))
+  const dCash = senditBasis?.cash ?? (byDeliv ? R.cash : stats.cashReceivedDelivered)
   const dProfit = byDeliv ? R.profit : stats.profitDelivered
   const dMargin = byDeliv ? R.margin : stats.marginDelivered
-  const dOrders = byDeliv ? R.orders : stats.ordersDelivered
+  const dOrders = senditBasis?.orders ?? (byDeliv ? R.orders : stats.ordersDelivered)
+  const dUnmatchedOrders = senditBasis?.unmatchedOrders ?? 0
+  const dUnmatchedCod = senditBasis?.unmatchedCod ?? 0
+  const dFinancialOrders = byDeliv ? (R.matchedOrders ?? stats.ordersDelivered) : stats.ordersDelivered
   const basisSub = byDeliv ? 'par date de livraison' : 'par date de création'
 
   const exportCsv = () => {
@@ -311,7 +342,7 @@ export default function GlowDashboard() {
               />
             )}
 
-            <button className="btn-modern btn-secondary btn-icon" onClick={() => load()} title="Rafraîchir" aria-label="Rafraîchir" disabled={loading}>
+            <button className="btn-modern btn-secondary btn-icon" onClick={refreshSendit} title="Synchroniser Sendit" aria-label="Synchroniser Sendit" disabled={loading}>
               <RefreshCw className="w-4 h-4" style={loading ? { animation: 'dash-spin 0.8s linear infinite' } : undefined} />
             </button>
             <button className="btn-modern btn-secondary" onClick={exportCsv}><Download className="w-4 h-4" />Export</button>
@@ -321,7 +352,8 @@ export default function GlowDashboard() {
 
         {lastUpdated && (
           <div style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: -10, marginBottom: 14, textAlign: 'right' }}>
-            Mis à jour à {lastUpdated.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+            Dashboard actualisé à {lastUpdated.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+            {stats.sendit?.lastPulledAt && ` · Sendit synchronisé à ${new Date(stats.sendit.lastPulledAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`}
           </div>
         )}
 
@@ -337,14 +369,23 @@ export default function GlowDashboard() {
           </div>
           <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>
             {byDeliv
-              ? 'Compté au mois de livraison — se réconcilie avec le cash Sendit du mois.'
-              : 'Compté au mois de création de la commande — utile pour suivre une cohorte.'}
+              ? 'Cash Sendit par livraison. Comparer avec Sendit → Type de date → Date de livraison.'
+              : 'Cash Sendit par création. Correspond au filtre Date de Création de Sendit.'}
           </span>
         </div>
 
+        {dUnmatchedOrders > 0 && (
+          <div role="status" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', padding: '10px 12px', marginBottom: 14, border: '1px solid var(--amber-line)', borderLeft: '3px solid var(--amber)', borderRadius: 7, background: 'var(--amber-bg)', color: 'var(--tx-mid)', fontSize: 12 }}>
+            <AlertTriangle className="w-4 h-4" aria-hidden="true" />
+            <strong style={{ color: 'var(--tx-hi)' }}>{dUnmatchedOrders} colis livrés à traiter</strong>
+            <span>{mad(dUnmatchedCod)} MAD inclus dans le cash Sendit, exclus du CA livré et du profit jusqu’au rapprochement ou à la synchronisation.</span>
+            <Link href="/sendit" style={{ marginLeft: 'auto', color: 'var(--rose-bright)', fontWeight: 700, textDecoration: 'none' }}>Corriger</Link>
+          </div>
+        )}
+
         {/* KPI strip */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 16 }}>
-          <Kpi label={`CA livré · ${periodLabel}`} value={`${mad(dRevenue)}`} unit="MAD" delta={dRevenueDelta} deltaLabel={compareLabel} sub={`produits · ${basisSub}`} accent />
+          <Kpi label={`CA livré · ${periodLabel}`} value={`${mad(dRevenue)}`} unit="MAD" delta={dRevenueDelta} deltaLabel={compareLabel} sub={`produits rapprochés · ${basisSub}`} accent />
           <Kpi
             label={`CA attendu · ${periodLabel}`}
             value={`${mad(stats.revenueWeek)}`}
@@ -355,16 +396,17 @@ export default function GlowDashboard() {
                 : 'toutes livrées · création'
             }
           />
-          <Kpi label={`Encaissé COD · ${periodLabel}`} value={mad(dEncaisse)} unit="MAD" sub={`avec livraison · ${basisSub}`} />
+          <Kpi label={`Encaissé COD · ${periodLabel}`} value={mad(dEncaisse)} unit="MAD" sub={`source Sendit · ${basisSub}`} />
+          <Kpi label={`Frais Sendit · ${periodLabel}`} value={mad(dFees)} unit="MAD" sub={`colis livrés · ${basisSub}`} />
           {dBank > 0 && (
             <Kpi label={`Virements reçus · ${periodLabel}`} value={mad(dBank)} unit="MAD" sub={`paiements vérifiés · ${basisSub}`} />
           )}
           {Math.round(dCash) !== Math.round(dRevenue) && (
             <Kpi label={`Cash reçu · ${periodLabel}`} value={mad(dCash)} unit="MAD" sub={`net frais Sendit · ${basisSub}`} />
           )}
-          <Kpi label="Profit livré" value={mad(dProfit)} unit="MAD" sub={`${dMargin.toFixed(1)}% marge · ${basisSub}`} />
-          <Kpi label={byDeliv ? `Livrées · ${periodLabel}` : `Commandes · ${periodLabel}`} value={String(byDeliv ? dOrders : stats.ordersWeek)} sub={byDeliv ? basisSub : 'créées, hors annulées'} />
-          <Kpi label="Panier moyen" value={mad(byDeliv && dOrders > 0 ? dRevenue / dOrders : stats.averageOrderValue)} unit="MAD" sub={byDeliv ? 'CA livré / livrées' : 'CA / commandes'} />
+          <Kpi label="Profit livré" value={mad(dProfit)} unit="MAD" sub={`${dMargin.toFixed(1)}% · commandes rapprochées`} />
+          <Kpi label={`Colis livrés Sendit · ${periodLabel}`} value={String(dOrders)} sub={`${Math.max(0, dOrders - dUnmatchedOrders)} rapprochés · ${dUnmatchedOrders} à traiter`} />
+          <Kpi label="Panier moyen" value={mad(dFinancialOrders > 0 ? dRevenue / dFinancialOrders : stats.averageOrderValue)} unit="MAD" sub="CA produits / commandes rapprochées" />
           <Kpi label="Taux de livraison" value={`${stats.deliveryRate.toFixed(0)}%`} sub="livrées / résolues · création" />
           <Kpi label="ROAS global" value={stats.roas != null ? `${stats.roas.toFixed(1)}x` : '—'} sub="CA livré ÷ pub" />
         </div>
@@ -427,7 +469,7 @@ export default function GlowDashboard() {
                 <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginTop: 4 }}>
                   Encaissé COD <b style={{ color: 'var(--tx-mid)' }}>{mad(dEncaisse)}</b>
                   {dBank > 0 && <span style={{ color: 'var(--tx-faint)' }}> + virements {mad(dBank)}</span>}
-                  <span style={{ color: 'var(--tx-faint)' }}> − frais Sendit {mad(dEncaisse + dBank - dCash)} = </span>
+                  <span style={{ color: 'var(--tx-faint)' }}> − frais Sendit {mad(dFees)} = </span>
                   <b style={{ color: 'var(--green)' }}>cash reçu {mad(dCash)} MAD</b>
                 </div>
                 {stats.revenueWeek > stats.revenueDelivered && (

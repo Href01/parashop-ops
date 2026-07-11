@@ -118,6 +118,20 @@ interface RecentOrderRow {
   sourceChannel: string | null
 }
 
+interface SenditLedgerRow {
+  createdCod: number | string | null
+  createdFees: number | string | null
+  createdOrders: number | string | null
+  createdUnmatchedOrders: number | string | null
+  createdUnmatchedCod: number | string | null
+  deliveredCod: number | string | null
+  deliveredFees: number | string | null
+  deliveredOrders: number | string | null
+  deliveredUnmatchedOrders: number | string | null
+  deliveredUnmatchedCod: number | string | null
+  lastPulledAt: string | Date | null
+}
+
 // Period-aware financial CTE. The selected range is [range_start, range_end);
 // the comparison range is [compare_start, compare_end) (previous month/week, or
 // same period last year). All dates are validated YYYY-MM-DD (no injection).
@@ -323,6 +337,7 @@ export async function GET(req: Request) {
       channelRows,
       activityHistoryRows,
       recentOrdersRows,
+      senditLedgerRows,
       pnlRows,
     ] = await Promise.all([
       safeQuery<SummaryRow>('summary', `
@@ -526,6 +541,61 @@ export async function GET(req: Request) {
         ORDER BY o."createdAt" DESC
         LIMIT 6
       `),
+      safeQuery<SenditLedgerRow>('sendit-ledger', `
+        SELECT
+          COALESCE(SUM(amount) FILTER (
+            WHERE UPPER("senditStatus") = 'DELIVERED'
+              AND "senditCreatedAt" >= '${from}'::timestamp
+              AND "senditCreatedAt" < ('${to}'::date + INTERVAL '1 day')
+          ), 0)::double precision AS "createdCod",
+          COALESCE(SUM(fee) FILTER (
+            WHERE UPPER("senditStatus") = 'DELIVERED'
+              AND "senditCreatedAt" >= '${from}'::timestamp
+              AND "senditCreatedAt" < ('${to}'::date + INTERVAL '1 day')
+          ), 0)::double precision AS "createdFees",
+          COUNT(*) FILTER (
+            WHERE UPPER("senditStatus") = 'DELIVERED'
+              AND "senditCreatedAt" >= '${from}'::timestamp
+              AND "senditCreatedAt" < ('${to}'::date + INTERVAL '1 day')
+          )::int AS "createdOrders",
+          COUNT(*) FILTER (
+            WHERE UPPER("senditStatus") = 'DELIVERED' AND ("matchedOrderId" IS NULL OR state = 'mismatch')
+              AND "senditCreatedAt" >= '${from}'::timestamp
+              AND "senditCreatedAt" < ('${to}'::date + INTERVAL '1 day')
+          )::int AS "createdUnmatchedOrders",
+          COALESCE(SUM(amount) FILTER (
+            WHERE UPPER("senditStatus") = 'DELIVERED' AND ("matchedOrderId" IS NULL OR state = 'mismatch')
+              AND "senditCreatedAt" >= '${from}'::timestamp
+              AND "senditCreatedAt" < ('${to}'::date + INTERVAL '1 day')
+          ), 0)::double precision AS "createdUnmatchedCod",
+          COALESCE(SUM(amount) FILTER (
+            WHERE UPPER("senditStatus") = 'DELIVERED'
+              AND "lastActionAt" >= ('${from}'::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
+              AND "lastActionAt" < (('${to}'::date + INTERVAL '1 day')::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
+          ), 0)::double precision AS "deliveredCod",
+          COALESCE(SUM(fee) FILTER (
+            WHERE UPPER("senditStatus") = 'DELIVERED'
+              AND "lastActionAt" >= ('${from}'::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
+              AND "lastActionAt" < (('${to}'::date + INTERVAL '1 day')::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
+          ), 0)::double precision AS "deliveredFees",
+          COUNT(*) FILTER (
+            WHERE UPPER("senditStatus") = 'DELIVERED'
+              AND "lastActionAt" >= ('${from}'::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
+              AND "lastActionAt" < (('${to}'::date + INTERVAL '1 day')::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
+          )::int AS "deliveredOrders",
+          COUNT(*) FILTER (
+            WHERE UPPER("senditStatus") = 'DELIVERED' AND ("matchedOrderId" IS NULL OR state = 'mismatch')
+              AND "lastActionAt" >= ('${from}'::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
+              AND "lastActionAt" < (('${to}'::date + INTERVAL '1 day')::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
+          )::int AS "deliveredUnmatchedOrders",
+          COALESCE(SUM(amount) FILTER (
+            WHERE UPPER("senditStatus") = 'DELIVERED' AND ("matchedOrderId" IS NULL OR state = 'mismatch')
+              AND "lastActionAt" >= ('${from}'::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
+              AND "lastActionAt" < (('${to}'::date + INTERVAL '1 day')::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
+          ), 0)::double precision AS "deliveredUnmatchedCod",
+          MAX("pulledAt") AS "lastPulledAt"
+        FROM "SenditStaging"
+      `),
       // P&L inputs for the period [from, to]: supplier purchase cash-out, ad spend,
       // logged operating expenses, and the packaging per-parcel rate.
       safeQuery<{ purchaseSpend: number; adSpend: number; opex: number; opexPackaging: number; packagingRate: number }>('pnl', `
@@ -589,19 +659,41 @@ export async function GET(req: Request) {
     const realizedMargin = realizedRevenue > 0 ? (realizedProfit / realizedRevenue) * 100 : 0
     const realizedRevenueDelta = percentageChange(realizedRevenue, previousRealizedRevenue)
 
+    // Sendit owns parcel count, COD and courier fees. Orders own products, profit and bank payments.
+    const senditLedgerRow = senditLedgerRows[0]
+    const hasSenditLedger = Boolean(senditLedgerRow?.lastPulledAt)
+    const senditCreated = {
+      cod: toNumber(senditLedgerRow?.createdCod),
+      fees: toNumber(senditLedgerRow?.createdFees),
+      orders: toNumber(senditLedgerRow?.createdOrders),
+      unmatchedOrders: toNumber(senditLedgerRow?.createdUnmatchedOrders),
+      unmatchedCod: toNumber(senditLedgerRow?.createdUnmatchedCod),
+    }
+    const senditDelivered = {
+      cod: toNumber(senditLedgerRow?.deliveredCod),
+      fees: toNumber(senditLedgerRow?.deliveredFees),
+      orders: toNumber(senditLedgerRow?.deliveredOrders),
+      unmatchedOrders: toNumber(senditLedgerRow?.deliveredUnmatchedOrders),
+      unmatchedCod: toNumber(senditLedgerRow?.deliveredUnmatchedCod),
+    }
+    const senditCreatedCash = senditCreated.cod + bankReceivedDelivered - senditCreated.fees
+    const senditDeliveredCash = senditDelivered.cod + realizedBank - senditDelivered.fees
+
     // ---- Period P&L: Rentabilité (accrual) + Trésorerie (cash) ----
     const pnlRow = pnlRows[0]
     const purchaseSpend = toNumber(pnlRow?.purchaseSpend)
     const adSpendPnl = toNumber(pnlRow?.adSpend)
     const opex = toNumber(pnlRow?.opex)
     const packagingRate = toNumber(pnlRow?.packagingRate)
-    // Emballage on the margin side is accrued per delivered parcel (realized orders).
-    const packagingAccrued = realizedOrders * packagingRate
+    // Physical parcels include Sendit rows that still await product reconciliation.
+    const deliveredParcels = hasSenditLedger ? senditDelivered.orders : realizedOrders
+    const treasuryCash = hasSenditLedger ? senditDeliveredCash : realizedCash
+    const packagingAccrued = deliveredParcels * packagingRate
     // Rentabilité: profit on delivered sales (already net of COGS + Sendit delivery),
     // then minus accrued packaging and ad spend.
     const profitNet = realizedProfit - packagingAccrued - adSpendPnl
     // Trésorerie: cash collected (net Sendit) minus all cash out in the period.
-    const cashNet = realizedCash - purchaseSpend - adSpendPnl - opex
+    const cashNet = treasuryCash - purchaseSpend - adSpendPnl - opex
     const pnl = {
       rentabilite: {
         caLivre: realizedRevenue,
@@ -613,14 +705,14 @@ export async function GET(req: Request) {
         marginPct: realizedRevenue > 0 ? (profitNet / realizedRevenue) * 100 : 0,
       },
       tresorerie: {
-        encaisse: realizedCash,
+        encaisse: treasuryCash,
         achats: purchaseSpend,
         pub: adSpendPnl,
         frais: opex,
         net: cashNet,
       },
       packagingRate,
-      deliveredParcels: realizedOrders,
+      deliveredParcels,
     }
     const marginPercent = revenueWeek > 0 ? (estimatedProfitWeek / revenueWeek) * 100 : 0
     const revenueDelta = percentageChange(revenueWeek, previousRevenueWeek)
@@ -768,15 +860,21 @@ export async function GET(req: Request) {
       marginDelivered,
       cashReceivedDelivered,
       deliveryCostDelivered,
+      sendit: {
+        lastPulledAt: senditLedgerRow?.lastPulledAt || null,
+        created: { ...senditCreated, bank: bankReceivedDelivered, cash: senditCreatedCash },
+        delivered: { ...senditDelivered, bank: realizedBank, cash: senditDeliveredCash },
+      },
       // Realized-by-delivery-date block (reconciles with Sendit cashflow).
       realized: {
         revenue: realizedRevenue,
-        encaisse: realizedEncaisse,
+        encaisse: hasSenditLedger ? senditDelivered.cod : realizedEncaisse,
         bank: realizedBank,
-        cash: realizedCash,
+        cash: treasuryCash,
         profit: realizedProfit,
         margin: realizedMargin,
-        orders: realizedOrders,
+        orders: hasSenditLedger ? senditDelivered.orders : realizedOrders,
+        matchedOrders: realizedOrders,
         revenueDelta: realizedRevenueDelta,
       },
       pnl,

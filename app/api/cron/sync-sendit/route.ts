@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { syncSenditStatuses } from '@/lib/sendit-sync'
+import { pullSenditStaging } from '@/lib/sendit-staging-sync'
 
 /**
  * Vercel Cron: keep Sendit delivery statuses fresh automatically.
@@ -15,8 +16,9 @@ export async function GET(req: Request) {
 
   try {
     const result = await syncSenditStatuses()
-    console.log(`[Cron] Sendit sync: checked ${result.checked}, updated ${result.updated.length}, failed ${result.failed.length}`)
-    return NextResponse.json({ success: true, ...result })
+    const staging = await pullSenditStaging()
+    console.log(`[Cron] Sendit sync: checked ${result.checked}, updated ${result.updated.length}, failed ${result.failed.length}, ledger ${staging.pulled}`)
+    return NextResponse.json({ success: true, ...result, staging })
   } catch (error: any) {
     console.error('[Cron] Sendit sync error:', error)
     return NextResponse.json({ error: error?.message || 'sync failed' }, { status: 500 })
