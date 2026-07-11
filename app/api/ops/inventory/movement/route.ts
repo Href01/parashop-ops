@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
+import { revalidateWebsite } from '@/lib/revalidate-website'
 
 /**
  * POST /api/ops/inventory/movement
@@ -183,6 +184,10 @@ export async function POST(request: NextRequest) {
         ])
       }
     }
+
+    // Stock just changed in the shared DB — bust the public site's product cache so
+    // the new number shows immediately instead of after its 60s revalidation.
+    await revalidateWebsite(['products'])
 
     return NextResponse.json({
       success: true,
