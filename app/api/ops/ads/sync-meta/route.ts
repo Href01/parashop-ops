@@ -86,8 +86,8 @@ async function fxToMad(account: string, token: string): Promise<number> {
  * the real spend over any period. Additive + paginated; failures are swallowed so
  * they never break the campaign-level sync above.
  */
-async function syncDaily(account: string, token: string, fx: number): Promise<number> {
-  const datePreset = process.env.META_DATE_PRESET || 'last_90d'
+async function syncDaily(account: string, token: string, fx: number, preset: string): Promise<number> {
+  const datePreset = preset
   let url: string | null = `${GRAPH}/${account}/insights`
     + `?level=campaign`
     + `&fields=campaign_id,campaign_name,spend,impressions,clicks,action_values`
@@ -131,7 +131,7 @@ async function authorized(req: NextRequest): Promise<boolean> {
   return !!session?.user?.email && isFounder(session.user.email)
 }
 
-async function runSync() {
+async function runSync(preset: string) {
     const token = await getMetaToken() // DB (auto-refreshed) → env bootstrap
     const rawAccount = process.env.META_AD_ACCOUNT_ID
     if (!token || !rawAccount) {
@@ -146,8 +146,8 @@ async function runSync() {
     // is in MAD. Convert spend & revenue to MAD so everything is consistent.
     const fx = await fxToMad(account, token)
 
-    // Recent window only — avoids importing years of old/unrelated campaigns.
-    const datePreset = process.env.META_DATE_PRESET || 'last_90d'
+    // Window controlled by `preset` (default last_90d; 'maximum' = full history backfill).
+    const datePreset = preset
     const url = `${GRAPH}/${account}/insights`
       + `?level=campaign`
       + `&fields=campaign_id,campaign_name,spend,impressions,clicks,action_values,actions`
@@ -202,15 +202,23 @@ async function runSync() {
 
     // Per-day spend for period-accurate ROAS — never let it break the main sync.
     let dailyUpserts = 0
-    try { dailyUpserts = await syncDaily(account, token, fx) } catch (e) { console.error('[Ads] sync-meta daily', e) }
+    try { dailyUpserts = await syncDaily(account, token, fx, preset) } catch (e) { console.error('[Ads] sync-meta daily', e) }
 
-    return NextResponse.json({ configured: true, scanned: rows.length, created, updated, dailyUpserts })
+    return NextResponse.json({ configured: true, preset, fx, scanned: rows.length, created, updated, dailyUpserts })
+}
+
+/** Window: ?preset=maximum for a full-history backfill, else last_90d (env override). */
+function presetFrom(req: NextRequest): string {
+  const p = new URL(req.url).searchParams.get('preset')
+  const allowed = ['maximum', 'last_28d', 'last_30d', 'last_90d', 'this_year', 'last_year']
+  if (p && allowed.includes(p)) return p
+  return process.env.META_DATE_PRESET || 'last_90d'
 }
 
 export async function POST(req: NextRequest) {
   try {
     if (!(await authorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    return await runSync()
+    return await runSync(presetFrom(req))
   } catch (e) {
     console.error('[Ads] sync-meta', e)
     return NextResponse.json({ error: 'Internal server error', details: e instanceof Error ? e.message : 'unknown' }, { status: 500 })
@@ -221,7 +229,7 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   try {
     if (!(await authorized(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    return await runSync()
+    return await runSync(presetFrom(req))
   } catch (e) {
     console.error('[Ads] sync-meta', e)
     return NextResponse.json({ error: 'Internal server error', details: e instanceof Error ? e.message : 'unknown' }, { status: 500 })
