@@ -24,6 +24,7 @@ export async function POST(request: NextRequest) {
       orderId,
       supplierId,
       costPerUnit,
+      freeUnits, // bonus units received at no charge ("X payés + Y gratuits") — Purchase only
       supplier, // free-text supplier name (products use a text supplier field)
       notes,
     } = body
@@ -53,17 +54,23 @@ export async function POST(request: NextRequest) {
 
     const stockBefore = productResult.rows[0].stock || 0
     const productName = productResult.rows[0].name
-    const stockAfter = stockBefore + parseInt(quantity)
+
+    // "X payés + Y gratuits": paidQty is what the user typed; free units add to stock
+    // and unit count but cost nothing. Free units only make sense for a Purchase add.
+    const paidQty = parseInt(quantity)
+    const free = type === 'Purchase' && paidQty > 0 ? Math.max(0, parseInt(freeUnits) || 0) : 0
+    const effectiveQuantity = paidQty + (paidQty > 0 ? free : 0) // total units moved (paid + free)
+    const stockAfter = stockBefore + effectiveQuantity
 
     if (stockAfter < 0) {
       return NextResponse.json(
-        { error: `Insufficient stock. Current: ${stockBefore}, Requested: ${Math.abs(quantity)}` },
+        { error: `Insufficient stock. Current: ${stockBefore}, Requested: ${Math.abs(paidQty)}` },
         { status: 400 }
       )
     }
 
-    // Calculate total cost
-    const totalCost = costPerUnit ? parseFloat(costPerUnit) * Math.abs(parseInt(quantity)) : null
+    // Money actually spent = unit price × PAID units (free units add stock, not cost).
+    const totalCost = costPerUnit ? parseFloat(costPerUnit) * Math.abs(paidQty) : null
 
     // Create movement record
     const movementResult = await pool.query(`
@@ -86,7 +93,7 @@ export async function POST(request: NextRequest) {
     `, [
       productId,
       type,
-      quantity,
+      effectiveQuantity,
       stockBefore,
       stockAfter,
       reason || null,
@@ -111,16 +118,17 @@ export async function POST(request: NextRequest) {
     // above still stores the ACTUAL purchase cost (costPerUnit) for the spend report.
     if (type === 'Purchase') {
       let newCost: number | null = null
-      if (costPerUnit) {
-        const buyCost = parseFloat(costPerUnit)
-        const buyQty = Math.abs(parseInt(quantity))
+      if (costPerUnit && totalCost != null) {
+        // Blend by real money spent and TOTAL units received (paid + free), so the
+        // effective unit cost drops when part of the batch was free.
+        const buyQty = Math.abs(effectiveQuantity)
         const oldRes = await pool.query('SELECT "costPrice"::float AS c FROM "Product" WHERE id = $1', [productId])
         const oldCost = oldRes.rows[0]?.c
-        // No prior cost or no prior stock → the purchase cost becomes the cost.
+        // No prior cost or no prior stock → the effective batch cost becomes the cost.
         if (oldCost == null || stockBefore <= 0) {
-          newCost = buyCost
+          newCost = totalCost / buyQty
         } else {
-          newCost = (stockBefore * oldCost + buyQty * buyCost) / (stockBefore + buyQty)
+          newCost = (stockBefore * oldCost + totalCost) / (stockBefore + buyQty)
         }
         newCost = Math.round(newCost * 100) / 100
       }

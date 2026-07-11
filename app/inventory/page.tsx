@@ -6,7 +6,7 @@ import BosShell from '@/components/BosShell'
 import {
   Search, AlertTriangle, Package, PackageCheck, TrendingDown, CheckCircle, XCircle,
   Download, Plus, Minus, DollarSign, History, ArrowUpCircle, ArrowDownCircle,
-  Truck, ShoppingCart, ChevronRight, ChevronDown, Trash2,
+  Truck, ShoppingCart, ChevronRight, ChevronDown, Trash2, Pencil,
 } from 'lucide-react'
 
 type OpenOrder = { orderId: number; qty: number; customer: string; city: string | null; shipped: boolean; status: string; created: string }
@@ -78,6 +78,7 @@ export default function InventoryPage() {
   const [adjustQty, setAdjustQty] = useState('')
   const [adjustReason, setAdjustReason] = useState('')
   const [adjustCost, setAdjustCost] = useState('')
+  const [adjustFree, setAdjustFree] = useState('')
   const [adjustSupplier, setAdjustSupplier] = useState('')
   const [adjusting, setAdjusting] = useState(false)
   const [supplierModal, setSupplierModal] = useState<{ productId: number; productName: string; currentSupplier: string | null } | null>(null)
@@ -128,6 +129,29 @@ export default function InventoryPage() {
     }
   }
 
+  // Edit a purchase (fix a wrong quantity / cost without deleting + re-adding).
+  const [editPurchase, setEditPurchase] = useState<{ id: number; name: string; quantity: string; totalCost: string } | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
+  const saveEditPurchase = async () => {
+    if (!editPurchase) return
+    setSavingEdit(true)
+    try {
+      const res = await fetch(`/api/ops/inventory/movement/${editPurchase.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantity: editPurchase.quantity, totalCost: editPurchase.totalCost }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Échec de la modification')
+      setEditPurchase(null)
+      await Promise.all([fetchPurchases(), fetchMovements(), fetchInventory()])
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Échec de la modification')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
   const fetchInventory = async () => {
     setLoading(true)
     try {
@@ -163,6 +187,7 @@ export default function InventoryPage() {
     setAdjustReason('')
     setAdjustCost(p.costPrice ? String(p.costPrice) : '')
     setAdjustSupplier(p.supplier || '')
+    setAdjustFree('')
   }
 
   const submitAdjustment = async () => {
@@ -179,6 +204,7 @@ export default function InventoryPage() {
           quantity: isPurchase ? Number(adjustQty) : -Number(adjustQty),
           reason: adjustReason || (isPurchase ? 'Réapprovisionnement fournisseur' : 'Ajustement manuel'),
           ...(isPurchase && adjustCost ? { costPerUnit: Number(adjustCost) } : {}),
+          ...(isPurchase && Number(adjustFree) > 0 ? { freeUnits: Number(adjustFree) } : {}),
           ...(isPurchase && adjustSupplier.trim() ? { supplier: adjustSupplier.trim(), notes: `Fournisseur: ${adjustSupplier.trim()}` } : {}),
         }),
       })
@@ -643,6 +669,13 @@ export default function InventoryPage() {
                             </div>
                             <div className="num fw600" style={{ color: 'var(--tx-hi)', whiteSpace: 'nowrap' }}>{r.totalCost != null ? `${money(r.totalCost)}` : '—'}</div>
                             <button
+                              onClick={() => setEditPurchase({ id: r.id, name: r.name, quantity: String(r.quantity), totalCost: r.totalCost != null ? String(r.totalCost) : '' })}
+                              title="Modifier cet achat (quantité / coût)"
+                              style={{ display: 'flex', alignItems: 'center', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--tx-faint)', padding: 4 }}
+                            >
+                              <Pencil style={{ width: 14, height: 14 }} />
+                            </button>
+                            <button
                               onClick={() => deleteMovement(r.id, `${r.name} · +${r.quantity}`)}
                               disabled={deletingId === r.id}
                               title="Supprimer cet achat (annule le stock ajouté)"
@@ -742,21 +775,48 @@ export default function InventoryPage() {
                   </div>
                 </div>
                 <div style={{ marginBottom: 16 }}>
-                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Quantité{adjustModal.prefill ? ' (suggérée)' : ''}</label>
-                  <input type="number" min="1" value={adjustQty} onChange={(e) => setAdjustQty(e.target.value)} placeholder="Ex: 10" className="input-modern" style={{ width: '100%' }} />
-                  {adjustQty && (<div className="fs11 tx-lo" style={{ marginTop: 4 }}>Nouveau stock : <b className="num">{adjustType === 'in' ? adjustModal.currentStock + Number(adjustQty) : Math.max(0, adjustModal.currentStock - Number(adjustQty))}</b></div>)}
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <div style={{ flex: adjustType === 'in' ? 2 : 1 }}>
+                      <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>{adjustType === 'in' ? 'Quantité payée' : 'Quantité'}{adjustModal.prefill ? ' (suggérée)' : ''}</label>
+                      <input type="number" min="1" value={adjustQty} onChange={(e) => setAdjustQty(e.target.value)} placeholder="Ex: 10" className="input-modern" style={{ width: '100%' }} />
+                    </div>
+                    {adjustType === 'in' && (
+                      <div style={{ flex: 1 }}>
+                        <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Dont gratuites</label>
+                        <input type="number" min="0" value={adjustFree} onChange={(e) => setAdjustFree(e.target.value)} placeholder="Ex: 3" className="input-modern" style={{ width: '100%' }} />
+                      </div>
+                    )}
+                  </div>
+                  {adjustQty && (() => {
+                    const paid = Number(adjustQty), free = adjustType === 'in' ? Number(adjustFree) || 0 : 0
+                    const recu = paid + free
+                    return (
+                      <div className="fs11 tx-lo" style={{ marginTop: 4 }}>
+                        {adjustType === 'in' ? (
+                          <>Nouveau stock : <b className="num">{adjustModal.currentStock + recu}</b>{free > 0 && <> · <b className="num">{paid}</b> payées + <b className="num">{free}</b> gratuites = <b className="num">{recu}</b> reçues</>}</>
+                        ) : (
+                          <>Nouveau stock : <b className="num">{Math.max(0, adjustModal.currentStock - paid)}</b></>
+                        )}
+                      </div>
+                    )
+                  })()}
                 </div>
                 {adjustType === 'in' && (
                   <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
                     <div style={{ flex: 1 }}>
-                      <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Coût / unité (MAD)</label>
+                      <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Prix / unité payée (MAD)</label>
                       <input type="number" min="0" step="0.01" value={adjustCost} onChange={(e) => setAdjustCost(e.target.value)} placeholder="Ex: 45" className="input-modern" style={{ width: '100%' }} />
                       {adjustCost && adjustQty && (() => {
-                        const buy = Number(adjustCost), qty = Number(adjustQty), s = adjustModal.currentStock, oc = adjustModal.oldCost
-                        const wac = (oc && s > 0) ? Math.round(((s * oc + qty * buy) / (s + qty)) * 100) / 100 : buy
+                        const buy = Number(adjustCost), paid = Number(adjustQty), free = Number(adjustFree) || 0
+                        const recu = paid + free, spent = buy * paid
+                        const s = adjustModal.currentStock, oc = adjustModal.oldCost
+                        // Effective cost blends the money spent over ALL units received (incl. free).
+                        const eff = recu > 0 ? Math.round((spent / recu) * 100) / 100 : buy
+                        const wac = (oc && s > 0) ? Math.round(((s * oc + spent) / (s + recu)) * 100) / 100 : eff
                         return (
                           <div className="fs11 tx-lo" style={{ marginTop: 4 }}>
-                            Total : <b className="num">{money(buy * qty)} MAD</b>
+                            Dépense : <b className="num">{money(spent)} MAD</b>
+                            {free > 0 && <> · coût réel <b className="num">{eff}</b>/unité (avec gratuites)</>}
                             {oc && s > 0 && Math.abs(wac - oc) > 0.01 && <> · Coût moyen après : <b className="num" style={{ color: 'var(--tx-hi)' }}>{wac}</b> (avant {oc})</>}
                           </div>
                         )
@@ -775,6 +835,35 @@ export default function InventoryPage() {
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                   <button className="btn-modern btn-secondary" onClick={() => setAdjustModal(null)}>Annuler</button>
                   <button className="btn-modern btn-primary" onClick={submitAdjustment} disabled={adjusting || !adjustQty || Number(adjustQty) <= 0}>{adjusting ? 'En cours…' : 'Confirmer'}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit Purchase Modal */}
+        {editPurchase && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={() => setEditPurchase(null)}>
+            <div className="card-modern" style={{ maxWidth: 460, width: '90%' }} onClick={(e) => e.stopPropagation()}>
+              <div className="card-header"><h3 className="text-lg font-semibold">Modifier l&apos;achat</h3></div>
+              <div className="card-body">
+                <p className="fs12 tx-lo" style={{ marginBottom: 14 }}>{editPurchase.name}</p>
+                <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+                  <div style={{ flex: 1 }}>
+                    <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Quantité reçue</label>
+                    <input type="number" min="1" value={editPurchase.quantity} onChange={(e) => setEditPurchase({ ...editPurchase, quantity: e.target.value })} className="input-modern" style={{ width: '100%' }} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Dépense totale (MAD)</label>
+                    <input type="number" min="0" step="0.01" value={editPurchase.totalCost} onChange={(e) => setEditPurchase({ ...editPurchase, totalCost: e.target.value })} className="input-modern" style={{ width: '100%' }} />
+                  </div>
+                </div>
+                {Number(editPurchase.quantity) > 0 && Number(editPurchase.totalCost) > 0 && (
+                  <div className="fs11 tx-lo" style={{ marginBottom: 14 }}>Coût réel : <b className="num">{Math.round((Number(editPurchase.totalCost) / Number(editPurchase.quantity)) * 100) / 100}</b> / unité · le stock s&apos;ajuste de la différence de quantité.</div>
+                )}
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button className="btn-modern btn-secondary" onClick={() => setEditPurchase(null)}>Annuler</button>
+                  <button className="btn-modern btn-primary" onClick={saveEditPurchase} disabled={savingEdit || !(Number(editPurchase.quantity) > 0)}>{savingEdit ? 'En cours…' : 'Enregistrer'}</button>
                 </div>
               </div>
             </div>
