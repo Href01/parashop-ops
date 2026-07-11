@@ -32,7 +32,11 @@ export async function GET(request: NextRequest) {
            COUNT(*)::int AS purchases
          FROM "InventoryMovement" im
          LEFT JOIN "Product" p ON p.id = im."productId"
-         WHERE im.type = 'Purchase' AND im."createdAt" >= NOW() - ($1 || ' days')::interval
+         -- "Dépenses" = purchases with a real recorded cost. A stock-in logged
+         -- without a cost is an inventory correction, not a tracked expense, so it
+         -- must not inflate units or dilute the average cost here.
+         WHERE im.type = 'Purchase' AND im."totalCost" IS NOT NULL AND im."totalCost" > 0
+           AND im."createdAt" >= NOW() - ($1 || ' days')::interval
          GROUP BY im."productId", p.name, p.brand, p.supplier, p.stock
          ORDER BY spent DESC, units DESC`,
         [String(days)]
@@ -44,7 +48,8 @@ export async function GET(request: NextRequest) {
                 im."performedBy", im."createdAt"
          FROM "InventoryMovement" im
          LEFT JOIN "Product" p ON p.id = im."productId"
-         WHERE im.type = 'Purchase' AND im."createdAt" >= NOW() - ($1 || ' days')::interval
+         WHERE im.type = 'Purchase' AND im."totalCost" IS NOT NULL AND im."totalCost" > 0
+           AND im."createdAt" >= NOW() - ($1 || ' days')::interval
          ORDER BY im."createdAt" DESC
          LIMIT 50`,
         [String(days)]
@@ -56,7 +61,8 @@ export async function GET(request: NextRequest) {
            COUNT(*)::int AS "purchaseCount",
            COUNT(DISTINCT "productId")::int AS "productsRestocked"
          FROM "InventoryMovement"
-         WHERE type = 'Purchase' AND "createdAt" >= NOW() - ($1 || ' days')::interval`,
+         WHERE type = 'Purchase' AND "totalCost" IS NOT NULL AND "totalCost" > 0
+           AND "createdAt" >= NOW() - ($1 || ' days')::interval`,
         [String(days)]
       ),
     ])
