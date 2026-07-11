@@ -202,10 +202,14 @@ export async function GET(
     const statusMap: Record<string, string> = {
       'DELIVERED': 'DELIVERED',
       'CANCELED': 'CANCELLED',
+      'CANCELLED': 'CANCELLED',
       'REJECTED': 'CANCELLED',
+      'REFUSED': 'CANCELLED',
+      'RETURNED': 'CANCELLED',
+      'RETURN': 'CANCELLED',
     }
 
-    const newStatus = statusMap[tracking.status]
+    const newStatus = statusMap[String(tracking.status || '').toUpperCase()]
 
     const prepaid = isPrepaidPaymentMethod(orderResult.rows[0].paymentMethod)
     const amount = Number(tracking.amount) || 0

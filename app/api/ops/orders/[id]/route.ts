@@ -265,6 +265,8 @@ export async function PUT(
       updates.push(`"status" = $${paramIndex}`)
       values.push(status)
       paramIndex++
+      // deliveredAt is stamped automatically by the DB trigger stamp_delivered_at
+      // (migration 025) on any path that sets status/senditStatus = DELIVERED.
     }
 
     if (updates.length === 0) {

@@ -129,7 +129,10 @@ export async function POST(req: NextRequest) {
             $12, $13, $14, COALESCE($15, NOW()),
             CASE WHEN NULLIF($17::text, '') IS NOT NULL
               THEN ($17::timestamp AT TIME ZONE 'Africa/Casablanca') ELSE NULL END,
-            $18, $19::timestamptz, $20, $21)
+            $18,
+            CASE WHEN NULLIF($19::text, '') IS NOT NULL
+              THEN ($19::timestamp AT TIME ZONE 'Africa/Casablanca') ELSE NULL END,
+            $20, $21)
          RETURNING id`,
         [
           customerId, orderTotal, productsTotal, status,
