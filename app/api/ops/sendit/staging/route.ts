@@ -123,8 +123,8 @@ export async function POST(req: NextRequest) {
           await pool.query(
             `UPDATE "Order"
              SET "senditTrackingId" = COALESCE("senditTrackingId", $1),
-                 "senditStatus" = $2,
-                 "deliveryStatus" = $2,
+                 "senditStatus" = $2::text,
+                 "deliveryStatus" = $2::varchar,
                  status = $3::"OrderStatus",
                  "actualDeliveryCost" = $4,
                  "codAmount" = NULL,
@@ -140,8 +140,8 @@ export async function POST(req: NextRequest) {
           await pool.query(
             `UPDATE "Order"
              SET "senditTrackingId" = COALESCE("senditTrackingId", $1),
-                 "senditStatus" = $2,
-                 "deliveryStatus" = $2,
+                 "senditStatus" = $2::text,
+                 "deliveryStatus" = $2::varchar,
                  status = $3::"OrderStatus",
                  "actualDeliveryCost" = $4,
                  total = CASE WHEN $5 > 0 THEN $5 ELSE total END,

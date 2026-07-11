@@ -101,31 +101,34 @@ async function main() {
       for (const repair of repairs) {
         await client.query(
           `UPDATE "Order"
-           SET "senditTrackingId" = $1,
-               "senditBarcode" = $1,
-               "senditStatus" = $2,
-               "deliveryStatus" = $2,
+           SET "senditTrackingId" = $1::text,
+               "senditBarcode" = $1::text,
+               "senditStatus" = $2::text,
+               "deliveryStatus" = $2::varchar,
                status = $3::"OrderStatus",
-               "paymentMethod" = $4,
-               total = $5,
-               "codAmount" = $6,
-               "deliveryFeeCharged" = $7,
-               "estimatedDeliveryCost" = $8,
-               "actualDeliveryCost" = $8,
+               "paymentMethod" = $4::text,
+               total = $5::numeric,
+               "codAmount" = $6::numeric,
+               "deliveryFeeCharged" = $7::numeric,
+               "estimatedDeliveryCost" = $8::numeric,
+               "actualDeliveryCost" = $8::numeric,
                "deliveredAt" = CASE
                  WHEN NULLIF($9::text, '') IS NOT NULL
                    THEN ($9::timestamp AT TIME ZONE 'Africa/Casablanca')
                  ELSE NULL
                END,
-               "paidAmount" = $10,
+               "paidAmount" = $10::numeric,
                "paidAt" = CASE
                  WHEN NULLIF($11::text, '') IS NOT NULL
                    THEN ($11::timestamp AT TIME ZONE 'Africa/Casablanca')
                  ELSE NULL
                END,
-               "paymentReference" = CASE WHEN $10 IS NOT NULL THEN $1 ELSE NULL END,
-               "paymentStatus" = $12
-           WHERE id = $13`,
+               "paymentReference" = CASE
+                 WHEN $10::numeric IS NOT NULL THEN $1::text
+                 ELSE NULL
+               END,
+               "paymentStatus" = $12::text
+           WHERE id = $13::integer`,
           [
             repair.officialCode, repair.senditStatus, repair.status, repair.paymentMethod,
             repair.orderTotal, repair.paymentMethod === 'COD' ? repair.amount : null,

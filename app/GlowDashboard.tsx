@@ -14,6 +14,8 @@ interface DashboardStats {
   revenueWeek: number
   revenueDelivered: number
   revenueDeliveredTotal: number
+  codReceivedDelivered?: number
+  bankReceivedDelivered?: number
   revenueDeliveredDelta: number | null
   profitDelivered: number
   marginDelivered: number
@@ -226,14 +228,15 @@ export default function GlowDashboard() {
   // what Sendit actually collected in the period. A safe fallback to the cohort
   // numbers keeps old cached payloads (no `realized` field) from crashing.
   const R = stats.realized ?? {
-    revenue: stats.revenueDelivered, encaisse: stats.revenueDeliveredTotal, bank: 0,
+    revenue: stats.revenueDelivered, encaisse: stats.codReceivedDelivered ?? stats.revenueDeliveredTotal, bank: stats.bankReceivedDelivered ?? 0,
     cash: stats.cashReceivedDelivered, profit: stats.profitDelivered,
     margin: stats.marginDelivered, orders: stats.ordersDelivered, revenueDelta: stats.revenueDeliveredDelta,
   }
   const byDeliv = basis === 'delivered'
   const dRevenue = byDeliv ? R.revenue : stats.revenueDelivered
   const dRevenueDelta = byDeliv ? R.revenueDelta : stats.revenueDeliveredDelta
-  const dEncaisse = byDeliv ? R.encaisse : stats.revenueDeliveredTotal
+  const dEncaisse = byDeliv ? R.encaisse : (stats.codReceivedDelivered ?? stats.revenueDeliveredTotal)
+  const dBank = byDeliv ? R.bank : (stats.bankReceivedDelivered ?? 0)
   const dCash = byDeliv ? R.cash : stats.cashReceivedDelivered
   const dProfit = byDeliv ? R.profit : stats.profitDelivered
   const dMargin = byDeliv ? R.margin : stats.marginDelivered
@@ -353,8 +356,8 @@ export default function GlowDashboard() {
             }
           />
           <Kpi label={`Encaissé COD · ${periodLabel}`} value={mad(dEncaisse)} unit="MAD" sub={`avec livraison · ${basisSub}`} />
-          {byDeliv && R.bank > 0 && (
-            <Kpi label={`Virements reçus · ${periodLabel}`} value={mad(R.bank)} unit="MAD" sub="paiements vérifiés" />
+          {dBank > 0 && (
+            <Kpi label={`Virements reçus · ${periodLabel}`} value={mad(dBank)} unit="MAD" sub={`paiements vérifiés · ${basisSub}`} />
           )}
           {Math.round(dCash) !== Math.round(dRevenue) && (
             <Kpi label={`Cash reçu · ${periodLabel}`} value={mad(dCash)} unit="MAD" sub={`net frais Sendit · ${basisSub}`} />
@@ -401,7 +404,7 @@ export default function GlowDashboard() {
                 </div>
                 <div className="card-modern" style={{ padding: 16 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }}>🟢 Trésorerie <span style={{ fontWeight: 500, color: 'var(--tx-faint)', fontSize: 11 }}>· cash réel</span></div>
-                  <PnlRow label="Cash encaissé" sub="COD livré, net frais Sendit" value={t.encaisse} />
+                  <PnlRow label="Cash encaissé" sub="COD + virements vérifiés, net frais Sendit" value={t.encaisse} />
                   <PnlRow label="Achats fournisseur" value={-t.achats} neg />
                   <PnlRow label="Pub" value={-t.pub} neg />
                   <PnlRow label="Dépenses (emballage & frais)" value={-t.frais} neg />
@@ -422,8 +425,9 @@ export default function GlowDashboard() {
                   {mad(dRevenue)} <span style={{ fontSize: 16, color: 'var(--tx-lo)', fontWeight: 500 }}>MAD</span>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginTop: 4 }}>
-                  Encaissé (COD) <b style={{ color: 'var(--tx-mid)' }}>{mad(dEncaisse)}</b>
-                  <span style={{ color: 'var(--tx-faint)' }}> − frais Sendit {mad(dEncaisse - dCash)} = </span>
+                  Encaissé COD <b style={{ color: 'var(--tx-mid)' }}>{mad(dEncaisse)}</b>
+                  {dBank > 0 && <span style={{ color: 'var(--tx-faint)' }}> + virements {mad(dBank)}</span>}
+                  <span style={{ color: 'var(--tx-faint)' }}> − frais Sendit {mad(dEncaisse + dBank - dCash)} = </span>
                   <b style={{ color: 'var(--green)' }}>cash reçu {mad(dCash)} MAD</b>
                 </div>
                 {stats.revenueWeek > stats.revenueDelivered && (
@@ -502,7 +506,7 @@ export default function GlowDashboard() {
               <div style={{ width: `${goalWeekPct}%`, height: '100%', borderRadius: 6, background: goalWeekPct >= 100 ? 'var(--green)' : 'linear-gradient(90deg, var(--rose), var(--rose-bright))' }} />
             </div>
             <p style={{ fontSize: 12, color: 'var(--tx-mid)' }}>
-              <b style={{ color: 'var(--tx-hi)' }}>{mad(weekRevenue)} MAD</b> {mode === 'week' ? `· semaine S${week.w}` : 'encaissés sur 7 jours'}
+              <b style={{ color: 'var(--tx-hi)' }}>{mad(weekRevenue)} MAD</b> {mode === 'week' ? `· CA semaine S${week.w}` : 'de CA confirmé + livré sur 7 jours'}
             </p>
 
             {/* Monthly goal */}

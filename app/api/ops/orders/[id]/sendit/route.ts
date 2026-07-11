@@ -213,7 +213,7 @@ export async function GET(
     if (prepaid) {
       await pool.query(
         `UPDATE "Order"
-         SET "senditStatus" = $1, "deliveryStatus" = $1,
+         SET "senditStatus" = $1::text, "deliveryStatus" = $1::varchar,
              status = COALESCE($2::"OrderStatus", status),
              "actualDeliveryCost" = $3, "codAmount" = NULL,
              "deliveredAt" = CASE
@@ -226,7 +226,7 @@ export async function GET(
     } else {
       await pool.query(
         `UPDATE "Order"
-         SET "senditStatus" = $1, "deliveryStatus" = $1,
+         SET "senditStatus" = $1::text, "deliveryStatus" = $1::varchar,
              status = COALESCE($2::"OrderStatus", status),
              "actualDeliveryCost" = $3,
              total = CASE WHEN $4 > 0 THEN $4 ELSE total END,
