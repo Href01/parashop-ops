@@ -357,12 +357,12 @@ export default function InventoryPage() {
               const marginPct = summary && summary.stockRetailValue > 0 ? Math.round((summary.stockMarginValue / summary.stockRetailValue) * 100) : 0
               return (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 mb-4 inv-fade">
-                  <Kpi tone="violet" icon={<DollarSign />} label="Valeur stock" value={money(summary?.stockValue || 0)} sub={`vente ${money(summary?.stockRetailValue || 0)} · ${marginPct}% marge`} />
+                  <Kpi tone="violet" icon={<DollarSign />} label="Valeur (coût)" value={money(summary?.stockValue || 0)} sub="prix d'achat du stock" />
+                  <Kpi tone="green" icon={<DollarSign />} label="Valeur (vente)" value={money(summary?.stockRetailValue || 0)} sub={`marge ${money(summary?.stockMarginValue || 0)} · ${marginPct}%`} />
                   <Kpi tone="red" icon={<TrendingDown />} label="CA à risque" value={money(summary?.revenueAtRisk || 0)} sub="ventes perdues (ruptures)" alert={(summary?.revenueAtRisk || 0) > 0} />
                   <Kpi tone="red" icon={<XCircle />} label="Ruptures" value={String(summary?.shortages || 0)} sub="commandé > stock" alert={(summary?.shortages || 0) > 0} />
                   <Kpi tone="amber" icon={<AlertTriangle />} label="Stock bas" value={String(summary?.lowStock || 0)} sub="sous le seuil" />
-                  <Kpi tone="blue" icon={<Truck />} label="À expédier" value={`${summary?.toShipOrders || 0}`} sub={`${summary?.toShipUnits || 0} articles`} />
-                  <Kpi tone="green" icon={<ShoppingCart />} label="À recommander" value={String(summary?.reorderProducts || 0)} sub={`${money(summary?.reorderValue || 0)} coût · +${money(summary?.reorderMargin || 0)} marge`} />
+                  <Kpi tone="green" icon={<ShoppingCart />} label="À recommander" value={String(summary?.reorderProducts || 0)} sub={`${money(summary?.reorderValue || 0)} · +${money(summary?.reorderMargin || 0)} marge`} />
                 </div>
               )
             })()}
