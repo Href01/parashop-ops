@@ -383,32 +383,28 @@ export default function GlowDashboard() {
           </div>
         )}
 
-        {/* KPI strip */}
+        {/* Trio héros — les 3 chiffres qui comptent : CA · Profit · Cash */}
+        <div className="dash-hero g-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 14 }}>
+          <HeroTile tone="rose" label={`CA livré · ${periodLabel}`} value={mad(dRevenue)} delta={dRevenueDelta} deltaLabel={compareLabel} />
+          <HeroTile tone="green" label="Profit net · rentabilité" value={mad(stats.pnl ? stats.pnl.rentabilite.net : dProfit)} sub={`${Math.round(stats.pnl ? stats.pnl.rentabilite.marginPct : dMargin)}% de marge · détail ci-dessous`} />
+          <HeroTile tone="green" label="Cash net généré · trésorerie" value={mad(stats.pnl ? stats.pnl.tresorerie.net : dCash)} sub="liquide réel entré − sorti" />
+        </div>
+
+        {/* KPIs secondaires — le plomberie financière vit dans le panneau Résultat */}
         <div className="g-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(168px, 1fr))', gap: 12, marginBottom: 18 }}>
-          <Kpi label={`CA livré · ${periodLabel}`} value={`${mad(dRevenue)}`} unit="MAD" delta={dRevenueDelta} deltaLabel={compareLabel} sub={`produits rapprochés · ${basisSub}`} accent />
+          <Kpi label="Commandes livrées" value={String(dOrders)} sub={`panier moyen ${mad(dFinancialOrders > 0 ? dRevenue / dFinancialOrders : stats.averageOrderValue)} MAD`} />
+          <Kpi label="Taux de livraison" value={`${stats.deliveryRate.toFixed(0)}%`} sub="livrées / résolues" />
+          <Kpi label="ROAS global" value={stats.roas != null ? `${stats.roas.toFixed(1)}x` : '—'} sub="CA livré ÷ pub" />
           <Kpi
             label={`CA attendu · ${periodLabel}`}
             value={`${mad(stats.revenueWeek)}`}
             unit="MAD"
             sub={
               stats.revenueWeek > stats.revenueDelivered
-                ? `+ ${mad(stats.revenueWeek - stats.revenueDelivered)} en cours (${stats.ordersWeek - stats.ordersDelivered} cmd) · création`
-                : 'toutes livrées · création'
+                ? `+ ${mad(stats.revenueWeek - stats.revenueDelivered)} en cours (${stats.ordersWeek - stats.ordersDelivered} cmd)`
+                : 'toutes livrées'
             }
           />
-          <Kpi label={`Encaissé COD · ${periodLabel}`} value={mad(dEncaisse)} unit="MAD" sub={`source Sendit · ${basisSub}`} />
-          <Kpi label={`Frais Sendit · ${periodLabel}`} value={mad(dFees)} unit="MAD" sub={`colis livrés · ${basisSub}`} />
-          {dBank > 0 && (
-            <Kpi label={`Virements reçus · ${periodLabel}`} value={mad(dBank)} unit="MAD" sub={`paiements vérifiés · ${basisSub}`} />
-          )}
-          {Math.round(dCash) !== Math.round(dRevenue) && (
-            <Kpi label={`Cash reçu · ${periodLabel}`} value={mad(dCash)} unit="MAD" sub={`net frais Sendit · ${basisSub}`} />
-          )}
-          <Kpi label="Profit livré" value={mad(dProfit)} unit="MAD" sub={`${dMargin.toFixed(1)}% · commandes rapprochées`} />
-          <Kpi label={`Colis livrés Sendit · ${periodLabel}`} value={String(dOrders)} sub={`${Math.max(0, dOrders - dUnmatchedOrders)} rapprochés · ${dUnmatchedOrders} à traiter`} />
-          <Kpi label="Panier moyen" value={mad(dFinancialOrders > 0 ? dRevenue / dFinancialOrders : stats.averageOrderValue)} unit="MAD" sub="CA produits / commandes rapprochées" />
-          <Kpi label="Taux de livraison" value={`${stats.deliveryRate.toFixed(0)}%`} sub="livrées / résolues · création" />
-          <Kpi label="ROAS global" value={stats.roas != null ? `${stats.roas.toFixed(1)}x` : '—'} sub="CA livré ÷ pub" />
         </div>
 
         {/* Résultat de la période: Rentabilité + Trésorerie */}
@@ -446,7 +442,7 @@ export default function GlowDashboard() {
                 </div>
                 <div className="card-modern" style={{ padding: 16 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }}>🟢 Trésorerie <span style={{ fontWeight: 500, color: 'var(--tx-faint)', fontSize: 11 }}>· cash réel</span></div>
-                  <PnlRow label="Cash encaissé" sub="COD + virements vérifiés, net frais Sendit" value={t.encaisse} />
+                  <PnlRow label="Cash encaissé" sub={`COD ${mad(dEncaisse)}${dBank > 0 ? ` + virements ${mad(dBank)}` : ''} − frais Sendit ${mad(dFees)}`} value={t.encaisse} />
                   <PnlRow label="Achats fournisseur" value={-t.achats} neg />
                   <PnlRow label="Pub" value={-t.pub} neg />
                   <PnlRow label="Dépenses (emballage & frais)" value={-t.frais} neg />
@@ -462,24 +458,9 @@ export default function GlowDashboard() {
           <Card>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
               <div>
-                <Label>CA livré · {periodLabel} · hors livraison · {basisSub}</Label>
-                <div style={{ fontSize: 38, fontWeight: 600, fontFamily: 'var(--mono)', letterSpacing: '-0.02em', color: 'var(--tx-hi)', lineHeight: 1.1 }}>
-                  {mad(dRevenue)} <span style={{ fontSize: 16, color: 'var(--tx-lo)', fontWeight: 500 }}>MAD</span>
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginTop: 4 }}>
-                  Encaissé COD <b style={{ color: 'var(--tx-mid)' }}>{mad(dEncaisse)}</b>
-                  {dBank > 0 && <span style={{ color: 'var(--tx-faint)' }}> + virements {mad(dBank)}</span>}
-                  <span style={{ color: 'var(--tx-faint)' }}> − frais Sendit {mad(dFees)} = </span>
-                  <b style={{ color: 'var(--green)' }}>cash reçu {mad(dCash)} MAD</b>
-                </div>
-                {stats.revenueWeek > stats.revenueDelivered && (
-                  <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginTop: 2 }}>
-                    CA attendu (confirmé + livré) : <b style={{ color: 'var(--tx-mid)' }}>{mad(stats.revenueWeek)} MAD</b>
-                    <span style={{ color: 'var(--tx-faint)' }}> · dont {mad(stats.revenueWeek - stats.revenueDelivered)} pas encore livré</span>
-                  </div>
-                )}
-                <div style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 4 }}>
-                  Courbe : commandes créées (CA attendu) par jour
+                <Label>Tendance du CA · {periodLabel}</Label>
+                <div style={{ fontSize: 13, color: 'var(--tx-mid)', marginTop: 5, fontWeight: 500 }}>
+                  CA attendu par jour <span style={{ color: 'var(--tx-faint)', fontWeight: 400 }}>· commandes créées — pics et creux de la demande</span>
                 </div>
               </div>
             </div>
@@ -896,6 +877,28 @@ function Kpi({ label, value, unit, sub, delta, deltaLabel, accent }: { label: st
         <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
           {delta != null ? <DeltaPill value={delta} small /> : <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>{sub}</span>}
           {delta != null && deltaLabel && <span style={{ fontSize: 10, color: 'var(--tx-faint)' }}>vs {deltaLabel}</span>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function HeroTile({ label, value, sub, delta, deltaLabel, tone }: { label: string; value: string; sub?: string; delta?: number | null; deltaLabel?: string; tone: 'rose' | 'green' }) {
+  const color = tone === 'rose' ? 'var(--rose-bright)' : 'var(--green)'
+  return (
+    <div className="g-card" style={{ borderRadius: 'var(--radius-lg)', padding: '18px 20px 16px', position: 'relative', overflow: 'hidden' }}>
+      <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: color }} />
+      <div style={{ fontSize: 11.5, color: 'var(--tx-lo)', fontWeight: 600, marginBottom: 9 }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+        <span style={{ fontSize: 33, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: '-0.03em', color, lineHeight: 1 }}>{value}</span>
+        <span style={{ fontSize: 13, color: 'var(--tx-faint)', fontWeight: 500 }}>MAD</span>
+      </div>
+      {(delta != null || sub) && (
+        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          {delta != null && <DeltaPill value={delta} />}
+          {delta != null && deltaLabel
+            ? <span style={{ fontSize: 11.5, color: 'var(--tx-faint)' }}>vs {deltaLabel}</span>
+            : sub && <span style={{ fontSize: 11.5, color: 'var(--tx-faint)' }}>{sub}</span>}
         </div>
       )}
     </div>
