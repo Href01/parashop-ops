@@ -349,36 +349,35 @@ export default function InventoryPage() {
                   <div className="flex-1" />
                   <span className="fs12 tx-lo">ce qu'il faut traiter aujourd'hui</span>
                 </div>
-                <div className="card-body">
-                  <div className="flex flex-col gap-2">
-                    {urgentActions.map(({ p, critical }) => (
-                      <div key={p.id} style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
-                        padding: '10px 12px', borderRadius: 10,
-                        background: critical ? 'var(--rose-bg)' : 'var(--amber-bg)',
-                        border: `1px solid ${critical ? 'var(--rose-soft, rgba(225,29,72,.2))' : 'var(--amber-soft, rgba(217,119,6,.2))'}`,
+                <div style={{ padding: '2px 6px 6px' }}>
+                  {urgentActions.map(({ p, critical }, i) => {
+                    const tone = critical ? 'var(--rose-bright)' : 'var(--amber)'
+                    const status = p.available < 0 ? `Manque ${Math.abs(p.available)}` : p.stock <= 0 ? 'Rupture' : `Bas · ${p.stock}`
+                    const metric = p.available < 0
+                      ? (p.toShipOrders > 0 ? `${p.toShipOrders} cmd bloquée${p.toShipOrders > 1 ? 's' : ''}` : `${p.toShip} à expédier`)
+                      : (p.daysLeft != null ? `~${p.daysLeft}j · ${p.sold30d}/30j` : p.sold30d > 0 ? `${p.sold30d} vendus/30j` : '—')
+                    return (
+                      <div key={p.id} title={`${p.name} · ${p.brand}`} style={{
+                        display: 'flex', alignItems: 'center', gap: 10, padding: '7px 8px',
+                        borderTop: i === 0 ? 'none' : '1px solid var(--line-soft)',
                       }}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 600, color: 'var(--tx-hi)', fontSize: 13.5 }}>{p.name} <span className="tx-lo fw400">· {p.brand}</span></div>
-                          <div style={{ fontSize: 12, color: critical ? 'var(--rose-bright)' : 'var(--amber)', marginTop: 2 }}>
-                            {p.available < 0
-                              ? <>🔴 {p.toShip} à expédier / {p.stock} en stock — <b>manque {Math.abs(p.available)}</b>{p.toShipOrders > 0 && <> · {p.toShipOrders} cmd bloquée{p.toShipOrders > 1 ? 's' : ''}</>}</>
-                              : p.stock === 0
-                                ? <>Rupture · {p.sold30d} vendus/30j{p.toShip > 0 ? <> · {p.toShip} à expédier</> : ''}</>
-                                : <>Stock {p.stock} ≤ seuil {p.reorderPoint}{p.daysLeft != null ? <> · ~{p.daysLeft}j restants ({p.sold30d} vendus/30j)</> : p.sold30d > 0 ? <> · {p.sold30d} vendus/30j</> : ''}</>}
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          {p.suggestedReorder > 0 && (
-                            <span style={{ fontSize: 12, color: 'var(--tx-mid)' }}>recommander <b>{p.suggestedReorder}</b>{p.supplier ? ` · ${p.supplier}` : ''}</span>
-                          )}
-                          <button className="btn-modern btn-sm btn-primary" onClick={() => openAdjustModal(p, p.suggestedReorder || undefined)} style={{ whiteSpace: 'nowrap' }}>
-                            Réappro
-                          </button>
-                        </div>
+                        <span style={{ width: 7, height: 7, borderRadius: '50%', background: tone, flexShrink: 0 }} />
+                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, fontWeight: 600, color: 'var(--tx-hi)' }}>
+                          {p.name} <span className="tx-lo fw400">· {p.brand}</span>
+                        </span>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: tone, whiteSpace: 'nowrap', flexShrink: 0 }}>{status}</span>
+                        <span className="fs11 tx-lo hide-sm" style={{ whiteSpace: 'nowrap', flexShrink: 0, minWidth: 96, textAlign: 'right' }}>{metric}</span>
+                        {p.suggestedReorder > 0 && (
+                          <span className="fs11" style={{ color: 'var(--tx-mid)', whiteSpace: 'nowrap', flexShrink: 0 }} title={p.supplier ? `Recommander ${p.suggestedReorder} · ${p.supplier}` : `Recommander ${p.suggestedReorder}`}>
+                            → <b>{p.suggestedReorder}</b>
+                          </span>
+                        )}
+                        <button className="btn-modern btn-sm btn-primary" onClick={() => openAdjustModal(p, p.suggestedReorder || undefined)} style={{ whiteSpace: 'nowrap', flexShrink: 0, padding: '4px 11px' }}>
+                          Réappro
+                        </button>
                       </div>
-                    ))}
-                  </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
