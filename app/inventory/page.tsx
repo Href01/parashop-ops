@@ -449,12 +449,17 @@ export default function InventoryPage() {
                               </td>
                               <td><span className={h.cls}>{h.label}</span></td>
                               <td className="r">
-                                <span className={`num fw600 ${p.stock <= 0 ? 'neg' : p.stock <= p.reorderPoint ? 'tx-lo' : ''}`}>{p.stock}</span>
-                                {p.virtualStock > 0 && (
-                                  <div className="fs11 tx-lo" style={{ whiteSpace: 'nowrap' }} title="Stock virtuel (vendable sur commande, hors valeur stock)">
-                                    +{p.virtualStock} virt · vend. <b style={{ color: 'var(--tx-mid)' }}>{p.sellable}</b>
-                                  </div>
-                                )}
+                                <button onClick={(e) => { e.stopPropagation(); openSupplierModal(p) }} title="Régler le stock virtuel (vendable sur commande, hors valeur stock)"
+                                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'right', width: '100%' }}>
+                                  <span className={`num fw600 ${p.stock <= 0 ? 'neg' : p.stock <= p.reorderPoint ? 'tx-lo' : ''}`}>{p.stock}</span>
+                                  {p.virtualStock > 0 ? (
+                                    <div className="fs11" style={{ whiteSpace: 'nowrap', color: 'var(--rose-bright)' }}>
+                                      +{p.virtualStock} virt · vend. <b>{p.sellable}</b>
+                                    </div>
+                                  ) : (
+                                    <div className="fs11" style={{ whiteSpace: 'nowrap', color: 'var(--tx-faint)', textDecoration: 'underline' }}>+ virtuel</div>
+                                  )}
+                                </button>
                               </td>
                               <td className="r">
                                 {p.toShip > 0
