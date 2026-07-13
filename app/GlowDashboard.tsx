@@ -40,7 +40,7 @@ interface DashboardStats {
   }
   pnl?: {
     rentabilite: { caLivre: number; profitLivre: number; margeLivree: number; pub: number; emballage: number; net: number; marginPct: number }
-    tresorerie: { encaisse: number; achats: number; pub: number; frais: number; net: number }
+    tresorerie: { encaisse: number; achats: number; pub: number; emballage: number; emballageEstime: boolean; frais: number; net: number }
     packagingRate: number
     deliveredParcels: number
   }
@@ -448,7 +448,8 @@ export default function GlowDashboard() {
                   <PnlRow label="Cash encaissé" sub={`COD ${mad(dEncaisse)}${dBank > 0 ? ` + virements ${mad(dBank)}` : ''} − frais Sendit ${mad(dFees)}`} value={t.encaisse} />
                   <PnlRow label="Achats fournisseur" value={-t.achats} neg />
                   <PnlRow label="Pub" value={-t.pub} neg />
-                  <PnlRow label="Dépenses (emballage & frais)" value={-t.frais} neg />
+                  <PnlRow label="Emballage" sub={t.emballageEstime ? 'estimé · colis × taux' : 'réel loggé'} value={-t.emballage} neg />
+                  {t.frais > 0 && <PnlRow label="Dépenses (frais divers)" value={-t.frais} neg />}
                   <PnlRow label="Cash net généré" value={t.net} total />
                 </div>
               </div>

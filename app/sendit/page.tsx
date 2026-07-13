@@ -79,6 +79,21 @@ export default function SenditLabPage() {
     finally { setBusy(false) }
   }
 
+  const ignore = async (ignoreIds: number[]) => {
+    if (busy || ignoreIds.length === 0) return
+    if (!confirm(`Ignorer ${ignoreIds.length} colis ?\n\nPour les colis d'un autre business partageant le compte Sendit. Ils disparaissent de la liste et ne reviendront pas au prochain Pull. Réversible.`)) return
+    setBusy(true); setError(null); setNotice(null)
+    try {
+      const res = await fetch('/api/ops/sendit/staging', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'ignore', ids: ignoreIds }) })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || `Erreur ${res.status}`)
+      setNotice(`${d.ignored} colis ignoré(s).`)
+      load()
+      setTimeout(() => setNotice(null), 6000)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Action impossible') }
+    finally { setBusy(false) }
+  }
+
   const load = () => {
     fetch('/api/ops/sendit/staging', { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : { rows: [], counts: {} }))
@@ -209,6 +224,7 @@ export default function SenditLabPage() {
                             {(r.assignedProducts?.length ?? 0) > 0 && (
                               <button className="btn-modern btn-sm btn-primary" onClick={() => promote([r.id])} disabled={busy} style={{ fontSize: 11 }}>Officialiser</button>
                             )}
+                            <button onClick={() => ignore([r.id])} disabled={busy} title="Colis d'un autre business — masquer et ne plus le repull" style={{ fontSize: 11, background: 'none', border: 'none', color: 'var(--tx-faint)', cursor: 'pointer', padding: '2px 4px' }}>Ignorer</button>
                           </div>
                         ) : (
                           <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>—</span>

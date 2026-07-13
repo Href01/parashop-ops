@@ -35,15 +35,17 @@ export async function GET() {
            "paidAmount"::float AS "paidAmount", "paidAt", "paymentReference", state, promoted,
            "promotedOrderId", "lastActionAt", "pulledAt"
     FROM "SenditStaging"
+    WHERE state IS DISTINCT FROM 'ignored'
     ORDER BY promoted ASC, "senditCreatedAt" DESC NULLS LAST
   `)
   const counts = await pool.query(`
     SELECT
-      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE state IS DISTINCT FROM 'ignored')::int AS total,
       COUNT(*) FILTER (WHERE state = 'sendit_only' AND NOT promoted)::int AS sendit_only,
       COUNT(*) FILTER (WHERE state = 'matched')::int AS matched,
       COUNT(*) FILTER (WHERE state = 'mismatch')::int AS mismatch,
       COUNT(*) FILTER (WHERE promoted)::int AS promoted,
+      COUNT(*) FILTER (WHERE state = 'ignored')::int AS ignored,
       COUNT(*) FILTER (
         WHERE "assignedProducts" IS NOT NULL
           AND jsonb_array_length("assignedProducts") > 0
@@ -58,6 +60,29 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   if (!(await guard())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await req.json().catch(() => ({}))
+
+  // Ignore / restore parcels that belong to a third party sharing the Sendit account
+  // (e.g. the founder's brother's other business). Only allowed on non-promoted rows so
+  // official BOS orders are never touched. 'ignored' is preserved across pulls.
+  if (body.action === 'ignore' || body.action === 'unignore') {
+    const ids = Array.isArray(body.ids) ? body.ids.map(Number).filter(Number.isInteger) : []
+    if (ids.length === 0) return NextResponse.json({ error: 'Aucun colis sélectionné' }, { status: 400 })
+    if (body.action === 'ignore') {
+      const r = await pool.query(
+        `UPDATE "SenditStaging" SET state = 'ignored', "updatedAt" = NOW()
+         WHERE id = ANY($1) AND promoted = false AND state <> 'ignored'`,
+        [ids]
+      )
+      return NextResponse.json({ ok: true, ignored: r.rowCount })
+    }
+    // unignore → back to sendit_only (unmatched) so it can be re-processed on next pull
+    const r = await pool.query(
+      `UPDATE "SenditStaging" SET state = 'sendit_only', "updatedAt" = NOW()
+       WHERE id = ANY($1) AND state = 'ignored'`,
+      [ids]
+    )
+    return NextResponse.json({ ok: true, restored: r.rowCount })
+  }
 
   if (body.action === 'sync-matched') {
     try {

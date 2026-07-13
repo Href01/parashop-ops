@@ -104,7 +104,9 @@ export async function pullSenditStaging() {
            END,
            "matchedUserId" = EXCLUDED."matchedUserId",
            "matchedCustomerName" = EXCLUDED."matchedCustomerName",
-           state = EXCLUDED.state,
+           -- 'ignored' = parcels from a third party (e.g. another business sharing the
+           -- Sendit account). Keep them hidden across re-pulls instead of resurfacing.
+           state = CASE WHEN "SenditStaging".state = 'ignored' THEN 'ignored' ELSE EXCLUDED.state END,
            "pulledAt" = NOW(), "updatedAt" = NOW()
          RETURNING (xmax = 0) AS inserted`,
         [
