@@ -19,15 +19,24 @@ type Product = {
   activeAlerts: number
   committed: number; toShip: number; inTransit: number; available: number
   toShipOrders: number; openOrdersCount: number; openOrders: OpenOrder[]
-  sold30d: number; daysLeft: number | null; salesByChannel: ChannelSale[]
+  sold30d: number; sold7d: number; daysLeft: number | null; daysCover: number | null; salesByChannel: ChannelSale[]
   suggestedReorder: number
+  // Advanced reorder metrics (from the API engine)
+  price: number
+  velocity: number; trend: number
+  leadTime: number; safetyStock: number; reorderPointDyn: number
+  stockoutRisk: 'out' | 'high' | 'medium' | 'low' | 'none'
+  revenueAtRisk: number; marginUnit: number; marginPct: number
+  retailValue: number; marginValue: number; explanation: string
 }
 type ToShipItem = { productId: number; name: string; brand: string; qty: number; stock: number }
 type ToShipOrder = { id: number; customer: string; city: string; phone: string | null; status: string; created: string; units: number; canFulfill: boolean; items: ToShipItem[] }
 type Summary = {
   totalProducts: number; stockValue: number; shortages: number; lowStock: number; outOfStock: number
   toShipOrders: number; toShipUnits: number; reorderProducts: number; reorderValue: number
+  stockRetailValue: number; stockMarginValue: number; revenueAtRisk: number; reorderRetail: number; reorderMargin: number
 }
+type Policy = { targetDays: number; leadDefault: number; leadTimes: Record<string, number> }
 type Movement = {
   id: number; productId: number; productName: string; productBrand: string; type: string
   quantity: number; stockBefore: number; stockAfter: number; reason: string | null; performedBy: string; createdAt: string
@@ -91,6 +100,10 @@ export default function InventoryPage() {
   const [supplierModal, setSupplierModal] = useState<{ productId: number; productName: string; currentSupplier: string | null; stock: number } | null>(null)
   const [supplierInput, setSupplierInput] = useState('')
   const [virtualInput, setVirtualInput] = useState('')
+  const [leadInput, setLeadInput] = useState('')
+  const [policy, setPolicy] = useState<Policy | null>(null)
+  const [showPolicy, setShowPolicy] = useState(false)
+  const [policyForm, setPolicyForm] = useState({ targetDays: '', leadDefault: '' })
   const [savingSupplier, setSavingSupplier] = useState(false)
 
   useEffect(() => {
@@ -168,6 +181,7 @@ export default function InventoryPage() {
       setProducts(data.products || [])
       setToShip(data.toShip || [])
       setSummary(data.summary || null)
+      if (data.policy) { setPolicy(data.policy); setPolicyForm({ targetDays: String(data.policy.targetDays), leadDefault: String(data.policy.leadDefault) }) }
     } catch (error) {
       console.error('Failed to fetch inventory:', error)
     } finally {
@@ -231,18 +245,26 @@ export default function InventoryPage() {
     setSupplierModal({ productId: p.id, productName: p.name, currentSupplier: p.supplier, stock: p.stock })
     setSupplierInput(p.supplier || '')
     setVirtualInput(String(p.virtualStock || 0))
+    setLeadInput(String(p.leadTime || policy?.leadDefault || 5))
+  }
+
+  const savePolicy = async (body: Record<string, unknown>) => {
+    await fetch('/api/ops/inventory/policy', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {})
   }
 
   const submitSupplier = async () => {
     if (!supplierModal || savingSupplier) return
     setSavingSupplier(true)
     try {
+      const supplier = supplierInput.trim() || null
       const res = await fetch(`/api/ops/products/${supplierModal.productId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ supplier: supplierInput.trim() || null, virtualStock: Math.max(0, Math.trunc(Number(virtualInput)) || 0) }),
+        body: JSON.stringify({ supplier, virtualStock: Math.max(0, Math.trunc(Number(virtualInput)) || 0) }),
       })
       if (!res.ok) throw new Error('Failed')
+      // Per-supplier lead time (drives the reorder recommendation).
+      if (supplier && leadInput) await savePolicy({ supplier, leadTime: Math.max(1, Math.trunc(Number(leadInput)) || 5) })
       setSupplierModal(null)
       fetchInventory()
     } catch (error) {
@@ -331,13 +353,27 @@ export default function InventoryPage() {
         {activeTab === 'stock' && (
           <>
             {/* KPI strip */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 mb-5">
-              <Kpi tone="violet" icon={<DollarSign />} label="Valeur stock" value={`${money(summary?.stockValue || 0)}`} sub="MAD (coût)" />
-              <Kpi tone="red" icon={<XCircle />} label="Ruptures" value={String(summary?.shortages || 0)} sub="commandé > stock" alert={(summary?.shortages || 0) > 0} />
-              <Kpi tone="amber" icon={<AlertTriangle />} label="Stock bas" value={String(summary?.lowStock || 0)} sub="sous le seuil" />
-              <Kpi tone="blue" icon={<Truck />} label="À expédier" value={`${summary?.toShipOrders || 0}`} sub={`${summary?.toShipUnits || 0} articles`} />
-              <Kpi tone="green" icon={<ShoppingCart />} label="À recommander" value={String(summary?.reorderProducts || 0)} sub={`≈ ${money(summary?.reorderValue || 0)} MAD`} />
-            </div>
+            {(() => {
+              const marginPct = summary && summary.stockRetailValue > 0 ? Math.round((summary.stockMarginValue / summary.stockRetailValue) * 100) : 0
+              return (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 mb-4 inv-fade">
+                  <Kpi tone="violet" icon={<DollarSign />} label="Valeur stock" value={money(summary?.stockValue || 0)} sub={`vente ${money(summary?.stockRetailValue || 0)} · ${marginPct}% marge`} />
+                  <Kpi tone="red" icon={<TrendingDown />} label="CA à risque" value={money(summary?.revenueAtRisk || 0)} sub="ventes perdues (ruptures)" alert={(summary?.revenueAtRisk || 0) > 0} />
+                  <Kpi tone="red" icon={<XCircle />} label="Ruptures" value={String(summary?.shortages || 0)} sub="commandé > stock" alert={(summary?.shortages || 0) > 0} />
+                  <Kpi tone="amber" icon={<AlertTriangle />} label="Stock bas" value={String(summary?.lowStock || 0)} sub="sous le seuil" />
+                  <Kpi tone="blue" icon={<Truck />} label="À expédier" value={`${summary?.toShipOrders || 0}`} sub={`${summary?.toShipUnits || 0} articles`} />
+                  <Kpi tone="green" icon={<ShoppingCart />} label="À recommander" value={String(summary?.reorderProducts || 0)} sub={`${money(summary?.reorderValue || 0)} coût · +${money(summary?.reorderMargin || 0)} marge`} />
+                </div>
+              )
+            })()}
+
+            {/* Reorder policy summary + settings */}
+            {policy && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                <span className="fs11 tx-lo">Politique réappro : couverture cible <b className="tx-mid">{policy.targetDays}j</b> · délai fournisseur défaut <b className="tx-mid">{policy.leadDefault}j</b></span>
+                <button className="btn-modern btn-sm btn-subtle" onClick={() => setShowPolicy(true)}>⚙ Réglages</button>
+              </div>
+            )}
 
             {/* Actions urgentes — the smart feed */}
             {!loading && urgentActions.length > 0 && (
@@ -368,7 +404,7 @@ export default function InventoryPage() {
                         <span style={{ fontSize: 11, fontWeight: 700, color: tone, whiteSpace: 'nowrap', flexShrink: 0 }}>{status}</span>
                         <span className="fs11 tx-lo hide-sm" style={{ whiteSpace: 'nowrap', flexShrink: 0, minWidth: 96, textAlign: 'right' }}>{metric}</span>
                         {p.suggestedReorder > 0 && (
-                          <span className="fs11" style={{ color: 'var(--tx-mid)', whiteSpace: 'nowrap', flexShrink: 0 }} title={p.supplier ? `Recommander ${p.suggestedReorder} · ${p.supplier}` : `Recommander ${p.suggestedReorder}`}>
+                          <span className="fs11" style={{ color: 'var(--tx-mid)', whiteSpace: 'nowrap', flexShrink: 0, cursor: 'help', borderBottom: '1px dotted var(--line-soft)' }} title={p.explanation}>
                             → <b>{p.suggestedReorder}</b>
                           </span>
                         )}
@@ -404,20 +440,22 @@ export default function InventoryPage() {
             </div>
 
             {/* Unified table */}
-            <div className="card-modern">
+            <div className="card-modern inv-fade">
               <div className="overflow-x-auto">
-                <table className="table-modern">
+                <table className="table-modern inv-table">
                   <thead>
                     <tr>
                       <th>Produit</th>
                       <th>État</th>
                       <th className="r">Stock</th>
-                      <th className="r">À exp.</th>
-                      <th className="r">Dispo</th>
-                      <th className="r">Vendu 30j</th>
-                      <th className="r">Jours</th>
-                      <th>Fournisseur</th>
-                      <th className="r" title="Valeur du stock au coût d'achat = stock × coût unitaire">Valeur (coût)</th>
+                      <th className="r" title="Commandes non encore expédiées (prélèvent du stock)">À exp.</th>
+                      <th className="r" title="Disponible = stock − à expédier">Dispo</th>
+                      <th className="r" title="Vitesse de vente, unités/jour (pondéré 7j/30j) · ↑ accélère ↓ ralentit">Vél./j</th>
+                      <th className="r" title="Couverture = dispo ÷ vélocité (jours avant rupture)">Couv.</th>
+                      <th className="r" title="Marge = (prix de vente − coût) ÷ prix de vente">Marge</th>
+                      <th className="r" title="Quantité recommandée à commander — survole le chiffre pour le calcul détaillé">Reco</th>
+                      <th title="Fournisseur & stock virtuel">Fourn.</th>
+                      <th className="r" title="Valeur du stock au coût = max(0, stock) × coût unitaire">Valeur</th>
                       <th />
                     </tr>
                   </thead>
@@ -446,7 +484,12 @@ export default function InventoryPage() {
                                   </div>
                                 </div>
                               </td>
-                              <td><span className={h.cls}>{h.label}</span></td>
+                              <td>
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                                  <span title={`Risque rupture: ${p.stockoutRisk}`} style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: (p.stockoutRisk === 'out' || p.stockoutRisk === 'high') ? 'var(--rose-bright)' : p.stockoutRisk === 'medium' ? 'var(--amber)' : p.stockoutRisk === 'low' ? 'var(--green)' : 'var(--line-soft)' }} />
+                                  <span className={h.cls}>{h.label}</span>
+                                </span>
+                              </td>
                               <td className="r">
                                 <button onClick={(e) => { e.stopPropagation(); openSupplierModal(p) }} title="Régler le stock virtuel (vendable sur commande, hors valeur stock)"
                                   style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'right', width: '100%' }}>
@@ -467,11 +510,17 @@ export default function InventoryPage() {
                               </td>
                               <td className="r"><span className="num fw600" style={{ color: p.available < 0 ? 'var(--rose-bright)' : 'var(--tx-hi)' }}>{p.available}</span></td>
                               <td className="r">
-                                {p.sold30d > 0
-                                  ? <span className="num fw600" style={{ color: 'var(--tx-hi)' }}>{p.sold30d}</span>
+                                {p.velocity > 0
+                                  ? <span className="num fw600" style={{ color: 'var(--tx-hi)' }} title={`${p.sold30d} vendus/30j · ${p.sold7d} sur 7j`}>{p.velocity.toFixed(1)}<span style={{ color: p.trend > 0.25 ? 'var(--green)' : p.trend < -0.25 ? 'var(--rose-bright)' : 'var(--tx-faint)', marginLeft: 2 }}>{p.trend > 0.25 ? '↑' : p.trend < -0.25 ? '↓' : ''}</span></span>
                                   : <span className="tx-lo">—</span>}
                               </td>
-                              <td className="r">{p.daysLeft != null ? <span className={`num ${p.daysLeft < 7 ? 'neg' : p.daysLeft < 14 ? 'tx-lo' : ''}`}>{p.daysLeft}j</span> : <span className="tx-lo">—</span>}</td>
+                              <td className="r">{p.daysCover != null ? <span className={`num ${p.daysCover < p.leadTime ? 'neg' : p.daysCover < p.leadTime * 2 ? 'tx-lo' : ''}`}>{p.daysCover}j</span> : <span className="tx-lo">{p.velocity > 0 ? '0j' : '∞'}</span>}</td>
+                              <td className="r">{p.marginPct > 0 ? <span className="num" style={{ color: p.marginPct >= 0.4 ? 'var(--green)' : p.marginPct >= 0.2 ? 'var(--tx-hi)' : 'var(--amber)' }}>{Math.round(p.marginPct * 100)}%</span> : <span className="tx-lo">—</span>}</td>
+                              <td className="r">
+                                {p.suggestedReorder > 0
+                                  ? <span className="num fw700" style={{ color: 'var(--rose-bright)', cursor: 'help', borderBottom: '1px dotted rgba(225,29,72,.45)' }} title={p.explanation}>{p.suggestedReorder}</span>
+                                  : <span className="tx-lo" style={{ cursor: 'help' }} title={p.explanation}>—</span>}
+                              </td>
                               <td>
                                 <button onClick={(e) => { e.stopPropagation(); openSupplierModal(p) }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: p.supplier ? 'var(--tx-lo)' : 'var(--rose-bright)', fontSize: 12, textDecoration: p.supplier ? 'none' : 'underline' }} title="Modifier le fournisseur">
                                   {p.supplier || '+ Ajouter'}
@@ -905,12 +954,16 @@ export default function InventoryPage() {
                   <input type="text" value={supplierInput} onChange={(e) => setSupplierInput(e.target.value)} placeholder="Ex: Beauty Supply Morocco" className="input-modern" style={{ width: '100%' }} autoFocus />
                   <div className="fs11 tx-lo" style={{ marginTop: 4 }}>Laissez vide pour supprimer le fournisseur</div>
                 </div>
-                <div style={{ marginBottom: 16 }}>
-                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Stock virtuel (vendable sur commande)</label>
-                  <input type="number" min="0" step="1" value={virtualInput} onChange={(e) => setVirtualInput(e.target.value)} placeholder="0" className="input-modern" style={{ width: '100%' }} />
-                  <div className="fs11 tx-lo" style={{ marginTop: 4 }}>
-                    Vendable = stock réel + virtuel = <b>{supplierModal.stock + (Math.max(0, Math.trunc(Number(virtualInput)) || 0))}</b> unités.
-                    Le virtuel n'entre <b>jamais</b> dans la valeur du stock, et n'apparaît pas côté client.
+                <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                  <div style={{ flex: 1 }}>
+                    <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Stock virtuel</label>
+                    <input type="number" min="0" step="1" value={virtualInput} onChange={(e) => setVirtualInput(e.target.value)} placeholder="0" className="input-modern" style={{ width: '100%' }} />
+                    <div className="fs11 tx-lo" style={{ marginTop: 4 }}>Vendable = <b>{supplierModal.stock + (Math.max(0, Math.trunc(Number(virtualInput)) || 0))}</b> · hors valeur stock, invisible client</div>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Délai fournisseur (jours)</label>
+                    <input type="number" min="1" step="1" value={leadInput} onChange={(e) => setLeadInput(e.target.value)} placeholder={String(policy?.leadDefault || 5)} className="input-modern" style={{ width: '100%' }} />
+                    <div className="fs11 tx-lo" style={{ marginTop: 4 }}>De la commande à la réception. Pilote le point de commande &amp; la reco.</div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
@@ -922,6 +975,53 @@ export default function InventoryPage() {
           </div>
         )}
       </div>
+
+      {showPolicy && policy && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={() => setShowPolicy(false)}>
+          <div className="card-modern" style={{ maxWidth: 470, width: '92%' }} onClick={(e) => e.stopPropagation()}>
+            <div className="card-header"><h3 className="text-lg font-semibold">Réglages réappro</h3></div>
+            <div className="card-body">
+              <p className="fs12 tx-lo" style={{ marginBottom: 14 }}>Ces réglages pilotent la <b>quantité recommandée</b> et le <b>point de commande</b>.</p>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+                <div style={{ flex: 1 }}>
+                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Couverture cible (jours)</label>
+                  <input type="number" min="1" value={policyForm.targetDays} onChange={(e) => setPolicyForm({ ...policyForm, targetDays: e.target.value })} className="input-modern" style={{ width: '100%' }} />
+                  <div className="fs11 tx-lo" style={{ marginTop: 4 }}>Jours de stock visés à chaque commande.</div>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Délai fournisseur défaut (j)</label>
+                  <input type="number" min="1" value={policyForm.leadDefault} onChange={(e) => setPolicyForm({ ...policyForm, leadDefault: e.target.value })} className="input-modern" style={{ width: '100%' }} />
+                  <div className="fs11 tx-lo" style={{ marginTop: 4 }}>Si le fournisseur n&apos;a pas de délai propre.</div>
+                </div>
+              </div>
+              {policy.leadTimes && Object.keys(policy.leadTimes).length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                  <div className="fs12 tx-mid fw600" style={{ marginBottom: 6 }}>Délais par fournisseur</div>
+                  {Object.entries(policy.leadTimes).map(([sup, d]) => (
+                    <div key={sup} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, padding: '3px 0', borderBottom: '1px solid var(--line-soft)' }}><span className="tx-mid">{sup}</span><b>{d}j</b></div>
+                  ))}
+                  <div className="fs11 tx-faint" style={{ marginTop: 4 }}>Modifiable via « Fournisseur &amp; stock virtuel » d&apos;un produit.</div>
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                <button className="btn-modern btn-secondary" onClick={() => setShowPolicy(false)}>Annuler</button>
+                <button className="btn-modern btn-primary" onClick={async () => { await savePolicy({ targetDays: Number(policyForm.targetDays) || 15, leadDefault: Number(policyForm.leadDefault) || 5 }); setShowPolicy(false); fetchInventory() }}>Enregistrer</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style jsx>{`
+        .inv-table { font-size: 12px; }
+        .inv-table :global(th) { font-size: 10.5px; letter-spacing: .01em; text-transform: uppercase; color: var(--tx-faint); padding-top: 8px; padding-bottom: 8px; }
+        .inv-table :global(td) { padding-top: 9px; padding-bottom: 9px; }
+        .inv-table :global(tbody tr) { transition: background .12s ease; }
+        .inv-fade { animation: invFade .32s cubic-bezier(.16,1,.3,1) both; }
+        @keyframes invFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+        :global(.inv-card) { transition: transform .14s ease, box-shadow .14s ease; }
+        :global(.inv-card:hover) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,.07); }
+      `}</style>
     </BosShell>
   )
 }
@@ -961,12 +1061,12 @@ function Kpi({ tone, icon, label, value, sub, alert }: { tone: 'blue' | 'amber' 
   }
   const c = map[tone]
   return (
-    <div className="card-modern" style={{ padding: 14, ...(alert ? { borderColor: 'var(--rose-bright)' } : {}) }}>
-      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: c.fg, background: c.bg, padding: '3px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600 }}>
-        <span style={{ display: 'inline-flex', width: 15, height: 15 }}>{icon}</span>{label}
+    <div className="card-modern inv-card" style={{ padding: '10px 12px', ...(alert ? { borderColor: 'var(--rose-bright)' } : {}) }}>
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: c.fg, background: c.bg, padding: '2px 7px', borderRadius: 5, fontSize: 11, fontWeight: 600 }}>
+        <span style={{ display: 'inline-flex', width: 13, height: 13 }}>{icon}</span>{label}
       </div>
-      <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--tx-hi)', marginTop: 8, lineHeight: 1 }}>{value}</div>
-      <div className="fs12 tx-faint" style={{ marginTop: 3 }}>{sub}</div>
+      <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--tx-hi)', marginTop: 6, lineHeight: 1 }}>{value}</div>
+      <div className="tx-faint" style={{ marginTop: 2, fontSize: 10.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={sub}>{sub}</div>
     </div>
   )
 }
