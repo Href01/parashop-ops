@@ -57,6 +57,21 @@ export async function GET(request: NextRequest) {
     }
     const whereClause = `WHERE ${conditions.join(' AND ')}`
 
+    // Reorder policy (editable in Réglages): target coverage (days), a default supplier
+    // lead time, and per-supplier lead times. These drive the advanced recommendation.
+    const settingsRes = await pool.query(
+      `SELECT key, value FROM "AppSetting" WHERE key IN ('reorder_target_days','reorder_lead_time_default','reorder_lead_times')`
+    ).catch(() => ({ rows: [] as Array<{ key: string; value: string }> }))
+    const settingsMap = new Map(settingsRes.rows.map((r) => [r.key, r.value]))
+    const targetDays = Math.max(1, parseInt(settingsMap.get('reorder_target_days') || '15') || 15)
+    const leadDefault = Math.max(1, parseInt(settingsMap.get('reorder_lead_time_default') || '5') || 5)
+    let leadMap: Record<string, number> = {}
+    try { leadMap = JSON.parse(settingsMap.get('reorder_lead_times') || '{}') } catch { /* ignore */ }
+    const leadTimeFor = (supplier: string | null) => {
+      const v = supplier ? Number(leadMap[supplier]) : NaN
+      return Number.isFinite(v) && v > 0 ? v : leadDefault
+    }
+
     const [productsRes, toShipRes] = await Promise.all([
       pool.query(
         `
@@ -75,7 +90,9 @@ export async function GET(request: NextRequest) {
         -- Real velocity across ALL channels (Instagram, WhatsApp, Sendit, Website…),
         -- 30-day window so low-volume products don't read as 0 like the old 7-day did.
         sales AS (
-          SELECT oi."productId" AS pid, COALESCE(SUM(oi.quantity), 0)::int AS sold30
+          SELECT oi."productId" AS pid,
+                 COALESCE(SUM(oi.quantity), 0)::int AS sold30,
+                 COALESCE(SUM(oi.quantity) FILTER (WHERE o."createdAt" >= NOW() - INTERVAL '7 days'), 0)::int AS sold7
           FROM "OrderItem" oi
           JOIN "Order" o ON o.id = oi."orderId"
           WHERE o.status IN ('CONFIRMED', 'DELIVERED')
@@ -94,6 +111,7 @@ export async function GET(request: NextRequest) {
           COALESCE(d.to_ship_orders, 0) AS "toShipOrders",
           COALESCE(d.open_orders_count, 0) AS "openOrdersCount",
           COALESCE(s.sold30, 0) AS sold30d,
+          COALESCE(s.sold7, 0) AS sold7d,
           -- Available = physical stock minus what still has to be shipped. Already
           -- shipped orders have LEFT the warehouse, so they must NOT reduce it again.
           (p.stock - COALESCE(d.to_ship, 0))::int AS available,
@@ -171,40 +189,83 @@ export async function GET(request: NextRequest) {
       const reorderPoint = Number(r.reorderPoint) || 0
       const reorderQuantity = Number(r.reorderQuantity) || 0
       const sold30d = Number(r.sold30d) || 0
-      // Live velocity from real 30-day multi-channel sales.
-      const dailyVelocity = sold30d / 30
-      const daysLeft = dailyVelocity > 0 && stock > 0 ? Math.round(available / dailyVelocity) : null
-      // Suggested reorder, velocity-driven so it stays consistent with "Vendu 30j":
-      //  - if we can't even ship what's owed → cover that gap first
-      //  - else top up to ~30 days of sales
-      //  - if no velocity but under the reorder point → fall back to the threshold
+      const sold7d = Number(r.sold7d) || 0
+      const inTransit = Number(r.inTransit) || 0
+      const price = r.price != null ? Number(r.price) : 0
+      const costPrice = r.costPrice != null ? Number(r.costPrice) : 0
+
+      // ── Advanced reorder model ──────────────────────────────────────────────
+      // Velocity blends the 30-day baseline (stable for low-volume) with the last 7
+      // days (reacts to a spike), weighted toward recent. Trend = recent vs baseline.
+      const v30 = sold30d / 30
+      const v7 = sold7d / 7
+      const velocity = sold30d > 0 ? (v7 * 0.5 + v30 * 0.5) : 0 // units/day
+      const trend = v30 > 0 ? (v7 - v30) / v30 : 0              // >0 accelerating
+
+      const leadTime = leadTimeFor(r.supplier || null)          // days, per-supplier
+      // Safety stock ~ z·σ over the lead time; demand modelled Poisson so σ=√(mean).
+      // z=1.65 ≈ 95% service level. Protects against demand variability while waiting.
+      const leadDemand = velocity * leadTime
+      const safetyStock = velocity > 0 ? Math.ceil(1.65 * Math.sqrt(Math.max(1, leadDemand))) : 0
+      // Dynamic reorder point: order when on-hand falls to (lead-time demand + safety).
+      const reorderPointDyn = Math.ceil(leadDemand + safetyStock)
+      // Days the current available stock lasts at the current pace.
+      const daysCover = velocity > 0 ? Math.round(available / velocity) : (available > 0 ? null : 0)
+      const daysLeft = daysCover // kept for backward compat
+
+      // Recommended quantity: top up to (target coverage + lead time) of demand, minus
+      // what's on hand and already inbound. Always cover what we owe (unshipped > stock).
       const owedGap = Math.max(0, toShip - stock)
-      const target30 = Math.ceil(dailyVelocity * 30)
-      let suggestedReorder = owedGap
-      if (sold30d > 0) suggestedReorder = Math.max(owedGap, target30 - available)
-      else if (stock <= reorderPoint) suggestedReorder = Math.max(owedGap, reorderQuantity, reorderPoint - stock)
-      suggestedReorder = Math.max(0, suggestedReorder)
+      const targetUnits = Math.ceil(velocity * (targetDays + leadTime))
+      let suggestedReorder = Math.max(owedGap, targetUnits - available - inTransit)
+      if (sold30d === 0 && stock <= reorderPoint) suggestedReorder = Math.max(owedGap, reorderQuantity, reorderPoint - stock)
+      suggestedReorder = Math.max(0, Math.round(suggestedReorder))
+
+      // Stockout risk from days-of-cover vs the lead time (can we restock in time?).
+      let stockoutRisk: 'out' | 'high' | 'medium' | 'low' | 'none' = 'none'
+      if (sellable <= 0) stockoutRisk = 'out'
+      else if (velocity > 0) {
+        if (available <= 0 || (daysCover != null && daysCover < leadTime)) stockoutRisk = 'high'
+        else if (available <= reorderPointDyn) stockoutRisk = 'medium'
+        else stockoutRisk = 'low'
+      }
+      // Margin economics.
+      const marginUnit = Math.max(0, price - costPrice)
+      const marginPct = price > 0 ? marginUnit / price : 0
+      // Revenue you'd lose during the reorder wait if you're already stocking out.
+      const revenueAtRisk = (stockoutRisk === 'out' || stockoutRisk === 'high') && velocity > 0
+        ? Math.round(velocity * price * leadTime) : 0
+      const retailValue = Math.max(0, stock) * price
+      const marginValue = Math.max(0, stock) * marginUnit
+
+      const trendTxt = trend > 0.25 ? '↑ accélère' : trend < -0.25 ? '↓ ralentit' : 'stable'
+      const explanation = velocity > 0
+        ? `Vend ${velocity.toFixed(1)}/j (${trendTxt}) · couvre ${daysCover == null ? '∞' : daysCover + 'j'}. `
+          + `Point de commande ${reorderPointDyn} = ${Math.ceil(leadDemand)} (délai ${leadTime}j) + ${safetyStock} sécurité. `
+          + `Reco ${suggestedReorder} → ${targetDays}j + délai.`
+          + (revenueAtRisk > 0 ? ` CA à risque ~${revenueAtRisk} MAD/délai.` : '')
+        : (stock <= reorderPoint ? `Pas de vente 30j · sous le seuil (${reorderPoint}).` : `Pas de vente 30j · stock OK.`)
+
       return {
         ...r,
-        stock,
-        virtualStock,
-        sellable,
-        committed,
-        available,
-        reorderPoint,
-        reorderQuantity,
-        toShip,
-        inTransit: Number(r.inTransit) || 0,
+        stock, virtualStock, sellable, committed, available,
+        reorderPoint, reorderQuantity, toShip, inTransit,
         toShipOrders: Number(r.toShipOrders) || 0,
         openOrdersCount: Number(r.openOrdersCount) || 0,
-        sold30d,
-        daysLeft,
-        costPrice: r.costPrice != null ? Number(r.costPrice) : 0,
+        sold30d, sold7d, daysLeft, daysCover,
+        price, costPrice,
         weeklySales: Number(r.weeklySales) || 0,
         activeAlerts: Number(r.activeAlerts) || 0,
         openOrders: r.openOrders || [],
         salesByChannel: r.salesByChannel || [],
         suggestedReorder,
+        // Advanced metrics
+        velocity: Math.round(velocity * 100) / 100,
+        trend: Math.round(trend * 100) / 100,
+        leadTime, safetyStock, reorderPointDyn, stockoutRisk,
+        revenueAtRisk, marginUnit, marginPct: Math.round(marginPct * 100) / 100,
+        retailValue, marginValue,
+        explanation,
       }
     })
 
@@ -235,9 +296,18 @@ export async function GET(request: NextRequest) {
       toShipUnits: toShip.reduce((s, o) => s + o.units, 0),
       reorderProducts: products.filter((p) => p.suggestedReorder > 0).length,
       reorderValue: products.reduce((s, p) => s + p.suggestedReorder * (p.costPrice || 0), 0),
+      // Stock value AT SALE price + the margin locked in it (what the user asked for).
+      stockRetailValue: products.reduce((s, p) => s + p.retailValue, 0),
+      stockMarginValue: products.reduce((s, p) => s + p.marginValue, 0),
+      // Revenue you're losing right now on out-of-stock / high-risk sellers (per lead time).
+      revenueAtRisk: products.reduce((s, p) => s + p.revenueAtRisk, 0),
+      // If you order all the suggestions: cash out (cost) vs sales/margin it unlocks.
+      reorderRetail: products.reduce((s, p) => s + p.suggestedReorder * (p.price || 0), 0),
+      reorderMargin: products.reduce((s, p) => s + p.suggestedReorder * (p.marginUnit || 0), 0),
     }
 
-    return NextResponse.json({ products, toShip, summary })
+    const policy = { targetDays, leadDefault, leadTimes: leadMap }
+    return NextResponse.json({ products, toShip, summary, policy })
   } catch (error: any) {
     console.error('GET inventory error:', error)
     return NextResponse.json(
