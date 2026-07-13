@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
+import { revalidateWebsite } from '@/lib/revalidate-website'
 
 // GET /api/ops/products/[id] - Get product details
 export async function GET(
@@ -28,6 +29,7 @@ export async function GET(
         image,
         description,
         stock,
+        COALESCE("virtualStock", 0) AS "virtualStock",
         "lowStockThreshold",
         supplier
       FROM "Product"
@@ -148,7 +150,7 @@ export async function PUT(
     const { id: productId } = await params
     const body = await request.json()
 
-    const { costPrice, lowStockThreshold, supplier } = body
+    const { costPrice, lowStockThreshold, supplier, virtualStock } = body
 
     // Build update query dynamically
     const updates: string[] = []
@@ -159,6 +161,17 @@ export async function PUT(
       updates.push(`"costPrice" = $${paramIndex}`)
       values.push(costPrice)
       paramIndex++
+    }
+
+    // Supplier-backed sellable buffer. Never affects inventory valuation; does change
+    // what the storefront lets customers order → revalidate the site below.
+    let virtualStockChanged = false
+    if (virtualStock !== undefined) {
+      const v = Math.max(0, Math.trunc(Number(virtualStock)) || 0)
+      updates.push(`"virtualStock" = $${paramIndex}`)
+      values.push(v)
+      paramIndex++
+      virtualStockChanged = true
     }
 
     if (lowStockThreshold !== undefined) {
@@ -192,6 +205,9 @@ export async function PUT(
     if (result.rows.length === 0) {
       return NextResponse.json({ error: 'Product not found' }, { status: 404 })
     }
+
+    // Changing the sellable buffer must refresh the public site's cached availability.
+    if (virtualStockChanged) revalidateWebsite(['products']).catch(() => {})
 
     return NextResponse.json(result.rows[0])
   } catch (error) {

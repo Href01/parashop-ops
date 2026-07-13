@@ -84,6 +84,7 @@ export async function GET(request: NextRequest) {
         )
         SELECT
           p.id, p.name, p.brand, p.price, p.image, p.stock,
+          COALESCE(p."virtualStock", 0) AS "virtualStock",
           p."reorderPoint", p."reorderQuantity", p."stockStatus",
           p.supplier, p."supplierSKU", p."lastRestockDate", p."costPrice",
           p."weeklySales", p."monthlyRevenue", p."profitMargin",
@@ -160,6 +161,10 @@ export async function GET(request: NextRequest) {
 
     const products = productsRes.rows.map((r) => {
       const stock = Number(r.stock) || 0
+      const virtualStock = Number(r.virtualStock) || 0
+      // Sellable = physical + supplier-backed virtual buffer (what the storefront lets
+      // customers order). Physical may be negative (backorder); the value below clamps.
+      const sellable = stock + virtualStock
       const committed = Number(r.committed) || 0
       const toShip = Number(r.toShip) || 0
       const available = Number(r.available) // = stock - toShip (shipped already left)
@@ -182,6 +187,8 @@ export async function GET(request: NextRequest) {
       return {
         ...r,
         stock,
+        virtualStock,
+        sellable,
         committed,
         available,
         reorderPoint,
@@ -215,10 +222,15 @@ export async function GET(request: NextRequest) {
 
     const summary = {
       totalProducts: products.length,
-      stockValue: products.reduce((s, p) => s + p.stock * (p.costPrice || 0), 0),
+      // Value counts PHYSICAL stock only, clamped at 0 — the virtual buffer and any
+      // negative backorder never inflate (nor deflate) the real inventory value.
+      stockValue: products.reduce((s, p) => s + Math.max(0, p.stock) * (p.costPrice || 0), 0),
       shortages: products.filter((p) => p.available < 0).length,
       lowStock: products.filter((p) => p.available >= 0 && (p.stock <= p.reorderPoint || p.stockStatus === 'Low stock')).length,
-      outOfStock: products.filter((p) => p.stock === 0).length,
+      // Truly out of stock = nothing sellable (physical + virtual ≤ 0).
+      outOfStock: products.filter((p) => p.sellable <= 0).length,
+      // Sellable only thanks to the supplier-backed buffer (physical ≤ 0, virtual > 0).
+      supplierBacked: products.filter((p) => p.stock <= 0 && p.virtualStock > 0).length,
       toShipOrders: toShip.length,
       toShipUnits: toShip.reduce((s, o) => s + o.units, 0),
       reorderProducts: products.filter((p) => p.suggestedReorder > 0).length,

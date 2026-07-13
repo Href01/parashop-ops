@@ -13,6 +13,7 @@ type OpenOrder = { orderId: number; qty: number; customer: string; city: string 
 type ChannelSale = { channel: string; units: number }
 type Product = {
   id: number; name: string; brand: string; image: string; stock: number
+  virtualStock: number; sellable: number
   reorderPoint: number; reorderQuantity: number; stockStatus: string
   supplier: string; costPrice: number; weeklySales: number
   activeAlerts: number
@@ -52,7 +53,13 @@ const emptyBox: React.CSSProperties = { padding: 22, textAlign: 'center', fontSi
 
 /** Demand-aware health: a shortage (committed > stock) outranks the forecast status. */
 function health(p: Product): { label: string; cls: string; tone: 'red' | 'amber' | 'green' } {
-  if (p.available < 0 || p.stock === 0) return { label: 'Rupture', cls: 'badge red', tone: 'red' }
+  // Supplier-backed (virtual buffer) products are never a true "rupture" while sellable:
+  // physical at/under 0 just means "restock from supplier", the store keeps selling.
+  if ((p.virtualStock || 0) > 0) {
+    if (p.sellable <= 0) return { label: 'Rupture', cls: 'badge red', tone: 'red' }
+    if (p.stock <= 0) return { label: 'Sur commande', cls: 'badge blue', tone: 'amber' }
+  }
+  if (p.available < 0 || p.stock <= 0) return { label: 'Rupture', cls: 'badge red', tone: 'red' }
   if (p.stock <= p.reorderPoint || p.available <= p.reorderPoint || p.stockStatus === 'Low stock') return { label: 'Stock bas', cls: 'badge amber', tone: 'amber' }
   return { label: 'OK', cls: 'badge green', tone: 'green' }
 }
@@ -81,8 +88,9 @@ export default function InventoryPage() {
   const [adjustFree, setAdjustFree] = useState('')
   const [adjustSupplier, setAdjustSupplier] = useState('')
   const [adjusting, setAdjusting] = useState(false)
-  const [supplierModal, setSupplierModal] = useState<{ productId: number; productName: string; currentSupplier: string | null } | null>(null)
+  const [supplierModal, setSupplierModal] = useState<{ productId: number; productName: string; currentSupplier: string | null; stock: number } | null>(null)
   const [supplierInput, setSupplierInput] = useState('')
+  const [virtualInput, setVirtualInput] = useState('')
   const [savingSupplier, setSavingSupplier] = useState(false)
 
   useEffect(() => {
@@ -220,8 +228,9 @@ export default function InventoryPage() {
   }
 
   const openSupplierModal = (p: Product) => {
-    setSupplierModal({ productId: p.id, productName: p.name, currentSupplier: p.supplier })
+    setSupplierModal({ productId: p.id, productName: p.name, currentSupplier: p.supplier, stock: p.stock })
     setSupplierInput(p.supplier || '')
+    setVirtualInput(String(p.virtualStock || 0))
   }
 
   const submitSupplier = async () => {
@@ -231,7 +240,7 @@ export default function InventoryPage() {
       const res = await fetch(`/api/ops/products/${supplierModal.productId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ supplier: supplierInput.trim() || null }),
+        body: JSON.stringify({ supplier: supplierInput.trim() || null, virtualStock: Math.max(0, Math.trunc(Number(virtualInput)) || 0) }),
       })
       if (!res.ok) throw new Error('Failed')
       setSupplierModal(null)
@@ -252,7 +261,7 @@ export default function InventoryPage() {
         ]
       : [
           ['Produit', 'Marque', 'Stock', 'À expédier', 'Dispo', 'Seuil', 'Vendu 30j', 'Jours', 'Statut', 'Fournisseur', 'Coût', 'Valeur', 'À recommander'],
-          ...products.map((p) => [p.name, p.brand, p.stock, p.toShip, p.available, p.reorderPoint, p.sold30d, p.daysLeft ?? '∞', health(p).label, p.supplier || '', p.costPrice || 0, p.costPrice ? p.stock * p.costPrice : 0, p.suggestedReorder || 0]),
+          ...products.map((p) => [p.name, p.brand, p.stock, p.toShip, p.available, p.reorderPoint, p.sold30d, p.daysLeft ?? '∞', health(p).label, p.supplier || '', p.costPrice || 0, p.costPrice ? Math.max(0, p.stock) * p.costPrice : 0, p.suggestedReorder || 0]),
         ]
     const csv = rows.map((r) => r.join(',')).join('\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
@@ -439,7 +448,14 @@ export default function InventoryPage() {
                                 </div>
                               </td>
                               <td><span className={h.cls}>{h.label}</span></td>
-                              <td className="r"><span className={`num fw600 ${p.stock === 0 ? 'neg' : p.stock <= p.reorderPoint ? 'tx-lo' : ''}`}>{p.stock}</span></td>
+                              <td className="r">
+                                <span className={`num fw600 ${p.stock <= 0 ? 'neg' : p.stock <= p.reorderPoint ? 'tx-lo' : ''}`}>{p.stock}</span>
+                                {p.virtualStock > 0 && (
+                                  <div className="fs11 tx-lo" style={{ whiteSpace: 'nowrap' }} title="Stock virtuel (vendable sur commande, hors valeur stock)">
+                                    +{p.virtualStock} virt · vend. <b style={{ color: 'var(--tx-mid)' }}>{p.sellable}</b>
+                                  </div>
+                                )}
+                              </td>
                               <td className="r">
                                 {p.toShip > 0
                                   ? <span className="num fw600" style={{ color: p.available < 0 ? 'var(--rose-bright)' : 'var(--tx-hi)' }}>{p.toShip}</span>
@@ -457,7 +473,7 @@ export default function InventoryPage() {
                                   {p.supplier || '+ Ajouter'}
                                 </button>
                               </td>
-                              <td className="r num fw600">{p.costPrice ? money(p.stock * p.costPrice) : '—'}</td>
+                              <td className="r num fw600">{p.costPrice ? money(Math.max(0, p.stock) * p.costPrice) : '—'}</td>
                               <td className="r" style={{ whiteSpace: 'nowrap' }}>
                                 <button className="btn-modern btn-sm btn-subtle" onClick={(e) => { e.stopPropagation(); openAdjustModal(p, p.suggestedReorder || undefined) }}>Ajuster</button>
                                 {(p.openOrdersCount > 0 || p.sold30d > 0) && <ChevronDown style={{ width: 15, height: 15, marginLeft: 6, verticalAlign: 'middle', color: 'var(--tx-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />}
@@ -874,7 +890,7 @@ export default function InventoryPage() {
         {supplierModal && (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={() => setSupplierModal(null)}>
             <div className="card-modern" style={{ maxWidth: 450, width: '90%' }} onClick={(e) => e.stopPropagation()}>
-              <div className="card-header"><h3 className="text-lg font-semibold">Modifier le fournisseur</h3></div>
+              <div className="card-header"><h3 className="text-lg font-semibold">Fournisseur & stock virtuel</h3></div>
               <div className="card-body">
                 <div style={{ marginBottom: 16 }}>
                   <div className="t-strong">{supplierModal.productName}</div>
@@ -884,6 +900,14 @@ export default function InventoryPage() {
                   <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Nom du fournisseur</label>
                   <input type="text" value={supplierInput} onChange={(e) => setSupplierInput(e.target.value)} placeholder="Ex: Beauty Supply Morocco" className="input-modern" style={{ width: '100%' }} autoFocus />
                   <div className="fs11 tx-lo" style={{ marginTop: 4 }}>Laissez vide pour supprimer le fournisseur</div>
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Stock virtuel (vendable sur commande)</label>
+                  <input type="number" min="0" step="1" value={virtualInput} onChange={(e) => setVirtualInput(e.target.value)} placeholder="0" className="input-modern" style={{ width: '100%' }} />
+                  <div className="fs11 tx-lo" style={{ marginTop: 4 }}>
+                    Vendable = stock réel + virtuel = <b>{supplierModal.stock + (Math.max(0, Math.trunc(Number(virtualInput)) || 0))}</b> unités.
+                    Le virtuel n'entre <b>jamais</b> dans la valeur du stock, et n'apparaît pas côté client.
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                   <button className="btn-modern btn-secondary" onClick={() => setSupplierModal(null)}>Annuler</button>
