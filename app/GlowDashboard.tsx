@@ -384,7 +384,7 @@ export default function GlowDashboard() {
         )}
 
         {/* KPI strip */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 14, marginBottom: 16 }}>
+        <div className="g-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(168px, 1fr))', gap: 12, marginBottom: 18 }}>
           <Kpi label={`CA livré · ${periodLabel}`} value={`${mad(dRevenue)}`} unit="MAD" delta={dRevenueDelta} deltaLabel={compareLabel} sub={`produits rapprochés · ${basisSub}`} accent />
           <Kpi
             label={`CA attendu · ${periodLabel}`}
@@ -435,7 +435,7 @@ export default function GlowDashboard() {
                 </div>
                 <button className="btn-modern btn-secondary" onClick={openExpenses}>Dépenses & emballage</button>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }} className="dash-hero">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }} className="dash-hero g-stagger">
                 <div className="card-modern" style={{ padding: 16 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }}>🔵 Rentabilité <span style={{ fontWeight: 500, color: 'var(--tx-faint)', fontSize: 11 }}>· ventes livrées</span></div>
                   <PnlRow label="CA livré" value={r.caLivre} />
@@ -458,7 +458,7 @@ export default function GlowDashboard() {
         })()}
 
         {/* Chart + goal */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: 16, marginBottom: 16 }} className="dash-hero">
+        <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: 16, marginBottom: 16 }} className="dash-hero g-stagger">
           <Card>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
               <div>
@@ -589,7 +589,7 @@ export default function GlowDashboard() {
         </div>
 
         {/* Top products + channels (real data, previously unused) */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }} className="g-stagger">
           <Card>
             <Label>Top produits · {periodLabel}</Label>
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -637,7 +637,7 @@ export default function GlowDashboard() {
         </div>
 
         {/* Pipeline + Alerts + Activity */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, marginTop: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, marginTop: 16 }} className="g-stagger">
           {/* Pipeline */}
           <Card>
             <Label>Pipeline des commandes · {periodLabel}</Label>
@@ -781,6 +781,35 @@ export default function GlowDashboard() {
       <style jsx>{`
         @media (max-width: 1100px) { .dash-hero { grid-template-columns: 1fr !important; } }
         @keyframes dash-spin { to { transform: rotate(360deg); } }
+
+        /* Cards: soft hover lift + smooth transitions */
+        :global(.g-card) {
+          background: var(--bg-1);
+          border: 1px solid var(--line-soft);
+          box-shadow: var(--shadow-1);
+          transition: transform .16s cubic-bezier(.16,1,.3,1), box-shadow .16s ease, border-color .16s ease;
+          will-change: transform;
+        }
+        :global(.g-card:hover) {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 28px rgba(0,0,0,.09);
+          border-color: color-mix(in srgb, var(--line-soft) 40%, var(--tx-faint));
+        }
+        /* Staggered fade-in-up entrance for grids */
+        :global(.g-stagger) > :global(*) { animation: gIn .42s cubic-bezier(.16,1,.3,1) both; }
+        :global(.g-stagger) > :global(*):nth-child(1) { animation-delay: .02s; }
+        :global(.g-stagger) > :global(*):nth-child(2) { animation-delay: .06s; }
+        :global(.g-stagger) > :global(*):nth-child(3) { animation-delay: .10s; }
+        :global(.g-stagger) > :global(*):nth-child(4) { animation-delay: .14s; }
+        :global(.g-stagger) > :global(*):nth-child(5) { animation-delay: .18s; }
+        :global(.g-stagger) > :global(*):nth-child(6) { animation-delay: .22s; }
+        :global(.g-stagger) > :global(*):nth-child(7) { animation-delay: .26s; }
+        :global(.g-stagger) > :global(*):nth-child(8) { animation-delay: .30s; }
+        :global(.g-stagger) > :global(*):nth-child(9) { animation-delay: .34s; }
+        @keyframes gIn { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+        @media (prefers-reduced-motion: reduce) {
+          :global(.g-card), :global(.g-stagger) > :global(*) { transition: none !important; animation: none !important; }
+        }
       `}</style>
     </div>
   )
@@ -799,7 +828,7 @@ function DashboardSkeleton() {
             </div>
           ))}
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: 16, marginBottom: 16 }} className="dash-hero">
+        <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: 16, marginBottom: 16 }} className="dash-hero g-stagger">
           <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-lg)', padding: 18, height: 320 }}>
             <div className="skeleton-line" style={{ width: '30%', marginBottom: 16 }} />
             <div className="skeleton-line" style={{ width: '100%', height: 220 }} />
@@ -831,7 +860,7 @@ function Stepper({ label, onPrev, onNext }: { label: string; onPrev: () => void;
 }
 
 function Card({ children }: { children: React.ReactNode }) {
-  return <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-lg)', padding: 18, boxShadow: 'var(--shadow-1)' }}>{children}</div>
+  return <div className="g-card" style={{ borderRadius: 'var(--radius-lg)', padding: 18 }}>{children}</div>
 }
 function Label({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 10.5, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--tx-lo)', fontWeight: 600 }}>{children}</div>
@@ -857,10 +886,10 @@ function PnlRow({ label, value, sub, neg, muted, total, pct }: { label: string; 
 
 function Kpi({ label, value, unit, sub, delta, deltaLabel, accent }: { label: string; value: string; unit?: string; sub?: string; delta?: number | null; deltaLabel?: string; accent?: boolean }) {
   return (
-    <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius)', padding: 14, boxShadow: 'var(--shadow-1)' }}>
-      <div style={{ fontSize: 11, color: 'var(--tx-lo)', marginBottom: 6 }}>{label}</div>
+    <div className="g-card" style={{ borderRadius: 'var(--radius)', padding: '13px 15px' }}>
+      <div style={{ fontSize: 11, color: 'var(--tx-lo)', marginBottom: 6, fontWeight: 500 }}>{label}</div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-        <span style={{ fontSize: 22, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: '-0.01em', color: accent ? 'var(--rose-bright)' : 'var(--tx-hi)' }}>{value}</span>
+        <span style={{ fontSize: 23, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: '-0.02em', color: accent ? 'var(--rose-bright)' : 'var(--tx-hi)' }}>{value}</span>
         {unit && <span style={{ fontSize: 12, color: 'var(--tx-faint)' }}>{unit}</span>}
       </div>
       {(delta != null || sub) && (
