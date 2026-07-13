@@ -120,8 +120,7 @@ export default function GlowDashboard() {
   const [month, setMonth] = useState({ year: now.getFullYear(), m: now.getMonth() })
   const iw = getISOWeek(now)
   const [week, setWeek] = useState({ year: iw.year, w: iw.week })
-  const [editingGoal, setEditingGoal] = useState<'week' | 'month' | null>(null)
-  const [goalInput, setGoalInput] = useState('')
+  const [goals, setGoals] = useState<GoalsData | null>(null)
   const [hoveredPoint, setHoveredPoint] = useState<number | null>(null)
   // Accounting basis for the delivered/cash cards: 'delivered' = by delivery date
   // (réalisé, reconciles with Sendit) · 'created' = by order-creation date (cohorte).
@@ -139,13 +138,26 @@ export default function GlowDashboard() {
     : (PERIODS.find((p) => p.days === days)?.label || `${days}j`)
   const compareLabel = mode === 'month' ? 'mois préc.' : mode === 'week' ? 'sem. préc.' : 'période préc.'
 
-  const saveGoal = async (which: 'week' | 'month') => {
-    const v = Math.round(Number(goalInput))
-    if (!Number.isFinite(v) || v < 0) { setEditingGoal(null); return }
-    const key = which === 'week' ? 'weeklyGoal' : 'monthlyGoal'
-    setStats((s) => s ? { ...s, [key]: v } : s)
-    setEditingGoal(null)
-    await fetch('/api/ops/settings/goal', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [key]: v }) }).catch(() => {})
+  function fetchGoals() {
+    return fetch('/api/ops/goals', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && !d.error) setGoals(d) })
+      .catch(() => {})
+  }
+
+  const saveGoalSmart = async (kind: 'week' | 'month', target: number) => {
+    if (!Number.isFinite(target) || target < 0) return
+    // Optimistic: update the current period locally, then persist + refetch history.
+    setGoals((g) => {
+      if (!g) return g
+      const blk = g[kind]
+      if (!blk.current) return g
+      const pct = target > 0 ? Math.round((blk.current.actual / target) * 100) : 0
+      const cur = { ...blk.current, target, pct, achieved: blk.current.actual >= target }
+      return { ...g, [kind]: { ...blk, current: cur, periods: blk.periods.map((p) => (p.current ? cur : p)) } }
+    })
+    await fetch('/api/ops/goals', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind, target }) }).catch(() => {})
+    fetchGoals()
   }
 
   function load() {
@@ -154,6 +166,7 @@ export default function GlowDashboard() {
     else if (mode === 'week') { const r = weekRange(week.year, week.w); qs = `from=${r.from}&to=${r.to}&compareFrom=${r.compareFrom}&compareTo=${r.compareTo}` }
     setLoading(true)
     setError(false)
+    fetchGoals()
     return fetch(`/api/ops/dashboard/stats?${qs}`, { cache: 'no-store' })
       .then((r) => { if (!r.ok) throw new Error('fetch'); return r.json() })
       .then((d) => { setStats(d); setLastUpdated(new Date()) })
@@ -234,16 +247,6 @@ export default function GlowDashboard() {
     return <DashboardSkeleton />
   }
 
-  const weeklyGoal = stats.weeklyGoal || 42000
-  const monthlyGoal = stats.monthlyGoal || 180000
-  // Goals follow the selected period: in week/month mode the progress is that
-  // exact week/month's CA; otherwise the rolling last-7d / last-30d.
-  const weekRevenue = mode === 'week' ? stats.revenueWeek : stats.revenue7d
-  const monthRevenue = mode === 'month' ? stats.revenueWeek : stats.revenue30d
-  const weekGoalTitle = mode === 'week' ? `Objectif semaine S${week.w}` : 'Objectif de la semaine'
-  const monthGoalTitle = mode === 'month' ? `Objectif ${MONTHS_FR[month.m]}` : 'Objectif du mois'
-  const goalWeekPct = Math.min(Math.round((weekRevenue / weeklyGoal) * 100), 100)
-  const goalMonthPct = Math.min(Math.round((monthRevenue / monthlyGoal) * 100), 100)
   // Plot the full selected period (was truncated to 14 points, which made the
   // curve lie in Mois/90j/1 an mode). Cap dot density for very long ranges.
   const series = stats.revenueSeries
@@ -504,69 +507,15 @@ export default function GlowDashboard() {
             </div>
           </Card>
 
-          <Card>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Label>{weekGoalTitle}</Label>
-              {editingGoal !== 'week' && (
-                <button onClick={() => { setGoalInput(String(weeklyGoal)); setEditingGoal('week') }} title="Modifier l'objectif hebdo" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--tx-lo)', fontSize: 11, padding: 0 }}>✏️ modifier</button>
-              )}
-            </div>
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 6, marginBottom: 4 }}>
-              <span style={{ fontSize: 40, fontWeight: 700, fontFamily: 'var(--mono)', color: goalWeekPct >= 100 ? 'var(--green)' : 'var(--rose-bright)' }}>{goalWeekPct}%</span>
-              {editingGoal === 'week' ? (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <span style={{ fontSize: 13, color: 'var(--tx-lo)' }}>de</span>
-                  <input autoFocus type="number" value={goalInput} onChange={(e) => setGoalInput(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') saveGoal('week'); if (e.key === 'Escape') setEditingGoal(null) }}
-                    style={{ width: 90, fontSize: 13, padding: '3px 6px', borderRadius: 6, border: '1px solid var(--rose-bright)', background: 'var(--bg-2)', color: 'var(--tx-hi)' }} />
-                  <button onClick={() => saveGoal('week')} style={{ fontSize: 12, padding: '3px 8px', borderRadius: 6, border: 'none', background: 'var(--rose-bright)', color: '#fff', cursor: 'pointer' }}>OK</button>
-                </span>
-              ) : (
-                <span style={{ fontSize: 13, color: 'var(--tx-lo)' }}>de {mad(weeklyGoal)} MAD</span>
-              )}
-            </div>
-            <div style={{ height: 10, borderRadius: 6, background: 'var(--bg-3)', overflow: 'hidden', marginBottom: 6 }}>
-              <div style={{ width: `${goalWeekPct}%`, height: '100%', borderRadius: 6, background: goalWeekPct >= 100 ? 'var(--green)' : 'linear-gradient(90deg, var(--rose), var(--rose-bright))' }} />
-            </div>
-            <p style={{ fontSize: 12, color: 'var(--tx-mid)' }}>
-              <b style={{ color: 'var(--tx-hi)' }}>{mad(weekRevenue)} MAD</b> {mode === 'week' ? `· CA semaine S${week.w}` : 'de CA confirmé + livré sur 7 jours'}
-            </p>
-
-            {/* Monthly goal */}
-            <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--line-soft)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: 12, color: 'var(--tx-mid)' }}>
-                  {monthGoalTitle} · <b style={{ color: goalMonthPct >= 100 ? 'var(--green)' : 'var(--tx-hi)' }}>{goalMonthPct}%</b>
-                </span>
-                {editingGoal === 'month' ? (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <input autoFocus type="number" value={goalInput} onChange={(e) => setGoalInput(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') saveGoal('month'); if (e.key === 'Escape') setEditingGoal(null) }}
-                      style={{ width: 90, fontSize: 12, padding: '2px 6px', borderRadius: 6, border: '1px solid var(--rose-bright)', background: 'var(--bg-2)', color: 'var(--tx-hi)' }} />
-                    <button onClick={() => saveGoal('month')} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 6, border: 'none', background: 'var(--rose-bright)', color: '#fff', cursor: 'pointer' }}>OK</button>
-                  </span>
-                ) : (
-                  <button onClick={() => { setGoalInput(String(monthlyGoal)); setEditingGoal('month') }} style={{ fontSize: 11, color: 'var(--tx-lo)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>de {mad(monthlyGoal)} MAD ✏️</button>
-                )}
-              </div>
-              <div style={{ height: 7, borderRadius: 4, background: 'var(--bg-3)', overflow: 'hidden' }}>
-                <div style={{ width: `${goalMonthPct}%`, height: '100%', borderRadius: 4, background: goalMonthPct >= 100 ? 'var(--green)' : 'var(--rose-bright)' }} />
-              </div>
-              <p style={{ fontSize: 11, color: 'var(--tx-lo)', marginTop: 4 }}>{mad(monthRevenue)} MAD {mode === 'month' ? `· ${MONTHS_FR[month.m]}` : 'sur 30 jours'}</p>
-            </div>
-            <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line-soft)', display: 'grid', gap: 10 }}>
-              {[
-                { label: `Commandes · ${periodLabel}`, value: String(stats.ordersWeek) },
-                { label: 'Panier moyen', value: `${mad(stats.averageOrderValue)} MAD` },
-                { label: 'Taux livraison', value: `${stats.deliveryRate.toFixed(0)}%` },
-              ].map((m) => (
-                <div key={m.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: 12, color: 'var(--tx-lo)' }}>{m.label}</span>
-                  <span style={{ fontSize: 14, fontWeight: 600, fontFamily: 'var(--mono)', color: 'var(--tx-hi)' }}>{m.value}</span>
-                </div>
-              ))}
-            </div>
-          </Card>
+          <GoalCard
+            data={goals}
+            onSave={saveGoalSmart}
+            extra={[
+              { label: `Commandes · ${periodLabel}`, value: String(stats.ordersWeek) },
+              { label: 'Panier moyen', value: `${mad(stats.averageOrderValue)} MAD` },
+              { label: 'Taux livraison', value: `${stats.deliveryRate.toFixed(0)}%` },
+            ]}
+          />
         </div>
 
         {/* Top products + channels (real data, previously unused) */}
@@ -880,6 +829,150 @@ function Kpi({ label, value, unit, sub, delta, deltaLabel, accent }: { label: st
         </div>
       )}
     </div>
+  )
+}
+
+type GoalPeriod = { key: string; label: string; start: string; target: number; actual: number; orders: number; pct: number; achieved: boolean; current: boolean }
+type GoalBlock = {
+  periods: GoalPeriod[]
+  current: GoalPeriod | null
+  summary: { streak: number; hitRate: { hit: number; total: number; pct: number }; avgActual: number; suggested: number }
+  projection: { daysElapsed: number; daysTotal: number; projected: number; onPace: boolean; perDayNeeded: number } | null
+}
+type GoalsData = { week: GoalBlock; month: GoalBlock }
+
+function GoalCard({ data, onSave, extra }: {
+  data: GoalsData | null
+  onSave: (kind: 'week' | 'month', target: number) => void
+  extra: Array<{ label: string; value: string }>
+}) {
+  const [editing, setEditing] = useState<'week' | 'month' | null>(null)
+  const [input, setInput] = useState('')
+  const wk = data?.week
+  const mo = data?.month
+  const cur = wk?.current ?? null
+  const curMo = mo?.current ?? null
+
+  const startEdit = (kind: 'week' | 'month', target: number) => { setInput(String(target)); setEditing(kind) }
+  const commit = (kind: 'week' | 'month') => {
+    const v = Math.round(Number(input))
+    if (Number.isFinite(v) && v >= 0) onSave(kind, v)
+    setEditing(null)
+  }
+
+  return (
+    <Card>
+      {/* Header: title + streak + hit-rate */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <Label>Objectif de la semaine</Label>
+        {wk && (wk.summary.streak > 0 || wk.summary.hitRate.total > 0) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
+            {wk.summary.streak > 0 && <span style={{ color: 'var(--green)', fontWeight: 600 }}>🔥 {wk.summary.streak} sem.</span>}
+            {wk.summary.hitRate.total > 0 && <span style={{ color: 'var(--tx-lo)' }}>{wk.summary.hitRate.hit}/{wk.summary.hitRate.total} · {wk.summary.hitRate.pct}%</span>}
+          </div>
+        )}
+      </div>
+
+      {/* Big % + editable target */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 6, marginBottom: 4 }}>
+        <span style={{ fontSize: 40, fontWeight: 700, fontFamily: 'var(--mono)', color: (cur?.pct ?? 0) >= 100 ? 'var(--green)' : 'var(--rose-bright)' }}>{cur?.pct ?? 0}%</span>
+        {editing === 'week' ? (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontSize: 13, color: 'var(--tx-lo)' }}>de</span>
+            <input autoFocus type="number" value={input} onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') commit('week'); if (e.key === 'Escape') setEditing(null) }}
+              style={{ width: 90, fontSize: 13, padding: '3px 6px', borderRadius: 6, border: '1px solid var(--rose-bright)', background: 'var(--bg-2)', color: 'var(--tx-hi)' }} />
+            <button onClick={() => commit('week')} style={{ fontSize: 12, padding: '3px 8px', borderRadius: 6, border: 'none', background: 'var(--rose-bright)', color: '#fff', cursor: 'pointer' }}>OK</button>
+          </span>
+        ) : (
+          <button onClick={() => startEdit('week', cur?.target ?? 0)} title="Modifier l'objectif" style={{ fontSize: 13, color: 'var(--tx-lo)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>de {mad(cur?.target ?? 0)} MAD ✏️</button>
+        )}
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ height: 10, borderRadius: 6, background: 'var(--bg-3)', overflow: 'hidden', marginBottom: 6 }}>
+        <div style={{ width: `${Math.min(cur?.pct ?? 0, 100)}%`, height: '100%', borderRadius: 6, background: (cur?.pct ?? 0) >= 100 ? 'var(--green)' : 'linear-gradient(90deg, var(--rose), var(--rose-bright))', transition: 'width .5s cubic-bezier(.16,1,.3,1)' }} />
+      </div>
+      <p style={{ fontSize: 12, color: 'var(--tx-mid)' }}>
+        <b style={{ color: 'var(--tx-hi)' }}>{mad(cur?.actual ?? 0)} MAD</b> de CA confirmé + livré
+      </p>
+
+      {/* Projection */}
+      {cur && wk?.projection && (
+        (cur.pct >= 100)
+          ? <p style={{ fontSize: 11.5, color: 'var(--green)', marginTop: 5, fontWeight: 600 }}>🎯 Objectif atteint !</p>
+          : wk.projection.onPace
+            ? <p style={{ fontSize: 11.5, color: 'var(--green)', marginTop: 5 }}>✓ En bonne voie · projection <b>{mad(wk.projection.projected)} MAD</b> <span style={{ color: 'var(--tx-faint)' }}>({wk.projection.daysElapsed}/{wk.projection.daysTotal}j)</span></p>
+            : <p style={{ fontSize: 11.5, color: '#b45309', marginTop: 5 }}>⚠ À ce rythme <b>{mad(wk.projection.projected)}</b> — <b>+{mad(wk.projection.perDayNeeded)}/j</b> pour l&apos;objectif <span style={{ color: 'var(--tx-faint)' }}>({wk.projection.daysTotal - wk.projection.daysElapsed}j restants)</span></p>
+      )}
+
+      {/* History bars — last weeks, target = dashed line */}
+      {wk && wk.periods.length > 1 && (
+        <div style={{ marginTop: 12 }}>
+          <div style={{ fontSize: 10, color: 'var(--tx-faint)', marginBottom: 5, display: 'flex', justifyContent: 'space-between' }}>
+            <span>Régularité · {wk.periods.length - 1} dern. semaines</span><span>— cible</span>
+          </div>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'flex-end', gap: 4, height: 46 }}>
+            <div style={{ position: 'absolute', left: 0, right: 0, bottom: (100 / 130) * 46, borderTop: '1px dashed var(--tx-faint)', opacity: .55 }} />
+            {wk.periods.map((p) => {
+              const h = Math.max(3, (Math.min(p.pct, 130) / 130) * 46)
+              const col = p.achieved ? 'var(--green)' : 'var(--rose-bright)'
+              return (
+                <div key={p.key} title={`${p.label} · ${mad(p.actual)} / ${mad(p.target)} MAD (${p.pct}%)`}
+                  style={{ flex: 1, height: h, borderRadius: 3, background: col, opacity: p.current ? 1 : .5, minHeight: 3, cursor: 'default' }} />
+              )
+            })}
+          </div>
+          <div style={{ display: 'flex', gap: 4, marginTop: 3 }}>
+            {wk.periods.map((p) => (
+              <span key={p.key} style={{ flex: 1, textAlign: 'center', fontSize: 8.5, color: p.current ? 'var(--tx-mid)' : 'var(--tx-faint)', fontWeight: p.current ? 700 : 400 }}>{p.label}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Suggested target */}
+      {wk && wk.summary.suggested > 0 && editing !== 'week' && cur && cur.target !== wk.summary.suggested && (
+        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '7px 10px', borderRadius: 8, background: 'var(--bg-3)' }}>
+          <span style={{ fontSize: 11, color: 'var(--tx-mid)' }}>💡 Cible conseillée <b style={{ color: 'var(--tx-hi)' }}>{mad(wk.summary.suggested)} MAD</b> <span style={{ color: 'var(--tx-faint)' }}>· moy. 4 sem. +10%</span></span>
+          <button onClick={() => onSave('week', wk.summary.suggested)} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 6, border: '1px solid var(--rose-bright)', background: 'transparent', color: 'var(--rose-bright)', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600 }}>Appliquer</button>
+        </div>
+      )}
+
+      {/* Monthly goal */}
+      <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--line-soft)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <span style={{ fontSize: 12, color: 'var(--tx-mid)' }}>
+            Objectif du mois · <b style={{ color: (curMo?.pct ?? 0) >= 100 ? 'var(--green)' : 'var(--tx-hi)' }}>{curMo?.pct ?? 0}%</b>
+            {mo && mo.summary.streak > 0 && <span style={{ color: 'var(--green)', marginLeft: 6 }}>🔥{mo.summary.streak}</span>}
+          </span>
+          {editing === 'month' ? (
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <input autoFocus type="number" value={input} onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') commit('month'); if (e.key === 'Escape') setEditing(null) }}
+                style={{ width: 90, fontSize: 12, padding: '2px 6px', borderRadius: 6, border: '1px solid var(--rose-bright)', background: 'var(--bg-2)', color: 'var(--tx-hi)' }} />
+              <button onClick={() => commit('month')} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 6, border: 'none', background: 'var(--rose-bright)', color: '#fff', cursor: 'pointer' }}>OK</button>
+            </span>
+          ) : (
+            <button onClick={() => startEdit('month', curMo?.target ?? 0)} style={{ fontSize: 11, color: 'var(--tx-lo)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>de {mad(curMo?.target ?? 0)} MAD ✏️</button>
+          )}
+        </div>
+        <div style={{ height: 7, borderRadius: 4, background: 'var(--bg-3)', overflow: 'hidden' }}>
+          <div style={{ width: `${Math.min(curMo?.pct ?? 0, 100)}%`, height: '100%', borderRadius: 4, background: (curMo?.pct ?? 0) >= 100 ? 'var(--green)' : 'var(--rose-bright)', transition: 'width .5s cubic-bezier(.16,1,.3,1)' }} />
+        </div>
+        <p style={{ fontSize: 11, color: 'var(--tx-lo)', marginTop: 4 }}>{mad(curMo?.actual ?? 0)} MAD{curMo ? ` · ${MONTHS_FR[Number(curMo.key.slice(5, 7)) - 1]}` : ''}</p>
+      </div>
+
+      {/* Extra metrics */}
+      <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--line-soft)', display: 'grid', gap: 10 }}>
+        {extra.map((m) => (
+          <div key={m.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: 'var(--tx-lo)' }}>{m.label}</span>
+            <span style={{ fontSize: 14, fontWeight: 600, fontFamily: 'var(--mono)', color: 'var(--tx-hi)' }}>{m.value}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
   )
 }
 
