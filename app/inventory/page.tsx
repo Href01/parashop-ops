@@ -87,6 +87,9 @@ export default function InventoryPage() {
   const [filter, setFilter] = useState<Filter>('all')
   const [sortKey, setSortKey] = useState<SortKey>('available')
   const [search, setSearch] = useState('')
+  // Table density: 'compact' hides secondary columns (À exp., Couv., Marge, Fourn.,
+  // Valeur) to reduce cognitive load; 'detailed' shows everything.
+  const [density, setDensity] = useState<'compact' | 'detailed'>('detailed')
   const [expanded, setExpanded] = useState<number | null>(null)
 
   const [adjustModal, setAdjustModal] = useState<{ productId: number; productName: string; currentStock: number; prefill?: number; oldCost?: number } | null>(null)
@@ -453,25 +456,30 @@ export default function InventoryPage() {
                 <option value="sales">Vendu 30j ↓</option>
                 <option value="name">Nom A→Z</option>
               </select>
+              <div className="inline-flex gap-1 p-1 bg-bg-2 rounded-lg" title="Densité du tableau">
+                {([['compact', 'Compact'], ['detailed', 'Détaillé']] as ['compact' | 'detailed', string][]).map(([d, label]) => (
+                  <button key={d} className={`btn-modern btn-sm ${density === d ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setDensity(d)}>{label}</button>
+                ))}
+              </div>
             </div>
 
             {/* Unified table */}
             <div className="card-modern inv-fade">
               <div className="overflow-x-auto">
-                <table className="table-modern inv-table">
+                <table className={`table-modern inv-table${density === 'compact' ? ' compact' : ''}`}>
                   <thead>
                     <tr>
                       <th>Produit</th>
                       <th>État</th>
                       <th className="r">Stock</th>
-                      <th className="r" title="Commandes non encore expédiées (prélèvent du stock)">À exp.</th>
+                      <th className="r col-detail" title="Commandes non encore expédiées (prélèvent du stock)">À exp.</th>
                       <th className="r" title="Disponible = stock − à expédier">Dispo</th>
                       <th className="r" title="Vitesse de vente, unités/jour (pondéré 7j/30j) · ↑ accélère ↓ ralentit">Vél./j</th>
-                      <th className="r" title="Couverture = dispo ÷ vélocité (jours avant rupture)">Couv.</th>
-                      <th className="r" title="Marge = (prix de vente − coût) ÷ prix de vente">Marge</th>
+                      <th className="r col-detail" title="Couverture = dispo ÷ vélocité (jours avant rupture)">Couv.</th>
+                      <th className="r col-detail" title="Marge = (prix de vente − coût) ÷ prix de vente">Marge</th>
                       <th className="r" title="Quantité recommandée à commander — survole le chiffre pour le calcul détaillé">Reco</th>
-                      <th title="Fournisseur & stock virtuel">Fourn.</th>
-                      <th className="r" title="Valeur du stock au coût = max(0, stock) × coût unitaire">Valeur</th>
+                      <th className="col-detail" title="Fournisseur & stock virtuel">Fourn.</th>
+                      <th className="r col-detail" title="Valeur du stock au coût = max(0, stock) × coût unitaire">Valeur</th>
                       <th />
                     </tr>
                   </thead>
@@ -519,7 +527,7 @@ export default function InventoryPage() {
                                   )}
                                 </button>
                               </td>
-                              <td className="r">
+                              <td className="r col-detail">
                                 {p.toShip > 0
                                   ? <span className="num fw600" style={{ color: p.available < 0 ? 'var(--rose-bright)' : 'var(--tx-hi)' }}>{p.toShip}</span>
                                   : <span className="tx-lo">—</span>}
@@ -530,19 +538,19 @@ export default function InventoryPage() {
                                   ? <span className="num fw600" style={{ color: 'var(--tx-hi)' }} title={`${p.sold30d} vendus/30j · ${p.sold7d} sur 7j`}>{p.velocity.toFixed(1)}<span style={{ color: p.trend > 0.25 ? 'var(--green)' : p.trend < -0.25 ? 'var(--rose-bright)' : 'var(--tx-faint)', marginLeft: 2 }}>{p.trend > 0.25 ? '↑' : p.trend < -0.25 ? '↓' : ''}</span></span>
                                   : <span className="tx-lo">—</span>}
                               </td>
-                              <td className="r">{p.daysCover != null ? <span className={`num ${p.daysCover < p.leadTime ? 'neg' : p.daysCover < p.leadTime * 2 ? 'tx-lo' : ''}`}>{p.daysCover}j</span> : <span className="tx-lo">{p.velocity > 0 ? '0j' : '∞'}</span>}</td>
-                              <td className="r">{p.marginPct > 0 ? <span className="num" style={{ color: p.marginPct >= 0.4 ? 'var(--green)' : p.marginPct >= 0.2 ? 'var(--tx-hi)' : 'var(--amber)' }}>{Math.round(p.marginPct * 100)}%</span> : <span className="tx-lo">—</span>}</td>
+                              <td className="r col-detail">{p.daysCover != null ? <span className={`num ${p.daysCover < p.leadTime ? 'neg' : p.daysCover < p.leadTime * 2 ? 'tx-lo' : ''}`}>{p.daysCover}j</span> : <span className="tx-lo">{p.velocity > 0 ? '0j' : '∞'}</span>}</td>
+                              <td className="r col-detail">{p.marginPct > 0 ? <span className="num" style={{ color: p.marginPct >= 0.4 ? 'var(--green)' : p.marginPct >= 0.2 ? 'var(--tx-hi)' : 'var(--amber)' }}>{Math.round(p.marginPct * 100)}%</span> : <span className="tx-lo">—</span>}</td>
                               <td className="r">
                                 {p.suggestedReorder > 0
                                   ? <span className="num fw700" style={{ color: 'var(--rose-bright)', cursor: 'help', borderBottom: '1px dotted rgba(225,29,72,.45)' }} title={p.explanation}>{p.suggestedReorder}</span>
                                   : <span className="tx-lo" style={{ cursor: 'help' }} title={p.explanation}>—</span>}
                               </td>
-                              <td>
+                              <td className="col-detail">
                                 <button onClick={(e) => { e.stopPropagation(); openSupplierModal(p) }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: p.supplier ? 'var(--tx-lo)' : 'var(--rose-bright)', fontSize: 12, textDecoration: p.supplier ? 'none' : 'underline' }} title="Modifier le fournisseur">
                                   {p.supplier || '+ Ajouter'}
                                 </button>
                               </td>
-                              <td className="r num fw600">{p.costPrice ? money(Math.max(0, p.stock) * p.costPrice) : '—'}</td>
+                              <td className="r num fw600 col-detail">{p.costPrice ? money(Math.max(0, p.stock) * p.costPrice) : '—'}</td>
                               <td className="r" style={{ whiteSpace: 'nowrap' }}>
                                 <button className="btn-modern btn-sm btn-subtle" onClick={(e) => { e.stopPropagation(); openAdjustModal(p, p.suggestedReorder || undefined) }}>Ajuster</button>
                                 {(p.openOrdersCount > 0 || p.sold30d > 0) && <ChevronDown style={{ width: 15, height: 15, marginLeft: 6, verticalAlign: 'middle', color: 'var(--tx-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />}
@@ -844,7 +852,7 @@ export default function InventoryPage() {
 
         {/* Stock Adjustment Modal */}
         {adjustModal && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={() => setAdjustModal(null)}>
+          <div className="inv-modal-backdrop" onClick={() => setAdjustModal(null)}>
             <div className="card-modern" style={{ maxWidth: 500, width: '90%' }} onClick={(e) => e.stopPropagation()}>
               <div className="card-header"><h3 className="text-lg font-semibold">Ajuster le stock</h3></div>
               <div className="card-body">
@@ -947,7 +955,7 @@ export default function InventoryPage() {
 
         {/* Edit Purchase Modal */}
         {editPurchase && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={() => setEditPurchase(null)}>
+          <div className="inv-modal-backdrop" onClick={() => setEditPurchase(null)}>
             <div className="card-modern" style={{ maxWidth: 460, width: '90%' }} onClick={(e) => e.stopPropagation()}>
               <div className="card-header"><h3 className="text-lg font-semibold">Modifier l&apos;achat</h3></div>
               <div className="card-body">
@@ -980,7 +988,7 @@ export default function InventoryPage() {
 
         {/* Supplier Edit Modal */}
         {supplierModal && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={() => setSupplierModal(null)}>
+          <div className="inv-modal-backdrop" onClick={() => setSupplierModal(null)}>
             <div className="card-modern" style={{ maxWidth: 450, width: '90%' }} onClick={(e) => e.stopPropagation()}>
               <div className="card-header"><h3 className="text-lg font-semibold">Fournisseur & stock virtuel</h3></div>
               <div className="card-body">
@@ -1016,7 +1024,7 @@ export default function InventoryPage() {
       </div>
 
       {showPolicy && policy && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={() => setShowPolicy(false)}>
+        <div className="inv-modal-backdrop" onClick={() => setShowPolicy(false)}>
           <div className="card-modern" style={{ maxWidth: 470, width: '92%' }} onClick={(e) => e.stopPropagation()}>
             <div className="card-header"><h3 className="text-lg font-semibold">Réglages réappro</h3></div>
             <div className="card-body">
@@ -1059,6 +1067,8 @@ export default function InventoryPage() {
         .inv-table :global(.num), .inv-table :global(td.r), .inv-table :global(th.r) { font-variant-numeric: tabular-nums; }
         .inv-table :global(tbody tr) { transition: background .12s ease; }
         .inv-table :global(tbody tr:hover) { background: var(--bg-2); }
+        /* Compact density: hide secondary columns to reduce cognitive load. */
+        .inv-table.compact :global(.col-detail) { display: none; }
         .inv-fade { animation: invFade .4s cubic-bezier(.16,1,.3,1) both; }
         @keyframes invFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
         /* Cascade: children appear one after another for a lively, ordered entrance. */
@@ -1071,8 +1081,13 @@ export default function InventoryPage() {
         .inv-stagger > :global(*):nth-child(6) { animation-delay: .23s; }
         :global(.inv-card) { transition: transform .16s cubic-bezier(.16,1,.3,1), box-shadow .16s ease, border-color .16s ease; }
         :global(.inv-card:hover) { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(0,0,0,.08); }
+        /* Modals: soft blurred backdrop + pop-in of the card (its direct child). */
+        :global(.inv-modal-backdrop) { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; background: oklch(0.2 0.02 350 / 0.4); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); animation: invModalBg .18s ease both; }
+        :global(.inv-modal-backdrop) > :global(*) { animation: invModalPop .24s cubic-bezier(.16,1,.3,1) both; max-height: 92vh; overflow-y: auto; box-shadow: 0 18px 50px rgba(0,0,0,.22); }
+        @keyframes invModalBg { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes invModalPop { from { opacity: 0; transform: translateY(10px) scale(.985); } to { opacity: 1; transform: none; } }
         @media (prefers-reduced-motion: reduce) {
-          .inv-fade, .inv-stagger > :global(*), :global(.inv-card) { animation: none !important; transition: none !important; }
+          .inv-fade, .inv-stagger > :global(*), :global(.inv-card), :global(.inv-modal-backdrop), :global(.inv-modal-backdrop) > :global(*) { animation: none !important; transition: none !important; }
         }
       `}</style>
     </BosShell>
