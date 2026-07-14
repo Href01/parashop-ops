@@ -4,12 +4,13 @@ import { useEffect, useState } from 'react'
 import BosShell from '@/components/BosShell'
 import { ArrowUp, ArrowDown, Minus } from 'lucide-react'
 
-type Verdict = { code: 'win' | 'loss' | 'neutral' | 'insufficient'; text: string }
+type Verdict = { code: 'win' | 'loss' | 'neutral' | 'volume' | 'insufficient'; text: string }
 type PerDay = { units: number; revenue: number; margin: number; conv: number | null; cartRate: number | null }
 type Side = { units: number; revenue: number; margin: number; orders: number; views: number; carts: number; perDay: PerDay }
 type Confidence = 'low' | 'medium' | 'high'
 type PriceEffect = { reliable: boolean; label: string; note: string }
 type Sample = { unitsBefore: number; unitsAfter: number; viewsBefore: number; viewsAfter: number }
+type BridgeT = { priceMad: number; volumeMad: number; totalMad: number } | null
 type Prod = {
   productId: number; name: string; brand: string | null; currentPrice: number; costPrice: number
   change: { oldPrice: number; newPrice: number; pct: number | null; changedAt: string; source: string }
@@ -19,6 +20,7 @@ type Prod = {
   elasticity: number | null
   confidence: Confidence
   sample: Sample
+  bridge: BridgeT
   priceEffect: PriceEffect
   verdict: Verdict
 }
@@ -34,9 +36,10 @@ const dfmt = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { day: '
 const pct = (v: number | null) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(0)}%`)
 
 const VERDICT: Record<Verdict['code'], { bg: string; fg: string; label: string }> = {
-  win: { bg: 'var(--green-bg)', fg: 'var(--green)', label: '✓ Gagnant' },
-  loss: { bg: 'var(--red-bg, #fee2e2)', fg: 'var(--red, #dc2626)', label: '✕ Perdant' },
+  win: { bg: 'var(--green-bg)', fg: 'var(--green)', label: '✓ Le prix paie' },
+  loss: { bg: 'var(--red-bg, #fee2e2)', fg: 'var(--red, #dc2626)', label: '✕ Le prix coûte' },
   neutral: { bg: 'var(--bg-3)', fg: 'var(--tx-mid)', label: '≈ Neutre' },
+  volume: { bg: 'var(--bg-3)', fg: 'var(--tx-mid)', label: '≈ Surtout le volume' },
   insufficient: { bg: 'var(--amber-bg)', fg: 'var(--amber)', label: '⏳ À surveiller' },
 }
 const CONF: Record<Confidence, { label: string; fg: string; dots: number }> = {
@@ -90,6 +93,36 @@ function RowHead() {
   )
 }
 
+/** "Where did the marge/jour change come from?" — two bars (prix vs volume) that sum
+ *  to the total, in plain language so the admin sees the price's real contribution. */
+function Bridge({ b }: { b: NonNullable<BridgeT> }) {
+  const max = Math.max(1, Math.abs(b.priceMad), Math.abs(b.volumeMad))
+  const col = (v: number) => (v >= 0 ? 'var(--green)' : 'var(--red, #dc2626)')
+  const money = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(Math.abs(v) < 0.5 ? 0 : v)
+  const signed = (v: number) => `${v >= 0 ? '+' : ''}${money(v)}`
+  const Bar = ({ icon, label, hint, v }: { icon: string; label: string; hint: string; v: number }) => (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+        <span style={{ fontSize: 11.5, color: 'var(--tx-mid)' }}>{icon} <b style={{ color: 'var(--tx-hi)' }}>{label}</b> <span style={{ color: 'var(--tx-faint)' }}>{hint}</span></span>
+        <b style={{ fontFamily: 'var(--mono)', fontSize: 12.5, fontVariantNumeric: 'tabular-nums', color: col(v) }}>{signed(v)} MAD/j</b>
+      </div>
+      <div style={{ height: 6, background: 'var(--bg-3)', borderRadius: 4, marginTop: 3, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${Math.round((Math.abs(v) / max) * 100)}%`, background: col(v), borderRadius: 4, transition: 'width .5s cubic-bezier(.16,1,.3,1)' }} />
+      </div>
+    </div>
+  )
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tx-hi)' }}>D&apos;où vient le changement de marge/jour&nbsp;?</span>
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 12.5, fontWeight: 800, color: col(b.totalMad) }}>{signed(b.totalMad)} MAD/j</span>
+      </div>
+      <Bar icon="🏷️" label="Prix" hint="marge par vente" v={b.priceMad} />
+      <Bar icon="📦" label="Volume" hint="nombre de ventes" v={b.volumeMad} />
+    </div>
+  )
+}
+
 /** One before→after row. `hero` highlights the money metric; `sub` shows the sample/caveat. */
 function Row({ label, before, after, delta, hero, sub }: { label: string; before: string; after: string; delta: number | null; hero?: boolean; sub?: string }) {
   const numeric = { textAlign: 'right' as const, fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums' as const }
@@ -122,8 +155,8 @@ export default function PricesPage() {
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '22px 24px 60px' }}>
         <div className="eyebrow" style={{ marginBottom: 4 }}>OPÉRATIONS</div>
         <h1 className="serif-display" style={{ fontSize: 28, lineHeight: 1.05 }}>Prix &amp; Marges</h1>
-        <p style={{ fontSize: 13, color: 'var(--tx-mid)', marginTop: 7, maxWidth: 720, lineHeight: 1.55 }}>
-          Pour chaque changement de prix : ta <b>marge par jour avant vs après</b> — le seul chiffre qui compte. On compare la période <b>depuis</b> le changement à la <b>même durée avant</b>. Le verdict n&apos;est vert que si l&apos;on a assez de ventes pour y croire.
+        <p style={{ fontSize: 13, color: 'var(--tx-mid)', marginTop: 7, maxWidth: 740, lineHeight: 1.55 }}>
+          Pour chaque changement de prix, on répond à une question : <b>as-tu gagné plus grâce au prix… ou juste parce que tu as plus vendu&nbsp;?</b> Chaque carte sépare l&apos;effet <b>🏷️ prix</b> de l&apos;effet <b>📦 volume</b> (pub, saison). Comparaison sur la période depuis le changement vs la même durée avant. Le verdict n&apos;est vert que si le <b>prix</b> lui-même a payé, et qu&apos;on a assez de ventes pour y croire.
         </p>
 
         {/* Summary */}
@@ -216,15 +249,14 @@ export default function PricesPage() {
                   </div>
                 </div>
 
-                {/* Zone 4 — honest read of the price effect */}
+                {/* Zone 4 — where the change came from: price vs volume (plain language) */}
                 <div style={{ padding: '12px 16px', borderTop: '1px solid var(--line-soft)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3 }}>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: p.priceEffect.reliable ? 'var(--tx-hi)' : 'var(--tx-mid)' }}>Effet du prix : {p.priceEffect.label}</span>
-                    {p.priceEffect.reliable && p.elasticity != null && (
-                      <span style={{ fontSize: 10.5, fontFamily: 'var(--mono)', color: 'var(--tx-faint)' }}>élasticité {Math.abs(p.elasticity).toFixed(1)}</span>
-                    )}
-                  </div>
-                  <p style={{ fontSize: 11.5, color: 'var(--tx-lo)', margin: 0, lineHeight: 1.5 }}>{p.priceEffect.note}</p>
+                  {p.bridge ? <Bridge b={p.bridge} /> : (
+                    <span style={{ fontSize: 11.5, color: 'var(--tx-lo)' }}>Pas assez de ventes avant/après pour décomposer l&apos;effet.</span>
+                  )}
+                  <p style={{ fontSize: 11.5, color: 'var(--tx-lo)', margin: '9px 0 0', lineHeight: 1.5, paddingTop: 9, borderTop: '1px dashed var(--line-soft)' }}>
+                    <b style={{ color: p.priceEffect.reliable ? 'var(--tx-hi)' : 'var(--tx-mid)' }}>Effet du prix : {p.priceEffect.label}.</b> {p.priceEffect.note}
+                  </p>
                 </div>
 
                 {/* Zone 5 — price ladder footer (distinct levels, no noisy reversals) */}

@@ -29,6 +29,7 @@ async function guard() {
 type Agg = { units: number; revenue: number; margin: number; orders: number; views: number; carts: number }
 const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : 0 }
 const fmt0 = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v || 0)
+const signed = (v: number) => `${v >= 0 ? '+' : ''}${fmt0(v)}`
 
 type Confidence = 'low' | 'medium' | 'high'
 
@@ -67,32 +68,55 @@ function priceEffect(pctPrice: number | null, pctQ: number | null, elasticity: n
   return { reliable: true, label: 'Demande sensible au prix', note: `Si le prix bouge de 10 %, le volume bouge d’environ ${(e * 10).toFixed(0)} %. Le volume réagit fort — prudence sur les hausses.` }
 }
 
+type Bridge = { priceMad: number; volumeMad: number; totalMad: number } | null
+
 /**
- * Money-first, honest verdict. Low confidence never declares a winner/loser — it stays
- * "à surveiller" so a lucky 4-sale streak doesn't show up as a green "Gagnant".
+ * Where did the marge/jour change come from — the PRICE or the VOLUME?
+ * Splits Δ(marge/jour) into two parts that sum exactly to it:
+ *   priceMad  = (margeUnitAprès − margeUnitAvant) × ventesAprès   → l'effet du prix
+ *   volumeMad = (ventesAprès − ventesAvant) × margeUnitAvant      → l'effet du volume
+ * This is a standard price/volume margin bridge. It's what lets us stop crediting the
+ * price for a gain that's really just more sales (ads/season).
  */
-function verdict(marginBeforePerDay: number, marginAfterPerDay: number, daysAfter: number, totalUnits: number, unitsAfter: number, confidence: Confidence, qtyUp: boolean | null, newPrice: number, marginUnitAfter: number | null) {
+function marginBridge(q0: number, q1: number, m0: number | null, m1: number | null): Bridge {
+  if (m0 == null || m1 == null) return null
+  const priceMad = (m1 - m0) * q1
+  const volumeMad = (q1 - q0) * m0
+  return { priceMad, volumeMad, totalMad: priceMad + volumeMad }
+}
+
+/**
+ * Honest verdict, driven by the bridge. The badge now judges THE PRICE, not raw cash:
+ *  - price & volume moved the SAME way (price↑ & sales↑) → the sales gain is external
+ *    (pub/saison), so we say "surtout le volume", not a price win.
+ *  - price & volume moved OPPOSITE ways (price↑ & sales↓) → the price caused both the
+ *    higher unit margin AND the lost sales, so the net (totalMad) IS the price's doing.
+ * Low confidence never declares anything — stays "à surveiller".
+ */
+function verdict(bridge: Bridge, marginBeforePerDay: number, marginAfterPerDay: number, daysAfter: number, totalUnits: number, unitsAfter: number, confidence: Confidence, coMove: boolean, priceUp: boolean, newPrice: number, marginUnitAfter: number | null) {
   if (daysAfter < 3 || totalUnits < 3)
     return { code: 'insufficient', text: `Trop tôt pour conclure : ${fmt0(totalUnits)} vente(s) sur ${daysAfter}j. Reviens dans quelques jours.` }
-  const d = marginAfterPerDay - marginBeforePerDay
-  const rel = marginBeforePerDay > 0 ? d / marginBeforePerDay : (d > 0 ? 1 : 0)
-  const relTxt = `${rel >= 0 ? '+' : ''}${(rel * 100).toFixed(0)}%`
-  const thresh = 0.02 * Math.max(1, marginBeforePerDay)
+  const total = bridge ? bridge.totalMad : marginAfterPerDay - marginBeforePerDay
+  const thresh = Math.max(1, 0.02 * Math.max(1, marginBeforePerDay))
   const unit = marginUnitAfter != null ? `${fmt0(marginUnitAfter)} MAD de marge par vente` : `${fmt0(newPrice)} MAD`
+  const move = priceUp ? 'hausse' : 'baisse'
+
   if (confidence === 'low') {
-    const trend = d > thresh ? 'semble positive' : d < -thresh ? 'semble négative' : 'reste neutre'
+    const trend = total > thresh ? 'semble positive' : total < -thresh ? 'semble négative' : 'reste neutre'
     return { code: 'insufficient', text: `À ${fmt0(newPrice)} MAD tu fais ${unit}. Mais encore peu de recul (${fmt0(unitsAfter)} ventes en ${daysAfter}j) : la tendance ${trend}, à confirmer.` }
   }
-  if (d > thresh) {
-    // Margin/day is up — but if volume also rose the gain isn't the price's doing.
-    const cause = qtyUp === true
-      ? `Ta marge/jour monte à ${fmt0(marginAfterPerDay)} (${relTxt}), mais surtout grâce au volume — pas seulement au prix.`
-      : `Même avec moins de volume, ta marge/jour tient à ${fmt0(marginAfterPerDay)} MAD (${relTxt}). La hausse paie.`
-    return { code: 'win', text: `À ${fmt0(newPrice)} MAD tu fais ${unit}. ${cause}` }
+
+  // Price and sales moved the same way → the volume swing isn't the price's doing.
+  if (coMove && bridge) {
+    return { code: 'volume', text: `À ${fmt0(newPrice)} MAD tu fais ${unit}. Ta marge/jour a surtout bougé à cause du VOLUME (${signed(bridge.volumeMad)} MAD/j) — tes ventes ont changé pour d'autres raisons (pub, saison), pas grâce au prix (${signed(bridge.priceMad)} MAD/j seulement).` }
   }
-  if (d < -thresh)
-    return { code: 'loss', text: `À ${fmt0(newPrice)} MAD tu fais ${unit}, mais ta marge/jour tombe à ${fmt0(marginAfterPerDay)} contre ${fmt0(marginBeforePerDay)} avant (${relTxt}).${qtyUp === false ? ' Les clients achètent moins.' : ''}` }
-  return { code: 'neutral', text: `À ${fmt0(newPrice)} MAD tu fais ${unit}. Marge/jour quasi identique (${fmt0(marginAfterPerDay)} vs ${fmt0(marginBeforePerDay)} avant) — impact négligeable sur ton cash.` }
+
+  // Opposite directions (or no split) → the price move owns the net result.
+  if (total > thresh)
+    return { code: 'win', text: `À ${fmt0(newPrice)} MAD tu fais ${unit}. Ta ${move} de prix rapporte : ${signed(total)} MAD/jour net${bridge ? ` (plus de marge par vente que de clients perdus)` : ''}. Bon move.` }
+  if (total < -thresh)
+    return { code: 'loss', text: `À ${fmt0(newPrice)} MAD tu fais ${unit}, mais ta ${move} de prix coûte ${signed(total)} MAD/jour${priceUp ? ' : tu perds plus de clients que tu ne gagnes en marge. Le prix est peut-être trop haut.' : '.'}` }
+  return { code: 'neutral', text: `À ${fmt0(newPrice)} MAD tu fais ${unit}. Impact quasi nul sur ta marge/jour (${fmt0(marginAfterPerDay)} vs ${fmt0(marginBeforePerDay)} avant).` }
 }
 
 async function analyseProduct(row: any) {
@@ -150,9 +174,13 @@ async function analyseProduct(row: any) {
 
   const totalUnits = before.units + after.units
   const confidence = confidenceLevel(daysAfter, totalUnits)
-  const qtyUp = pctQ == null ? null : pctQ > 0
   const uMargeB = before.units > 0 ? before.margin / before.units : null
   const uMargeA = after.units > 0 ? after.margin / after.units : null
+  // Price/volume margin bridge — where the marge/jour change actually came from.
+  const bridge = marginBridge(pdB.units, pdA.units, uMargeB, uMargeA)
+  // Did price and sales move the SAME direction? (then the volume swing is external.)
+  const coMove = pctPrice != null && pctQ != null && pctPrice !== 0 && pctQ !== 0 && (pctPrice > 0) === (pctQ > 0)
+  const priceUp = (pctPrice ?? 0) >= 0
 
   return {
     productId: pid, name: row.name, brand: row.brand,
@@ -170,11 +198,13 @@ async function analyseProduct(row: any) {
     confidence,
     // Per-unit margin — the number the founder actually knows (real cash per sale).
     marginUnit: { before: uMargeB, after: uMargeA },
+    // Where the marge/jour change came from: price vs volume (sums to Δ marge/jour).
+    bridge,
     // Absolute counts behind the per-day rates — so the UI can show "(4 ventes en 22j)"
     // and mute conversion when it rests on a handful of views.
     sample: { unitsBefore: before.units, unitsAfter: after.units, viewsBefore: before.views, viewsAfter: after.views },
     priceEffect: priceEffect(pctPrice, pctQ, elasticity, confidence),
-    verdict: verdict(pdB.margin, pdA.margin, daysAfter, totalUnits, after.units, confidence, qtyUp, nw, uMargeA),
+    verdict: verdict(bridge, pdB.margin, pdA.margin, daysAfter, totalUnits, after.units, confidence, coMove, priceUp, nw, uMargeA),
   }
 }
 

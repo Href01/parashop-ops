@@ -6,10 +6,11 @@ import { ArrowUp, ArrowDown, Minus } from 'lucide-react'
 
 /** Compact price-change impact block for the product detail page. Reuses /api/ops/prices. */
 
-type Verdict = { code: 'win' | 'loss' | 'neutral' | 'insufficient'; text: string }
+type Verdict = { code: 'win' | 'loss' | 'neutral' | 'volume' | 'insufficient'; text: string }
 type Confidence = 'low' | 'medium' | 'high'
 type PerDay = { units: number; revenue: number; margin: number; conv: number | null }
 type Side = { perDay: PerDay }
+type BridgeT = { priceMad: number; volumeMad: number; totalMad: number } | null
 type Prod = {
   productId: number
   change: { oldPrice: number; newPrice: number; pct: number | null; changedAt: string }
@@ -19,6 +20,7 @@ type Prod = {
   elasticity: number | null
   confidence: Confidence
   sample: { unitsBefore: number; unitsAfter: number; viewsBefore: number; viewsAfter: number }
+  bridge: BridgeT
   priceEffect: { reliable: boolean; label: string; note: string }
   verdict: Verdict
 }
@@ -28,10 +30,38 @@ const money = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDig
 const dfmt = (iso: string) => new Date(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' })
 const pct = (v: number | null) => (v == null ? '—' : `${v >= 0 ? '+' : ''}${(v * 100).toFixed(0)}%`)
 const VERDICT: Record<Verdict['code'], { bg: string; fg: string; label: string }> = {
-  win: { bg: 'var(--green-bg)', fg: 'var(--green)', label: '✓ Gagnant' },
-  loss: { bg: 'var(--red-bg, #fee2e2)', fg: 'var(--red, #dc2626)', label: '✕ Perdant' },
+  win: { bg: 'var(--green-bg)', fg: 'var(--green)', label: '✓ Le prix paie' },
+  loss: { bg: 'var(--red-bg, #fee2e2)', fg: 'var(--red, #dc2626)', label: '✕ Le prix coûte' },
   neutral: { bg: 'var(--bg-3)', fg: 'var(--tx-mid)', label: '≈ Neutre' },
+  volume: { bg: 'var(--bg-3)', fg: 'var(--tx-mid)', label: '≈ Surtout le volume' },
   insufficient: { bg: 'var(--amber-bg)', fg: 'var(--amber)', label: '⏳ À surveiller' },
+}
+function Bridge({ b }: { b: NonNullable<BridgeT> }) {
+  const max = Math.max(1, Math.abs(b.priceMad), Math.abs(b.volumeMad))
+  const col = (v: number) => (v >= 0 ? 'var(--green)' : 'var(--red, #dc2626)')
+  const m = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(Math.abs(v) < 0.5 ? 0 : v)
+  const s = (v: number) => `${v >= 0 ? '+' : ''}${m(v)}`
+  const Bar = ({ icon, label, hint, v }: { icon: string; label: string; hint: string; v: number }) => (
+    <div style={{ marginTop: 7 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+        <span style={{ fontSize: 11, color: 'var(--tx-mid)' }}>{icon} <b style={{ color: 'var(--tx-hi)' }}>{label}</b> <span style={{ color: 'var(--tx-faint)' }}>{hint}</span></span>
+        <b style={{ fontFamily: 'var(--mono)', fontSize: 12, color: col(v) }}>{s(v)} MAD/j</b>
+      </div>
+      <div style={{ height: 5, background: 'var(--bg-3)', borderRadius: 4, marginTop: 3, overflow: 'hidden' }}>
+        <div style={{ height: '100%', width: `${Math.round((Math.abs(v) / max) * 100)}%`, background: col(v), borderRadius: 4 }} />
+      </div>
+    </div>
+  )
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
+        <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--tx-hi)' }}>D&apos;où vient le changement&nbsp;?</span>
+        <b style={{ fontFamily: 'var(--mono)', fontSize: 12, color: col(b.totalMad) }}>{s(b.totalMad)} MAD/j</b>
+      </div>
+      <Bar icon="🏷️" label="Prix" hint="marge/vente" v={b.priceMad} />
+      <Bar icon="📦" label="Volume" hint="nb ventes" v={b.volumeMad} />
+    </div>
+  )
 }
 const CONF: Record<Confidence, { label: string; fg: string; dots: number }> = {
   high: { label: 'Fiable', fg: 'var(--green)', dots: 3 },
@@ -137,13 +167,14 @@ export default function PriceImpact({ productId }: { productId: number }) {
         />
       </div>
 
-      {/* Price effect — honest read */}
-      <div style={{ marginTop: 10, padding: '9px 11px', background: 'var(--bg-2)', borderRadius: 8, border: '1px solid var(--line-soft)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-          <span style={{ fontSize: 11, fontWeight: 700, color: prod.priceEffect.reliable ? 'var(--tx-hi)' : 'var(--tx-mid)' }}>Effet du prix : {prod.priceEffect.label}</span>
-          {prod.priceEffect.reliable && prod.elasticity != null && <span style={{ fontSize: 10.5, fontFamily: 'var(--mono)', color: 'var(--tx-faint)' }}>élasticité {Math.abs(prod.elasticity).toFixed(1)}</span>}
-        </div>
-        <p style={{ fontSize: 11.5, color: 'var(--tx-lo)', margin: '3px 0 0', lineHeight: 1.5 }}>{prod.priceEffect.note}</p>
+      {/* Where the change came from: price vs volume */}
+      <div style={{ marginTop: 10, padding: '10px 11px', background: 'var(--bg-2)', borderRadius: 8, border: '1px solid var(--line-soft)' }}>
+        {prod.bridge ? <Bridge b={prod.bridge} /> : (
+          <span style={{ fontSize: 11, color: 'var(--tx-lo)' }}>Pas assez de ventes pour décomposer l&apos;effet.</span>
+        )}
+        <p style={{ fontSize: 11, color: 'var(--tx-lo)', margin: '8px 0 0', lineHeight: 1.5, paddingTop: 8, borderTop: '1px dashed var(--line-soft)' }}>
+          <b style={{ color: prod.priceEffect.reliable ? 'var(--tx-hi)' : 'var(--tx-mid)' }}>Effet du prix : {prod.priceEffect.label}.</b> {prod.priceEffect.note}
+        </p>
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>
