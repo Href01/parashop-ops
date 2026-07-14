@@ -7,6 +7,9 @@ import { ArrowUp, ArrowDown, Minus } from 'lucide-react'
 type Verdict = { code: 'win' | 'loss' | 'neutral' | 'insufficient'; text: string }
 type PerDay = { units: number; revenue: number; margin: number; conv: number | null; cartRate: number | null }
 type Side = { units: number; revenue: number; margin: number; orders: number; views: number; carts: number; perDay: PerDay }
+type Confidence = 'low' | 'medium' | 'high'
+type PriceEffect = { reliable: boolean; label: string; note: string }
+type Sample = { unitsBefore: number; unitsAfter: number; viewsBefore: number; viewsAfter: number }
 type Prod = {
   productId: number; name: string; brand: string | null; currentPrice: number; costPrice: number
   change: { oldPrice: number; newPrice: number; pct: number | null; changedAt: string; source: string }
@@ -14,6 +17,9 @@ type Prod = {
   before: Side; after: Side
   deltas: { unitsPerDay: number | null; revenuePerDay: number | null; marginPerDay: number | null; conv: number | null }
   elasticity: number | null
+  confidence: Confidence
+  sample: Sample
+  priceEffect: PriceEffect
   verdict: Verdict
 }
 type Hist = { oldPrice: number; newPrice: number; changedAt: string; source: string; note: string | null }
@@ -33,6 +39,33 @@ const VERDICT: Record<Verdict['code'], { bg: string; fg: string; label: string }
   neutral: { bg: 'var(--bg-3)', fg: 'var(--tx-mid)', label: '≈ Neutre' },
   insufficient: { bg: 'var(--amber-bg)', fg: 'var(--amber)', label: '⏳ À surveiller' },
 }
+const CONF: Record<Confidence, { label: string; fg: string; dots: number }> = {
+  high: { label: 'Fiable', fg: 'var(--green)', dots: 3 },
+  medium: { label: 'Moyen', fg: 'var(--amber)', dots: 2 },
+  low: { label: 'Signal faible', fg: 'var(--tx-faint)', dots: 1 },
+}
+
+/** Distinct price levels the product has actually sold at — sorted, deduped. Avoids the
+ *  confusing "185→175" reversal chips that the backfilled history produced. */
+function priceLadder(hist: Hist[]): number[] {
+  const set = new Set<number>()
+  for (const h of hist) { if (h.oldPrice) set.add(Math.round(h.oldPrice)); if (h.newPrice) set.add(Math.round(h.newPrice)) }
+  return [...set].sort((a, b) => a - b)
+}
+
+function ConfBadge({ level }: { level: Confidence }) {
+  const c = CONF[level]
+  return (
+    <span title="Fiabilité du verdict, selon le nombre de ventes et de jours de recul." style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, fontWeight: 700, color: c.fg }}>
+      <span style={{ display: 'inline-flex', gap: 2 }}>
+        {[0, 1, 2].map((i) => (
+          <span key={i} style={{ width: 5, height: 5, borderRadius: '50%', background: i < c.dots ? c.fg : 'var(--line-soft)' }} />
+        ))}
+      </span>
+      {c.label}
+    </span>
+  )
+}
 
 function Delta({ v }: { v: number | null }) {
   if (v == null) return <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>—</span>
@@ -42,16 +75,20 @@ function Delta({ v }: { v: number | null }) {
   return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, fontWeight: 600, color: col }}><Icon style={{ width: 11, height: 11 }} />{pct(v)}</span>
 }
 
-function Metric({ label, before, after, delta, fmt }: { label: string; before: string; after: string; delta: number | null; fmt?: boolean }) {
+/** One before→after row. `strong` highlights the money metric; `sub` shows the sample/caveat. */
+function Metric({ label, before, after, delta, fmt, strong, sub }: { label: string; before: string; after: string; delta: number | null; fmt?: boolean; strong?: boolean; sub?: string }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, padding: '5px 0' }}>
-      <span style={{ fontSize: 12, color: 'var(--tx-lo)' }}>{label}</span>
-      <span style={{ display: 'flex', alignItems: 'baseline', gap: 7, fontFamily: 'var(--mono)', fontSize: 12.5 }}>
-        <span style={{ color: 'var(--tx-faint)' }}>{before}</span>
-        <span style={{ color: 'var(--tx-faint)' }}>→</span>
-        <b style={{ color: 'var(--tx-hi)' }}>{after}{fmt ? ' MAD' : ''}</b>
-        <Delta v={delta} />
-      </span>
+    <div style={{ padding: strong ? '9px 11px' : '7px 0', background: strong ? 'var(--bg-2)' : undefined, borderRadius: strong ? 8 : undefined, border: strong ? '1px solid var(--line-soft)' : undefined }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+        <span style={{ fontSize: strong ? 12 : 11.5, fontWeight: strong ? 700 : 400, color: strong ? 'var(--tx-hi)' : 'var(--tx-lo)' }}>{label}</span>
+        <span style={{ display: 'flex', alignItems: 'baseline', gap: 7, fontFamily: 'var(--mono)', fontSize: strong ? 13.5 : 12.5, fontVariantNumeric: 'tabular-nums' }}>
+          <span style={{ color: 'var(--tx-faint)' }}>{before}</span>
+          <span style={{ color: 'var(--tx-faint)' }}>→</span>
+          <b style={{ color: strong ? 'var(--tx-hi)' : 'var(--tx-hi)', fontSize: strong ? 15 : undefined }}>{after}{fmt ? ' MAD' : ''}</b>
+          <Delta v={delta} />
+        </span>
+      </div>
+      {sub && <div style={{ fontSize: 10.5, color: 'var(--tx-faint)', marginTop: 2 }}>{sub}</div>}
     </div>
   )
 }
@@ -73,7 +110,7 @@ export default function PricesPage() {
         <div className="eyebrow" style={{ marginBottom: 4 }}>OPÉRATIONS</div>
         <h1 className="serif-display" style={{ fontSize: 28, lineHeight: 1.05 }}>Prix &amp; Marges</h1>
         <p style={{ fontSize: 13, color: 'var(--tx-mid)', marginTop: 7, maxWidth: 720, lineHeight: 1.55 }}>
-          Historique des changements de prix + <b>impact mesuré</b> : ventes, marge et conversion <b>avant/après</b> chaque hausse, avec l&apos;<b>élasticité</b> et un verdict. Comparaison sur la période depuis le changement vs la même durée avant.
+          Pour chaque changement de prix : ta <b>marge par jour avant vs après</b> — le seul chiffre qui compte. On compare la période <b>depuis</b> le changement à la <b>même durée avant</b>. Le verdict n&apos;est vert que si l&apos;on a assez de ventes pour y croire.
         </p>
 
         {/* Summary */}
@@ -129,44 +166,55 @@ export default function PricesPage() {
                       <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>{dfmt(p.change.changedAt)} · {p.window.daysAfter}j de recul</span>
                     </div>
                   </div>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: V.fg, background: V.bg, padding: '4px 10px', borderRadius: 7, whiteSpace: 'nowrap' }}>{V.label}</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: V.fg, background: V.bg, padding: '4px 10px', borderRadius: 7, whiteSpace: 'nowrap' }}>{V.label}</span>
+                    <ConfBadge level={p.confidence} />
+                  </div>
                 </div>
 
-                {/* Verdict text */}
-                <p style={{ fontSize: 12.5, color: 'var(--tx-mid)', margin: '10px 0 4px', lineHeight: 1.5 }}>{p.verdict.text}</p>
+                {/* Verdict — the plain-language takeaway */}
+                <p style={{ fontSize: 13, color: 'var(--tx-hi)', margin: '11px 0 10px', lineHeight: 1.55 }}>{p.verdict.text}</p>
 
-                {/* Before / After metrics */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))', gap: '2px 24px', marginTop: 8, borderTop: '1px solid var(--line-soft)', paddingTop: 8 }}>
-                  <Metric label="Ventes / jour" before={p.before.perDay.units.toFixed(1)} after={p.after.perDay.units.toFixed(1)} delta={p.deltas.unitsPerDay} />
-                  <Metric label="Marge / jour" before={money(p.before.perDay.margin)} after={money(p.after.perDay.margin)} delta={p.deltas.marginPerDay} fmt />
+                {/* The money metric, highlighted — then the supporting ones */}
+                <Metric label="Marge / jour" before={money(p.before.perDay.margin)} after={money(p.after.perDay.margin)} delta={p.deltas.marginPerDay} fmt strong
+                  sub={`${money(p.before.perDay.margin * p.window.daysAfter)} → ${money(p.after.perDay.margin * p.window.daysAfter)} MAD sur ${p.window.daysAfter}j`} />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0 24px', marginTop: 6 }}>
+                  <Metric label="Ventes / jour" before={p.before.perDay.units.toFixed(1)} after={p.after.perDay.units.toFixed(1)} delta={p.deltas.unitsPerDay}
+                    sub={`${p.sample.unitsBefore} vente(s) avant · ${p.sample.unitsAfter} après`} />
                   <Metric label="CA / jour" before={money(p.before.perDay.revenue)} after={money(p.after.perDay.revenue)} delta={p.deltas.revenuePerDay} fmt />
                   <Metric
                     label="Conversion (vue→achat)"
                     before={p.before.perDay.conv != null ? `${(p.before.perDay.conv * 100).toFixed(1)}%` : '—'}
                     after={p.after.perDay.conv != null ? `${(p.after.perDay.conv * 100).toFixed(1)}%` : '—'}
                     delta={p.deltas.conv}
+                    sub={Math.min(p.sample.viewsBefore, p.sample.viewsAfter) < 20 ? 'peu de vues — indicatif' : undefined}
                   />
                 </div>
 
-                {/* Elasticity + history */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 10, flexWrap: 'wrap' }}>
-                  <div style={{ fontSize: 11.5, color: 'var(--tx-lo)' }}>
-                    Élasticité-prix : <b style={{ color: 'var(--tx-hi)', fontFamily: 'var(--mono)' }}>{p.elasticity != null ? p.elasticity.toFixed(2) : '—'}</b>
-                    {p.elasticity != null && (
-                      <span style={{ color: 'var(--tx-faint)' }}> · {Math.abs(p.elasticity) < 1 ? 'demande peu sensible (inélastique)' : 'demande sensible (élastique)'}</span>
+                {/* Price effect — honest read, replaces the cryptic elasticity number */}
+                <div style={{ marginTop: 12, padding: '10px 12px', background: 'var(--bg-2)', borderRadius: 8, border: '1px solid var(--line-soft)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: p.priceEffect.reliable ? 'var(--tx-hi)' : 'var(--tx-mid)' }}>Effet du prix : {p.priceEffect.label}</span>
+                    {p.priceEffect.reliable && p.elasticity != null && (
+                      <span style={{ fontSize: 10.5, fontFamily: 'var(--mono)', color: 'var(--tx-faint)' }}>élasticité {Math.abs(p.elasticity).toFixed(1)}</span>
                     )}
                   </div>
-                  {hist.length > 0 && (
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <span style={{ fontSize: 10.5, color: 'var(--tx-faint)' }}>Historique :</span>
-                      {hist.slice(0, 5).map((h, i) => (
-                        <span key={i} title={`${dfmt(h.changedAt)}${h.source === 'backfill' ? ' · reconstruit' : ''}`} style={{ fontSize: 10.5, fontFamily: 'var(--mono)', color: 'var(--tx-lo)', background: 'var(--bg-3)', padding: '1px 6px', borderRadius: 4 }}>
-                          {money(h.oldPrice)}→{money(h.newPrice)}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  <p style={{ fontSize: 11.5, color: 'var(--tx-lo)', margin: '3px 0 0', lineHeight: 1.5 }}>{p.priceEffect.note}</p>
                 </div>
+
+                {/* Price ladder — distinct levels sold at, no noisy reversals */}
+                {(() => { const ladder = priceLadder(hist); return ladder.length > 1 ? (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+                    <span style={{ fontSize: 10.5, color: 'var(--tx-faint)' }}>Prix pratiqués :</span>
+                    {ladder.map((v, i) => (
+                      <span key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontSize: 10.5, fontFamily: 'var(--mono)', fontWeight: v === Math.round(p.currentPrice) ? 700 : 400, color: v === Math.round(p.currentPrice) ? 'var(--rose-bright)' : 'var(--tx-lo)', background: 'var(--bg-3)', padding: '1px 7px', borderRadius: 4 }}>{money(v)}</span>
+                        {i < ladder.length - 1 && <span style={{ color: 'var(--line-soft)', fontSize: 10 }}>·</span>}
+                      </span>
+                    ))}
+                    <span style={{ fontSize: 10, color: 'var(--tx-faint)' }}>MAD</span>
+                  </div>
+                ) : null })()}
               </div>
             )
           })}

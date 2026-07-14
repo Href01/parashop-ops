@@ -28,20 +28,65 @@ async function guard() {
 
 type Agg = { units: number; revenue: number; margin: number; orders: number; views: number; carts: number }
 const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : 0 }
+const fmt0 = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v || 0)
 
-function verdict(pctPrice: number | null, elasticity: number | null, marginBeforePerDay: number, marginAfterPerDay: number, daysAfter: number, totalUnits: number) {
-  if (daysAfter < 3 || totalUnits < 3) {
-    return { code: 'insufficient', text: `Trop tôt pour conclure (${daysAfter}j après, ${totalUnits} u). Reviens dans quelques jours.` }
-  }
+type Confidence = 'low' | 'medium' | 'high'
+
+/** How much we can trust this read, from the amount of real data behind it. */
+function confidenceLevel(daysAfter: number, totalUnits: number): Confidence {
+  if (daysAfter < 5 || totalUnits < 6) return 'low'
+  if (totalUnits < 20) return 'medium'
+  return 'high'
+}
+
+/**
+ * Honest read of the price↔demand relationship, in plain language.
+ * Key insight: elasticity is only meaningful when price and volume move in OPPOSITE
+ * directions (price up → sales down). When they move the SAME way (price up AND sales up),
+ * the number is confounded by outside factors (ads, season, stock) — it is NOT elasticity,
+ * so we say so instead of printing a fake "26.25 · élastique".
+ */
+function priceEffect(pctPrice: number | null, pctQ: number | null, elasticity: number | null, confidence: Confidence) {
+  if (pctPrice == null || pctPrice === 0 || pctQ == null)
+    return { reliable: false, label: 'Effet prix indéterminé', note: 'Pas assez de ventes avant/après pour mesurer l’effet du prix.' }
+  const priceUp = pctPrice > 0
+  const sameDir = pctQ !== 0 && priceUp === (pctQ > 0)
+  if (sameDir)
+    return {
+      reliable: false,
+      label: 'Effet prix non isolable',
+      note: priceUp
+        ? 'Le prix a monté et les ventes aussi : d’autres facteurs ont joué (pub, saison, stock). On ne peut pas attribuer la hausse des ventes au prix.'
+        : 'Le prix a baissé et les ventes aussi : d’autres facteurs ont joué. L’effet du prix seul n’est pas isolable.',
+    }
+  if (confidence === 'low' || elasticity == null)
+    return { reliable: false, label: 'Signal faible', note: 'Trop peu de ventes pour mesurer la sensibilité au prix — à reconfirmer dans quelques jours.' }
+  const e = Math.abs(elasticity)
+  if (e < 1)
+    return { reliable: true, label: 'Demande peu sensible au prix', note: `Si le prix bouge de 10 %, le volume ne bouge que d’environ ${(e * 10).toFixed(0)} %. Tu as de la marge pour ajuster le prix.` }
+  return { reliable: true, label: 'Demande sensible au prix', note: `Si le prix bouge de 10 %, le volume bouge d’environ ${(e * 10).toFixed(0)} %. Le volume réagit fort — prudence sur les hausses.` }
+}
+
+/**
+ * Money-first, honest verdict. Low confidence never declares a winner/loser — it stays
+ * "à surveiller" so a lucky 4-sale streak doesn't show up as a green "Gagnant".
+ */
+function verdict(marginBeforePerDay: number, marginAfterPerDay: number, daysAfter: number, totalUnits: number, unitsAfter: number, confidence: Confidence, qtyUp: boolean | null, newPrice: number) {
+  if (daysAfter < 3 || totalUnits < 3)
+    return { code: 'insufficient', text: `Trop tôt pour conclure : ${fmt0(totalUnits)} vente(s) sur ${daysAfter}j. Reviens dans quelques jours.` }
   const d = marginAfterPerDay - marginBeforePerDay
   const rel = marginBeforePerDay > 0 ? d / marginBeforePerDay : (d > 0 ? 1 : 0)
-  if (elasticity != null && Math.abs(elasticity) < 1 && d >= 0)
-    return { code: 'win', text: `Demande peu sensible au prix (élasticité ${elasticity.toFixed(2)}). La hausse augmente ta marge/jour de ${(rel * 100).toFixed(0)}%.` }
-  if (d > 0.02 * Math.max(1, marginBeforePerDay))
-    return { code: 'win', text: `Marge/jour en hausse (+${(rel * 100).toFixed(0)}%) malgré le volume. La hausse paie.` }
-  if (d < -0.02 * Math.max(1, marginBeforePerDay))
-    return { code: 'loss', text: `Marge/jour en baisse (${(rel * 100).toFixed(0)}%)${elasticity != null && Math.abs(elasticity) > 1 ? ` — demande élastique (${elasticity.toFixed(2)}), le volume chute plus vite que le prix.` : '.'}` }
-  return { code: 'neutral', text: 'Impact quasi neutre sur la marge/jour.' }
+  const relTxt = `${rel >= 0 ? '+' : ''}${(rel * 100).toFixed(0)}%`
+  const thresh = 0.02 * Math.max(1, marginBeforePerDay)
+  if (confidence === 'low') {
+    const trend = d > thresh ? 'semble positive' : d < -thresh ? 'semble négative' : 'reste neutre'
+    return { code: 'insufficient', text: `Encore peu de recul : ${fmt0(unitsAfter)} ventes en ${daysAfter}j. La tendance ${trend} (marge/jour ${fmt0(marginBeforePerDay)}→${fmt0(marginAfterPerDay)} MAD), mais à confirmer.` }
+  }
+  if (d > thresh)
+    return { code: 'win', text: `À ${fmt0(newPrice)} MAD, tu dégages ${fmt0(marginAfterPerDay)} MAD de marge/jour contre ${fmt0(marginBeforePerDay)} avant (${relTxt}). La hausse paie.` }
+  if (d < -thresh)
+    return { code: 'loss', text: `À ${fmt0(newPrice)} MAD, ta marge/jour tombe à ${fmt0(marginAfterPerDay)} contre ${fmt0(marginBeforePerDay)} avant (${relTxt}).${qtyUp === false ? ' Les clients achètent moins.' : ''}` }
+  return { code: 'neutral', text: `Marge/jour quasi identique (${fmt0(marginAfterPerDay)} vs ${fmt0(marginBeforePerDay)} avant). Impact négligeable sur ton cash.` }
 }
 
 async function analyseProduct(row: any) {
@@ -92,6 +137,10 @@ async function analyseProduct(row: any) {
   const elasticity = pctQ != null && pctPrice ? pctQ / pctPrice : null
   const pct = (b: number, a: number) => (b > 0 ? (a - b) / b : null)
 
+  const totalUnits = before.units + after.units
+  const confidence = confidenceLevel(daysAfter, totalUnits)
+  const qtyUp = pctQ == null ? null : pctQ > 0
+
   return {
     productId: pid, name: row.name, brand: row.brand,
     currentPrice: num(row.curPrice), costPrice: cost,
@@ -104,7 +153,12 @@ async function analyseProduct(row: any) {
       marginPerDay: pct(pdB.margin, pdA.margin), conv: pct(pdB.conv || 0, pdA.conv || 0),
     },
     elasticity,
-    verdict: verdict(pctPrice, elasticity, pdB.margin, pdA.margin, daysAfter, before.units + after.units),
+    confidence,
+    // Absolute counts behind the per-day rates — so the UI can show "(4 ventes en 22j)"
+    // and mute conversion when it rests on a handful of views.
+    sample: { unitsBefore: before.units, unitsAfter: after.units, viewsBefore: before.views, viewsAfter: after.views },
+    priceEffect: priceEffect(pctPrice, pctQ, elasticity, confidence),
+    verdict: verdict(pdB.margin, pdA.margin, daysAfter, totalUnits, after.units, confidence, qtyUp, nw),
   }
 }
 
