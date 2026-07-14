@@ -168,6 +168,11 @@ export default function PricesPage() {
             const days = p.window.daysAfter
             const lowViews = Math.min(p.sample.viewsBefore, p.sample.viewsAfter) < 20
             const convStr = (v: number | null) => (v != null ? `${(v * 100).toFixed(1)}%` : '—')
+            // Per-unit margin — the number the founder actually knows (≈120 MAD here).
+            // margin/day × days = total margin for the window; ÷ units = margin per sale.
+            const uMargeB = p.sample.unitsBefore > 0 ? (p.before.perDay.margin * days) / p.sample.unitsBefore : null
+            const uMargeA = p.sample.unitsAfter > 0 ? (p.after.perDay.margin * days) / p.sample.unitsAfter : null
+            const uMargeDelta = uMargeB && uMargeB > 0 && uMargeA != null ? (uMargeA - uMargeB) / uMargeB : null
             return (
               <div key={p.productId} className="card-modern pz-card" style={{ padding: 0, borderLeft: `3px solid ${V.fg}`, overflow: 'hidden' }}>
                 {/* Zone 1 — what changed + verdict */}
@@ -198,9 +203,11 @@ export default function PricesPage() {
                 {/* Zone 3 — aligned before/after table, money metric first */}
                 <div style={{ padding: '12px 16px', borderTop: '1px solid var(--line-soft)' }}>
                   <RowHead />
-                  <Row label="Marge / jour" before={money(p.before.perDay.margin)} after={`${money(p.after.perDay.margin)} MAD`} delta={p.deltas.marginPerDay} hero
-                    sub={`${money(p.before.perDay.margin * days)} → ${money(p.after.perDay.margin * days)} MAD sur ${days}j`} />
+                  <Row label="Marge / unité" before={uMargeB != null ? money(uMargeB) : '—'} after={uMargeA != null ? `${money(uMargeA)} MAD` : '—'} delta={uMargeDelta} hero
+                    sub="marge réelle par vente — l'effet direct du prix" />
                   <div style={{ marginTop: 4 }}>
+                    <Row label="Marge / jour" before={money(p.before.perDay.margin)} after={`${money(p.after.perDay.margin)} MAD`} delta={p.deltas.marginPerDay}
+                      sub={uMargeA != null ? `${p.after.perDay.units.toFixed(1)} ventes/j × ${money(uMargeA)} MAD = ${money(p.after.perDay.margin * days)} MAD sur ${days}j` : `${money(p.after.perDay.margin * days)} MAD sur ${days}j`} />
                     <Row label="Ventes / jour" before={p.before.perDay.units.toFixed(1)} after={p.after.perDay.units.toFixed(1)} delta={p.deltas.unitsPerDay}
                       sub={`${p.sample.unitsBefore} → ${p.sample.unitsAfter} ventes`} />
                     <Row label="CA / jour" before={money(p.before.perDay.revenue)} after={`${money(p.after.perDay.revenue)} MAD`} delta={p.deltas.revenuePerDay} />

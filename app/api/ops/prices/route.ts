@@ -71,22 +71,28 @@ function priceEffect(pctPrice: number | null, pctQ: number | null, elasticity: n
  * Money-first, honest verdict. Low confidence never declares a winner/loser — it stays
  * "à surveiller" so a lucky 4-sale streak doesn't show up as a green "Gagnant".
  */
-function verdict(marginBeforePerDay: number, marginAfterPerDay: number, daysAfter: number, totalUnits: number, unitsAfter: number, confidence: Confidence, qtyUp: boolean | null, newPrice: number) {
+function verdict(marginBeforePerDay: number, marginAfterPerDay: number, daysAfter: number, totalUnits: number, unitsAfter: number, confidence: Confidence, qtyUp: boolean | null, newPrice: number, marginUnitAfter: number | null) {
   if (daysAfter < 3 || totalUnits < 3)
     return { code: 'insufficient', text: `Trop tôt pour conclure : ${fmt0(totalUnits)} vente(s) sur ${daysAfter}j. Reviens dans quelques jours.` }
   const d = marginAfterPerDay - marginBeforePerDay
   const rel = marginBeforePerDay > 0 ? d / marginBeforePerDay : (d > 0 ? 1 : 0)
   const relTxt = `${rel >= 0 ? '+' : ''}${(rel * 100).toFixed(0)}%`
   const thresh = 0.02 * Math.max(1, marginBeforePerDay)
+  const unit = marginUnitAfter != null ? `${fmt0(marginUnitAfter)} MAD de marge par vente` : `${fmt0(newPrice)} MAD`
   if (confidence === 'low') {
     const trend = d > thresh ? 'semble positive' : d < -thresh ? 'semble négative' : 'reste neutre'
-    return { code: 'insufficient', text: `Encore peu de recul : ${fmt0(unitsAfter)} ventes en ${daysAfter}j. La tendance ${trend} (marge/jour ${fmt0(marginBeforePerDay)}→${fmt0(marginAfterPerDay)} MAD), mais à confirmer.` }
+    return { code: 'insufficient', text: `À ${fmt0(newPrice)} MAD tu fais ${unit}. Mais encore peu de recul (${fmt0(unitsAfter)} ventes en ${daysAfter}j) : la tendance ${trend}, à confirmer.` }
   }
-  if (d > thresh)
-    return { code: 'win', text: `À ${fmt0(newPrice)} MAD, tu dégages ${fmt0(marginAfterPerDay)} MAD de marge/jour contre ${fmt0(marginBeforePerDay)} avant (${relTxt}). La hausse paie.` }
+  if (d > thresh) {
+    // Margin/day is up — but if volume also rose the gain isn't the price's doing.
+    const cause = qtyUp === true
+      ? `Ta marge/jour monte à ${fmt0(marginAfterPerDay)} (${relTxt}), mais surtout grâce au volume — pas seulement au prix.`
+      : `Même avec moins de volume, ta marge/jour tient à ${fmt0(marginAfterPerDay)} MAD (${relTxt}). La hausse paie.`
+    return { code: 'win', text: `À ${fmt0(newPrice)} MAD tu fais ${unit}. ${cause}` }
+  }
   if (d < -thresh)
-    return { code: 'loss', text: `À ${fmt0(newPrice)} MAD, ta marge/jour tombe à ${fmt0(marginAfterPerDay)} contre ${fmt0(marginBeforePerDay)} avant (${relTxt}).${qtyUp === false ? ' Les clients achètent moins.' : ''}` }
-  return { code: 'neutral', text: `Marge/jour quasi identique (${fmt0(marginAfterPerDay)} vs ${fmt0(marginBeforePerDay)} avant). Impact négligeable sur ton cash.` }
+    return { code: 'loss', text: `À ${fmt0(newPrice)} MAD tu fais ${unit}, mais ta marge/jour tombe à ${fmt0(marginAfterPerDay)} contre ${fmt0(marginBeforePerDay)} avant (${relTxt}).${qtyUp === false ? ' Les clients achètent moins.' : ''}` }
+  return { code: 'neutral', text: `À ${fmt0(newPrice)} MAD tu fais ${unit}. Marge/jour quasi identique (${fmt0(marginAfterPerDay)} vs ${fmt0(marginBeforePerDay)} avant) — impact négligeable sur ton cash.` }
 }
 
 async function analyseProduct(row: any) {
@@ -140,6 +146,8 @@ async function analyseProduct(row: any) {
   const totalUnits = before.units + after.units
   const confidence = confidenceLevel(daysAfter, totalUnits)
   const qtyUp = pctQ == null ? null : pctQ > 0
+  const uMargeB = before.units > 0 ? before.margin / before.units : null
+  const uMargeA = after.units > 0 ? after.margin / after.units : null
 
   return {
     productId: pid, name: row.name, brand: row.brand,
@@ -151,14 +159,17 @@ async function analyseProduct(row: any) {
     deltas: {
       unitsPerDay: pct(pdB.units, pdA.units), revenuePerDay: pct(pdB.revenue, pdA.revenue),
       marginPerDay: pct(pdB.margin, pdA.margin), conv: pct(pdB.conv || 0, pdA.conv || 0),
+      marginPerUnit: pct(uMargeB || 0, uMargeA || 0),
     },
     elasticity,
     confidence,
+    // Per-unit margin — the number the founder actually knows (real cash per sale).
+    marginUnit: { before: uMargeB, after: uMargeA },
     // Absolute counts behind the per-day rates — so the UI can show "(4 ventes en 22j)"
     // and mute conversion when it rests on a handful of views.
     sample: { unitsBefore: before.units, unitsAfter: after.units, viewsBefore: before.views, viewsAfter: after.views },
     priceEffect: priceEffect(pctPrice, pctQ, elasticity, confidence),
-    verdict: verdict(pdB.margin, pdA.margin, daysAfter, totalUnits, after.units, confidence, qtyUp, nw),
+    verdict: verdict(pdB.margin, pdA.margin, daysAfter, totalUnits, after.units, confidence, qtyUp, nw, uMargeA),
   }
 }
 

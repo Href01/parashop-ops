@@ -82,6 +82,11 @@ export default function PriceImpact({ productId }: { productId: number }) {
   const V = VERDICT[prod.verdict.code]
   const C = CONF[prod.confidence]
   const ladder = priceLadder(hist)
+  const days = prod.window.daysAfter
+  // Per-unit margin — the founder's number (real cash per sale).
+  const uMargeA = prod.sample.unitsAfter > 0 ? (prod.after.perDay.margin * days) / prod.sample.unitsAfter : null
+  const uMargeB = prod.sample.unitsBefore > 0 ? (prod.before.perDay.margin * days) / prod.sample.unitsBefore : null
+  const uMargeDelta = uMargeB && uMargeB > 0 && uMargeA != null ? (uMargeA - uMargeB) / uMargeB : null
 
   return (
     <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderLeft: `3px solid ${V.fg}`, borderRadius: 'var(--radius-lg)', padding: 16, marginBottom: 16 }}>
@@ -106,18 +111,22 @@ export default function PriceImpact({ productId }: { productId: number }) {
 
       <p style={{ fontSize: 13, color: 'var(--tx-hi)', margin: '10px 0 10px', lineHeight: 1.5 }}>{prod.verdict.text}</p>
 
-      {/* Money metric, highlighted */}
-      <div style={{ padding: '9px 11px', background: 'var(--bg-2)', borderRadius: 8, border: '1px solid var(--line-soft)', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tx-hi)' }}>Marge / jour</span>
-        <span style={{ display: 'flex', alignItems: 'baseline', gap: 7, fontFamily: 'var(--mono)', fontSize: 13.5, fontVariantNumeric: 'tabular-nums' }}>
-          <span style={{ color: 'var(--tx-faint)' }}>{money(prod.before.perDay.margin)}</span>
-          <span style={{ color: 'var(--tx-faint)' }}>→</span>
-          <b style={{ color: 'var(--tx-hi)', fontSize: 15 }}>{money(prod.after.perDay.margin)} MAD</b>
-          <Delta v={prod.deltas.marginPerDay} />
-        </span>
+      {/* Money metric, highlighted — marge par vente, the founder's number */}
+      <div style={{ padding: '9px 11px', background: 'var(--bg-2)', borderRadius: 8, border: '1px solid var(--line-soft)' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tx-hi)' }}>Marge / unité</span>
+          <span style={{ display: 'flex', alignItems: 'baseline', gap: 7, fontFamily: 'var(--mono)', fontSize: 13.5, fontVariantNumeric: 'tabular-nums' }}>
+            <span style={{ color: 'var(--tx-faint)' }}>{uMargeB != null ? money(uMargeB) : '—'}</span>
+            <span style={{ color: 'var(--tx-faint)' }}>→</span>
+            <b style={{ color: 'var(--tx-hi)', fontSize: 15 }}>{uMargeA != null ? `${money(uMargeA)} MAD` : '—'}</b>
+            <Delta v={uMargeDelta} />
+          </span>
+        </div>
+        <div style={{ fontSize: 10, color: 'var(--tx-faint)', marginTop: 1 }}>marge réelle par vente — l&apos;effet direct du prix</div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '0 20px', marginTop: 4 }}>
+        <Cell label="Marge / jour" before={money(prod.before.perDay.margin)} after={`${money(prod.after.perDay.margin)} MAD`} delta={prod.deltas.marginPerDay} sub={uMargeA != null ? `${prod.after.perDay.units.toFixed(1)}/j × ${money(uMargeA)}` : undefined} />
         <Cell label="Ventes / jour" before={prod.before.perDay.units.toFixed(1)} after={prod.after.perDay.units.toFixed(1)} delta={prod.deltas.unitsPerDay} sub={`${prod.sample.unitsBefore} → ${prod.sample.unitsAfter} ventes`} />
         <Cell
           label="Conversion vue→achat"
