@@ -77,7 +77,7 @@ export default function PricesPage() {
         </p>
 
         {/* Summary */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, margin: '16px 0 20px' }}>
+        <div className="pz-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, margin: '16px 0 20px' }}>
           {[
             { l: 'Produits changés', v: data?.summary.changedProducts ?? '—', c: 'var(--tx-hi)' },
             { l: 'Hausses gagnantes', v: data?.summary.wins ?? '—', c: 'var(--green)' },
@@ -85,14 +85,24 @@ export default function PricesPage() {
             { l: 'À surveiller', v: data?.summary.pending ?? '—', c: 'var(--amber)' },
             { l: 'Δ Marge / jour', v: data ? `${data.summary.marginPerDayDelta >= 0 ? '+' : ''}${money(data.summary.marginPerDayDelta)}` : '—', c: (data?.summary.marginPerDayDelta ?? 0) >= 0 ? 'var(--green)' : 'var(--red, #dc2626)', unit: 'MAD' },
           ].map((k) => (
-            <div key={k.l} className="card-modern" style={{ padding: 14 }}>
+            <div key={k.l} className="card-modern pz-card" style={{ padding: 14 }}>
               <div className="fs12 tx-lo">{k.l}</div>
-              <div style={{ fontSize: 24, fontWeight: 700, color: k.c, fontFamily: 'var(--mono)' }}>{k.v}{k.unit && <span style={{ fontSize: 12, color: 'var(--tx-faint)', marginLeft: 3 }}>{k.unit}</span>}</div>
+              <div style={{ fontSize: 24, fontWeight: 800, color: k.c, fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', marginTop: 4 }}>{k.v}{k.unit && <span style={{ fontSize: 12, color: 'var(--tx-faint)', marginLeft: 3 }}>{k.unit}</span>}</div>
             </div>
           ))}
         </div>
 
-        {loading && <p style={{ fontSize: 13, color: 'var(--tx-faint)', textAlign: 'center', padding: 40 }}>Chargement…</p>}
+        {loading && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="card-modern" style={{ padding: 16, opacity: 1 - i * 0.22 }}>
+                <div className="skeleton-line" style={{ width: '45%', height: 14, marginBottom: 12 }} />
+                <div className="skeleton-line" style={{ width: '70%', height: 10, marginBottom: 16 }} />
+                <div style={{ display: 'flex', gap: 20 }}>{[0, 1, 2, 3].map((j) => <div key={j} className="skeleton-line" style={{ flex: 1, height: 24 }} />)}</div>
+              </div>
+            ))}
+          </div>
+        )}
         {!loading && (!data || data.products.length === 0) && (
           <div className="card-modern" style={{ padding: 30, textAlign: 'center', color: 'var(--tx-faint)', fontSize: 13 }}>
             Aucun changement de prix enregistré. Dès que tu modifies un prix, il apparaîtra ici avec son impact.
@@ -100,12 +110,12 @@ export default function PricesPage() {
         )}
 
         {/* Products */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="pz-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {data?.products.map((p) => {
             const V = VERDICT[p.verdict.code]
             const hist = data.history[p.productId] || []
             return (
-              <div key={p.productId} className="card-modern" style={{ padding: 16 }}>
+              <div key={p.productId} className="card-modern pz-card" style={{ padding: 16, borderLeft: `3px solid ${V.fg}` }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx-hi)' }}>{p.name}</div>
@@ -162,6 +172,23 @@ export default function PricesPage() {
           })}
         </div>
       </div>
+      <style jsx>{`
+        .pz-stagger > :global(*) { animation: pzIn .44s cubic-bezier(.16,1,.3,1) both; }
+        .pz-stagger > :global(*):nth-child(1) { animation-delay: .03s; }
+        .pz-stagger > :global(*):nth-child(2) { animation-delay: .07s; }
+        .pz-stagger > :global(*):nth-child(3) { animation-delay: .11s; }
+        .pz-stagger > :global(*):nth-child(4) { animation-delay: .15s; }
+        .pz-stagger > :global(*):nth-child(5) { animation-delay: .19s; }
+        .pz-stagger > :global(*):nth-child(6) { animation-delay: .23s; }
+        .pz-stagger > :global(*):nth-child(7) { animation-delay: .27s; }
+        .pz-stagger > :global(*):nth-child(8) { animation-delay: .31s; }
+        @keyframes pzIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        :global(.pz-card) { transition: transform .16s cubic-bezier(.16,1,.3,1), box-shadow .16s ease; }
+        :global(.pz-card:hover) { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(0,0,0,.08); }
+        @media (prefers-reduced-motion: reduce) {
+          .pz-stagger > :global(*), :global(.pz-card) { animation: none !important; transition: none !important; }
+        }
+      `}</style>
     </BosShell>
   )
 }
