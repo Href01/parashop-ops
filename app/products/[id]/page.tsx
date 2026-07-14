@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, ExternalLink } from 'lucide-react'
 import BosShell from '@/components/BosShell'
+import PriceImpact from '@/app/prices/PriceImpact'
 
 interface ProductDetail {
   name?: string; brand?: string; category?: string
@@ -122,6 +123,9 @@ export default function ProductDetailPage() {
               <Stat label="Vendus (total)" value={`${num(p.sold?.units)} u.`} />
               <Stat label="CA livré (total)" value={mad(p.sold?.revenue)} accent />
             </div>
+
+            {/* Price change impact (only shows if this product has a recorded change) */}
+            <PriceImpact productId={Number(id)} />
 
             {/* Content promoting this product */}
             {p.content && p.content.length > 0 && (
