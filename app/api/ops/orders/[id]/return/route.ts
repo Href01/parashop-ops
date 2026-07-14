@@ -6,13 +6,14 @@ import { revalidateWebsite } from '@/lib/revalidate-website'
 /**
  * Return / exchange tagging for an order.
  *
- * POST { deliveryFee, restockReturned?, sent? } — mark the order as a return/exchange:
+ * POST { deliveryFee, returned?, restockReturned?, sent? } — mark the order as a return/exchange:
  *  - deliveryFee: the (manually entered) Sendit return delivery fee — 0 if the customer
  *    repaid. Feeds the P&L "Retours / échanges" line (both panels).
- *  - restockReturned: put the order's own items back into sellable stock (returned product
- *    is resellable). Off for a defective unit.
+ *  - returned: [{ productId, qty }] — the SPECIFIC items coming back that are resellable
+ *    (partial return supported: only the products actually returned). They restock.
+ *  - restockReturned (back-compat, no `returned`): restock ALL order items, or none.
  *  - sent: [{ productId, qty }] — the replacement product(s) shipped in exchange, which
- *    LEAVE stock. Empty for a plain return.
+ *    LEAVE stock. Empty for a plain return or when a separate order ships the replacement.
  *
  * The exact signed stock moves are stored in Order.returnMoves so re-tagging and DELETE
  * (undo) reverse them precisely. Idempotent: re-posting reverses the previous moves first.
@@ -49,10 +50,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   try {
     const body = await request.json().catch(() => ({}))
     const fee = Math.max(0, Math.round(Number(body.deliveryFee) || 0))
-    const restockReturned = body.restockReturned ?? body.restock ?? false
     const sent: Move[] = Array.isArray(body.sent)
       ? body.sent.map((s: { productId: number; qty: number }) => ({ productId: Number(s.productId), qty: -Math.abs(Number(s.qty) || 0) })).filter((m: Move) => m.productId && m.qty)
       : []
+    // Explicit list of returned items (partial return), else back-compat "restock all".
+    const explicitReturned: Move[] | null = Array.isArray(body.returned)
+      ? body.returned.map((r: { productId: number; qty: number }) => ({ productId: Number(r.productId), qty: Math.abs(Number(r.qty) || 0) })).filter((m: Move) => m.productId && m.qty)
+      : null
+    const restockAll = !explicitReturned && (body.restockReturned ?? body.restock ?? false)
 
     const cur = await pool.query(`SELECT "returnMoves" FROM "Order" WHERE id = $1`, [orderId])
     if (cur.rows.length === 0) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
@@ -61,14 +66,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const prev: Move[] = Array.isArray(cur.rows[0].returnMoves) ? cur.rows[0].returnMoves : []
     if (prev.length) await applyMoves(reverse(prev), orderId, session.user.email, `Ré-tag retour #${orderId}`)
 
-    // Returned items restock = the order's own items (positive qty).
-    const returned: Move[] = []
-    if (restockReturned) {
+    // Returned items restock (positive qty): the chosen items, or all order items.
+    let returned: Move[] = explicitReturned ?? []
+    if (restockAll) {
       const items = await pool.query(
         `SELECT "productId", SUM(quantity)::int AS qty FROM "OrderItem" WHERE "orderId" = $1 GROUP BY "productId"`,
         [orderId]
       )
-      for (const it of items.rows) if (it.productId) returned.push({ productId: it.productId, qty: Number(it.qty) })
+      returned = items.rows.filter((it) => it.productId).map((it) => ({ productId: it.productId, qty: Number(it.qty) }))
     }
     const moves = [...returned, ...sent]
     if (moves.length) await applyMoves(moves, orderId, session.user.email, `Retour/échange commande #${orderId}`)
@@ -80,7 +85,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
            "returnRestocked" = $3,
            "returnMoves" = $4::jsonb
        WHERE id = $1`,
-      [orderId, fee, restockReturned, JSON.stringify(moves)]
+      [orderId, fee, returned.length > 0, JSON.stringify(moves)]
     )
     if (moves.length || prev.length) await revalidateWebsite(['products'])
     return NextResponse.json({ ok: true, deliveryFee: fee, moves })
