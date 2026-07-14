@@ -18,6 +18,7 @@ import {
   Settings,
   Sparkles,
   Star,
+  Tag,
   Truck,
   Target,
   Users,
@@ -53,6 +54,7 @@ const sections: Array<{ label: string; items: NavItem[] }> = [
       { label: 'Sendit', href: '/sendit', icon: Truck },
       { label: 'Produits', href: '/products', icon: Box },
       { label: 'Stock & Réappro', href: '/inventory', icon: Warehouse },
+      { label: 'Prix & Marges', href: '/prices', icon: Tag },
     ],
   },
   {
@@ -92,7 +94,7 @@ export default function BosShell({
   crumb,
   children,
 }: {
-  active: 'dashboard' | 'intelligence' | 'orders' | 'sendit' | 'products' | 'customers' | 'inventory' | 'leads' | 'campaigns' | 'ads' | 'events' | 'content' | 'work' | 'guide' | 'settings'
+  active: 'dashboard' | 'intelligence' | 'orders' | 'sendit' | 'products' | 'customers' | 'inventory' | 'prices' | 'leads' | 'campaigns' | 'ads' | 'events' | 'content' | 'work' | 'guide' | 'settings'
   title: string
   crumb: string
   children: ReactNode
