@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { AlertTriangle, Download, Plus, ArrowUp, ArrowDown, RefreshCw, Trash2 } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { AlertTriangle, Download, Plus, ArrowUp, ArrowDown, RefreshCw, Trash2, TrendingUp, Wallet, PiggyBank } from 'lucide-react'
 import Link from 'next/link'
 
 interface DashboardStats {
@@ -251,6 +251,10 @@ export default function GlowDashboard() {
   // curve lie in Mois/90j/1 an mode). Cap dot density for very long ranges.
   const series = stats.revenueSeries
   const maxRev = Math.max(1, ...series.map((p) => p.revenue))
+  // Chart summary: period total, daily average, and the peak day (marked on the curve).
+  const seriesTotal = series.reduce((s, p) => s + p.revenue, 0)
+  const avgDay = series.length ? seriesTotal / series.length : 0
+  const bestIdx = series.length ? series.reduce((best, p, i) => (p.revenue > series[best].revenue ? i : best), 0) : -1
 
   // Delivered/cash cards switch between the realized (by delivery date) and the
   // cohort (by creation date) basis. Realized is the default — it reconciles with
@@ -287,7 +291,7 @@ export default function GlowDashboard() {
     a.click()
     URL.revokeObjectURL(url)
   }
-  const W = 800, H = 220
+  const W = 800, H = 188
   const pts = series.map((p, i) => ({
     x: series.length > 1 ? (i / (series.length - 1)) * W : 0,
     y: H - (p.revenue / maxRev) * (H - 24) - 8,
@@ -388,9 +392,9 @@ export default function GlowDashboard() {
 
         {/* Trio héros — les 3 chiffres qui comptent : CA · Profit · Cash */}
         <div className="dash-hero g-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 10 }}>
-          <HeroTile tone="rose" label={`CA livré · ${periodLabel}`} value={mad(dRevenue)} delta={dRevenueDelta} deltaLabel={compareLabel} />
-          <HeroTile tone="green" label="Profit net · rentabilité" value={mad(stats.pnl ? stats.pnl.rentabilite.net : dProfit)} sub={`${Math.round(stats.pnl ? stats.pnl.rentabilite.marginPct : dMargin)}% de marge · détail ci-dessous`} />
-          <HeroTile tone="green" label="Cash net généré · trésorerie" value={mad(stats.pnl ? stats.pnl.tresorerie.net : dCash)} sub="liquide réel entré − sorti" />
+          <HeroTile tone="rose" icon={<TrendingUp style={{ width: 14, height: 14 }} />} label={`CA livré · ${periodLabel}`} amount={dRevenue} delta={dRevenueDelta} deltaLabel={compareLabel} />
+          <HeroTile tone="green" icon={<PiggyBank style={{ width: 14, height: 14 }} />} label="Profit net · rentabilité" amount={stats.pnl ? stats.pnl.rentabilite.net : dProfit} sub={`${Math.round(stats.pnl ? stats.pnl.rentabilite.marginPct : dMargin)}% de marge · détail ci-dessous`} />
+          <HeroTile tone="green" icon={<Wallet style={{ width: 14, height: 14 }} />} label="Cash net généré · trésorerie" amount={stats.pnl ? stats.pnl.tresorerie.net : dCash} sub="liquide réel entré − sorti" />
         </div>
 
         {/* KPIs secondaires — le plomberie financière vit dans le panneau Résultat */}
@@ -462,13 +466,22 @@ export default function GlowDashboard() {
         {/* Chart + goal */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: 16, marginBottom: 16 }} className="dash-hero g-stagger">
           <Card>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4, gap: 12, flexWrap: 'wrap' }}>
               <div>
                 <Label>Tendance du CA · {periodLabel}</Label>
-                <div style={{ fontSize: 13, color: 'var(--tx-mid)', marginTop: 5, fontWeight: 500 }}>
-                  CA attendu par jour <span style={{ color: 'var(--tx-faint)', fontWeight: 400 }}>· commandes créées — pics et creux de la demande</span>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginTop: 5 }}>
+                  <span style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: '-0.02em', color: 'var(--tx-hi)', lineHeight: 1 }}>{mad(seriesTotal)}</span>
+                  <span style={{ fontSize: 12, color: 'var(--tx-faint)', fontWeight: 500 }}>MAD attendus</span>
                 </div>
+                <div style={{ fontSize: 11.5, color: 'var(--tx-faint)', marginTop: 4 }}>≈ {mad(avgDay)} MAD/jour · commandes créées</div>
               </div>
+              {bestIdx >= 0 && (
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 10, color: 'var(--tx-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Meilleur jour</div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--rose-bright)', fontFamily: 'var(--mono)' }}>{mad(series[bestIdx].revenue)}</div>
+                  <div style={{ fontSize: 10.5, color: 'var(--tx-faint)' }}>{series[bestIdx].label}</div>
+                </div>
+              )}
             </div>
             <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ marginTop: 8 }} onMouseLeave={() => setHoveredPoint(null)}>
               <defs>
@@ -483,6 +496,9 @@ export default function GlowDashboard() {
               {areaPath && <path d={areaPath} fill="url(#rev-fill)" />}
               {linePath && <path d={linePath} fill="none" stroke="var(--rose-bright)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}
               {pts.length > 0 && <circle cx={pts[pts.length - 1].x} cy={pts[pts.length - 1].y} r="4" fill="var(--rose-bright)" />}
+              {hoveredPoint === null && bestIdx >= 0 && pts[bestIdx] && bestIdx !== pts.length - 1 && (
+                <circle cx={pts[bestIdx].x} cy={pts[bestIdx].y} r="4.5" fill="var(--bg-1)" stroke="var(--rose-bright)" strokeWidth="2.5" />
+              )}
               {pts.map((p, i) => (
                 <g key={i}>
                   {hoveredPoint === i && <circle cx={p.x} cy={p.y} r="5" fill="var(--rose-bright)" />}
@@ -979,14 +995,43 @@ function GoalCard({ data, onSave, extra }: {
   )
 }
 
-function HeroTile({ label, value, sub, delta, deltaLabel, tone }: { label: string; value: string; sub?: string; delta?: number | null; deltaLabel?: string; tone: 'rose' | 'green' }) {
+// Count up to a target value (ease-out). Only animates when the value actually changes,
+// so the numbers tick pleasantly on load and on each live refresh.
+function useCountUp(target: number, duration = 650) {
+  const [v, setV] = useState(target)
+  const prev = useRef(target)
+  useEffect(() => {
+    const from = prev.current, to = target
+    if (from === to || typeof window === 'undefined' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { prev.current = to; setV(to); return }
+    let raf = 0
+    const start = performance.now()
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration)
+      const eased = 1 - Math.pow(1 - t, 3)
+      setV(from + (to - from) * eased)
+      if (t < 1) raf = requestAnimationFrame(tick)
+      else { prev.current = to; setV(to) }
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [target, duration])
+  return v
+}
+
+function HeroTile({ label, amount, sub, delta, deltaLabel, tone, icon }: { label: string; amount: number; sub?: string; delta?: number | null; deltaLabel?: string; tone: 'rose' | 'green'; icon: React.ReactNode }) {
   const color = tone === 'rose' ? 'var(--rose-bright)' : 'var(--green)'
+  const iconBg = tone === 'rose' ? 'var(--rose-bg)' : 'var(--green-bg)'
+  const shown = useCountUp(amount)
+  const display = mad(shown === amount ? amount : Math.round(shown))
   return (
     <div className="g-card" style={{ borderRadius: 'var(--radius-lg)', padding: '12px 16px 11px', position: 'relative', overflow: 'hidden' }}>
       <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: color }} />
-      <div style={{ fontSize: 11, color: 'var(--tx-lo)', fontWeight: 600, marginBottom: 6 }}>{label}</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 7 }}>
+        <div style={{ fontSize: 11, color: 'var(--tx-lo)', fontWeight: 600 }}>{label}</div>
+        <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 7, background: iconBg, color, flexShrink: 0 }}>{icon}</span>
+      </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-        <span style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: '-0.03em', color, lineHeight: 1 }}>{value}</span>
+        <span style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: '-0.03em', color, lineHeight: 1 }}>{display}</span>
         <span style={{ fontSize: 12, color: 'var(--tx-faint)', fontWeight: 500 }}>MAD</span>
       </div>
       {(delta != null || sub) && (
