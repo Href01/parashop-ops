@@ -90,12 +90,13 @@ export default function InventoryPage() {
   const [expanded, setExpanded] = useState<number | null>(null)
 
   const [adjustModal, setAdjustModal] = useState<{ productId: number; productName: string; currentStock: number; prefill?: number; oldCost?: number } | null>(null)
-  const [adjustType, setAdjustType] = useState<'in' | 'out'>('in')
+  const [adjustType, setAdjustType] = useState<'in' | 'out' | 'fix'>('in')
   const [adjustQty, setAdjustQty] = useState('')
   const [adjustReason, setAdjustReason] = useState('')
   const [adjustCost, setAdjustCost] = useState('')
   const [adjustFree, setAdjustFree] = useState('')
   const [adjustSupplier, setAdjustSupplier] = useState('')
+  const [adjustDate, setAdjustDate] = useState('')
   const [adjusting, setAdjusting] = useState(false)
   const [supplierModal, setSupplierModal] = useState<{ productId: number; productName: string; currentSupplier: string | null; stock: number } | null>(null)
   const [supplierInput, setSupplierInput] = useState('')
@@ -151,7 +152,7 @@ export default function InventoryPage() {
   }
 
   // Edit a purchase (fix a wrong quantity / cost without deleting + re-adding).
-  const [editPurchase, setEditPurchase] = useState<{ id: number; name: string; quantity: string; totalCost: string } | null>(null)
+  const [editPurchase, setEditPurchase] = useState<{ id: number; name: string; quantity: string; totalCost: string; date: string } | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
   const saveEditPurchase = async () => {
     if (!editPurchase) return
@@ -160,7 +161,7 @@ export default function InventoryPage() {
       const res = await fetch(`/api/ops/inventory/movement/${editPurchase.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quantity: editPurchase.quantity, totalCost: editPurchase.totalCost }),
+        body: JSON.stringify({ quantity: editPurchase.quantity, totalCost: editPurchase.totalCost, ...(editPurchase.date ? { date: editPurchase.date } : {}) }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.error || 'Échec de la modification')
@@ -210,24 +211,39 @@ export default function InventoryPage() {
     setAdjustCost(p.costPrice ? String(p.costPrice) : '')
     setAdjustSupplier(p.supplier || '')
     setAdjustFree('')
+    setAdjustDate('')
   }
 
   const submitAdjustment = async () => {
-    if (!adjustModal || !adjustQty || Number(adjustQty) <= 0) return
+    if (!adjustModal) return
+    const isPurchase = adjustType === 'in'
+    const isFix = adjustType === 'fix'
+    // 'fix' = correction inventaire : on saisit le stock RÉEL visé, le mouvement applique
+    // la différence (± sans coût → n'est PAS compté comme un achat dans la trésorerie).
+    let quantity: number
+    if (isFix) {
+      if (adjustQty === '' || !Number.isFinite(Number(adjustQty))) return
+      const target = Math.max(0, Math.trunc(Number(adjustQty)))
+      quantity = target - adjustModal.currentStock
+      if (quantity === 0) { setAdjustModal(null); return } // déjà à jour
+    } else {
+      if (!adjustQty || Number(adjustQty) <= 0) return
+      quantity = isPurchase ? Number(adjustQty) : -Number(adjustQty)
+    }
     setAdjusting(true)
     try {
-      const isPurchase = adjustType === 'in'
       const res = await fetch('/api/ops/inventory/movement', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           productId: adjustModal.productId,
           type: isPurchase ? 'Purchase' : 'Adjustment',
-          quantity: isPurchase ? Number(adjustQty) : -Number(adjustQty),
-          reason: adjustReason || (isPurchase ? 'Réapprovisionnement fournisseur' : 'Ajustement manuel'),
+          quantity,
+          reason: adjustReason || (isPurchase ? 'Réapprovisionnement fournisseur' : isFix ? 'Correction inventaire' : 'Ajustement manuel'),
           ...(isPurchase && adjustCost ? { costPerUnit: Number(adjustCost) } : {}),
           ...(isPurchase && Number(adjustFree) > 0 ? { freeUnits: Number(adjustFree) } : {}),
           ...(isPurchase && adjustSupplier.trim() ? { supplier: adjustSupplier.trim(), notes: `Fournisseur: ${adjustSupplier.trim()}` } : {}),
+          ...(isPurchase && adjustDate ? { date: adjustDate } : {}),
         }),
       })
       if (!res.ok) throw new Error('Failed')
@@ -738,7 +754,7 @@ export default function InventoryPage() {
                             </div>
                             <div className="num fw600" style={{ color: 'var(--tx-hi)', whiteSpace: 'nowrap' }}>{r.totalCost != null ? `${money(r.totalCost)}` : '—'}</div>
                             <button
-                              onClick={() => setEditPurchase({ id: r.id, name: r.name, quantity: String(r.quantity), totalCost: r.totalCost != null ? String(r.totalCost) : '' })}
+                              onClick={() => setEditPurchase({ id: r.id, name: r.name, quantity: String(r.quantity), totalCost: r.totalCost != null ? String(r.totalCost) : '', date: r.createdAt ? new Date(r.createdAt).toISOString().slice(0, 10) : '' })}
                               title="Modifier cet achat (quantité / coût)"
                               style={{ display: 'flex', alignItems: 'center', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--tx-faint)', padding: 4 }}
                             >
@@ -838,16 +854,18 @@ export default function InventoryPage() {
                 </div>
                 <div style={{ marginBottom: 16 }}>
                   <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Type d'ajustement</label>
-                  <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <button className={`btn-modern btn-sm ${adjustType === 'in' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setAdjustType('in')}><Plus className="w-4 h-4" /> Entrée (réappro)</button>
                     <button className={`btn-modern btn-sm ${adjustType === 'out' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setAdjustType('out')}><Minus className="w-4 h-4" /> Sortie</button>
+                    <button className={`btn-modern btn-sm ${adjustType === 'fix' ? 'btn-primary' : 'btn-subtle'}`} onClick={() => setAdjustType('fix')} title="Corriger le stock réel sans le compter comme un achat"><History style={{ width: 15, height: 15 }} /> Correction</button>
                   </div>
+                  {adjustType === 'fix' && <div className="fs11 tx-lo" style={{ marginTop: 6 }}>Correction d&apos;inventaire : met le stock au bon chiffre <b>sans le compter comme un achat</b> (aucun impact sur la trésorerie / les dépenses).</div>}
                 </div>
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ display: 'flex', gap: 12 }}>
                     <div style={{ flex: adjustType === 'in' ? 2 : 1 }}>
-                      <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>{adjustType === 'in' ? 'Quantité payée' : 'Quantité'}{adjustModal.prefill ? ' (suggérée)' : ''}</label>
-                      <input type="number" min="1" value={adjustQty} onChange={(e) => setAdjustQty(e.target.value)} placeholder="Ex: 10" className="input-modern" style={{ width: '100%' }} />
+                      <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>{adjustType === 'in' ? 'Quantité payée' : adjustType === 'fix' ? 'Stock réel (corriger à)' : 'Quantité'}{adjustModal.prefill && adjustType !== 'fix' ? ' (suggérée)' : ''}</label>
+                      <input type="number" min={adjustType === 'fix' ? '0' : '1'} value={adjustQty} onChange={(e) => setAdjustQty(e.target.value)} placeholder={adjustType === 'fix' ? `Ex: ${adjustModal.currentStock}` : 'Ex: 10'} className="input-modern" style={{ width: '100%' }} />
                     </div>
                     {adjustType === 'in' && (
                       <div style={{ flex: 1 }}>
@@ -856,7 +874,17 @@ export default function InventoryPage() {
                       </div>
                     )}
                   </div>
-                  {adjustQty && (() => {
+                  {adjustQty !== '' && (() => {
+                    if (adjustType === 'fix') {
+                      const target = Math.max(0, Math.trunc(Number(adjustQty)))
+                      const delta = target - adjustModal.currentStock
+                      return (
+                        <div className="fs11 tx-lo" style={{ marginTop: 4 }}>
+                          Stock : <b className="num">{adjustModal.currentStock}</b> → <b className="num">{target}</b>
+                          {delta !== 0 && <> · correction de <b className="num" style={{ color: delta > 0 ? 'var(--green)' : 'var(--red, #dc2626)' }}>{delta > 0 ? '+' : ''}{delta}</b> (pas un achat)</>}
+                        </div>
+                      )
+                    }
                     const paid = Number(adjustQty), free = adjustType === 'in' ? Number(adjustFree) || 0 : 0
                     const recu = paid + free
                     return (
@@ -897,13 +925,20 @@ export default function InventoryPage() {
                     </div>
                   </div>
                 )}
+                {adjustType === 'in' && (
+                  <div style={{ marginBottom: 16 }}>
+                    <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Date de l&apos;achat</label>
+                    <input type="date" value={adjustDate} onChange={(e) => setAdjustDate(e.target.value)} max={new Date().toISOString().slice(0, 10)} className="input-modern" style={{ width: '100%' }} />
+                    <div className="fs11 tx-lo" style={{ marginTop: 4 }}>Vide = aujourd&apos;hui. Renseigne la vraie date si l&apos;achat a été fait un autre jour.</div>
+                  </div>
+                )}
                 <div style={{ marginBottom: 16 }}>
                   <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Raison (optionnel)</label>
-                  <input type="text" value={adjustReason} onChange={(e) => setAdjustReason(e.target.value)} placeholder={adjustType === 'in' ? 'Réapprovisionnement fournisseur' : 'Produit endommagé'} className="input-modern" style={{ width: '100%' }} />
+                  <input type="text" value={adjustReason} onChange={(e) => setAdjustReason(e.target.value)} placeholder={adjustType === 'in' ? 'Réapprovisionnement fournisseur' : adjustType === 'fix' ? 'Correction inventaire' : 'Produit endommagé'} className="input-modern" style={{ width: '100%' }} />
                 </div>
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                   <button className="btn-modern btn-secondary" onClick={() => setAdjustModal(null)}>Annuler</button>
-                  <button className="btn-modern btn-primary" onClick={submitAdjustment} disabled={adjusting || !adjustQty || Number(adjustQty) <= 0}>{adjusting ? 'En cours…' : 'Confirmer'}</button>
+                  <button className="btn-modern btn-primary" onClick={submitAdjustment} disabled={adjusting || adjustQty === '' || (adjustType !== 'fix' && Number(adjustQty) <= 0)}>{adjusting ? 'En cours…' : 'Confirmer'}</button>
                 </div>
               </div>
             </div>
@@ -926,6 +961,10 @@ export default function InventoryPage() {
                     <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Dépense totale (MAD)</label>
                     <input type="number" min="0" step="0.01" value={editPurchase.totalCost} onChange={(e) => setEditPurchase({ ...editPurchase, totalCost: e.target.value })} className="input-modern" style={{ width: '100%' }} />
                   </div>
+                </div>
+                <div style={{ marginBottom: 14 }}>
+                  <label className="fs12 tx-mid fw600" style={{ display: 'block', marginBottom: 6 }}>Date de l&apos;achat</label>
+                  <input type="date" value={editPurchase.date} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setEditPurchase({ ...editPurchase, date: e.target.value })} className="input-modern" style={{ width: '100%' }} />
                 </div>
                 {Number(editPurchase.quantity) > 0 && Number(editPurchase.totalCost) > 0 && (
                   <div className="fs11 tx-lo" style={{ marginBottom: 14 }}>Coût réel : <b className="num">{Math.round((Number(editPurchase.totalCost) / Number(editPurchase.quantity)) * 100) / 100}</b> / unité · le stock s&apos;ajuste de la différence de quantité.</div>

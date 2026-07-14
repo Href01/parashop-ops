@@ -82,14 +82,16 @@ export async function PATCH(
         )
       }
       const costPerUnit = newTotalCost != null && finalQty !== 0 ? newTotalCost / Math.abs(finalQty) : null
+      const newDate = body.date ? new Date(body.date).toISOString() : null
       await client.query(
         `UPDATE "InventoryMovement"
          SET quantity = $1,
              "totalCost" = COALESCE($2, "totalCost"),
              "costPerUnit" = COALESCE($3, "costPerUnit"),
-             reason = COALESCE($4, reason)
-         WHERE id = $5`,
-        [finalQty, newTotalCost, costPerUnit, body.reason || null, movementId]
+             reason = COALESCE($4, reason),
+             "createdAt" = COALESCE($5::timestamptz, "createdAt")
+         WHERE id = $6`,
+        [finalQty, newTotalCost, costPerUnit, body.reason || null, newDate, movementId]
       )
       await client.query('COMMIT')
     } catch (e) {

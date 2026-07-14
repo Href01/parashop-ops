@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
       freeUnits, // bonus units received at no charge ("X payés + Y gratuits") — Purchase only
       supplier, // free-text supplier name (products use a text supplier field)
       notes,
+      date, // optional: back-date the movement (purchase actually made another day)
     } = body
 
     // Validation
@@ -88,7 +89,7 @@ export async function POST(request: NextRequest) {
         "performedBy",
         "notes",
         "createdAt"
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW())
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13::timestamptz, NOW()))
       RETURNING *
     `, [
       productId,
@@ -103,6 +104,7 @@ export async function POST(request: NextRequest) {
       totalCost,
       session.user.email,
       notes || null,
+      date ? new Date(date).toISOString() : null,
     ])
 
     // Update product stock
