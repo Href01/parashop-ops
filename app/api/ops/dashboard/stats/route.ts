@@ -598,11 +598,13 @@ export async function GET(req: Request) {
       `),
       // P&L inputs for the period [from, to]: supplier purchase cash-out, ad spend,
       // logged operating expenses, and the packaging per-parcel rate.
-      safeQuery<{ purchaseSpend: number; adSpend: number; opex: number; opexPackaging: number; packagingRate: number }>('pnl', `
+      safeQuery<{ purchaseSpend: number; adSpend: number; opex: number; opexPackaging: number; returnFees: number; packagingRate: number }>('pnl', `
         SELECT
           (SELECT COALESCE(SUM("totalCost"),0) FROM "InventoryMovement"
              WHERE type='Purchase' AND "totalCost" IS NOT NULL
                AND "createdAt" >= '${from}'::date AND "createdAt" < ('${to}'::date + INTERVAL '1 day'))::double precision AS "purchaseSpend",
+          (SELECT COALESCE(SUM("returnDeliveryFee"),0) FROM "Order"
+             WHERE "returnedAt" >= '${from}'::date AND "returnedAt" < ('${to}'::date + INTERVAL '1 day'))::double precision AS "returnFees",
           (SELECT COALESCE(SUM(spend),0) FROM "AdSpendDaily"
              WHERE date >= '${from}'::date AND date <= '${to}'::date)::double precision AS "adSpend",
           (SELECT COALESCE(SUM(amount),0) FROM "OperatingExpense"
@@ -685,6 +687,7 @@ export async function GET(req: Request) {
     const adSpendPnl = toNumber(pnlRow?.adSpend)
     const opex = toNumber(pnlRow?.opex)
     const opexPackaging = toNumber(pnlRow?.opexPackaging)
+    const returnFees = toNumber(pnlRow?.returnFees)
     const packagingRate = toNumber(pnlRow?.packagingRate)
     // Physical parcels include Sendit rows that still await product reconciliation.
     const deliveredParcels = hasSenditLedger ? senditDelivered.orders : realizedOrders
@@ -692,14 +695,14 @@ export async function GET(req: Request) {
     const packagingAccrued = deliveredParcels * packagingRate
     // Rentabilité: profit on delivered sales (already net of COGS + Sendit delivery),
     // then minus accrued packaging and ad spend.
-    const profitNet = realizedProfit - packagingAccrued - adSpendPnl
+    const profitNet = realizedProfit - packagingAccrued - adSpendPnl - returnFees
     // Trésorerie: packaging is a real cash cost too. Use actual logged packaging
     // (OperatingExpense 'Emballage') when present, else the accrued estimate — never
     // both (opexPackaging is already inside `opex`, so split it out to avoid double-count).
     const nonPackagingOpex = Math.max(0, opex - opexPackaging)
     const packagingCash = opexPackaging > 0 ? opexPackaging : packagingAccrued
     // Trésorerie: cash collected (net Sendit) minus all cash out in the period.
-    const cashNet = treasuryCash - purchaseSpend - adSpendPnl - nonPackagingOpex - packagingCash
+    const cashNet = treasuryCash - purchaseSpend - adSpendPnl - nonPackagingOpex - packagingCash - returnFees
     const pnl = {
       rentabilite: {
         caLivre: realizedRevenue,
@@ -707,6 +710,7 @@ export async function GET(req: Request) {
         margeLivree: realizedMargin,
         pub: adSpendPnl,
         emballage: packagingAccrued,
+        retours: returnFees,
         net: profitNet,
         marginPct: realizedRevenue > 0 ? (profitNet / realizedRevenue) * 100 : 0,
       },
@@ -717,6 +721,7 @@ export async function GET(req: Request) {
         emballage: packagingCash,
         emballageEstime: opexPackaging === 0,
         frais: nonPackagingOpex,
+        retours: returnFees,
         net: cashNet,
       },
       packagingRate,

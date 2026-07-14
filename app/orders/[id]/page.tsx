@@ -28,6 +28,9 @@ interface Order {
   estimatedProfit?: number | string
   finalProfit?: number | string | null
   returnOrFailedFees?: number | string | null
+  returnedAt?: string | null
+  returnDeliveryFee?: number | string | null
+  returnRestocked?: boolean
   marginPercent?: number | string
   deliveryFeeCharged?: number | string
   estimatedDeliveryCost?: number | string
@@ -68,6 +71,8 @@ export default function OrderDetailPage() {
   const [actionLoading, setActionLoading] = useState(false)
   const [actionError, setActionError] = useState('')
   const [actionSuccess, setActionSuccess] = useState('')
+  const [showReturn, setShowReturn] = useState(false)
+  const [returnForm, setReturnForm] = useState({ deliveryFee: '', restock: true })
 
   // Edit form state
   const [editForm, setEditForm] = useState({
@@ -252,6 +257,34 @@ export default function OrderDetailPage() {
     }
   }
 
+  async function submitReturn() {
+    if (!order) return
+    if (!confirm(`Marquer la commande #${order.id} comme retour / échange ?${returnForm.restock ? '\n\nLes produits seront remis en stock vendable.' : ''}`)) return
+    setActionLoading(true); setActionError(''); setActionSuccess('')
+    try {
+      const res = await fetch(`/api/ops/orders/${orderId}/return`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deliveryFee: Number(returnForm.deliveryFee) || 0, restock: returnForm.restock }),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Échec')
+      setActionSuccess('Retour enregistré.')
+      setShowReturn(false)
+      await fetchOrder()
+    } catch (err: any) { setActionError(err.message) } finally { setActionLoading(false) }
+  }
+
+  async function cancelReturn() {
+    if (!order) return
+    if (!confirm('Annuler le tag retour ? Le stock remis sera repris.')) return
+    setActionLoading(true); setActionError(''); setActionSuccess('')
+    try {
+      const res = await fetch(`/api/ops/orders/${orderId}/return`, { method: 'DELETE' })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Échec')
+      setActionSuccess('Tag retour annulé.')
+      await fetchOrder()
+    } catch (err: any) { setActionError(err.message) } finally { setActionLoading(false) }
+  }
+
   async function handleSaveEdit() {
     if (!order) return
 
@@ -391,6 +424,46 @@ export default function OrderDetailPage() {
                 <X size={16} style={{ color: 'var(--red)' }} />
               </button>
             </div>
+          </div>
+        )}
+
+        {/* Return / exchange tag */}
+        {order.returnedAt && !showReturn && (
+          <div className="panel mb16" style={{ background: 'var(--amber-bg)', border: '1px solid var(--amber)', padding: '10px 14px' }}>
+            <div className="row gap10" style={{ alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 600, color: 'var(--amber)' }}>↩️ Retour / échange</span>
+              <span style={{ fontSize: 13, color: 'var(--tx-mid)' }}>
+                frais retour <b>{formatMoney(order.returnDeliveryFee)} MAD</b>
+                {order.returnRestocked ? ' · produits remis en stock' : ' · produits non restockés'}
+              </span>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+                <button type="button" onClick={() => { setReturnForm({ deliveryFee: String(order.returnDeliveryFee ?? ''), restock: !!order.returnRestocked }); setShowReturn(true) }} style={{ fontSize: 12, background: 'none', border: '1px solid var(--amber)', borderRadius: 6, padding: '3px 10px', color: 'var(--amber)', cursor: 'pointer' }}>Modifier</button>
+                <button type="button" onClick={cancelReturn} disabled={actionLoading} style={{ fontSize: 12, background: 'none', border: 'none', color: 'var(--tx-faint)', cursor: 'pointer' }}>Annuler le tag</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showReturn && (
+          <div className="panel mb16" style={{ border: '1px solid var(--amber)', padding: '14px 16px' }}>
+            <div style={{ fontWeight: 600, marginBottom: 10 }}>↩️ Retour / Échange</div>
+            <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: 'var(--tx-lo)' }}>
+                Frais de livraison retour (MAD)
+                <input type="number" value={returnForm.deliveryFee} onChange={(e) => setReturnForm((f) => ({ ...f, deliveryFee: e.target.value }))}
+                  placeholder="0 si le client repaie"
+                  style={{ width: 180, fontSize: 13, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--bg-2)', color: 'var(--tx-hi)' }} />
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--tx-hi)', cursor: 'pointer' }}>
+                <input type="checkbox" checked={returnForm.restock} onChange={(e) => setReturnForm((f) => ({ ...f, restock: e.target.checked }))} />
+                Remettre les produits en stock vendable
+              </label>
+              <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+                <button type="button" onClick={() => setShowReturn(false)} style={{ fontSize: 13, background: 'none', border: '1px solid var(--line)', borderRadius: 6, padding: '6px 12px', color: 'var(--tx-mid)', cursor: 'pointer' }}>Annuler</button>
+                <button type="button" onClick={submitReturn} disabled={actionLoading} style={{ fontSize: 13, background: 'var(--amber)', border: 'none', borderRadius: 6, padding: '6px 14px', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>Enregistrer</button>
+              </div>
+            </div>
+            <p style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 8 }}>Le frais retour est déduit du Profit net et du Cash net (panneau Résultat).</p>
           </div>
         )}
 
@@ -534,6 +607,16 @@ export default function OrderDetailPage() {
                         onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
                       >
                         Cancel Order
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => { setShowReturn(true); setShowMore(false) }}
+                        style={{ padding: '8px 12px', textAlign: 'left', background: 'none', border: 'none', borderRadius: '6px', cursor: 'pointer', color: 'var(--tx-hi)' }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-3)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
+                      >
+                        ↩️ Retour / Échange
                       </button>
 
                       <div style={{ borderTop: '1px solid var(--line-soft)', margin: '4px 0' }}></div>

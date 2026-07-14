@@ -39,8 +39,8 @@ interface DashboardStats {
     delivered: { cod: number; fees: number; bank: number; cash: number; orders: number; unmatchedOrders: number; unmatchedCod: number }
   }
   pnl?: {
-    rentabilite: { caLivre: number; profitLivre: number; margeLivree: number; pub: number; emballage: number; net: number; marginPct: number }
-    tresorerie: { encaisse: number; achats: number; pub: number; emballage: number; emballageEstime: boolean; frais: number; net: number }
+    rentabilite: { caLivre: number; profitLivre: number; margeLivree: number; pub: number; emballage: number; retours: number; net: number; marginPct: number }
+    tresorerie: { encaisse: number; achats: number; pub: number; emballage: number; emballageEstime: boolean; frais: number; retours: number; net: number }
     packagingRate: number
     deliveredParcels: number
   }
@@ -441,6 +441,7 @@ export default function GlowDashboard() {
                   <PnlRow label="Profit livré" sub={`net produits + livraison · ${r.margeLivree.toFixed(0)}%`} value={r.profitLivre} muted />
                   <PnlRow label="Pub" value={-r.pub} neg />
                   <PnlRow label={`Emballage`} sub={`${stats.pnl.deliveredParcels} colis × ${stats.pnl.packagingRate} DH`} value={-r.emballage} neg />
+                  {r.retours > 0 && <PnlRow label="Retours / échanges" sub="frais livraison retour" value={-r.retours} neg />}
                   <PnlRow label="Profit net" value={r.net} total pct={r.marginPct} />
                 </div>
                 <div className="card-modern" style={{ padding: 16 }}>
@@ -450,6 +451,7 @@ export default function GlowDashboard() {
                   <PnlRow label="Pub" value={-t.pub} neg />
                   <PnlRow label="Emballage" sub={t.emballageEstime ? 'estimé · colis × taux' : 'réel loggé'} value={-t.emballage} neg />
                   {t.frais > 0 && <PnlRow label="Dépenses (frais divers)" value={-t.frais} neg />}
+                  {t.retours > 0 && <PnlRow label="Retours / échanges" sub="frais livraison retour" value={-t.retours} neg />}
                   <PnlRow label="Cash net généré" value={t.net} total />
                 </div>
               </div>
