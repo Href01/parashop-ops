@@ -297,14 +297,14 @@ export default function GlowDashboard() {
 
   return (
     <div style={{ flex: 1, overflowY: 'auto' }}>
-      <div style={{ maxWidth: 1480, margin: '0 auto', padding: '24px 24px 60px' }}>
+      <div style={{ maxWidth: 1480, margin: '0 auto', padding: '16px 24px 60px' }}>
 
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 22 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 14 }}>
           <div>
-            <div className="eyebrow" style={{ marginBottom: 6 }}>SHINE COSMETICS · OPÉRATIONS</div>
-            <h1 className="serif-display" style={{ fontSize: 34, lineHeight: 1.04 }}>Vue d&apos;ensemble</h1>
-            <div style={{ fontSize: 13, color: 'var(--tx-lo)', marginTop: 6 }}>
+            <div className="eyebrow" style={{ marginBottom: 3 }}>SHINE COSMETICS · OPÉRATIONS</div>
+            <h1 className="serif-display" style={{ fontSize: 25, lineHeight: 1.05 }}>Vue d&apos;ensemble</h1>
+            <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginTop: 3 }}>
               {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · Casablanca
             </div>
           </div>
@@ -354,14 +354,14 @@ export default function GlowDashboard() {
         </div>
 
         {lastUpdated && (
-          <div style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: -10, marginBottom: 14, textAlign: 'right' }}>
+          <div style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: -8, marginBottom: 10, textAlign: 'right' }}>
             Dashboard actualisé à {lastUpdated.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
             {stats.sendit?.lastPulledAt && ` · Sendit synchronisé à ${new Date(stats.sendit.lastPulledAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`}
           </div>
         )}
 
         {/* Basis toggle: how the delivered/cash cards attribute a period. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
           <div style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 10, background: 'var(--bg-2)', border: '1px solid var(--line-soft)' }}>
             {([['delivered', 'Cash réalisé (livraison)'], ['created', 'Cohorte (création)']] as const).map(([b, lbl]) => (
               <button key={b} onClick={() => setBasis(b)} style={{
@@ -387,14 +387,14 @@ export default function GlowDashboard() {
         )}
 
         {/* Trio héros — les 3 chiffres qui comptent : CA · Profit · Cash */}
-        <div className="dash-hero g-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 14, marginBottom: 14 }}>
+        <div className="dash-hero g-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 10 }}>
           <HeroTile tone="rose" label={`CA livré · ${periodLabel}`} value={mad(dRevenue)} delta={dRevenueDelta} deltaLabel={compareLabel} />
           <HeroTile tone="green" label="Profit net · rentabilité" value={mad(stats.pnl ? stats.pnl.rentabilite.net : dProfit)} sub={`${Math.round(stats.pnl ? stats.pnl.rentabilite.marginPct : dMargin)}% de marge · détail ci-dessous`} />
           <HeroTile tone="green" label="Cash net généré · trésorerie" value={mad(stats.pnl ? stats.pnl.tresorerie.net : dCash)} sub="liquide réel entré − sorti" />
         </div>
 
         {/* KPIs secondaires — le plomberie financière vit dans le panneau Résultat */}
-        <div className="g-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(168px, 1fr))', gap: 12, marginBottom: 18 }}>
+        <div className="g-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(168px, 1fr))', gap: 12, marginBottom: 12 }}>
           <Kpi label="Commandes livrées" value={String(dOrders)} sub={`panier moyen ${mad(dFinancialOrders > 0 ? dRevenue / dFinancialOrders : stats.averageOrderValue)} MAD`} />
           <Kpi label="Taux de livraison" value={`${stats.deliveryRate.toFixed(0)}%`} sub="livrées / résolues" />
           <Kpi label="ROAS global" value={stats.roas != null ? `${stats.roas.toFixed(1)}x` : '—'} sub="CA livré ÷ pub" />
@@ -819,10 +819,10 @@ function PnlRow({ label, value, sub, neg, muted, total, pct }: { label: string; 
 
 function Kpi({ label, value, unit, sub, delta, deltaLabel, accent }: { label: string; value: string; unit?: string; sub?: string; delta?: number | null; deltaLabel?: string; accent?: boolean }) {
   return (
-    <div className="g-card" style={{ borderRadius: 'var(--radius)', padding: '13px 15px' }}>
-      <div style={{ fontSize: 11, color: 'var(--tx-lo)', marginBottom: 6, fontWeight: 500 }}>{label}</div>
+    <div className="g-card" style={{ borderRadius: 'var(--radius)', padding: '10px 14px' }}>
+      <div style={{ fontSize: 11, color: 'var(--tx-lo)', marginBottom: 4, fontWeight: 500 }}>{label}</div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-        <span style={{ fontSize: 23, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: '-0.02em', color: accent ? 'var(--rose-bright)' : 'var(--tx-hi)' }}>{value}</span>
+        <span style={{ fontSize: 20, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: '-0.02em', color: accent ? 'var(--rose-bright)' : 'var(--tx-hi)' }}>{value}</span>
         {unit && <span style={{ fontSize: 12, color: 'var(--tx-faint)' }}>{unit}</span>}
       </div>
       {(delta != null || sub) && (
@@ -982,15 +982,15 @@ function GoalCard({ data, onSave, extra }: {
 function HeroTile({ label, value, sub, delta, deltaLabel, tone }: { label: string; value: string; sub?: string; delta?: number | null; deltaLabel?: string; tone: 'rose' | 'green' }) {
   const color = tone === 'rose' ? 'var(--rose-bright)' : 'var(--green)'
   return (
-    <div className="g-card" style={{ borderRadius: 'var(--radius-lg)', padding: '18px 20px 16px', position: 'relative', overflow: 'hidden' }}>
+    <div className="g-card" style={{ borderRadius: 'var(--radius-lg)', padding: '12px 16px 11px', position: 'relative', overflow: 'hidden' }}>
       <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: color }} />
-      <div style={{ fontSize: 11.5, color: 'var(--tx-lo)', fontWeight: 600, marginBottom: 9 }}>{label}</div>
+      <div style={{ fontSize: 11, color: 'var(--tx-lo)', fontWeight: 600, marginBottom: 6 }}>{label}</div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-        <span style={{ fontSize: 33, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: '-0.03em', color, lineHeight: 1 }}>{value}</span>
-        <span style={{ fontSize: 13, color: 'var(--tx-faint)', fontWeight: 500 }}>MAD</span>
+        <span style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: '-0.03em', color, lineHeight: 1 }}>{value}</span>
+        <span style={{ fontSize: 12, color: 'var(--tx-faint)', fontWeight: 500 }}>MAD</span>
       </div>
       {(delta != null || sub) && (
-        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <div style={{ marginTop: 7, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           {delta != null && <DeltaPill value={delta} />}
           {delta != null && deltaLabel
             ? <span style={{ fontSize: 11.5, color: 'var(--tx-faint)' }}>vs {deltaLabel}</span>
