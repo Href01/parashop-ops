@@ -99,6 +99,9 @@ async function analyseProduct(row: any) {
   const changeAt: Date = new Date(row.changedAt)
   const now = new Date()
   const daysAfter = Math.max(1, Math.min(AFTER_CAP, Math.ceil((now.getTime() - changeAt.getTime()) / MS_DAY)))
+  // Cap the AFTER window to daysAfter as well — otherwise a change older than 30 days
+  // would sum >30 days of sales but still divide by 30, inflating the per-day rate.
+  const afterTo = new Date(Math.min(now.getTime(), changeAt.getTime() + daysAfter * MS_DAY))
   const beforeFrom = new Date(changeAt.getTime() - daysAfter * MS_DAY)
   const pid = row.productId
   const cost = num(row.cost)
@@ -116,7 +119,7 @@ async function analyseProduct(row: any) {
      FROM "OrderItem" oi JOIN "Order" o ON o.id = oi."orderId"
      WHERE oi."productId" = $1 AND o.status IN ('CONFIRMED','DELIVERED')
        AND o."createdAt" >= $3 AND o."createdAt" < $5`,
-    [pid, changeAt.toISOString(), beforeFrom.toISOString(), cost, now.toISOString()]
+    [pid, changeAt.toISOString(), beforeFrom.toISOString(), cost, afterTo.toISOString()]
   )
   const ev = await pool.query(
     `SELECT
@@ -126,7 +129,7 @@ async function analyseProduct(row: any) {
        COUNT(*) FILTER (WHERE name='PRODUCT_ADD_TO_CART' AND "createdAt" < $2) cb
      FROM "AnalyticsEvent"
      WHERE (props->>'productId') = $1::text AND "createdAt" >= $3 AND "createdAt" < $4`,
-    [pid, changeAt.toISOString(), beforeFrom.toISOString(), now.toISOString()]
+    [pid, changeAt.toISOString(), beforeFrom.toISOString(), afterTo.toISOString()]
   )
   const r = oi.rows[0], e = ev.rows[0]
   const after: Agg = { units: num(r.ua), revenue: num(r.ra), margin: num(r.ma), orders: num(r.oa), views: num(e.va), carts: num(e.ca) }
@@ -134,7 +137,9 @@ async function analyseProduct(row: any) {
 
   const perDay = (a: Agg) => ({
     units: a.units / daysAfter, revenue: a.revenue / daysAfter, margin: a.margin / daysAfter,
-    conv: a.views > 0 ? a.units / a.views : null, cartRate: a.views > 0 ? a.carts / a.views : null,
+    // Conversion vue→achat = share of viewers who bought → orders (purchases) per view,
+    // not units per view (a multi-item order isn't multiple conversions).
+    conv: a.views > 0 ? a.orders / a.views : null, cartRate: a.views > 0 ? a.carts / a.views : null,
   })
   const pdB = perDay(before), pdA = perDay(after)
   const old = num(row.oldPrice), nw = num(row.newPrice)
