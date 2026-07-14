@@ -61,16 +61,21 @@ const statusFR: Record<string, string> = { 'In stock': 'En stock', 'Low stock': 
 const sectionTitle: React.CSSProperties = { fontSize: 15, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }
 const emptyBox: React.CSSProperties = { padding: 22, textAlign: 'center', fontSize: 13, color: 'var(--tx-mid)', border: '1px dashed var(--line-soft)', borderRadius: 10, lineHeight: 1.6 }
 
-/** Demand-aware health: a shortage (committed > stock) outranks the forecast status. */
+/** Demand-aware health. "Stock bas" only means something for products that actually
+ *  sell — a 0-sales item at stock 2 is dormant, not low. Uses real velocity/cover, not
+ *  the unreliable static reorderPoint field. */
 function health(p: Product): { label: string; cls: string; tone: 'red' | 'amber' | 'green' } {
-  // Supplier-backed (virtual buffer) products are never a true "rupture" while sellable:
-  // physical at/under 0 just means "restock from supplier", the store keeps selling.
+  // Supplier-backed (virtual buffer): physical at/under 0 just means "restock from
+  // supplier", the store keeps selling — never a true rupture while sellable.
   if ((p.virtualStock || 0) > 0) {
     if (p.sellable <= 0) return { label: 'Rupture', cls: 'badge red', tone: 'red' }
     if (p.stock <= 0) return { label: 'Sur commande', cls: 'badge blue', tone: 'amber' }
   }
-  if (p.available < 0 || p.stock <= 0) return { label: 'Rupture', cls: 'badge red', tone: 'red' }
-  if (p.stock <= p.reorderPoint || p.available <= p.reorderPoint || p.stockStatus === 'Low stock') return { label: 'Stock bas', cls: 'badge amber', tone: 'amber' }
+  if (p.sellable <= 0) return { label: 'Rupture', cls: 'badge red', tone: 'red' }
+  // Only a concern if it moves: cover runs short vs the supplier lead time.
+  if (p.velocity > 0 && (p.available <= p.reorderPointDyn || (p.daysCover != null && p.daysCover < p.leadTime))) {
+    return { label: 'Stock bas', cls: 'badge amber', tone: 'amber' }
+  }
   return { label: 'OK', cls: 'badge green', tone: 'green' }
 }
 

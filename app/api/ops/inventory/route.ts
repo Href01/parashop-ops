@@ -218,13 +218,15 @@ export async function GET(request: NextRequest) {
       const daysCover = velocity > 0 ? Math.round(available / velocity) : (available > 0 ? null : 0)
       const daysLeft = daysCover // kept for backward compat
 
-      // Recommended quantity: top up to (target coverage + lead time) of demand, minus
-      // what's on hand and already inbound. Always cover what we owe (unshipped > stock).
+      // Recommended quantity: top up to (target coverage + lead time) of REAL demand,
+      // minus free stock. No sales → velocity 0 → targetUnits 0 → we only cover what we
+      // actually owe on open orders (owedGap), never a made-up quantity.
+      // (Removed the old fallback that pre-bought the static reorderQuantity for 0-sales
+      // items, and the `− inTransit` term — inTransit is shipped demand that already left
+      // stock, not inbound supply, so subtracting it under-ordered.)
       const owedGap = Math.max(0, toShip - stock)
       const targetUnits = Math.ceil(velocity * (targetDays + leadTime))
-      let suggestedReorder = Math.max(owedGap, targetUnits - available - inTransit)
-      if (sold30d === 0 && stock <= reorderPoint) suggestedReorder = Math.max(owedGap, reorderQuantity, reorderPoint - stock)
-      suggestedReorder = Math.max(0, Math.round(suggestedReorder))
+      let suggestedReorder = Math.max(0, Math.round(Math.max(owedGap, targetUnits - available)))
 
       // ── Stock mode ──────────────────────────────────────────────────────────
       // Hybrid business: some SKUs are truly stocked (hold inventory), others are
@@ -309,7 +311,8 @@ export async function GET(request: NextRequest) {
       stockValue: products.reduce((s, p) => s + Math.max(0, p.stock) * (p.costPrice || 0), 0),
       // Shortages only count STOCKED products — an on-demand SKU at 0 is normal, not a shortage.
       shortages: products.filter((p) => p.mode === 'stock' && p.available < 0).length,
-      lowStock: products.filter((p) => p.mode === 'stock' && p.available >= 0 && (p.stock <= p.reorderPoint || p.stockStatus === 'Low stock')).length,
+      // Low stock only for STOCKED products that actually sell and run short vs lead time.
+      lowStock: products.filter((p) => p.mode === 'stock' && p.available >= 0 && p.velocity > 0 && (p.available <= p.reorderPointDyn || (p.daysCover != null && p.daysCover < p.leadTime))).length,
       // Truly out of stock = nothing sellable (physical + virtual ≤ 0).
       outOfStock: products.filter((p) => p.sellable <= 0).length,
       // Sellable only thanks to the supplier-backed buffer (physical ≤ 0, virtual > 0).
