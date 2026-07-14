@@ -48,6 +48,8 @@ export default function SenditLabPage() {
   const [filter, setFilter] = useState<string>('sendit_only')
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
+  const [returnFor, setReturnFor] = useState<{ stagingId: number; orderId: number; name: string } | null>(null)
+  const [returnForm, setReturnForm] = useState({ fee: '', restock: true })
 
   const syncMatched = async () => {
     if (busy) return
@@ -91,6 +93,24 @@ export default function SenditLabPage() {
       load()
       setTimeout(() => setNotice(null), 6000)
     } catch (e) { setError(e instanceof Error ? e.message : 'Action impossible') }
+    finally { setBusy(false) }
+  }
+
+  const submitReturn = async () => {
+    if (busy || !returnFor) return
+    setBusy(true); setError(null); setNotice(null)
+    try {
+      const res = await fetch(`/api/ops/orders/${returnFor.orderId}/return`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deliveryFee: Number(returnForm.fee) || 0, restock: returnForm.restock }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d.error || `Erreur ${res.status}`)
+      setNotice(`Retour enregistré pour ${returnFor.name} (commande #${returnFor.orderId}).`)
+      setReturnFor(null); setReturnForm({ fee: '', restock: true })
+      load()
+      setTimeout(() => setNotice(null), 6000)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Retour impossible') }
     finally { setBusy(false) }
   }
 
@@ -214,9 +234,12 @@ export default function SenditLabPage() {
                         <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 5, color: b.fg, background: b.bg }}>{STATE_LABEL[r.state] || r.state}</span>
                       </td>
                       <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        {r.promoted ? (
-                          <span style={{ fontSize: 11, color: 'var(--green)' }}>✓ officiel</span>
-                        ) : r.state === 'sendit_only' ? (
+                        {(() => { const oid = r.promotedOrderId ?? r.matchedOrderId; return oid ? (
+                          <div style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+                            {r.promoted && <span style={{ fontSize: 11, color: 'var(--green)' }}>✓ officiel</span>}
+                            <button onClick={() => { setReturnForm({ fee: '', restock: true }); setReturnFor({ stagingId: r.id, orderId: oid, name: r.name }) }} title="Marquer cette commande comme retour / échange" style={{ fontSize: 11, background: 'none', border: '1px solid var(--amber)', borderRadius: 6, padding: '2px 8px', color: 'var(--amber)', cursor: 'pointer' }}>↩️ Retour</button>
+                          </div>
+                        ) : null })() || (r.state === 'sendit_only' ? (
                           <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                             <button className="btn-modern btn-sm btn-subtle" onClick={() => setSelectedId(r.id)} style={{ fontSize: 11 }}>
                               {(r.assignedProducts?.length ?? 0) > 0 ? `✓ ${r.assignedProducts!.length} prod.` : 'Produits'}
@@ -228,7 +251,7 @@ export default function SenditLabPage() {
                           </div>
                         ) : (
                           <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>—</span>
-                        )}
+                        ))}
                       </td>
                     </tr>
                   )
@@ -248,6 +271,31 @@ export default function SenditLabPage() {
           onClose={() => setSelectedId(null)}
           onSaved={() => { setSelectedId(null); load() }}
         />
+      )}
+
+      {returnFor && (
+        <div onClick={() => !busy && setReturnFor(null)} style={{ position: 'fixed', inset: 0, background: 'oklch(0.2 0.02 350 / 0.4)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: 'min(440px, 100%)', background: 'var(--bg-1)', border: '1px solid var(--line)', borderRadius: 'var(--radius-lg)', padding: 20 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 4 }}>↩️ Retour / Échange</div>
+            <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginBottom: 16 }}>{returnFor.name} · commande #{returnFor.orderId}</div>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 12, color: 'var(--tx-lo)', marginBottom: 14 }}>
+              Frais de livraison retour (MAD)
+              <input autoFocus type="number" value={returnForm.fee} onChange={(e) => setReturnForm((f) => ({ ...f, fee: e.target.value }))}
+                onKeyDown={(e) => { if (e.key === 'Enter') submitReturn(); if (e.key === 'Escape') setReturnFor(null) }}
+                placeholder="0 si le client repaie la livraison"
+                style={{ fontSize: 14, padding: '8px 10px', borderRadius: 8, border: '1px solid var(--line)', background: 'var(--bg-2)', color: 'var(--tx-hi)' }} />
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--tx-hi)', cursor: 'pointer', marginBottom: 6 }}>
+              <input type="checkbox" checked={returnForm.restock} onChange={(e) => setReturnForm((f) => ({ ...f, restock: e.target.checked }))} />
+              Remettre les produits en stock vendable
+            </label>
+            <p style={{ fontSize: 11, color: 'var(--tx-faint)', margin: '0 0 18px' }}>Le frais est déduit du Profit net et du Cash net sur le tableau de bord.</p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setReturnFor(null)} disabled={busy} style={{ fontSize: 13, background: 'none', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 14px', color: 'var(--tx-mid)', cursor: 'pointer' }}>Annuler</button>
+              <button onClick={submitReturn} disabled={busy} style={{ fontSize: 13, background: 'var(--amber)', border: 'none', borderRadius: 8, padding: '8px 16px', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>{busy ? '…' : 'Enregistrer'}</button>
+            </div>
+          </div>
+        </div>
       )}
     </BosShell>
   )
