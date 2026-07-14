@@ -484,22 +484,18 @@ export default function InventoryPage() {
                       <th>Produit</th>
                       <th>État</th>
                       <th className="r">Stock</th>
-                      <th className="r col-detail" title="Commandes non encore expédiées (prélèvent du stock)">À exp.</th>
-                      <th className="r" title="Disponible = stock − à expédier">Dispo</th>
-                      <th className="r" title="Vitesse de vente, unités/jour (pondéré 7j/30j) · ↑ accélère ↓ ralentit">Vél./j</th>
-                      <th className="r col-detail" title="Couverture = dispo ÷ vélocité (jours avant rupture)">Couv.</th>
+                      <th className="r" title="Ce qui se vend par semaine (moyenne sur 30j) · ↑ accélère ↓ ralentit">Se vend</th>
                       <th className="r col-detail" title="Marge = (prix de vente − coût) ÷ prix de vente">Marge</th>
-                      <th className="r" title="Quantité recommandée à commander — survole le chiffre pour le calcul détaillé">Reco</th>
-                      <th className="col-detail" title="Fournisseur & stock virtuel">Fourn.</th>
-                      <th className="r col-detail" title="Valeur du stock au coût = max(0, stock) × coût unitaire">Valeur</th>
+                      <th className="r" title="À acheter au fournisseur — pour les produits que tu stockes. Survole pour le détail.">À commander</th>
+                      <th className="col-detail" title="Fournisseur & stock virtuel">Fournisseur</th>
                       <th />
                     </tr>
                   </thead>
                   <tbody>
                     {loading ? (
-                      [1, 2, 3, 4, 5].map((i) => (<tr key={i}><td colSpan={10}><div className="skeleton-line" /></td></tr>))
+                      [1, 2, 3, 4, 5].map((i) => (<tr key={i}><td colSpan={8}><div className="skeleton-line" /></td></tr>))
                     ) : rows.length === 0 ? (
-                      <tr><td colSpan={10}><div style={{ textAlign: 'center', padding: '46px 20px' }}>
+                      <tr><td colSpan={8}><div style={{ textAlign: 'center', padding: '46px 20px' }}>
                         <div style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}><Package style={{ width: 26, height: 26, color: 'var(--tx-faint)' }} /></div>
                         <p style={{ fontSize: 14.5, fontWeight: 600, color: 'var(--tx-mid)', margin: '0 0 4px' }}>Aucun produit</p>
                         <p style={{ fontSize: 13, color: 'var(--tx-faint)', margin: 0 }}>Ajuste les filtres pour voir tes produits.</p>
@@ -508,6 +504,7 @@ export default function InventoryPage() {
                       rows.map((p) => {
                         const h = health(p)
                         const open = expanded === p.id
+                        const weekly = p.sold30d > 0 ? Math.round((p.sold30d / 30) * 7 * 10) / 10 : 0
                         return (
                           <Fragment key={p.id}>
                             <tr onClick={() => setExpanded(open ? null : p.id)} style={{ cursor: 'pointer' }}>
@@ -523,49 +520,32 @@ export default function InventoryPage() {
                                   </div>
                                 </div>
                               </td>
-                              <td>
-                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                                  <span title={`Risque rupture: ${p.stockoutRisk}`} style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: (p.stockoutRisk === 'out' || p.stockoutRisk === 'high') ? 'var(--rose-bright)' : p.stockoutRisk === 'medium' ? 'var(--amber)' : p.stockoutRisk === 'low' ? 'var(--green)' : 'var(--line-soft)' }} />
-                                  <span className={h.cls}>{h.label}</span>
-                                </span>
-                              </td>
+                              <td><span className={h.cls}>{h.label}</span></td>
                               <td className="r">
-                                <button onClick={(e) => { e.stopPropagation(); openSupplierModal(p) }} title="Régler le stock virtuel (vendable sur commande, hors valeur stock)"
+                                <button onClick={(e) => { e.stopPropagation(); openSupplierModal(p) }} title="Stock physique · clique pour régler le stock fournisseur"
                                   style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'right', width: '100%' }}>
-                                  <span className={`num fw600 ${p.stock <= 0 ? 'neg' : p.stock <= p.reorderPoint ? 'tx-lo' : ''}`}>{p.stock}</span>
-                                  {p.virtualStock > 0 ? (
-                                    <div className="fs11" style={{ whiteSpace: 'nowrap', color: 'var(--rose-bright)' }}>
-                                      +{p.virtualStock} virt · vend. <b>{p.sellable}</b>
-                                    </div>
-                                  ) : (
-                                    <div className="fs11" style={{ whiteSpace: 'nowrap', color: 'var(--tx-faint)', textDecoration: 'underline' }}>+ virtuel</div>
-                                  )}
+                                  <span className={`num fw600 ${p.sellable <= 0 ? 'neg' : p.stock <= 0 ? 'tx-lo' : ''}`}>{Math.max(0, p.stock)}</span>
+                                  {p.virtualStock > 0 && <div className="fs11" style={{ whiteSpace: 'nowrap', color: 'var(--tx-faint)' }}>+{p.virtualStock} fourn.</div>}
                                 </button>
                               </td>
-                              <td className="r col-detail">
-                                {p.toShip > 0
-                                  ? <span className="num fw600" style={{ color: p.available < 0 ? 'var(--rose-bright)' : 'var(--tx-hi)' }}>{p.toShip}</span>
-                                  : <span className="tx-lo">—</span>}
-                              </td>
-                              <td className="r"><span className="num fw600" style={{ color: p.available < 0 ? 'var(--rose-bright)' : 'var(--tx-hi)' }}>{p.available}</span></td>
                               <td className="r">
-                                {p.velocity > 0
-                                  ? <span className="num fw600" style={{ color: 'var(--tx-hi)' }} title={`${p.sold30d} vendus/30j · ${p.sold7d} sur 7j`}>{p.velocity.toFixed(1)}<span style={{ color: p.trend > 0.25 ? 'var(--green)' : p.trend < -0.25 ? 'var(--rose-bright)' : 'var(--tx-faint)', marginLeft: 2 }}>{p.trend > 0.25 ? '↑' : p.trend < -0.25 ? '↓' : ''}</span></span>
+                                {p.sold30d > 0
+                                  ? <span className="num fw600" style={{ color: 'var(--tx-hi)' }} title={`${p.sold30d} vendus sur 30j · ${p.sold7d} sur 7j`}>{weekly}<span className="tx-faint" style={{ fontWeight: 400 }}>/sem</span><span style={{ color: p.trend > 0.25 ? 'var(--green)' : p.trend < -0.25 ? 'var(--rose-bright)' : 'var(--tx-faint)', marginLeft: 3 }}>{p.trend > 0.25 ? '↑' : p.trend < -0.25 ? '↓' : ''}</span></span>
                                   : <span className="tx-lo">—</span>}
                               </td>
-                              <td className="r col-detail">{p.daysCover != null ? <span className={`num ${p.daysCover < p.leadTime ? 'neg' : p.daysCover < p.leadTime * 2 ? 'tx-lo' : ''}`}>{p.daysCover}j</span> : <span className="tx-lo">{p.velocity > 0 ? '0j' : '∞'}</span>}</td>
                               <td className="r col-detail">{p.marginPct > 0 ? <span className="num" style={{ color: p.marginPct >= 0.4 ? 'var(--green)' : p.marginPct >= 0.2 ? 'var(--tx-hi)' : 'var(--amber)' }}>{Math.round(p.marginPct * 100)}%</span> : <span className="tx-lo">—</span>}</td>
                               <td className="r">
                                 {p.suggestedReorder > 0
                                   ? <span className="num fw700" style={{ color: 'var(--rose-bright)', cursor: 'help', borderBottom: '1px dotted rgba(225,29,72,.45)' }} title={p.explanation}>{p.suggestedReorder}</span>
-                                  : <span className="tx-lo" style={{ cursor: 'help' }} title={p.explanation}>—</span>}
+                                  : p.mode === 'on_demand'
+                                    ? <span className="tx-faint" title="Commandé au fournisseur à la demande — pas de pré-achat">🤝</span>
+                                    : <span style={{ color: 'var(--green)', cursor: 'help' }} title={p.explanation}>✓</span>}
                               </td>
                               <td className="col-detail">
                                 <button onClick={(e) => { e.stopPropagation(); openSupplierModal(p) }} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: p.supplier ? 'var(--tx-lo)' : 'var(--rose-bright)', fontSize: 12, textDecoration: p.supplier ? 'none' : 'underline' }} title="Modifier le fournisseur">
                                   {p.supplier || '+ Ajouter'}
                                 </button>
                               </td>
-                              <td className="r num fw600 col-detail">{p.costPrice ? money(Math.max(0, p.stock) * p.costPrice) : '—'}</td>
                               <td className="r" style={{ whiteSpace: 'nowrap' }}>
                                 <button className="btn-modern btn-sm btn-subtle" onClick={(e) => { e.stopPropagation(); openAdjustModal(p, p.suggestedReorder || undefined) }}>Ajuster</button>
                                 {(p.openOrdersCount > 0 || p.sold30d > 0) && <ChevronDown style={{ width: 15, height: 15, marginLeft: 6, verticalAlign: 'middle', color: 'var(--tx-faint)', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform .15s' }} />}
@@ -575,10 +555,9 @@ export default function InventoryPage() {
                               const unshipped = p.openOrders.filter((o) => !o.shipped)
                               const shipped = p.openOrders.filter((o) => o.shipped)
                               const maxCh = Math.max(1, ...p.salesByChannel.map((c) => c.units))
-                              const weekly = p.sold30d > 0 ? Math.round((p.sold30d / 30) * 7 * 10) / 10 : 0
                               return (
                               <tr>
-                                <td colSpan={10} style={{ background: 'var(--bg-2)', padding: '14px 16px' }}>
+                                <td colSpan={8} style={{ background: 'var(--bg-2)', padding: '14px 16px' }}>
                                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 28 }}>
                                     {/* Open orders — split shipped vs to-ship */}
                                     <div style={{ flex: '1 1 300px', minWidth: 250 }}>
