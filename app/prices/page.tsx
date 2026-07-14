@@ -75,20 +75,33 @@ function Delta({ v }: { v: number | null }) {
   return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, fontWeight: 600, color: col }}><Icon style={{ width: 11, height: 11 }} />{pct(v)}</span>
 }
 
-/** One before→after row. `strong` highlights the money metric; `sub` shows the sample/caveat. */
-function Metric({ label, before, after, delta, fmt, strong, sub }: { label: string; before: string; after: string; delta: number | null; fmt?: boolean; strong?: boolean; sub?: string }) {
+// Aligned before/after table. Every row shares this column template so values line up.
+const ROW_COLS = 'minmax(96px, 1fr) 72px 84px 76px'
+
+function RowHead() {
+  const cell = { fontSize: 10, color: 'var(--tx-faint)', textTransform: 'uppercase' as const, letterSpacing: '0.04em', textAlign: 'right' as const }
   return (
-    <div style={{ padding: strong ? '9px 11px' : '7px 0', background: strong ? 'var(--bg-2)' : undefined, borderRadius: strong ? 8 : undefined, border: strong ? '1px solid var(--line-soft)' : undefined }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-        <span style={{ fontSize: strong ? 12 : 11.5, fontWeight: strong ? 700 : 400, color: strong ? 'var(--tx-hi)' : 'var(--tx-lo)' }}>{label}</span>
-        <span style={{ display: 'flex', alignItems: 'baseline', gap: 7, fontFamily: 'var(--mono)', fontSize: strong ? 13.5 : 12.5, fontVariantNumeric: 'tabular-nums' }}>
-          <span style={{ color: 'var(--tx-faint)' }}>{before}</span>
-          <span style={{ color: 'var(--tx-faint)' }}>→</span>
-          <b style={{ color: strong ? 'var(--tx-hi)' : 'var(--tx-hi)', fontSize: strong ? 15 : undefined }}>{after}{fmt ? ' MAD' : ''}</b>
-          <Delta v={delta} />
-        </span>
+    <div style={{ display: 'grid', gridTemplateColumns: ROW_COLS, gap: 10, padding: '0 2px 6px' }}>
+      <span />
+      <span style={cell}>Avant</span>
+      <span style={cell}>Après</span>
+      <span style={cell}>Δ</span>
+    </div>
+  )
+}
+
+/** One before→after row. `hero` highlights the money metric; `sub` shows the sample/caveat. */
+function Row({ label, before, after, delta, hero, sub }: { label: string; before: string; after: string; delta: number | null; hero?: boolean; sub?: string }) {
+  const numeric = { textAlign: 'right' as const, fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums' as const }
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: ROW_COLS, gap: 10, alignItems: 'baseline', padding: hero ? '9px 10px' : '7px 2px', borderRadius: hero ? 8 : 0, background: hero ? 'var(--bg-2)' : undefined, border: hero ? '1px solid var(--line-soft)' : undefined }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: hero ? 12.5 : 12, fontWeight: hero ? 700 : 400, color: hero ? 'var(--tx-hi)' : 'var(--tx-lo)' }}>{label}</div>
+        {sub && <div style={{ fontSize: 10, color: 'var(--tx-faint)', marginTop: 1 }}>{sub}</div>}
       </div>
-      {sub && <div style={{ fontSize: 10.5, color: 'var(--tx-faint)', marginTop: 2 }}>{sub}</div>}
+      <span style={{ ...numeric, fontSize: 12, color: 'var(--tx-faint)' }}>{before}</span>
+      <b style={{ ...numeric, fontSize: hero ? 15 : 12.5, fontWeight: hero ? 800 : 600, color: 'var(--tx-hi)' }}>{after}</b>
+      <span style={{ display: 'flex', justifyContent: 'flex-end' }}><Delta v={delta} /></span>
     </div>
   )
 }
@@ -151,9 +164,14 @@ export default function PricesPage() {
           {data?.products.map((p) => {
             const V = VERDICT[p.verdict.code]
             const hist = data.history[p.productId] || []
+            const ladder = priceLadder(hist)
+            const days = p.window.daysAfter
+            const lowViews = Math.min(p.sample.viewsBefore, p.sample.viewsAfter) < 20
+            const convStr = (v: number | null) => (v != null ? `${(v * 100).toFixed(1)}%` : '—')
             return (
-              <div key={p.productId} className="card-modern pz-card" style={{ padding: 16, borderLeft: `3px solid ${V.fg}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+              <div key={p.productId} className="card-modern pz-card" style={{ padding: 0, borderLeft: `3px solid ${V.fg}`, overflow: 'hidden' }}>
+                {/* Zone 1 — what changed + verdict */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', padding: '14px 16px 12px' }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx-hi)' }}>{p.name}</div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
@@ -163,7 +181,7 @@ export default function PricesPage() {
                         <b style={{ color: 'var(--tx-hi)' }}>{money(p.change.newPrice)} MAD</b>
                       </span>
                       <span style={{ fontSize: 11, fontWeight: 700, color: (p.change.pct ?? 0) >= 0 ? 'var(--rose-bright)' : 'var(--green)', background: 'var(--bg-3)', padding: '2px 7px', borderRadius: 5 }}>{pct(p.change.pct)}</span>
-                      <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>{dfmt(p.change.changedAt)} · {p.window.daysAfter}j de recul</span>
+                      <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>{dfmt(p.change.changedAt)} · {days}j de recul</span>
                     </div>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 5 }}>
@@ -172,39 +190,39 @@ export default function PricesPage() {
                   </div>
                 </div>
 
-                {/* Verdict — the plain-language takeaway */}
-                <p style={{ fontSize: 13, color: 'var(--tx-hi)', margin: '11px 0 10px', lineHeight: 1.55 }}>{p.verdict.text}</p>
-
-                {/* The money metric, highlighted — then the supporting ones */}
-                <Metric label="Marge / jour" before={money(p.before.perDay.margin)} after={money(p.after.perDay.margin)} delta={p.deltas.marginPerDay} fmt strong
-                  sub={`${money(p.before.perDay.margin * p.window.daysAfter)} → ${money(p.after.perDay.margin * p.window.daysAfter)} MAD sur ${p.window.daysAfter}j`} />
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0 24px', marginTop: 6 }}>
-                  <Metric label="Ventes / jour" before={p.before.perDay.units.toFixed(1)} after={p.after.perDay.units.toFixed(1)} delta={p.deltas.unitsPerDay}
-                    sub={`${p.sample.unitsBefore} vente(s) avant · ${p.sample.unitsAfter} après`} />
-                  <Metric label="CA / jour" before={money(p.before.perDay.revenue)} after={money(p.after.perDay.revenue)} delta={p.deltas.revenuePerDay} fmt />
-                  <Metric
-                    label="Conversion (vue→achat)"
-                    before={p.before.perDay.conv != null ? `${(p.before.perDay.conv * 100).toFixed(1)}%` : '—'}
-                    after={p.after.perDay.conv != null ? `${(p.after.perDay.conv * 100).toFixed(1)}%` : '—'}
-                    delta={p.deltas.conv}
-                    sub={Math.min(p.sample.viewsBefore, p.sample.viewsAfter) < 20 ? 'peu de vues — indicatif' : undefined}
-                  />
+                {/* Zone 2 — the plain-language takeaway */}
+                <div style={{ padding: '0 16px 14px' }}>
+                  <p style={{ fontSize: 13, color: 'var(--tx-hi)', margin: 0, lineHeight: 1.55 }}>{p.verdict.text}</p>
                 </div>
 
-                {/* Price effect — honest read, replaces the cryptic elasticity number */}
-                <div style={{ marginTop: 12, padding: '10px 12px', background: 'var(--bg-2)', borderRadius: 8, border: '1px solid var(--line-soft)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                {/* Zone 3 — aligned before/after table, money metric first */}
+                <div style={{ padding: '12px 16px', borderTop: '1px solid var(--line-soft)' }}>
+                  <RowHead />
+                  <Row label="Marge / jour" before={money(p.before.perDay.margin)} after={`${money(p.after.perDay.margin)} MAD`} delta={p.deltas.marginPerDay} hero
+                    sub={`${money(p.before.perDay.margin * days)} → ${money(p.after.perDay.margin * days)} MAD sur ${days}j`} />
+                  <div style={{ marginTop: 4 }}>
+                    <Row label="Ventes / jour" before={p.before.perDay.units.toFixed(1)} after={p.after.perDay.units.toFixed(1)} delta={p.deltas.unitsPerDay}
+                      sub={`${p.sample.unitsBefore} → ${p.sample.unitsAfter} ventes`} />
+                    <Row label="CA / jour" before={money(p.before.perDay.revenue)} after={`${money(p.after.perDay.revenue)} MAD`} delta={p.deltas.revenuePerDay} />
+                    <Row label="Conversion (vue→achat)" before={convStr(p.before.perDay.conv)} after={convStr(p.after.perDay.conv)} delta={p.deltas.conv}
+                      sub={lowViews ? 'peu de vues — indicatif' : undefined} />
+                  </div>
+                </div>
+
+                {/* Zone 4 — honest read of the price effect */}
+                <div style={{ padding: '12px 16px', borderTop: '1px solid var(--line-soft)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 3 }}>
                     <span style={{ fontSize: 11, fontWeight: 700, color: p.priceEffect.reliable ? 'var(--tx-hi)' : 'var(--tx-mid)' }}>Effet du prix : {p.priceEffect.label}</span>
                     {p.priceEffect.reliable && p.elasticity != null && (
                       <span style={{ fontSize: 10.5, fontFamily: 'var(--mono)', color: 'var(--tx-faint)' }}>élasticité {Math.abs(p.elasticity).toFixed(1)}</span>
                     )}
                   </div>
-                  <p style={{ fontSize: 11.5, color: 'var(--tx-lo)', margin: '3px 0 0', lineHeight: 1.5 }}>{p.priceEffect.note}</p>
+                  <p style={{ fontSize: 11.5, color: 'var(--tx-lo)', margin: 0, lineHeight: 1.5 }}>{p.priceEffect.note}</p>
                 </div>
 
-                {/* Price ladder — distinct levels sold at, no noisy reversals */}
-                {(() => { const ladder = priceLadder(hist); return ladder.length > 1 ? (
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+                {/* Zone 5 — price ladder footer (distinct levels, no noisy reversals) */}
+                {ladder.length > 1 && (
+                  <div style={{ padding: '10px 16px', borderTop: '1px solid var(--line-soft)', background: 'var(--bg-1)', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                     <span style={{ fontSize: 10.5, color: 'var(--tx-faint)' }}>Prix pratiqués :</span>
                     {ladder.map((v, i) => (
                       <span key={v} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -214,7 +232,7 @@ export default function PricesPage() {
                     ))}
                     <span style={{ fontSize: 10, color: 'var(--tx-faint)' }}>MAD</span>
                   </div>
-                ) : null })()}
+                )}
               </div>
             )
           })}
