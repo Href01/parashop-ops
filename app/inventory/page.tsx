@@ -1,6 +1,6 @@
 'use client'
 
-import { Fragment, useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import BosShell from '@/components/BosShell'
 import {
@@ -372,13 +372,13 @@ export default function InventoryPage() {
             {(() => {
               const marginPct = summary && summary.stockRetailValue > 0 ? Math.round((summary.stockMarginValue / summary.stockRetailValue) * 100) : 0
               return (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 mb-4 inv-fade">
-                  <Kpi tone="violet" icon={<DollarSign />} label="Valeur (coût)" value={money(summary?.stockValue || 0)} sub="prix d'achat du stock" />
-                  <Kpi tone="green" icon={<DollarSign />} label="Valeur (vente)" value={money(summary?.stockRetailValue || 0)} sub={`marge ${money(summary?.stockMarginValue || 0)} · ${marginPct}%`} />
-                  <Kpi tone="red" icon={<TrendingDown />} label="CA à risque" value={money(summary?.revenueAtRisk || 0)} sub="ventes perdues (ruptures)" alert={(summary?.revenueAtRisk || 0) > 0} />
-                  <Kpi tone="red" icon={<XCircle />} label="Ruptures" value={String(summary?.shortages || 0)} sub="commandé > stock" alert={(summary?.shortages || 0) > 0} />
-                  <Kpi tone="amber" icon={<AlertTriangle />} label="Stock bas" value={String(summary?.lowStock || 0)} sub="sous le seuil" />
-                  <Kpi tone="green" icon={<ShoppingCart />} label="À recommander" value={String(summary?.reorderProducts || 0)} sub={`${money(summary?.reorderValue || 0)} · +${money(summary?.reorderMargin || 0)} marge`} />
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4 inv-stagger">
+                  <Kpi tone="violet" icon={<DollarSign />} label="Valeur (coût)" amount={summary?.stockValue || 0} format="money" sub="prix d'achat du stock" />
+                  <Kpi tone="green" icon={<DollarSign />} label="Valeur (vente)" amount={summary?.stockRetailValue || 0} format="money" sub={`marge ${money(summary?.stockMarginValue || 0)} · ${marginPct}%`} />
+                  <Kpi tone="red" icon={<TrendingDown />} label="CA à risque" amount={summary?.revenueAtRisk || 0} format="money" sub="ventes perdues (ruptures)" alert={(summary?.revenueAtRisk || 0) > 0} />
+                  <Kpi tone="red" icon={<XCircle />} label="Ruptures" amount={summary?.shortages || 0} format="int" sub="commandé > stock" alert={(summary?.shortages || 0) > 0} />
+                  <Kpi tone="amber" icon={<AlertTriangle />} label="Stock bas" amount={summary?.lowStock || 0} format="int" sub="sous le seuil" />
+                  <Kpi tone="green" icon={<ShoppingCart />} label="À recommander" amount={summary?.reorderProducts || 0} format="int" sub={`${money(summary?.reorderValue || 0)} · +${money(summary?.reorderMargin || 0)} marge`} />
                 </div>
               )
             })()}
@@ -689,11 +689,11 @@ export default function InventoryPage() {
             ) : (
               <>
                 {/* KPIs */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-                  <Kpi tone="violet" icon={<DollarSign />} label="Total dépensé" value={`${money(purchases?.summary.totalSpent || 0)}`} sub="MAD sur la période" />
-                  <Kpi tone="blue" icon={<Package />} label="Unités achetées" value={String(purchases?.summary.unitsPurchased || 0)} sub="entrées de stock" />
-                  <Kpi tone="green" icon={<ShoppingCart />} label="Commandes" value={String(purchases?.summary.purchaseCount || 0)} sub={`${purchases?.summary.lineCount || 0} lignes d'achat`} />
-                  <Kpi tone="amber" icon={<Truck />} label="Produits" value={String(purchases?.summary.productsRestocked || 0)} sub="réapprovisionnés" />
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5 inv-stagger">
+                  <Kpi tone="violet" icon={<DollarSign />} label="Total dépensé" amount={purchases?.summary.totalSpent || 0} format="money" sub="MAD sur la période" />
+                  <Kpi tone="blue" icon={<Package />} label="Unités achetées" amount={purchases?.summary.unitsPurchased || 0} format="int" sub="entrées de stock" />
+                  <Kpi tone="green" icon={<ShoppingCart />} label="Commandes" amount={purchases?.summary.purchaseCount || 0} format="int" sub={`${purchases?.summary.lineCount || 0} lignes d'achat`} />
+                  <Kpi tone="amber" icon={<Truck />} label="Produits" amount={purchases?.summary.productsRestocked || 0} format="int" sub="réapprovisionnés" />
                 </div>
 
                 {(purchases?.byProduct.length ?? 0) === 0 ? (
@@ -1053,13 +1053,27 @@ export default function InventoryPage() {
 
       <style jsx>{`
         .inv-table { font-size: 12px; }
-        .inv-table :global(th) { font-size: 10.5px; letter-spacing: .01em; text-transform: uppercase; color: var(--tx-faint); padding-top: 8px; padding-bottom: 8px; }
-        .inv-table :global(td) { padding-top: 9px; padding-bottom: 9px; }
+        .inv-table :global(th) { font-size: 10px; letter-spacing: .04em; text-transform: uppercase; color: var(--tx-faint); font-weight: 700; padding: 8px 10px; }
+        .inv-table :global(td) { padding: 10px; vertical-align: middle; }
+        /* Tabular figures so every column of numbers lines up cleanly. */
+        .inv-table :global(.num), .inv-table :global(td.r), .inv-table :global(th.r) { font-variant-numeric: tabular-nums; }
         .inv-table :global(tbody tr) { transition: background .12s ease; }
-        .inv-fade { animation: invFade .32s cubic-bezier(.16,1,.3,1) both; }
-        @keyframes invFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-        :global(.inv-card) { transition: transform .14s ease, box-shadow .14s ease; }
-        :global(.inv-card:hover) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0,0,0,.07); }
+        .inv-table :global(tbody tr:hover) { background: var(--bg-2); }
+        .inv-fade { animation: invFade .4s cubic-bezier(.16,1,.3,1) both; }
+        @keyframes invFade { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        /* Cascade: children appear one after another for a lively, ordered entrance. */
+        .inv-stagger > :global(*) { animation: invFade .44s cubic-bezier(.16,1,.3,1) both; }
+        .inv-stagger > :global(*):nth-child(1) { animation-delay: .03s; }
+        .inv-stagger > :global(*):nth-child(2) { animation-delay: .07s; }
+        .inv-stagger > :global(*):nth-child(3) { animation-delay: .11s; }
+        .inv-stagger > :global(*):nth-child(4) { animation-delay: .15s; }
+        .inv-stagger > :global(*):nth-child(5) { animation-delay: .19s; }
+        .inv-stagger > :global(*):nth-child(6) { animation-delay: .23s; }
+        :global(.inv-card) { transition: transform .16s cubic-bezier(.16,1,.3,1), box-shadow .16s ease, border-color .16s ease; }
+        :global(.inv-card:hover) { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(0,0,0,.08); }
+        @media (prefers-reduced-motion: reduce) {
+          .inv-fade, .inv-stagger > :global(*), :global(.inv-card) { animation: none !important; transition: none !important; }
+        }
       `}</style>
     </BosShell>
   )
@@ -1090,7 +1104,28 @@ function TabBtn({ active, onClick, icon, label, count }: { active: boolean; onCl
   )
 }
 
-function Kpi({ tone, icon, label, value, sub, alert }: { tone: 'blue' | 'amber' | 'red' | 'green' | 'violet'; icon: React.ReactNode; label: string; value: string; sub: string; alert?: boolean }) {
+// Count up to a target (ease-out); animates only when the value changes, and respects
+// reduced-motion. Gives the KPI numbers a lively "tick up" on load.
+function useCountUp(target: number, duration = 600) {
+  const [v, setV] = useState(target)
+  const prev = useRef(target)
+  useEffect(() => {
+    const from = prev.current, to = target
+    if (from === to || typeof window === 'undefined' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) { prev.current = to; setV(to); return }
+    let raf = 0
+    const start = performance.now()
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration)
+      setV(from + (to - from) * (1 - Math.pow(1 - t, 3)))
+      if (t < 1) raf = requestAnimationFrame(tick); else { prev.current = to; setV(to) }
+    }
+    raf = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(raf)
+  }, [target, duration])
+  return v
+}
+
+function Kpi({ tone, icon, label, amount, format, sub, alert }: { tone: 'blue' | 'amber' | 'red' | 'green' | 'violet'; icon: React.ReactNode; label: string; amount: number; format: 'money' | 'int'; sub: string; alert?: boolean }) {
   const map: Record<string, { bg: string; fg: string }> = {
     blue: { bg: 'var(--blue-bg, #eff6ff)', fg: 'var(--blue, #2563eb)' },
     amber: { bg: 'var(--amber-bg)', fg: 'var(--amber)' },
@@ -1099,13 +1134,17 @@ function Kpi({ tone, icon, label, value, sub, alert }: { tone: 'blue' | 'amber' 
     violet: { bg: 'var(--violet-bg, #f5f3ff)', fg: 'var(--violet, #7c3aed)' },
   }
   const c = map[tone]
+  const shown = useCountUp(amount)
+  const n = shown === amount ? amount : Math.round(shown)
+  const display = format === 'money' ? money(n) : String(n)
   return (
-    <div className="card-modern inv-card" style={{ padding: '10px 12px', ...(alert ? { borderColor: 'var(--rose-bright)' } : {}) }}>
-      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: c.fg, background: c.bg, padding: '2px 7px', borderRadius: 5, fontSize: 11, fontWeight: 600 }}>
+    <div className="card-modern inv-card" style={{ padding: '12px 13px', position: 'relative', overflow: 'hidden', ...(alert ? { borderColor: 'var(--rose-bright)' } : {}) }}>
+      {alert && <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: 'var(--rose-bright)' }} />}
+      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, color: c.fg, background: c.bg, padding: '2px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600 }}>
         <span style={{ display: 'inline-flex', width: 13, height: 13 }}>{icon}</span>{label}
       </div>
-      <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--tx-hi)', marginTop: 6, lineHeight: 1 }}>{value}</div>
-      <div className="tx-faint" style={{ marginTop: 2, fontSize: 10.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={sub}>{sub}</div>
+      <div style={{ fontSize: 23, fontWeight: 800, color: 'var(--tx-hi)', marginTop: 8, lineHeight: 1, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em' }}>{display}</div>
+      <div className="tx-faint" style={{ marginTop: 3, fontSize: 10.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={sub}>{sub}</div>
     </div>
   )
 }
