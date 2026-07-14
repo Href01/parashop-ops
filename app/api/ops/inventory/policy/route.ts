@@ -49,6 +49,17 @@ export async function PUT(req: NextRequest) {
       const v = Math.max(1, Math.min(120, Math.trunc(Number(b.leadDefault)) || 5))
       await setSetting('reorder_lead_time_default', String(v))
     }
+    // Per-product stock mode: { productId, mode: 'stock' | 'on_demand' | 'auto' }.
+    // 'auto' clears the override so the velocity-based suggestion takes over again.
+    if (b.productId !== undefined && b.mode !== undefined) {
+      const cur = await pool.query(`SELECT value FROM "AppSetting" WHERE key = 'inventory_stock_mode'`)
+      let map: Record<string, string> = {}
+      try { map = JSON.parse(cur.rows[0]?.value || '{}') } catch { /* ignore */ }
+      const pid = String(Math.trunc(Number(b.productId)))
+      if (b.mode === 'stock' || b.mode === 'on_demand') map[pid] = b.mode
+      else delete map[pid] // 'auto' → back to the suggestion
+      await setSetting('inventory_stock_mode', JSON.stringify(map))
+    }
     // Merge a single supplier lead time, or replace the whole map.
     if (b.supplier || b.leadTimes) {
       const cur = await pool.query(`SELECT value FROM "AppSetting" WHERE key = 'reorder_lead_times'`)

@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     // Reorder policy (editable in Réglages): target coverage (days), a default supplier
     // lead time, and per-supplier lead times. These drive the advanced recommendation.
     const settingsRes = await pool.query(
-      `SELECT key, value FROM "AppSetting" WHERE key IN ('reorder_target_days','reorder_lead_time_default','reorder_lead_times')`
+      `SELECT key, value FROM "AppSetting" WHERE key IN ('reorder_target_days','reorder_lead_time_default','reorder_lead_times','inventory_stock_mode')`
     ).catch(() => ({ rows: [] as Array<{ key: string; value: string }> }))
     const settingsMap = new Map(settingsRes.rows.map((r) => [r.key, r.value]))
     const targetDays = Math.max(1, parseInt(settingsMap.get('reorder_target_days') || '15') || 15)
@@ -71,6 +71,11 @@ export async function GET(request: NextRequest) {
       const v = supplier ? Number(leadMap[supplier]) : NaN
       return Number.isFinite(v) && v > 0 ? v : leadDefault
     }
+    // Per-product stock mode override: 'stock' (I hold real inventory → reorder logic
+    // applies) vs 'on_demand' (I source from the supplier per order → no stockout alarms,
+    // no pre-buy). Founder-set; falls back to a velocity-based suggestion.
+    let modeMap: Record<string, 'stock' | 'on_demand'> = {}
+    try { modeMap = JSON.parse(settingsMap.get('inventory_stock_mode') || '{}') } catch { /* ignore */ }
 
     const [productsRes, toShipRes] = await Promise.all([
       pool.query(
@@ -221,9 +226,21 @@ export async function GET(request: NextRequest) {
       if (sold30d === 0 && stock <= reorderPoint) suggestedReorder = Math.max(owedGap, reorderQuantity, reorderPoint - stock)
       suggestedReorder = Math.max(0, Math.round(suggestedReorder))
 
+      // ── Stock mode ──────────────────────────────────────────────────────────
+      // Hybrid business: some SKUs are truly stocked (hold inventory), others are
+      // sourced from the supplier per order. Suggest 'stock' for products that move
+      // enough to be worth holding (~1.5+/week), 'on_demand' for the long tail. The
+      // founder overrides per product. On-demand products are supplier-backed, so a
+      // physical 0 is NOT a stockout — we mute their rupture alarms and pre-buy reco.
+      const suggestedMode: 'stock' | 'on_demand' = sold30d >= 6 ? 'stock' : 'on_demand'
+      const mode: 'stock' | 'on_demand' = modeMap[String(r.id)] === 'stock' ? 'stock' : modeMap[String(r.id)] === 'on_demand' ? 'on_demand' : suggestedMode
+      // On-demand = don't pre-buy; you order from the supplier when a customer buys.
+      if (mode === 'on_demand') suggestedReorder = 0
+
       // Stockout risk from days-of-cover vs the lead time (can we restock in time?).
-      let stockoutRisk: 'out' | 'high' | 'medium' | 'low' | 'none' = 'none'
-      if (sellable <= 0) stockoutRisk = 'out'
+      let stockoutRisk: 'out' | 'high' | 'medium' | 'low' | 'none' | 'on_demand' = 'none'
+      if (mode === 'on_demand') stockoutRisk = 'on_demand' // supplier-sourced → no stockout concept
+      else if (sellable <= 0) stockoutRisk = 'out'
       else if (velocity > 0) {
         if (available <= 0 || (daysCover != null && daysCover < leadTime)) stockoutRisk = 'high'
         else if (available <= reorderPointDyn) stockoutRisk = 'medium'
@@ -265,6 +282,7 @@ export async function GET(request: NextRequest) {
         leadTime, safetyStock, reorderPointDyn, stockoutRisk,
         revenueAtRisk, marginUnit, marginPct: Math.round(marginPct * 100) / 100,
         retailValue, marginValue,
+        mode, suggestedMode,
         explanation,
       }
     })
@@ -283,11 +301,15 @@ export async function GET(request: NextRequest) {
 
     const summary = {
       totalProducts: products.length,
+      // How the catalogue splits: truly stocked vs sourced-on-demand from the supplier.
+      stockedProducts: products.filter((p) => p.mode === 'stock').length,
+      onDemandProducts: products.filter((p) => p.mode === 'on_demand').length,
       // Value counts PHYSICAL stock only, clamped at 0 — the virtual buffer and any
       // negative backorder never inflate (nor deflate) the real inventory value.
       stockValue: products.reduce((s, p) => s + Math.max(0, p.stock) * (p.costPrice || 0), 0),
-      shortages: products.filter((p) => p.available < 0).length,
-      lowStock: products.filter((p) => p.available >= 0 && (p.stock <= p.reorderPoint || p.stockStatus === 'Low stock')).length,
+      // Shortages only count STOCKED products — an on-demand SKU at 0 is normal, not a shortage.
+      shortages: products.filter((p) => p.mode === 'stock' && p.available < 0).length,
+      lowStock: products.filter((p) => p.mode === 'stock' && p.available >= 0 && (p.stock <= p.reorderPoint || p.stockStatus === 'Low stock')).length,
       // Truly out of stock = nothing sellable (physical + virtual ≤ 0).
       outOfStock: products.filter((p) => p.sellable <= 0).length,
       // Sellable only thanks to the supplier-backed buffer (physical ≤ 0, virtual > 0).

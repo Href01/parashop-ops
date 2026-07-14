@@ -25,9 +25,10 @@ type Product = {
   price: number
   velocity: number; trend: number
   leadTime: number; safetyStock: number; reorderPointDyn: number
-  stockoutRisk: 'out' | 'high' | 'medium' | 'low' | 'none'
+  stockoutRisk: 'out' | 'high' | 'medium' | 'low' | 'none' | 'on_demand'
   revenueAtRisk: number; marginUnit: number; marginPct: number
   retailValue: number; marginValue: number; explanation: string
+  mode: 'stock' | 'on_demand'; suggestedMode: 'stock' | 'on_demand'
 }
 type ToShipItem = { productId: number; name: string; brand: string; qty: number; stock: number }
 type ToShipOrder = { id: number; customer: string; city: string; phone: string | null; status: string; created: string; units: number; canFulfill: boolean; items: ToShipItem[] }
@@ -271,6 +272,17 @@ export default function InventoryPage() {
     await fetch('/api/ops/inventory/policy', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => {})
   }
 
+  // Toggle a product between "stocked" and "sourced on-demand", then refresh.
+  const [modeSaving, setModeSaving] = useState<number | null>(null)
+  const setMode = async (productId: number, mode: 'stock' | 'on_demand') => {
+    setModeSaving(productId)
+    // Optimistic: flip locally so the panel updates instantly.
+    setProducts((prev) => prev.map((p) => (p.id === productId ? { ...p, mode } : p)))
+    await savePolicy({ productId, mode })
+    await fetchInventory()
+    setModeSaving(null)
+  }
+
   const submitSupplier = async () => {
     if (!supplierModal || savingSupplier) return
     setSavingSupplier(true)
@@ -504,7 +516,10 @@ export default function InventoryPage() {
                                   {p.image && <img src={p.image} alt={p.name} className="product-thumb" style={{ width: 34, height: 34, objectFit: 'cover', borderRadius: 5, flexShrink: 0 }} />}
                                   <div style={{ minWidth: 0 }}>
                                     <div className="t-strong" title={p.name} style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', maxWidth: 230, lineHeight: 1.3 }}>{p.name}</div>
-                                    <div className="fs11 tx-lo">{p.brand}</div>
+                                    <div className="fs11 tx-lo" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                      <span>{p.brand}</span>
+                                      <span title={p.mode === 'stock' ? 'Tu tiens un vrai stock' : 'Commandé au fournisseur à la demande'} style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: 'var(--bg-3)', color: 'var(--tx-lo)' }}>{p.mode === 'stock' ? '📦 Stocké' : '🤝 À la demande'}</span>
+                                    </div>
                                   </div>
                                 </div>
                               </td>
@@ -603,18 +618,39 @@ export default function InventoryPage() {
                                       )}
                                     </div>
 
-                                    {/* Reorder panel */}
-                                    <div style={{ flex: '0 0 auto', minWidth: 190 }}>
+                                    {/* Reorder panel — mode-aware */}
+                                    <div style={{ flex: '0 0 auto', minWidth: 210 }}>
                                       <div className="fs11 tx-faint" style={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Réapprovisionnement</div>
-                                      <div className="fs12 tx-mid" style={{ lineHeight: 1.8 }}>
-                                        <div>Dispo : <b className="num">{p.available}</b> · Vélocité : <b>{weekly}/sem</b></div>
-                                        <div>Autonomie : <b>{p.daysLeft != null ? `${p.daysLeft} j` : '—'}</b> · Seuil : {p.reorderPoint}</div>
-                                        <div>Fournisseur : <b>{p.supplier || '—'}</b></div>
-                                        {p.suggestedReorder > 0
-                                          ? <div style={{ color: 'var(--rose-bright)', marginTop: 4 }}>🔴 Recommander <b>{p.suggestedReorder}</b> unités</div>
-                                          : <div style={{ color: 'var(--green)', marginTop: 4 }}>✓ Stock suffisant</div>}
+
+                                      {/* Mode toggle: how you actually source this product */}
+                                      <div style={{ display: 'inline-flex', gap: 2, padding: 2, background: 'var(--bg-3)', borderRadius: 8, marginBottom: 8 }}>
+                                        {([['stock', '📦 Je stocke'], ['on_demand', '🤝 À la demande']] as [Product['mode'], string][]).map(([m, label]) => (
+                                          <button key={m} disabled={modeSaving === p.id} onClick={() => setMode(p.id, m)}
+                                            className="btn-modern btn-sm" title={m === 'stock' ? 'Je tiens un vrai stock de ce produit' : 'Je le commande au fournisseur quand un client achète'}
+                                            style={{ background: p.mode === m ? 'var(--card)' : 'transparent', color: p.mode === m ? 'var(--tx-hi)' : 'var(--tx-lo)', boxShadow: p.mode === m ? '0 1px 3px rgba(0,0,0,.08)' : 'none', fontWeight: p.mode === m ? 700 : 500 }}>
+                                            {label}
+                                          </button>
+                                        ))}
                                       </div>
-                                      <button className="btn-modern btn-sm btn-primary" style={{ marginTop: 8 }} onClick={() => openAdjustModal(p, p.suggestedReorder || undefined)}>Enregistrer réappro</button>
+                                      {p.mode !== p.suggestedMode && (
+                                        <div className="fs11 tx-faint" style={{ marginBottom: 6 }}>Suggéré : {p.suggestedMode === 'stock' ? '📦 stocker (se vend souvent)' : '🤝 à la demande (peu de ventes)'}</div>
+                                      )}
+
+                                      <div className="fs12 tx-mid" style={{ lineHeight: 1.8 }}>
+                                        <div>Vendu 30j : <b>{p.sold30d}</b> · <b>{weekly}/sem</b></div>
+                                        <div>Fournisseur : <b>{p.supplier || '—'}</b> · délai {p.leadTime}j</div>
+                                        {p.mode === 'stock' ? (
+                                          <>
+                                            <div>Dispo : <b className="num">{p.available}</b> · Autonomie : <b>{p.daysLeft != null ? `${p.daysLeft} j` : '∞'}</b></div>
+                                            {p.suggestedReorder > 0
+                                              ? <div style={{ color: 'var(--rose-bright)', marginTop: 4 }}>🔴 Pré-acheter <b>{p.suggestedReorder}</b> unités (couvrir {policy?.targetDays ?? 15}j + délai)</div>
+                                              : <div style={{ color: 'var(--green)', marginTop: 4 }}>✓ Stock suffisant</div>}
+                                          </>
+                                        ) : (
+                                          <div style={{ color: 'var(--tx-mid)', marginTop: 4 }}>🤝 Commandé au fournisseur à chaque vente — <b>pas besoin de pré-stocker</b>, le stock à 0 est normal.</div>
+                                        )}
+                                      </div>
+                                      <button className="btn-modern btn-sm btn-primary" style={{ marginTop: 8 }} onClick={() => openAdjustModal(p, p.mode === 'stock' && p.suggestedReorder ? p.suggestedReorder : undefined)}>Enregistrer réappro</button>
                                     </div>
                                   </div>
                                 </td>
@@ -630,6 +666,8 @@ export default function InventoryPage() {
               </div>
             </div>
             <p className="fs11 tx-faint" style={{ marginTop: 8 }}>
+              <b>📦 Stocké vs 🤝 À la demande</b> : ouvre un produit pour choisir. <b>Stocké</b> = tu tiens un vrai stock → on te dit quand pré-acheter et on t'alerte des ruptures. <b>À la demande</b> = tu commandes au fournisseur à chaque vente → un stock à 0 est <b>normal</b>, pas d'alerte de rupture, pas de pré-achat. (Par défaut, on suggère « stocké » si le produit se vend souvent.)
+              <br />
               <b>Dispo = stock − à expédier</b> (commandes pas encore parties). <b>Vendu 30j</b> = ventes réelles tous canaux (Instagram, WhatsApp, Sendit, site).
               {' '}<b>Valeur (coût)</b> = stock × coût d'achat unitaire (cash immobilisé, pas le prix de vente).
               {' '}Le stock se <b style={{ color: 'var(--green)' }}>décrémente automatiquement à l'expédition</b> (et revient si la commande est annulée) — n'ajuste plus le stock à la main que pour les <b>réappro fournisseur</b> et les <b>corrections physiques</b> (inventaire, casse). Chaque mouvement auto est tracé dans l'onglet Historique.
