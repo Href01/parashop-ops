@@ -72,7 +72,9 @@ export default function OrderDetailPage() {
   const [actionError, setActionError] = useState('')
   const [actionSuccess, setActionSuccess] = useState('')
   const [showReturn, setShowReturn] = useState(false)
-  const [returnForm, setReturnForm] = useState({ deliveryFee: '', restock: true })
+  const [returnForm, setReturnForm] = useState<{ deliveryFee: string; restock: boolean; sent: Array<{ productId: number; name: string; qty: number }> }>({ deliveryFee: '', restock: true, sent: [] })
+  const [catalog, setCatalog] = useState<Array<{ id: number; name: string; brand: string | null; stock: number }>>([])
+  const [sentSearch, setSentSearch] = useState('')
 
   // Edit form state
   const [editForm, setEditForm] = useState({
@@ -257,17 +259,29 @@ export default function OrderDetailPage() {
     }
   }
 
+  async function loadCatalog() {
+    if (catalog.length) return
+    try {
+      const res = await fetch('/api/ops/products', { cache: 'no-store' })
+      if (res.ok) { const d = await res.json(); if (Array.isArray(d)) setCatalog(d) }
+    } catch { /* non-blocking */ }
+  }
+
   async function submitReturn() {
     if (!order) return
-    if (!confirm(`Marquer la commande #${order.id} comme retour / échange ?${returnForm.restock ? '\n\nLes produits seront remis en stock vendable.' : ''}`)) return
+    if (!confirm(`Marquer la commande #${order.id} comme retour / échange ?${returnForm.restock ? '\n\nProduits rendus remis en stock.' : ''}${returnForm.sent.length ? `\nRemplacement(s) déduit(s) du stock : ${returnForm.sent.map((s) => s.name).join(', ')}.` : ''}`)) return
     setActionLoading(true); setActionError(''); setActionSuccess('')
     try {
       const res = await fetch(`/api/ops/orders/${orderId}/return`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ deliveryFee: Number(returnForm.deliveryFee) || 0, restock: returnForm.restock }),
+        body: JSON.stringify({
+          deliveryFee: Number(returnForm.deliveryFee) || 0,
+          restockReturned: returnForm.restock,
+          sent: returnForm.sent.map((s) => ({ productId: s.productId, qty: s.qty })),
+        }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Échec')
-      setActionSuccess('Retour enregistré.')
+      setActionSuccess('Retour / échange enregistré.')
       setShowReturn(false)
       await fetchOrder()
     } catch (err: any) { setActionError(err.message) } finally { setActionLoading(false) }
@@ -437,7 +451,7 @@ export default function OrderDetailPage() {
                 {order.returnRestocked ? ' · produits remis en stock' : ' · produits non restockés'}
               </span>
               <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-                <button type="button" onClick={() => { setReturnForm({ deliveryFee: String(order.returnDeliveryFee ?? ''), restock: !!order.returnRestocked }); setShowReturn(true) }} style={{ fontSize: 12, background: 'none', border: '1px solid var(--amber)', borderRadius: 6, padding: '3px 10px', color: 'var(--amber)', cursor: 'pointer' }}>Modifier</button>
+                <button type="button" onClick={() => { setReturnForm({ deliveryFee: String(order.returnDeliveryFee ?? ''), restock: !!order.returnRestocked, sent: [] }); setShowReturn(true); loadCatalog() }} style={{ fontSize: 12, background: 'none', border: '1px solid var(--amber)', borderRadius: 6, padding: '3px 10px', color: 'var(--amber)', cursor: 'pointer' }}>Modifier</button>
                 <button type="button" onClick={cancelReturn} disabled={actionLoading} style={{ fontSize: 12, background: 'none', border: 'none', color: 'var(--tx-faint)', cursor: 'pointer' }}>Annuler le tag</button>
               </div>
             </div>
@@ -456,14 +470,44 @@ export default function OrderDetailPage() {
               </label>
               <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, color: 'var(--tx-hi)', cursor: 'pointer' }}>
                 <input type="checkbox" checked={returnForm.restock} onChange={(e) => setReturnForm((f) => ({ ...f, restock: e.target.checked }))} />
-                Remettre les produits en stock vendable
+                Produit rendu revendable → remettre en stock
               </label>
-              <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-                <button type="button" onClick={() => setShowReturn(false)} style={{ fontSize: 13, background: 'none', border: '1px solid var(--line)', borderRadius: 6, padding: '6px 12px', color: 'var(--tx-mid)', cursor: 'pointer' }}>Annuler</button>
-                <button type="button" onClick={submitReturn} disabled={actionLoading} style={{ fontSize: 13, background: 'var(--amber)', border: 'none', borderRadius: 6, padding: '6px 14px', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>Enregistrer</button>
-              </div>
             </div>
-            <p style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 8 }}>Le frais retour est déduit du Profit net et du Cash net (panneau Résultat).</p>
+
+            {/* Replacement shipped (exchange for a different product) */}
+            <div style={{ marginTop: 14 }}>
+              <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginBottom: 6 }}>Produit envoyé en remplacement <span style={{ color: 'var(--tx-faint)' }}>(échange produit différent — sort du stock · optionnel)</span></div>
+              {returnForm.sent.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                  {returnForm.sent.map((s) => (
+                    <div key={s.productId} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                      <span style={{ flex: 1, color: 'var(--tx-hi)' }}>{s.name}</span>
+                      <input type="number" min={1} value={s.qty} onChange={(e) => setReturnForm((f) => ({ ...f, sent: f.sent.map((x) => x.productId === s.productId ? { ...x, qty: Math.max(1, Number(e.target.value) || 1) } : x) }))}
+                        style={{ width: 56, fontSize: 13, padding: '4px 6px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--bg-2)', color: 'var(--tx-hi)' }} />
+                      <button type="button" onClick={() => setReturnForm((f) => ({ ...f, sent: f.sent.filter((x) => x.productId !== s.productId) }))} style={{ background: 'none', border: 'none', color: 'var(--red)', cursor: 'pointer' }}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <input value={sentSearch} onChange={(e) => setSentSearch(e.target.value)} placeholder="Chercher un produit à envoyer…"
+                style={{ width: '100%', fontSize: 13, padding: '6px 10px', borderRadius: 6, border: '1px solid var(--line)', background: 'var(--bg-2)', color: 'var(--tx-hi)' }} />
+              {sentSearch.trim().length > 1 && (
+                <div style={{ marginTop: 4, border: '1px solid var(--line)', borderRadius: 6, maxHeight: 160, overflowY: 'auto' }}>
+                  {catalog.filter((p) => `${p.name} ${p.brand || ''}`.toLowerCase().includes(sentSearch.toLowerCase()) && !returnForm.sent.some((s) => s.productId === p.id)).slice(0, 8).map((p) => (
+                    <button key={p.id} type="button" onClick={() => { setReturnForm((f) => ({ ...f, sent: [...f.sent, { productId: p.id, name: p.name, qty: 1 }] })); setSentSearch('') }}
+                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '6px 10px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--tx-hi)' }}>
+                      {p.name} <span style={{ color: 'var(--tx-faint)' }}>· stock {p.stock}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+              <button type="button" onClick={() => setShowReturn(false)} style={{ fontSize: 13, background: 'none', border: '1px solid var(--line)', borderRadius: 6, padding: '6px 12px', color: 'var(--tx-mid)', cursor: 'pointer' }}>Annuler</button>
+              <button type="button" onClick={submitReturn} disabled={actionLoading} style={{ fontSize: 13, background: 'var(--amber)', border: 'none', borderRadius: 6, padding: '6px 14px', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>Enregistrer</button>
+            </div>
+            <p style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 8 }}>Le frais retour est déduit du Profit net et du Cash net (panneau Résultat). Réversible via « Annuler le tag ».</p>
           </div>
         )}
 
@@ -611,7 +655,7 @@ export default function OrderDetailPage() {
 
                       <button
                         type="button"
-                        onClick={() => { setShowReturn(true); setShowMore(false) }}
+                        onClick={() => { setShowReturn(true); setShowMore(false); loadCatalog() }}
                         style={{ padding: '8px 12px', textAlign: 'left', background: 'none', border: 'none', borderRadius: '6px', cursor: 'pointer', color: 'var(--tx-hi)' }}
                         onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-3)'}
                         onMouseLeave={(e) => e.currentTarget.style.background = 'none'}

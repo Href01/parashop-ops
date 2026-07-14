@@ -289,7 +289,7 @@ export default function SenditLabPage() {
               <input type="checkbox" checked={returnForm.restock} onChange={(e) => setReturnForm((f) => ({ ...f, restock: e.target.checked }))} />
               Remettre les produits en stock vendable
             </label>
-            <p style={{ fontSize: 11, color: 'var(--tx-faint)', margin: '0 0 18px' }}>Le frais est déduit du Profit net et du Cash net sur le tableau de bord.</p>
+            <p style={{ fontSize: 11, color: 'var(--tx-faint)', margin: '0 0 18px' }}>Le frais est déduit du Profit net et du Cash net. Pour un échange contre un <b>produit différent</b> (gérer le remplacement sorti du stock), utilise la page de la commande.</p>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button onClick={() => setReturnFor(null)} disabled={busy} style={{ fontSize: 13, background: 'none', border: '1px solid var(--line)', borderRadius: 8, padding: '8px 14px', color: 'var(--tx-mid)', cursor: 'pointer' }}>Annuler</button>
               <button onClick={submitReturn} disabled={busy} style={{ fontSize: 13, background: 'var(--amber)', border: 'none', borderRadius: 8, padding: '8px 16px', color: '#fff', cursor: 'pointer', fontWeight: 600 }}>{busy ? '…' : 'Enregistrer'}</button>
