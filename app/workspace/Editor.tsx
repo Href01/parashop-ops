@@ -138,6 +138,25 @@ export default function Editor({ url, token, user, page, onRename }: { url: stri
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor])
 
+  // Migrate legacy default "file" blocks (added before the preview feature) → our
+  // preview block, so existing PDFs/files become viewable without re-uploading.
+  useEffect(() => {
+    const EXT: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', mp4: 'video/mp4', webm: 'video/webm', mp3: 'audio/mpeg', wav: 'audio/wav' }
+    const mimeOf = (name: string) => EXT[(name.split('.').pop() || '').toLowerCase()] || ''
+    const t = setTimeout(() => {
+      try {
+        const legacy = editor.document.filter((b) => b.type === 'file' && (b as { props?: { url?: string } }).props?.url)
+        for (const b of legacy) {
+          const props = (b as unknown as { props: { url: string; name?: string } }).props
+          const name = props.name || decodeURIComponent((props.url.split('/').pop() || 'fichier'))
+          editor.replaceBlocks([b.id], [{ type: 'attachment', props: { url: props.url, name, mime: mimeOf(name), size: 0, preview: true } } as never])
+        }
+      } catch { /* ignore */ }
+    }, 1600) // let collab sync first
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor])
+
   const st = authFailed
     ? { fg: 'var(--red, #dc2626)', bg: 'var(--red-bg, #fee2e2)', dot: '#DC2626', label: 'Token invalide' }
     : status === 'connected'
