@@ -31,35 +31,26 @@ export default function WorkspacePage() {
 
   return (
     <BosShell active="workspace" title="Espace collaboratif" crumb="Équipe">
-      <div style={{ maxWidth: 900, margin: '0 auto', padding: '22px 24px 60px' }}>
-        <div className="eyebrow" style={{ marginBottom: 4 }}>ÉQUIPE</div>
-        <h1 className="serif-display" style={{ fontSize: 28, lineHeight: 1.05 }}>Notes de l&apos;équipe</h1>
-        <p style={{ fontSize: 13, color: 'var(--tx-mid)', marginTop: 7, maxWidth: 680, lineHeight: 1.55 }}>
-          Un espace <b>partagé en temps réel</b> : écrivez à plusieurs, les modifications et les curseurs de chacun apparaissent en direct. Titres, listes, <b>tableaux</b>, images, liens — tapez « / » pour insérer un bloc.
-        </p>
-
-        <div style={{ marginTop: 20 }}>
-          {loading ? (
-            <div className="card-modern" style={{ padding: 24 }}><div className="skeleton-line" style={{ width: '35%', height: 14 }} /></div>
-          ) : err === 'config' ? (
-            <div className="card-modern" style={{ padding: 24, borderLeft: '3px solid var(--amber)' }}>
+      <div style={{ maxWidth: 1040, margin: '0 auto', padding: '14px 18px 24px' }}>
+        {loading ? (
+          <div className="card-modern" style={{ padding: 24, minHeight: 200 }}><div className="skeleton-line" style={{ width: '30%', height: 14 }} /></div>
+        ) : err === 'config' ? (
+          <div className="card-modern" style={{ padding: 26, borderLeft: '3px solid var(--amber)', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            <Users style={{ width: 20, height: 20, color: 'var(--amber)', flexShrink: 0, marginTop: 2 }} />
+            <div>
               <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 6 }}>Serveur temps-réel non configuré</div>
               <p className="fs13 tx-mid" style={{ margin: 0, lineHeight: 1.6 }}>
-                Ajoute les variables <b>NEXT_PUBLIC_REALTIME_URL</b> (ex. <code>wss://shine-realtime.onrender.com</code>) et <b>REALTIME_TOKEN</b> dans Vercel (projet ops), puis redéploie.
+                Ajoute <b>NEXT_PUBLIC_REALTIME_URL</b> (ex. <code>wss://shine-realtime.onrender.com</code>) et <b>REALTIME_TOKEN</b> dans Vercel (projet ops), puis redéploie.
               </p>
             </div>
-          ) : err ? (
-            <div className="card-modern" style={{ padding: 24, borderLeft: '3px solid var(--red)' }}>
-              <p className="fs13 tx-mid" style={{ margin: 0 }}>Accès non autorisé. Reconnecte-toi au BOS.</p>
-            </div>
-          ) : cfg ? (
-            <Editor url={cfg.url} token={cfg.token} docName="page:1" user={cfg.user} />
-          ) : null}
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 14, fontSize: 11.5, color: 'var(--tx-faint)' }}>
-          <Users style={{ width: 13, height: 13 }} /> Ouvre cette page sur un autre appareil / avec l&apos;autre fondateur pour voir la collaboration en direct.
-        </div>
+          </div>
+        ) : err ? (
+          <div className="card-modern" style={{ padding: 24, borderLeft: '3px solid var(--red, #dc2626)' }}>
+            <p className="fs13 tx-mid" style={{ margin: 0 }}>Accès non autorisé. Reconnecte-toi au BOS.</p>
+          </div>
+        ) : cfg ? (
+          <Editor url={cfg.url} token={cfg.token} docName="page:1" user={cfg.user} />
+        ) : null}
       </div>
     </BosShell>
   )

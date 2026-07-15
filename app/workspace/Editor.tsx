@@ -74,35 +74,84 @@ export default function Editor({ url, token, docName, user }: { url: string; tok
       fragment: doc.getXmlFragment('document-store'),
       user: { name: user.name, color },
     },
+    // Upload a dropped/pasted/inserted file → stored in Postgres → returns its URL.
+    // Images preview inline; other files become a clickable file block.
+    uploadFile: async (file: File) => {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/ops/workspace/upload', { method: 'POST', body: fd })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d?.error || 'Échec de l’upload')
+      }
+      const d = await res.json()
+      return d.url as string
+    },
   })
 
-  const dot = authFailed ? '#DC2626' : status === 'connected' ? '#16A34A' : status === 'connecting' ? '#D97706' : '#DC2626'
-  const label = authFailed ? 'Token invalide (REALTIME_TOKEN)' : status === 'connected' ? 'En ligne' : status === 'connecting' ? 'Connexion…' : 'Reconnexion…'
+  const st = authFailed
+    ? { fg: 'var(--red, #dc2626)', bg: 'var(--red-bg, #fee2e2)', dot: '#DC2626', label: 'Token invalide' }
+    : status === 'connected'
+      ? { fg: 'var(--green)', bg: 'var(--green-bg)', dot: '#16A34A', label: 'En ligne' }
+      : status === 'connecting'
+        ? { fg: 'var(--amber)', bg: 'var(--amber-bg)', dot: '#D97706', label: 'Connexion…' }
+        : { fg: 'var(--red, #dc2626)', bg: 'var(--red-bg, #fee2e2)', dot: '#DC2626', label: 'Hors ligne' }
 
   return (
-    <div>
-      {/* Status + presence bar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, flexWrap: 'wrap' }}>
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: 'var(--tx-mid)' }}>
-          <span style={{ width: 8, height: 8, borderRadius: '50%', background: dot }} /> {label}
-        </span>
-        {peers.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>En ce moment :</span>
-            <div style={{ display: 'flex' }}>
-              {peers.map((p, i) => (
-                <span key={i} title={p.name} style={{ width: 24, height: 24, borderRadius: '50%', background: p.color, color: '#fff', fontSize: 10, fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', border: '2px solid var(--card, #fff)', marginLeft: i ? -8 : 0 }}>
-                  {initials(p.name)}
-                </span>
+    <div className="doc-card">
+      {/* Compact toolbar: title · live status · who's here · help */}
+      <div className="doc-bar">
+        <div className="doc-title"><span aria-hidden>🗒️</span> Notes de l&apos;équipe</div>
+        <div className="doc-tools">
+          <span className="doc-status" style={{ color: st.fg, background: st.bg }}>
+            <span className="doc-dot" style={{ background: st.dot }} />{st.label}
+          </span>
+          {peers.length > 0 && (
+            <div className="doc-peers">
+              {peers.slice(0, 5).map((p, i) => (
+                <span key={i} title={p.name} className="doc-avatar" style={{ background: p.color, marginLeft: i ? -9 : 0, zIndex: 5 - i }}>{initials(p.name)}</span>
               ))}
             </div>
-          </div>
-        )}
+          )}
+          <span className="doc-help" title="Tape « / » pour insérer (titre, tableau, image, liste…). Glisse un fichier (image, PDF) pour l'ajouter et le prévisualiser.">?</span>
+        </div>
       </div>
 
-      <div className="card-modern" style={{ padding: '8px 4px', minHeight: 420 }}>
-        <BlockNoteView editor={editor} theme="light" />
+      {/* Paper surface — centered content like a real doc */}
+      <div className="doc-surface">
+        <div className="doc-page">
+          <BlockNoteView editor={editor} theme="light" />
+        </div>
       </div>
+
+      <style jsx>{`
+        .doc-card {
+          background: var(--card, #fff);
+          border: 1px solid var(--line-soft);
+          border-radius: 16px;
+          overflow: hidden;
+          box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 12px 30px rgba(0,0,0,.05);
+          display: flex; flex-direction: column;
+          min-height: calc(100vh - 190px);
+        }
+        .doc-bar {
+          display: flex; align-items: center; justify-content: space-between; gap: 12;
+          padding: 11px 16px; border-bottom: 1px solid var(--line-soft);
+          background: var(--bg-1, #fff); position: sticky; top: 0; z-index: 3; flex-wrap: wrap;
+        }
+        .doc-title { display: inline-flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 700; color: var(--tx-hi); }
+        .doc-tools { display: inline-flex; align-items: center; gap: 12px; }
+        .doc-status { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; padding: 4px 11px; border-radius: 999px; white-space: nowrap; }
+        .doc-dot { width: 7px; height: 7px; border-radius: 50%; }
+        .doc-peers { display: inline-flex; }
+        .doc-avatar { width: 26px; height: 26px; border-radius: 50%; color: #fff; font-size: 10px; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; border: 2px solid var(--card, #fff); position: relative; }
+        .doc-help { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line-soft); color: var(--tx-lo); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; cursor: help; user-select: none; }
+        .doc-help:hover { color: var(--tx-hi); border-color: var(--tx-faint); }
+        .doc-surface { flex: 1; overflow-y: auto; padding: 30px clamp(14px, 4vw, 40px) 80px; }
+        .doc-page { max-width: 760px; margin: 0 auto; }
+        /* Let BlockNote breathe + match the app font */
+        .doc-page :global(.bn-editor) { padding-inline: 0 !important; }
+      `}</style>
     </div>
   )
 }
