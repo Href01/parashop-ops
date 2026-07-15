@@ -23,19 +23,26 @@ const initials = (n: string) => n.trim().split(/\s+/).map((w) => w[0]).slice(0, 
 
 export default function Editor({ url, token, docName, user }: { url: string; token: string; docName: string; user: User }) {
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
+  const [authFailed, setAuthFailed] = useState(false)
   const [peers, setPeers] = useState<Presence[]>([])
   const color = useMemo(() => colorFor(user.email || user.name), [user])
 
   // One Y.Doc + provider for the lifetime of this editor.
   const { doc, provider } = useMemo(() => {
     const doc = new Y.Doc()
-    const provider = new HocuspocusProvider({ url, name: docName, token, document: doc })
+    // Normalize to a WebSocket URL — accept https/http and force wss/ws (common config slip).
+    const wsUrl = (url || '').replace(/^http(s?):\/\//i, (_m, s) => (s ? 'wss://' : 'ws://')).replace(/\/+$/, '')
+    const provider = new HocuspocusProvider({ url: wsUrl, name: docName, token, document: doc })
     return { doc, provider }
   }, [url, token, docName])
 
   useEffect(() => {
     const onStatus = (e: { status: string }) => setStatus(e.status === 'connected' ? 'connected' : e.status === 'disconnected' ? 'disconnected' : 'connecting')
+    const onAuthFail = () => setAuthFailed(true)
+    const onAuthOk = () => setAuthFailed(false)
     provider.on('status', onStatus)
+    provider.on('authenticationFailed', onAuthFail)
+    provider.on('authenticated', onAuthOk)
     // Presence: read the awareness states (each collaborator's user info).
     const aw = provider.awareness
     const refresh = () => {
@@ -51,6 +58,8 @@ export default function Editor({ url, token, docName, user }: { url: string; tok
     refresh()
     return () => {
       provider.off('status', onStatus)
+      provider.off('authenticationFailed', onAuthFail)
+      provider.off('authenticated', onAuthOk)
       aw?.off('change', refresh)
       provider.destroy()
       doc.destroy()
@@ -67,8 +76,8 @@ export default function Editor({ url, token, docName, user }: { url: string; tok
     },
   })
 
-  const dot = status === 'connected' ? '#16A34A' : status === 'connecting' ? '#D97706' : '#DC2626'
-  const label = status === 'connected' ? 'En ligne' : status === 'connecting' ? 'Connexion…' : 'Reconnexion…'
+  const dot = authFailed ? '#DC2626' : status === 'connected' ? '#16A34A' : status === 'connecting' ? '#D97706' : '#DC2626'
+  const label = authFailed ? 'Token invalide (REALTIME_TOKEN)' : status === 'connected' ? 'En ligne' : status === 'connecting' ? 'Connexion…' : 'Reconnexion…'
 
   return (
     <div>
