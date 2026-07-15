@@ -2,12 +2,19 @@
 
 import '@blocknote/core/fonts/inter.css'
 import '@blocknote/mantine/style.css'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as Y from 'yjs'
 import { HocuspocusProvider } from '@hocuspocus/provider'
-import { useCreateBlockNote } from '@blocknote/react'
+import { useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/mantine'
+import { BlockNoteSchema, defaultBlockSpecs, filterSuggestionItems } from '@blocknote/core'
 import type { Awareness } from 'y-protocols/awareness'
+import { AttachmentBlock } from './FileBlock'
+
+// Extend BlockNote with our inline file-preview block (same schema on every client).
+const schema = BlockNoteSchema.create({
+  blockSpecs: { ...defaultBlockSpecs, attachment: AttachmentBlock() },
+})
 
 type User = { name: string; email: string }
 type Presence = { name: string; color: string }
@@ -66,7 +73,20 @@ export default function Editor({ url, token, docName, user }: { url: string; tok
     }
   }, [provider, doc])
 
+  const uploadFile = async (file: File) => {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch('/api/ops/workspace/upload', { method: 'POST', body: fd })
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}))
+      throw new Error(d?.error || 'Échec de l’upload')
+    }
+    const d = await res.json()
+    return d.url as string
+  }
+
   const editor = useCreateBlockNote({
+    schema,
     collaboration: {
       // Same object at runtime; cast narrows Hocuspocus's `awareness: Awareness|null`
       // to BlockNote's expected `awareness?: Awareness` (it's non-null from construction).
@@ -74,20 +94,29 @@ export default function Editor({ url, token, docName, user }: { url: string; tok
       fragment: doc.getXmlFragment('document-store'),
       user: { name: user.name, color },
     },
-    // Upload a dropped/pasted/inserted file → stored in Postgres → returns its URL.
-    // Images preview inline; other files become a clickable file block.
-    uploadFile: async (file: File) => {
-      const fd = new FormData()
-      fd.append('file', file)
-      const res = await fetch('/api/ops/workspace/upload', { method: 'POST', body: fd })
-      if (!res.ok) {
-        const d = await res.json().catch(() => ({}))
-        throw new Error(d?.error || 'Échec de l’upload')
-      }
-      const d = await res.json()
-      return d.url as string
-    },
+    uploadFile,
   })
+
+  // "Fichier & aperçu" slash command → pick a file → upload → insert the preview block.
+  const fileRef = useRef<HTMLInputElement>(null)
+  const uploading = useRef(false)
+  const insertAttachment = () => fileRef.current?.click()
+  const onFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file || uploading.current) return
+    uploading.current = true
+    try {
+      const fileUrl = await uploadFile(file)
+      const ref = editor.getTextCursorPosition().block
+      editor.insertBlocks(
+        [{ type: 'attachment', props: { url: fileUrl, name: file.name, mime: file.type || '', size: file.size, preview: true } } as never],
+        ref,
+        'after'
+      )
+    } catch { /* surfaced by uploadFile error toast if any */ }
+    finally { uploading.current = false }
+  }
 
   const st = authFailed
     ? { fg: 'var(--red, #dc2626)', bg: 'var(--red-bg, #fee2e2)', dot: '#DC2626', label: 'Token invalide' }
@@ -120,9 +149,30 @@ export default function Editor({ url, token, docName, user }: { url: string; tok
       {/* Paper surface — centered content like a real doc */}
       <div className="doc-surface">
         <div className="doc-page">
-          <BlockNoteView editor={editor} theme="light" />
+          <BlockNoteView editor={editor} theme="light" slashMenu={false}>
+            <SuggestionMenuController
+              triggerCharacter="/"
+              getItems={async (query) =>
+                filterSuggestionItems(
+                  [
+                    ...getDefaultReactSlashMenuItems(editor),
+                    {
+                      title: 'Fichier & aperçu',
+                      subtext: 'PDF, image, vidéo… avec aperçu',
+                      aliases: ['fichier', 'file', 'pdf', 'piece jointe', 'attachment', 'upload'],
+                      group: 'Média',
+                      icon: <span style={{ fontSize: 16 }}>📎</span>,
+                      onItemClick: insertAttachment,
+                    },
+                  ],
+                  query
+                )
+              }
+            />
+          </BlockNoteView>
         </div>
       </div>
+      <input ref={fileRef} type="file" onChange={onFilePicked} style={{ display: 'none' }} />
 
       <style jsx>{`
         .doc-card {
