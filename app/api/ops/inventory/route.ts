@@ -107,6 +107,7 @@ export async function GET(request: NextRequest) {
         SELECT
           p.id, p.name, p.brand, p.price, p.image, p.stock,
           COALESCE(p."virtualStock", 0) AS "virtualStock",
+          COALESCE(p."importUnavailable", false) AS "importUnavailable",
           p."reorderPoint", p."reorderQuantity", p."stockStatus",
           p.supplier, p."supplierSKU", p."lastRestockDate", p."costPrice",
           p."weeklySales", p."monthlyRevenue", p."profitMargin",

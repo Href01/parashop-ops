@@ -29,6 +29,7 @@ type Product = {
   revenueAtRisk: number; marginUnit: number; marginPct: number
   retailValue: number; marginValue: number; explanation: string
   mode: 'stock' | 'on_demand'; suggestedMode: 'stock' | 'on_demand'
+  importUnavailable?: boolean
 }
 type ToShipItem = { productId: number; name: string; brand: string; qty: number; stock: number }
 type ToShipOrder = { id: number; customer: string; city: string; phone: string | null; status: string; created: string; units: number; canFulfill: boolean; items: ToShipItem[] }
@@ -288,6 +289,17 @@ export default function InventoryPage() {
     setModeSaving(null)
   }
 
+  // Quick toggle: mark a product temporarily unavailable (import issue) → storefront
+  // shows the "prévenez-moi" block and it can't be ordered. Same effect as the product page.
+  const [importSaving, setImportSaving] = useState<number | null>(null)
+  const setImportUnavailable = async (productId: number, next: boolean) => {
+    setImportSaving(productId)
+    setProducts((prev) => prev.map((p) => (p.id === productId ? { ...p, importUnavailable: next } : p)))
+    await fetch(`/api/ops/products/${productId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ importUnavailable: next }) }).catch(() => {})
+    await fetchInventory()
+    setImportSaving(null)
+  }
+
   const submitSupplier = async () => {
     if (!supplierModal || savingSupplier) return
     setSavingSupplier(true)
@@ -521,6 +533,7 @@ export default function InventoryPage() {
                                     <div className="fs11 tx-lo" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                                       <span>{p.brand}</span>
                                       <span title={p.mode === 'stock' ? 'Tu tiens un vrai stock' : 'Commandé au fournisseur à la demande'} style={{ fontSize: 10, fontWeight: 600, padding: '1px 6px', borderRadius: 4, background: 'var(--bg-3)', color: 'var(--tx-lo)' }}>{p.mode === 'stock' ? '📦 Stocké' : '🤝 À la demande'}</span>
+                                      {p.importUnavailable && <span title="Indisponible (importation) — affiché sur le site" style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: '#FEF3C7', color: 'var(--amber)' }}>🚫 Indispo import</span>}
                                     </div>
                                   </div>
                                 </div>
@@ -635,6 +648,18 @@ export default function InventoryPage() {
                                         )}
                                       </div>
                                       <button className="btn-modern btn-sm btn-primary" style={{ marginTop: 8 }} onClick={() => openAdjustModal(p, p.mode === 'stock' && p.suggestedReorder ? p.suggestedReorder : undefined)}>Enregistrer réappro</button>
+
+                                      {/* Quick toggle: temporarily unavailable (import) */}
+                                      <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line-soft)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <button onClick={() => setImportUnavailable(p.id, !p.importUnavailable)} disabled={importSaving === p.id} aria-pressed={!!p.importUnavailable}
+                                          title={p.importUnavailable ? 'Rendre disponible sur le site' : 'Marquer indisponible (importation) sur le site'}
+                                          style={{ position: 'relative', width: 40, height: 23, borderRadius: 999, border: 'none', cursor: importSaving === p.id ? 'default' : 'pointer', background: p.importUnavailable ? 'var(--amber)' : 'var(--line)', transition: 'background .18s', flexShrink: 0, opacity: importSaving === p.id ? 0.6 : 1 }}>
+                                          <span style={{ position: 'absolute', top: 3, left: p.importUnavailable ? 20 : 3, width: 17, height: 17, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,.25)', transition: 'left .18s' }} />
+                                        </button>
+                                        <span className="fs12" style={{ color: p.importUnavailable ? 'var(--amber)' : 'var(--tx-lo)', fontWeight: p.importUnavailable ? 700 : 400 }}>
+                                          {p.importUnavailable ? '🚫 Indisponible (import) — actif sur le site' : 'Indisponible (import)'}
+                                        </span>
+                                      </div>
                                     </div>
                                   </div>
                                 </td>
