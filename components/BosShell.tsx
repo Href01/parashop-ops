@@ -62,6 +62,7 @@ const sections: Array<{ label: string; items: NavItem[] }> = [
     items: [
       { label: 'Messages', href: '/messages', icon: MessageCircle },
       { label: 'Leads & Alertes', href: '/leads', icon: PhoneCall },
+      { label: 'Liste d\'attente', href: '/restock', icon: Bell },
       { label: 'Avis', href: '/avis', icon: Star },
       { label: 'Clients', href: '/customers', icon: Users },
       { label: 'Stats', href: '/stats', icon: ChartBar },
@@ -94,7 +95,7 @@ export default function BosShell({
   crumb,
   children,
 }: {
-  active: 'dashboard' | 'intelligence' | 'orders' | 'sendit' | 'products' | 'customers' | 'inventory' | 'prices' | 'leads' | 'campaigns' | 'ads' | 'events' | 'content' | 'work' | 'guide' | 'settings'
+  active: 'dashboard' | 'intelligence' | 'orders' | 'sendit' | 'products' | 'customers' | 'inventory' | 'prices' | 'leads' | 'restock' | 'campaigns' | 'ads' | 'events' | 'content' | 'work' | 'guide' | 'settings'
   title: string
   crumb: string
   children: ReactNode
