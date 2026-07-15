@@ -14,6 +14,7 @@ type User = { name: string; email: string }
 type Presence = { name: string; color: string }
 type Page = { id: number; title: string; icon: string; cover?: string | null }
 type Comment = { id: number; authorEmail: string; authorName: string | null; body: string; createdAt: string; self: boolean }
+type Ver = { id: number; label: string | null; createdBy: string | null; createdAt: string; bytes: number }
 
 const PALETTE = ['#E11D48', '#0C6B52', '#7C3AED', '#D97706', '#2563EB', '#DB2777', '#059669', '#4F46E5']
 function colorFor(key: string) {
@@ -215,6 +216,40 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
     try { await fetch(`/api/ops/workspace/comments?id=${id}`, { method: 'DELETE' }) } catch { /* ignore */ }
   }
 
+  // ---- Version history (safety net) ----
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [versions, setVersions] = useState<Ver[]>([])
+  const [vBusy, setVBusy] = useState(false)
+  const loadVersions = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/ops/workspace/versions?pageId=${page.id}`, { cache: 'no-store' })
+      if (r.ok) { const d = await r.json(); setVersions(d.versions || []) }
+    } catch { /* ignore */ }
+  }, [page.id])
+  useEffect(() => { if (historyOpen) loadVersions() }, [historyOpen, loadVersions])
+  const saveVersion = async () => {
+    if (vBusy) return
+    setVBusy(true)
+    try {
+      const r = await fetch('/api/ops/workspace/versions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pageId: page.id }) })
+      if (!r.ok) { const d = await r.json().catch(() => ({})); alert(d.message || 'Impossible d’enregistrer la version.') }
+      else await loadVersions()
+    } catch { /* ignore */ } finally { setVBusy(false) }
+  }
+  const restore = async (id: number) => {
+    if (!confirm('Restaurer cette version ?\n\nLa version actuelle est sauvegardée automatiquement avant.\nImportant : demande à chacun de FERMER la page, puis rouvrez-la pour voir la version restaurée.')) return
+    setVBusy(true)
+    try {
+      const r = await fetch('/api/ops/workspace/versions/restore', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ pageId: page.id, versionId: id }) })
+      if (r.ok) alert('Version restaurée. Fermez puis rouvrez la page pour la voir (rechargez si besoin).')
+      else alert('Échec de la restauration.')
+      await loadVersions()
+    } catch { /* ignore */ } finally { setVBusy(false) }
+  }
+  const openComments = () => { setHistoryOpen(false); setCommentsOpen((v) => !v) }
+  const openHistory = () => { setCommentsOpen(false); setHistoryOpen((v) => !v) }
+  const vAgo = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+
   const st = authFailed
     ? { fg: 'var(--red, #dc2626)', bg: 'var(--red-bg, #fee2e2)', dot: '#DC2626', label: 'Token invalide' }
     : status === 'connected'
@@ -241,9 +276,10 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
               ))}
             </div>
           )}
-          <button className={`doc-cbtn${commentsOpen ? ' on' : ''}`} onClick={() => setCommentsOpen((v) => !v)} title="Commentaires">
+          <button className={`doc-cbtn${commentsOpen ? ' on' : ''}`} onClick={openComments} title="Commentaires">
             💬{comments.length > 0 && <span className="doc-cbadge">{comments.length}</span>}
           </button>
+          <button className={`doc-cbtn${historyOpen ? ' on' : ''}`} onClick={openHistory} title="Historique des versions">🕓</button>
           <span className="doc-help" title="Tape « / » pour insérer. Glisse une image → aperçu inline. Glisse un PDF → clique dessus pour l'ouvrir en aperçu.">?</span>
         </div>
       </div>
@@ -358,6 +394,33 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
             </div>
           </aside>
         )}
+
+        {/* Version history rail */}
+        {historyOpen && (
+          <aside className="doc-comments">
+            <div className="dc-head">
+              <span>🕓 Historique</span>
+              <button onClick={() => setHistoryOpen(false)} aria-label="Fermer">✕</button>
+            </div>
+            <div className="dc-compose" style={{ borderTop: 0, borderBottom: '1px solid var(--line-soft)' }}>
+              <button className="dc-send" onClick={saveVersion} disabled={vBusy} style={{ marginTop: 0 }}>{vBusy ? '…' : '📌 Enregistrer une version'}</button>
+              <p style={{ fontSize: 11, color: 'var(--tx-faint)', margin: '8px 0 0', lineHeight: 1.5 }}>Une sauvegarde à restaurer en cas de souci. Les 40 dernières sont conservées.</p>
+            </div>
+            <div className="dc-list">
+              {versions.length === 0 ? (
+                <p className="dc-empty">Aucune version enregistrée. Clique « Enregistrer une version » pour créer un point de restauration.</p>
+              ) : versions.map((v) => (
+                <div key={v.id} className="hv-item">
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div className="hv-lbl">{v.label || 'Version'}</div>
+                    <div className="hv-meta">{vAgo(v.createdAt)}{v.createdBy ? ' · ' + v.createdBy.split('@')[0] : ''} · {(v.bytes / 1024).toFixed(1)} Ko</div>
+                  </div>
+                  <button className="hv-restore" onClick={() => restore(v.id)} disabled={vBusy}>Restaurer</button>
+                </div>
+              ))}
+            </div>
+          </aside>
+        )}
       </div>
 
       <style jsx>{`
@@ -421,6 +484,12 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
         .dc-compose textarea:focus { border-color: var(--green); }
         .dc-send { margin-top: 8px; width: 100%; padding: 8px; border-radius: 9px; border: 0; background: var(--green); color: #fff; font-size: 12.5px; font-weight: 800; cursor: pointer; }
         .dc-send:disabled { opacity: .5; cursor: default; }
+        .hv-item { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--card, #fff); }
+        .hv-lbl { font-size: 12.5px; font-weight: 700; color: var(--tx-hi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .hv-meta { font-size: 10.5px; color: var(--tx-faint); margin-top: 2px; }
+        .hv-restore { flex-shrink: 0; font-size: 11.5px; font-weight: 700; padding: 5px 10px; border-radius: 7px; border: 1px solid var(--line-soft); background: var(--bg-1); color: var(--tx-mid); cursor: pointer; }
+        .hv-restore:hover { border-color: var(--green); color: var(--green); background: var(--green-bg); }
+        .hv-restore:disabled { opacity: .5; cursor: default; }
 
         @media (max-width: 900px) {
           .doc-body { flex-direction: column; }

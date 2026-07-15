@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
+import Link from 'next/link'
 import BosShell from '@/components/BosShell'
 import { Plus, Trash2, FileText, Search, PanelLeftClose, PanelLeft } from 'lucide-react'
 
@@ -13,6 +14,7 @@ const Editor = dynamic(() => import('./Editor'), {
 type Cfg = { url: string; token: string; user: { name: string; email: string } } | null
 type Page = { id: number; title: string; icon: string; cover?: string | null; parentId: number | null; updatedAt: string }
 type Peer = { email: string; name: string; color: string; pageId: number | null; self: boolean }
+type Pulse = { revenueToday: number | null; ordersToday: number | null; pending: number; lowStock: number; leadsToday: number; waitlist: number }
 
 const EMOJIS = ['📄', '📝', '🗒️', '📌', '✅', '📊', '📈', '💡', '🚀', '🔥', '⭐', '🎯', '📦', '🛒', '💰', '🏷️', '📣', '🧪', '🗓️', '🎨', '🔧', '📁', '🧠', '❤️']
 const initials = (n: string) => n.trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?'
@@ -27,6 +29,7 @@ export default function WorkspacePage() {
   const [search, setSearch] = useState('')
   const [iconFor, setIconFor] = useState<number | null>(null)
   const [sideOpen, setSideOpen] = useState(true)
+  const [pulse, setPulse] = useState<Pulse | null>(null)
   const selRef = useRef<number | null>(null)
   selRef.current = selectedId
 
@@ -62,6 +65,23 @@ export default function WorkspacePage() {
     const t = setInterval(() => { if (document.visibilityState === 'visible') loadPages() }, 6000)
     return () => clearInterval(t)
   }, [loadPages])
+
+  // Live KPI strip — a real-time pulse of the business at the top of the workspace.
+  useEffect(() => {
+    const load = async () => {
+      if (document.visibilityState !== 'visible') return
+      try {
+        const [p, s] = await Promise.all([
+          fetch('/api/ops/workspace/pulse', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+          fetch('/api/ops/dashboard/stats', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+        ])
+        if (p) setPulse({ revenueToday: s ? Number(s.revenueToday) || 0 : null, ordersToday: s ? Number(s.ordersToday) || 0 : null, pending: p.pending, lowStock: p.lowStock, leadsToday: p.leadsToday, waitlist: p.waitlist })
+      } catch { /* ignore */ }
+    }
+    load()
+    const t = setInterval(load, 45000)
+    return () => clearInterval(t)
+  }, [])
 
   // Presence heartbeat — tells everyone which page I'm on, gets back who's where.
   useEffect(() => {
@@ -149,6 +169,17 @@ export default function WorkspacePage() {
 
   return (
     <BosShell active="workspace" title="Espace collaboratif" crumb="Équipe">
+      {pulse && (
+        <div className="ws-pulse">
+          <span className="ws-pulse-live"><span className="ws-pulse-dot" />LIVE</span>
+          {pulse.revenueToday != null && <Link href="/" className="ws-kpi"><span className="ws-kpi-i">💰</span><b>{Math.round(pulse.revenueToday).toLocaleString('fr-FR')} DH</b><span>CA aujourd&apos;hui</span></Link>}
+          {pulse.ordersToday != null && <Link href="/orders" className="ws-kpi"><span className="ws-kpi-i">🛒</span><b>{pulse.ordersToday}</b><span>Commandes du jour</span></Link>}
+          <Link href="/orders" className={`ws-kpi${pulse.pending > 0 ? ' warn' : ''}`}><span className="ws-kpi-i">⏳</span><b>{pulse.pending}</b><span>À traiter</span></Link>
+          <Link href="/inventory" className={`ws-kpi${pulse.lowStock > 0 ? ' warn' : ''}`}><span className="ws-kpi-i">⚠️</span><b>{pulse.lowStock}</b><span>Alertes stock</span></Link>
+          <Link href="/leads" className="ws-kpi"><span className="ws-kpi-i">📞</span><b>{pulse.leadsToday}</b><span>Leads du jour</span></Link>
+          <Link href="/restock" className={`ws-kpi${pulse.waitlist > 0 ? ' warn' : ''}`}><span className="ws-kpi-i">🔔</span><b>{pulse.waitlist}</b><span>Liste d&apos;attente</span></Link>
+        </div>
+      )}
       <div className="ws-layout" onClick={() => iconFor != null && setIconFor(null)}>
         {!sideOpen && (
           <button className="ws-reopen" title="Afficher les pages" onClick={toggleSide}><PanelLeft style={{ width: 16, height: 16 }} /></button>
@@ -187,6 +218,18 @@ export default function WorkspacePage() {
       </div>
 
       <style jsx>{`
+        .ws-pulse { display: flex; align-items: stretch; gap: 8px; padding: 10px 16px 0; overflow-x: auto; }
+        .ws-pulse-live { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 800; color: var(--green); align-self: center; white-space: nowrap; letter-spacing: .04em; }
+        .ws-pulse-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 0 rgba(22,163,74,.5); animation: wspulse 1.8s infinite; }
+        @keyframes wspulse { 0% { box-shadow: 0 0 0 0 rgba(22,163,74,.5); } 70% { box-shadow: 0 0 0 5px rgba(22,163,74,0); } 100% { box-shadow: 0 0 0 0 rgba(22,163,74,0); } }
+        .ws-kpi { flex: 0 0 auto; display: flex; flex-direction: column; gap: 1px; padding: 8px 13px; border: 1px solid var(--line-soft); border-radius: 11px; background: var(--card, #fff); text-decoration: none; min-width: 92px; transition: all .12s; }
+        .ws-kpi:hover { border-color: var(--rose-bright); box-shadow: 0 2px 8px rgba(0,0,0,.05); }
+        .ws-kpi .ws-kpi-i { font-size: 13px; }
+        .ws-kpi b { font-size: 15px; font-weight: 800; color: var(--tx-hi); line-height: 1.15; }
+        .ws-kpi span:last-child { font-size: 10.5px; color: var(--tx-lo); white-space: nowrap; }
+        .ws-kpi.warn { background: var(--amber-bg, #fef7ec); border-color: var(--amber, #d97706); }
+        .ws-kpi.warn b { color: var(--amber, #b45309); }
+        @media (prefers-reduced-motion: reduce) { .ws-pulse-dot { animation: none; } }
         .ws-layout { display: flex; gap: 14px; padding: 12px 16px 20px; align-items: flex-start; }
         .ws-side { flex: 0 0 208px; position: sticky; top: 12px; background: var(--card, #fff); border: 1px solid var(--line-soft); border-radius: 14px; overflow: visible; max-height: calc(100vh - 130px); display: flex; flex-direction: column; }
         .ws-reopen { position: sticky; top: 12px; flex-shrink: 0; width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--line-soft); background: var(--card, #fff); color: var(--tx-mid); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
