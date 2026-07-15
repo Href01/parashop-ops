@@ -1,10 +1,11 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import BosShell from '@/components/BosShell'
 import { Activity } from 'lucide-react'
 
-type Ev = { id: string; type: string; icon: string; title: string; sub: string; actor: string | null; at: string }
+type Ev = { id: string; type: string; icon: string; title: string; sub: string; actor: string | null; at: string; href: string | null }
 
 const FILTERS: { key: string; label: string }[] = [
   { key: 'all', label: 'Tout' }, { key: 'order', label: 'Commandes' }, { key: 'price', label: 'Prix' },
@@ -82,16 +83,21 @@ export default function ActivityPage() {
           </div>
         ) : (
           <div className="act-feed">
-            {shown.map((e) => (
-              <div key={e.id} className={`act-row${fresh.has(e.id) ? ' fresh' : ''}`}>
-                <span className="act-ico" style={{ background: (TONE[e.type] || 'var(--tx-faint)') + '1a' }}>{e.icon}</span>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div className="act-title">{e.title}</div>
-                  <div className="act-sub">{e.sub}{e.actor ? <> · <b style={{ color: 'var(--tx-mid)' }}>{e.actor}</b></> : null}</div>
-                </div>
-                <span className="act-time">{ago(e.at)}</span>
-              </div>
-            ))}
+            {shown.map((e) => {
+              const inner = (
+                <>
+                  <span className="act-ico" style={{ background: (TONE[e.type] || 'var(--tx-faint)') + '1a' }}>{e.icon}</span>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div className="act-title">{e.title}</div>
+                    <div className="act-sub">{e.sub}{e.actor ? <> · <b style={{ color: 'var(--tx-mid)' }}>{e.actor}</b></> : null}</div>
+                  </div>
+                  <span className="act-time">{ago(e.at)}{e.href ? ' ›' : ''}</span>
+                </>
+              )
+              return e.href
+                ? <Link key={e.id} href={e.href} className={`act-row act-link${fresh.has(e.id) ? ' fresh' : ''}`}>{inner}</Link>
+                : <div key={e.id} className={`act-row${fresh.has(e.id) ? ' fresh' : ''}`}>{inner}</div>
+            })}
           </div>
         )}
       </div>
@@ -100,7 +106,9 @@ export default function ActivityPage() {
         .act-pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 0 rgba(22,163,74,.5); animation: actpulse 1.8s infinite; }
         @keyframes actpulse { 0% { box-shadow: 0 0 0 0 rgba(22,163,74,.5); } 70% { box-shadow: 0 0 0 6px rgba(22,163,74,0); } 100% { box-shadow: 0 0 0 0 rgba(22,163,74,0); } }
         .act-feed { display: flex; flex-direction: column; }
-        .act-row { display: flex; align-items: center; gap: 12px; padding: 11px 4px; border-bottom: 1px solid var(--line-soft); border-radius: 8px; transition: background .3s; }
+        .act-row { display: flex; align-items: center; gap: 12px; padding: 11px 8px; border-bottom: 1px solid var(--line-soft); border-radius: 8px; transition: background .3s; text-decoration: none; }
+        .act-link { cursor: pointer; }
+        .act-link:hover { background: var(--bg-2); }
         .act-row.fresh { background: var(--green-bg, #e7f7ef); animation: actin .4s cubic-bezier(.16,1,.3,1); }
         @keyframes actin { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
         .act-ico { flex-shrink: 0; width: 34px; height: 34px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; }
