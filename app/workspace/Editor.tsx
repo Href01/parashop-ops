@@ -28,7 +28,10 @@ function colorFor(key: string) {
 }
 const initials = (n: string) => n.trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?'
 
-export default function Editor({ url, token, docName, user }: { url: string; token: string; docName: string; user: User }) {
+type Page = { id: number; title: string; icon: string }
+
+export default function Editor({ url, token, user, page, onRename }: { url: string; token: string; user: User; page: Page; onRename: (title: string) => void }) {
+  const docName = `page:${page.id}`
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
   const [authFailed, setAuthFailed] = useState(false)
   const [peers, setPeers] = useState<Presence[]>([])
@@ -97,26 +100,43 @@ export default function Editor({ url, token, docName, user }: { url: string; tok
     uploadFile,
   })
 
-  // "Fichier & aperçu" slash command → pick a file → upload → insert the preview block.
+  // Insert one or more files as preview blocks (used by drop, paste AND the slash command).
   const fileRef = useRef<HTMLInputElement>(null)
-  const uploading = useRef(false)
-  const insertAttachment = () => fileRef.current?.click()
-  const onFilePicked = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    e.target.value = ''
-    if (!file || uploading.current) return
-    uploading.current = true
-    try {
-      const fileUrl = await uploadFile(file)
-      const ref = editor.getTextCursorPosition().block
-      editor.insertBlocks(
-        [{ type: 'attachment', props: { url: fileUrl, name: file.name, mime: file.type || '', size: file.size, preview: true } } as never],
-        ref,
-        'after'
-      )
-    } catch { /* surfaced by uploadFile error toast if any */ }
-    finally { uploading.current = false }
+  const surfaceRef = useRef<HTMLDivElement>(null)
+  const insertFiles = async (files: File[]) => {
+    for (const file of files) {
+      try {
+        const fileUrl = await uploadFile(file)
+        const ref = editor.getTextCursorPosition().block
+        editor.insertBlocks(
+          [{ type: 'attachment', props: { url: fileUrl, name: file.name, mime: file.type || '', size: file.size, preview: true } } as never],
+          ref, 'after'
+        )
+      } catch { /* ignore individual failures */ }
+    }
   }
+  const insertAttachment = () => fileRef.current?.click()
+  const onFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (files.length) insertFiles(files)
+  }
+
+  // Intercept drag-drop & paste of files BEFORE BlockNote (capture phase) so ANY file —
+  // PDF, image, video… — becomes our inline-preview block, not the plain default one.
+  useEffect(() => {
+    const el = surfaceRef.current
+    if (!el) return
+    const hasFiles = (dt: DataTransfer | null) => !!dt && Array.from(dt.types || []).includes('Files')
+    const onDrop = (e: DragEvent) => { if (!hasFiles(e.dataTransfer)) return; e.preventDefault(); e.stopPropagation(); insertFiles(Array.from(e.dataTransfer!.files)) }
+    const onPaste = (e: ClipboardEvent) => { const f = e.clipboardData?.files; if (!f || f.length === 0) return; e.preventDefault(); e.stopPropagation(); insertFiles(Array.from(f)) }
+    const onDragOver = (e: DragEvent) => { if (hasFiles(e.dataTransfer)) e.preventDefault() }
+    el.addEventListener('drop', onDrop, true)
+    el.addEventListener('paste', onPaste, true)
+    el.addEventListener('dragover', onDragOver, true)
+    return () => { el.removeEventListener('drop', onDrop, true); el.removeEventListener('paste', onPaste, true); el.removeEventListener('dragover', onDragOver, true) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor])
 
   const st = authFailed
     ? { fg: 'var(--red, #dc2626)', bg: 'var(--red-bg, #fee2e2)', dot: '#DC2626', label: 'Token invalide' }
@@ -130,7 +150,17 @@ export default function Editor({ url, token, docName, user }: { url: string; tok
     <div className="doc-card">
       {/* Compact toolbar: title · live status · who's here · help */}
       <div className="doc-bar">
-        <div className="doc-title"><span aria-hidden>🗒️</span> Notes de l&apos;équipe</div>
+        <div className="doc-title">
+          <span aria-hidden>{page.icon || '📄'}</span>
+          <input
+            defaultValue={page.title}
+            key={page.id}
+            onBlur={(e) => { const v = e.target.value.trim(); if (v && v !== page.title) onRename(v) }}
+            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+            aria-label="Titre de la page"
+            className="doc-title-input"
+          />
+        </div>
         <div className="doc-tools">
           <span className="doc-status" style={{ color: st.fg, background: st.bg }}>
             <span className="doc-dot" style={{ background: st.dot }} />{st.label}
@@ -147,7 +177,7 @@ export default function Editor({ url, token, docName, user }: { url: string; tok
       </div>
 
       {/* Paper surface — centered content like a real doc */}
-      <div className="doc-surface">
+      <div className="doc-surface" ref={surfaceRef}>
         <div className="doc-page">
           <BlockNoteView editor={editor} theme="light" slashMenu={false}>
             <SuggestionMenuController
@@ -189,7 +219,9 @@ export default function Editor({ url, token, docName, user }: { url: string; tok
           padding: 11px 16px; border-bottom: 1px solid var(--line-soft);
           background: var(--bg-1, #fff); position: sticky; top: 0; z-index: 3; flex-wrap: wrap;
         }
-        .doc-title { display: inline-flex; align-items: center; gap: 9px; font-size: 15px; font-weight: 700; color: var(--tx-hi); }
+        .doc-title { display: inline-flex; align-items: center; gap: 7px; font-size: 15px; font-weight: 700; color: var(--tx-hi); min-width: 0; flex: 1; }
+        .doc-title-input { border: none; background: transparent; font-size: 15px; font-weight: 700; color: var(--tx-hi); outline: none; padding: 3px 7px; border-radius: 7px; min-width: 0; width: 100%; max-width: 360px; transition: background .12s; }
+        .doc-title-input:hover, .doc-title-input:focus { background: var(--bg-2); }
         .doc-tools { display: inline-flex; align-items: center; gap: 12px; }
         .doc-status { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; padding: 4px 11px; border-radius: 999px; white-space: nowrap; }
         .doc-dot { width: 7px; height: 7px; border-radius: 50%; }
