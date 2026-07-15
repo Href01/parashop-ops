@@ -1,0 +1,19 @@
+{
+  "name": "shine-realtime",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Hocuspocus (Yjs) real-time collaboration server for the Shine BOS workspace. Deploys standalone (e.g. Render). Persists document state to the shared Postgres.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@hocuspocus/extension-database": "^2.15.0",
+    "@hocuspocus/server": "^2.15.0",
+    "pg": "^8.13.0",
+    "ws": "^8.18.0"
+  }
+}
