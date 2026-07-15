@@ -8,6 +8,7 @@ import { HocuspocusProvider } from '@hocuspocus/provider'
 import { useCreateBlockNote } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/mantine'
 import type { Awareness } from 'y-protocols/awareness'
+import SheetPreview from './SheetPreview'
 
 type User = { name: string; email: string }
 type Presence = { name: string; color: string }
@@ -89,24 +90,26 @@ export default function Editor({ url, token, user, page, onRename }: { url: stri
     uploadFile,
   })
 
-  // Derived, read-only PDF previews (never stored in the doc → cannot lose data). We scan
-  // the native file blocks for PDFs and render them in a panel below the note.
-  const [pdfs, setPdfs] = useState<{ url: string; name: string }[]>([])
+  // Derived, read-only previews (never stored in the doc → cannot lose data). We scan the
+  // native file blocks for PDFs / Excel / CSV and render them in a panel below the note.
+  const [docs, setDocs] = useState<{ url: string; name: string; kind: 'pdf' | 'sheet' }[]>([])
   useEffect(() => {
     const scan = () => {
-      const out: { url: string; name: string }[] = []
+      const out: { url: string; name: string; kind: 'pdf' | 'sheet' }[] = []
       const walk = (blocks: Array<{ type: string; props?: Record<string, unknown>; children?: unknown[] }>) => {
         for (const b of blocks) {
           const u = b.props?.url as string | undefined
           if (b.type === 'file' && u) {
             const name = (b.props?.name as string) || decodeURIComponent(u.split('/').pop() || 'fichier')
-            if ((name.split('.').pop() || '').toLowerCase() === 'pdf') out.push({ url: u, name })
+            const ext = (name.split('.').pop() || '').toLowerCase()
+            if (ext === 'pdf') out.push({ url: u, name, kind: 'pdf' })
+            else if (ext === 'csv' || ext === 'xls' || ext === 'xlsx') out.push({ url: u, name, kind: 'sheet' })
           }
           if (Array.isArray(b.children) && b.children.length) walk(b.children as never)
         }
       }
       try { walk(editor.document as never) } catch { /* ignore */ }
-      setPdfs((prev) => (JSON.stringify(prev) === JSON.stringify(out) ? prev : out))
+      setDocs((prev) => (JSON.stringify(prev) === JSON.stringify(out) ? prev : out))
     }
     scan()
     const t = setInterval(scan, 2000) // catch remote-synced content too
@@ -155,17 +158,19 @@ export default function Editor({ url, token, user, page, onRename }: { url: stri
           <BlockNoteView editor={editor} theme="light" />
         </div>
 
-        {/* Safe PDF previews (derived from the doc's file blocks, not stored in it) */}
-        {pdfs.length > 0 && (
+        {/* Safe previews (derived from the doc's file blocks, not stored in it) */}
+        {docs.length > 0 && (
           <div className="doc-page" style={{ marginTop: 26 }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--tx-faint)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 12 }}>📄 Aperçu des PDF du document</div>
-            {pdfs.map((a, i) => (
+            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--tx-faint)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 12 }}>📎 Aperçu des fichiers du document</div>
+            {docs.map((a, i) => (
               <div key={a.url + i} style={{ border: '1px solid var(--line-soft)', borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 12px', background: 'var(--bg-1)', borderBottom: '1px solid var(--line-soft)' }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--tx-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📄 {a.name}</span>
-                  <a href={a.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)', textDecoration: 'none', whiteSpace: 'nowrap' }}>Ouvrir en grand ↗</a>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--tx-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.kind === 'pdf' ? '📄' : '📊'} {a.name}</span>
+                  <a href={a.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)', textDecoration: 'none', whiteSpace: 'nowrap' }}>Ouvrir ↗</a>
                 </div>
-                <iframe src={a.url} title={a.name} style={{ width: '100%', height: 560, border: 0, display: 'block', background: '#fff' }} />
+                {a.kind === 'pdf'
+                  ? <iframe src={a.url} title={a.name} style={{ width: '100%', height: 560, border: 0, display: 'block', background: '#fff' }} />
+                  : <SheetPreview url={a.url} />}
               </div>
             ))}
           </div>
