@@ -26,13 +26,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   let i = 1
   if (typeof b.title === 'string') { sets.push(`title = $${i++}`); vals.push(b.title.trim() || 'Sans titre') }
   if (typeof b.icon === 'string') { sets.push(`icon = $${i++}`); vals.push(b.icon) }
+  if (b.cover === null || typeof b.cover === 'string') { sets.push(`cover = $${i++}`); vals.push(b.cover || null) }
   if (b.parentId === null || Number.isInteger(b.parentId)) { sets.push(`"parentId" = $${i++}`); vals.push(b.parentId ?? null) }
   if (typeof b.archived === 'boolean') { sets.push(`archived = $${i++}`); vals.push(b.archived) }
   if (sets.length === 0) return NextResponse.json({ error: 'rien à modifier' }, { status: 400 })
   sets.push(`"updatedAt" = now()`)
   vals.push(pid)
   const r = await pool.query(
-    `UPDATE "WorkspacePage" SET ${sets.join(', ')} WHERE id = $${i} RETURNING id, title, icon, "parentId", "updatedAt"`,
+    `UPDATE "WorkspacePage" SET ${sets.join(', ')} WHERE id = $${i} RETURNING id, title, icon, cover, "parentId", "updatedAt"`,
     vals
   )
   if (r.rows.length === 0) return NextResponse.json({ error: 'introuvable' }, { status: 404 })

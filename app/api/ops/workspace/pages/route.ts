@@ -18,7 +18,7 @@ async function guard() {
 export async function GET() {
   if (!(await guard())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const r = await pool.query(
-    `SELECT id, title, icon, "parentId", "updatedAt" FROM "WorkspacePage"
+    `SELECT id, title, icon, cover, "parentId", "updatedAt" FROM "WorkspacePage"
      WHERE archived = false ORDER BY "createdAt" ASC`
   )
   return NextResponse.json({ pages: r.rows }, { headers: { 'Cache-Control': 'no-store' } })

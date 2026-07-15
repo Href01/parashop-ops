@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import BosShell from '@/components/BosShell'
-import { Plus, Trash2, FileText, Search } from 'lucide-react'
+import { Plus, Trash2, FileText, Search, PanelLeftClose, PanelLeft } from 'lucide-react'
 
 const Editor = dynamic(() => import('./Editor'), {
   ssr: false,
@@ -11,7 +11,7 @@ const Editor = dynamic(() => import('./Editor'), {
 })
 
 type Cfg = { url: string; token: string; user: { name: string; email: string } } | null
-type Page = { id: number; title: string; icon: string; parentId: number | null; updatedAt: string }
+type Page = { id: number; title: string; icon: string; cover?: string | null; parentId: number | null; updatedAt: string }
 type Peer = { email: string; name: string; color: string; pageId: number | null; self: boolean }
 
 const EMOJIS = ['📄', '📝', '🗒️', '📌', '✅', '📊', '📈', '💡', '🚀', '🔥', '⭐', '🎯', '📦', '🛒', '💰', '🏷️', '📣', '🧪', '🗓️', '🎨', '🔧', '📁', '🧠', '❤️']
@@ -26,8 +26,12 @@ export default function WorkspacePage() {
   const [presence, setPresence] = useState<Peer[]>([])
   const [search, setSearch] = useState('')
   const [iconFor, setIconFor] = useState<number | null>(null)
+  const [sideOpen, setSideOpen] = useState(true)
   const selRef = useRef<number | null>(null)
   selRef.current = selectedId
+
+  useEffect(() => { try { setSideOpen(localStorage.getItem('ws-side') !== '0') } catch { /* ignore */ } }, [])
+  const toggleSide = () => setSideOpen((v) => { const n = !v; try { localStorage.setItem('ws-side', n ? '1' : '0') } catch { /* ignore */ } return n })
 
   const loadPages = useCallback(async () => {
     try {
@@ -95,6 +99,10 @@ export default function WorkspacePage() {
     setIconFor(null)
     await fetch(`/api/ops/workspace/pages/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ icon }) }).catch(() => {})
   }
+  const setCover = async (id: number, cover: string | null) => {
+    setPages((prev) => prev.map((p) => (p.id === id ? { ...p, cover } : p)))
+    await fetch(`/api/ops/workspace/pages/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cover }) }).catch(() => {})
+  }
 
   const childrenOf = (pid: number | null) => pages.filter((p) => (p.parentId ?? null) === pid)
   const selected = pages.find((p) => p.id === selectedId) || null
@@ -142,10 +150,16 @@ export default function WorkspacePage() {
   return (
     <BosShell active="workspace" title="Espace collaboratif" crumb="Équipe">
       <div className="ws-layout" onClick={() => iconFor != null && setIconFor(null)}>
-        <aside className="ws-side">
+        {!sideOpen && (
+          <button className="ws-reopen" title="Afficher les pages" onClick={toggleSide}><PanelLeft style={{ width: 16, height: 16 }} /></button>
+        )}
+        <aside className="ws-side" style={sideOpen ? undefined : { display: 'none' }}>
           <div className="ws-side-head">
             <span>Pages</span>
-            <button className="ws-new" title="Nouvelle page" onClick={() => createPage(null)}><Plus style={{ width: 15, height: 15 }} /></button>
+            <div style={{ display: 'inline-flex', gap: 4 }}>
+              <button className="ws-new" title="Nouvelle page" onClick={() => createPage(null)}><Plus style={{ width: 15, height: 15 }} /></button>
+              <button className="ws-new" title="Masquer" onClick={toggleSide}><PanelLeftClose style={{ width: 15, height: 15 }} /></button>
+            </div>
           </div>
           <div className="ws-search">
             <Search style={{ width: 13, height: 13, color: 'var(--tx-faint)' }} />
@@ -162,7 +176,7 @@ export default function WorkspacePage() {
 
         <main className="ws-main">
           {cfg && selected ? (
-            <Editor key={selected.id} url={cfg.url} token={cfg.token} user={cfg.user} page={{ id: selected.id, title: selected.title, icon: selected.icon }} onRename={(t) => renamePage(selected.id, t)} />
+            <Editor key={selected.id} url={cfg.url} token={cfg.token} user={cfg.user} page={{ id: selected.id, title: selected.title, icon: selected.icon, cover: selected.cover }} onRename={(t) => renamePage(selected.id, t)} onSetCover={(c) => setCover(selected.id, c)} />
           ) : (
             <div className="card-modern" style={{ padding: 40, textAlign: 'center', color: 'var(--tx-faint)' }}>
               <FileText style={{ width: 30, height: 30, margin: '0 auto 10px', opacity: .5 }} />
@@ -174,7 +188,9 @@ export default function WorkspacePage() {
 
       <style jsx>{`
         .ws-layout { display: flex; gap: 14px; padding: 12px 16px 20px; align-items: flex-start; }
-        .ws-side { flex: 0 0 240px; position: sticky; top: 12px; background: var(--card, #fff); border: 1px solid var(--line-soft); border-radius: 14px; overflow: visible; max-height: calc(100vh - 130px); display: flex; flex-direction: column; }
+        .ws-side { flex: 0 0 208px; position: sticky; top: 12px; background: var(--card, #fff); border: 1px solid var(--line-soft); border-radius: 14px; overflow: visible; max-height: calc(100vh - 130px); display: flex; flex-direction: column; }
+        .ws-reopen { position: sticky; top: 12px; flex-shrink: 0; width: 34px; height: 34px; border-radius: 9px; border: 1px solid var(--line-soft); background: var(--card, #fff); color: var(--tx-mid); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+        .ws-reopen:hover { background: var(--bg-2); color: var(--tx-hi); }
         .ws-side-head { display: flex; align-items: center; justify-content: space-between; padding: 11px 12px; border-bottom: 1px solid var(--line-soft); font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--tx-faint); }
         .ws-new { border: none; background: var(--bg-2); color: var(--tx-mid); width: 26px; height: 26px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
         .ws-new:hover { background: var(--rose-bright); color: #fff; }
