@@ -2,24 +2,17 @@
 
 import '@blocknote/core/fonts/inter.css'
 import '@blocknote/mantine/style.css'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import * as Y from 'yjs'
 import { HocuspocusProvider } from '@hocuspocus/provider'
-import { useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react'
+import { useCreateBlockNote } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/mantine'
-import { BlockNoteSchema, defaultBlockSpecs, filterSuggestionItems } from '@blocknote/core'
 import type { Awareness } from 'y-protocols/awareness'
-import { AttachmentBlock } from './FileBlock'
-
-// Extend BlockNote with our inline file-preview block (same schema on every client).
-const schema = BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, attachment: AttachmentBlock() },
-})
 
 type User = { name: string; email: string }
 type Presence = { name: string; color: string }
+type Page = { id: number; title: string; icon: string }
 
-// Stable per-name color for the live cursor + presence avatars.
 const PALETTE = ['#E11D48', '#0C6B52', '#7C3AED', '#D97706', '#2563EB', '#DB2777', '#059669', '#4F46E5']
 function colorFor(key: string) {
   let h = 0
@@ -28,8 +21,6 @@ function colorFor(key: string) {
 }
 const initials = (n: string) => n.trim().split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?'
 
-type Page = { id: number; title: string; icon: string }
-
 export default function Editor({ url, token, user, page, onRename }: { url: string; token: string; user: User; page: Page; onRename: (title: string) => void }) {
   const docName = `page:${page.id}`
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
@@ -37,10 +28,8 @@ export default function Editor({ url, token, user, page, onRename }: { url: stri
   const [peers, setPeers] = useState<Presence[]>([])
   const color = useMemo(() => colorFor(user.email || user.name), [user])
 
-  // One Y.Doc + provider for the lifetime of this editor.
   const { doc, provider } = useMemo(() => {
     const doc = new Y.Doc()
-    // Normalize to a WebSocket URL — accept https/http and force wss/ws (common config slip).
     const wsUrl = (url || '').replace(/^http(s?):\/\//i, (_m, s) => (s ? 'wss://' : 'ws://')).replace(/\/+$/, '')
     const provider = new HocuspocusProvider({ url: wsUrl, name: docName, token, document: doc })
     return { doc, provider }
@@ -53,12 +42,11 @@ export default function Editor({ url, token, user, page, onRename }: { url: stri
     provider.on('status', onStatus)
     provider.on('authenticationFailed', onAuthFail)
     provider.on('authenticated', onAuthOk)
-    // Presence: read the awareness states (each collaborator's user info).
     const aw = provider.awareness
     const refresh = () => {
       if (!aw) return
       const seen = new Map<string, Presence>()
-      aw.getStates().forEach((s: any) => {
+      aw.getStates().forEach((s: { user?: { name?: string; color?: string } }) => {
         const u = s?.user
         if (u?.name) seen.set(u.name + (u.color || ''), { name: u.name, color: u.color || '#888' })
       })
@@ -76,6 +64,9 @@ export default function Editor({ url, token, user, page, onRename }: { url: stri
     }
   }, [provider, doc])
 
+  // Upload dropped/pasted/inserted files → Postgres → returns the URL. BlockNote's
+  // native blocks handle the rest: images preview inline, other files (PDF…) become a
+  // file block you click to open (the browser previews it). Native = stable, no data loss.
   const uploadFile = async (file: File) => {
     const fd = new FormData()
     fd.append('file', file)
@@ -89,73 +80,13 @@ export default function Editor({ url, token, user, page, onRename }: { url: stri
   }
 
   const editor = useCreateBlockNote({
-    schema,
     collaboration: {
-      // Same object at runtime; cast narrows Hocuspocus's `awareness: Awareness|null`
-      // to BlockNote's expected `awareness?: Awareness` (it's non-null from construction).
       provider: provider as unknown as { awareness?: Awareness },
       fragment: doc.getXmlFragment('document-store'),
       user: { name: user.name, color },
     },
     uploadFile,
   })
-
-  // Insert one or more files as preview blocks (used by drop, paste AND the slash command).
-  const fileRef = useRef<HTMLInputElement>(null)
-  const surfaceRef = useRef<HTMLDivElement>(null)
-  const insertFiles = async (files: File[]) => {
-    for (const file of files) {
-      try {
-        const fileUrl = await uploadFile(file)
-        const ref = editor.getTextCursorPosition().block
-        editor.insertBlocks(
-          [{ type: 'attachment', props: { url: fileUrl, name: file.name, mime: file.type || '', size: file.size, preview: true } } as never],
-          ref, 'after'
-        )
-      } catch { /* ignore individual failures */ }
-    }
-  }
-  const insertAttachment = () => fileRef.current?.click()
-  const onFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    e.target.value = ''
-    if (files.length) insertFiles(files)
-  }
-
-  // Intercept drag-drop & paste of files BEFORE BlockNote (capture phase) so ANY file —
-  // PDF, image, video… — becomes our inline-preview block, not the plain default one.
-  useEffect(() => {
-    const el = surfaceRef.current
-    if (!el) return
-    const hasFiles = (dt: DataTransfer | null) => !!dt && Array.from(dt.types || []).includes('Files')
-    const onDrop = (e: DragEvent) => { if (!hasFiles(e.dataTransfer)) return; e.preventDefault(); e.stopPropagation(); insertFiles(Array.from(e.dataTransfer!.files)) }
-    const onPaste = (e: ClipboardEvent) => { const f = e.clipboardData?.files; if (!f || f.length === 0) return; e.preventDefault(); e.stopPropagation(); insertFiles(Array.from(f)) }
-    const onDragOver = (e: DragEvent) => { if (hasFiles(e.dataTransfer)) e.preventDefault() }
-    el.addEventListener('drop', onDrop, true)
-    el.addEventListener('paste', onPaste, true)
-    el.addEventListener('dragover', onDragOver, true)
-    return () => { el.removeEventListener('drop', onDrop, true); el.removeEventListener('paste', onPaste, true); el.removeEventListener('dragover', onDragOver, true) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor])
-
-  // Migrate legacy default "file" blocks (added before the preview feature) → our
-  // preview block, so existing PDFs/files become viewable without re-uploading.
-  useEffect(() => {
-    const EXT: Record<string, string> = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', mp4: 'video/mp4', webm: 'video/webm', mp3: 'audio/mpeg', wav: 'audio/wav' }
-    const mimeOf = (name: string) => EXT[(name.split('.').pop() || '').toLowerCase()] || ''
-    const t = setTimeout(() => {
-      try {
-        const legacy = editor.document.filter((b) => b.type === 'file' && (b as { props?: { url?: string } }).props?.url)
-        for (const b of legacy) {
-          const props = (b as unknown as { props: { url: string; name?: string } }).props
-          const name = props.name || decodeURIComponent((props.url.split('/').pop() || 'fichier'))
-          editor.replaceBlocks([b.id], [{ type: 'attachment', props: { url: props.url, name, mime: mimeOf(name), size: 0, preview: true } } as never])
-        }
-      } catch { /* ignore */ }
-    }, 1600) // let collab sync first
-    return () => clearTimeout(t)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor])
 
   const st = authFailed
     ? { fg: 'var(--red, #dc2626)', bg: 'var(--red-bg, #fee2e2)', dot: '#DC2626', label: 'Token invalide' }
@@ -167,7 +98,6 @@ export default function Editor({ url, token, user, page, onRename }: { url: stri
 
   return (
     <div className="doc-card">
-      {/* Compact toolbar: title · live status · who's here · help */}
       <div className="doc-bar">
         <div className="doc-title">
           <span aria-hidden>{page.icon || '📄'}</span>
@@ -191,53 +121,19 @@ export default function Editor({ url, token, user, page, onRename }: { url: stri
               ))}
             </div>
           )}
-          <span className="doc-help" title="Tape « / » pour insérer (titre, tableau, image, liste…). Glisse un fichier (image, PDF) pour l'ajouter et le prévisualiser.">?</span>
+          <span className="doc-help" title="Tape « / » pour insérer (titre, tableau, liste…). Glisse une image → aperçu inline. Glisse un PDF → clique dessus pour l'ouvrir/prévisualiser.">?</span>
         </div>
       </div>
 
-      {/* Paper surface — centered content like a real doc */}
-      <div className="doc-surface" ref={surfaceRef}>
+      <div className="doc-surface">
         <div className="doc-page">
-          <BlockNoteView editor={editor} theme="light" slashMenu={false}>
-            <SuggestionMenuController
-              triggerCharacter="/"
-              getItems={async (query) =>
-                filterSuggestionItems(
-                  [
-                    ...getDefaultReactSlashMenuItems(editor),
-                    {
-                      title: 'Fichier & aperçu',
-                      subtext: 'PDF, image, vidéo… avec aperçu',
-                      aliases: ['fichier', 'file', 'pdf', 'piece jointe', 'attachment', 'upload'],
-                      group: 'Média',
-                      icon: <span style={{ fontSize: 16 }}>📎</span>,
-                      onItemClick: insertAttachment,
-                    },
-                  ],
-                  query
-                )
-              }
-            />
-          </BlockNoteView>
+          <BlockNoteView editor={editor} theme="light" />
         </div>
       </div>
-      <input ref={fileRef} type="file" onChange={onFilePicked} style={{ display: 'none' }} />
 
       <style jsx>{`
-        .doc-card {
-          background: var(--card, #fff);
-          border: 1px solid var(--line-soft);
-          border-radius: 16px;
-          overflow: hidden;
-          box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 12px 30px rgba(0,0,0,.05);
-          display: flex; flex-direction: column;
-          min-height: calc(100vh - 190px);
-        }
-        .doc-bar {
-          display: flex; align-items: center; justify-content: space-between; gap: 12;
-          padding: 11px 16px; border-bottom: 1px solid var(--line-soft);
-          background: var(--bg-1, #fff); position: sticky; top: 0; z-index: 3; flex-wrap: wrap;
-        }
+        .doc-card { background: var(--card, #fff); border: 1px solid var(--line-soft); border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 12px 30px rgba(0,0,0,.05); display: flex; flex-direction: column; min-height: calc(100vh - 190px); }
+        .doc-bar { display: flex; align-items: center; justify-content: space-between; gap: 12; padding: 11px 16px; border-bottom: 1px solid var(--line-soft); background: var(--bg-1, #fff); position: sticky; top: 0; z-index: 3; flex-wrap: wrap; }
         .doc-title { display: inline-flex; align-items: center; gap: 7px; font-size: 15px; font-weight: 700; color: var(--tx-hi); min-width: 0; flex: 1; }
         .doc-title-input { border: none; background: transparent; font-size: 15px; font-weight: 700; color: var(--tx-hi); outline: none; padding: 3px 7px; border-radius: 7px; min-width: 0; width: 100%; max-width: 360px; transition: background .12s; }
         .doc-title-input:hover, .doc-title-input:focus { background: var(--bg-2); }
@@ -250,7 +146,6 @@ export default function Editor({ url, token, user, page, onRename }: { url: stri
         .doc-help:hover { color: var(--tx-hi); border-color: var(--tx-faint); }
         .doc-surface { flex: 1; overflow-y: auto; padding: 30px clamp(14px, 4vw, 40px) 80px; }
         .doc-page { max-width: 760px; margin: 0 auto; }
-        /* Let BlockNote breathe + match the app font */
         .doc-page :global(.bn-editor) { padding-inline: 0 !important; }
       `}</style>
     </div>
