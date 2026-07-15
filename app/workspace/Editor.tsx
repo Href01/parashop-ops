@@ -2,19 +2,12 @@
 
 import '@blocknote/core/fonts/inter.css'
 import '@blocknote/mantine/style.css'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import * as Y from 'yjs'
 import { HocuspocusProvider } from '@hocuspocus/provider'
-import { useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react'
+import { useCreateBlockNote } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/mantine'
-import { BlockNoteSchema, defaultBlockSpecs, filterSuggestionItems } from '@blocknote/core'
 import type { Awareness } from 'y-protocols/awareness'
-import { AttachmentBlock } from './FileBlock'
-
-// Preview block registered in the schema (same on every client → recognized, not dropped).
-const schema = BlockNoteSchema.create({
-  blockSpecs: { ...defaultBlockSpecs, attachment: AttachmentBlock() },
-})
 
 type User = { name: string; email: string }
 type Presence = { name: string; color: string }
@@ -71,9 +64,10 @@ export default function Editor({ url, token, user, page, onRename }: { url: stri
     }
   }, [provider, doc])
 
-  // Upload dropped/pasted/inserted files → Postgres → returns the URL. BlockNote's
-  // native blocks handle the rest: images preview inline, other files (PDF…) become a
-  // file block you click to open (the browser previews it). Native = stable, no data loss.
+  // Upload dropped/pasted/inserted files → Postgres → URL. Native blocks handle the rest
+  // and round-trip perfectly through Yjs (no data loss): images preview inline; PDFs &
+  // other files become a file block — the serve endpoint is `inline`, so a click opens
+  // the PDF as a full preview in the browser.
   const uploadFile = async (file: File) => {
     const fd = new FormData()
     fd.append('file', file)
@@ -87,7 +81,6 @@ export default function Editor({ url, token, user, page, onRename }: { url: stri
   }
 
   const editor = useCreateBlockNote({
-    schema,
     collaboration: {
       provider: provider as unknown as { awareness?: Awareness },
       fragment: doc.getXmlFragment('document-store'),
@@ -96,34 +89,28 @@ export default function Editor({ url, token, user, page, onRename }: { url: stri
     uploadFile,
   })
 
-  // Insert files as inline-preview blocks (user action only — as safe as typing; NO
-  // on-load mutation, which was the previous data-loss cause).
-  const fileRef = useRef<HTMLInputElement>(null)
-  const surfaceRef = useRef<HTMLDivElement>(null)
-  const insertFiles = async (files: File[]) => {
-    for (const file of files) {
-      try {
-        const fileUrl = await uploadFile(file)
-        const ref = editor.getTextCursorPosition().block
-        editor.insertBlocks([{ type: 'attachment', props: { url: fileUrl, name: file.name, mime: file.type || '', size: file.size, preview: true } } as never], ref, 'after')
-      } catch { /* ignore individual failures */ }
-    }
-  }
-  const insertAttachment = () => fileRef.current?.click()
-  const onFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => { const f = Array.from(e.target.files || []); e.target.value = ''; if (f.length) insertFiles(f) }
-
+  // Derived, read-only PDF previews (never stored in the doc → cannot lose data). We scan
+  // the native file blocks for PDFs and render them in a panel below the note.
+  const [pdfs, setPdfs] = useState<{ url: string; name: string }[]>([])
   useEffect(() => {
-    const el = surfaceRef.current
-    if (!el) return
-    const hasFiles = (dt: DataTransfer | null) => !!dt && Array.from(dt.types || []).includes('Files')
-    const onDrop = (e: DragEvent) => { if (!hasFiles(e.dataTransfer)) return; e.preventDefault(); e.stopPropagation(); insertFiles(Array.from(e.dataTransfer!.files)) }
-    const onPaste = (e: ClipboardEvent) => { const f = e.clipboardData?.files; if (!f || f.length === 0) return; e.preventDefault(); e.stopPropagation(); insertFiles(Array.from(f)) }
-    const onDragOver = (e: DragEvent) => { if (hasFiles(e.dataTransfer)) e.preventDefault() }
-    el.addEventListener('drop', onDrop, true)
-    el.addEventListener('paste', onPaste, true)
-    el.addEventListener('dragover', onDragOver, true)
-    return () => { el.removeEventListener('drop', onDrop, true); el.removeEventListener('paste', onPaste, true); el.removeEventListener('dragover', onDragOver, true) }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const scan = () => {
+      const out: { url: string; name: string }[] = []
+      const walk = (blocks: Array<{ type: string; props?: Record<string, unknown>; children?: unknown[] }>) => {
+        for (const b of blocks) {
+          const u = b.props?.url as string | undefined
+          if (b.type === 'file' && u) {
+            const name = (b.props?.name as string) || decodeURIComponent(u.split('/').pop() || 'fichier')
+            if ((name.split('.').pop() || '').toLowerCase() === 'pdf') out.push({ url: u, name })
+          }
+          if (Array.isArray(b.children) && b.children.length) walk(b.children as never)
+        }
+      }
+      try { walk(editor.document as never) } catch { /* ignore */ }
+      setPdfs((prev) => (JSON.stringify(prev) === JSON.stringify(out) ? prev : out))
+    }
+    scan()
+    const t = setInterval(scan, 2000) // catch remote-synced content too
+    return () => clearInterval(t)
   }, [editor])
 
   const st = authFailed
@@ -159,29 +146,31 @@ export default function Editor({ url, token, user, page, onRename }: { url: stri
               ))}
             </div>
           )}
-          <span className="doc-help" title="Tape « / » pour insérer (titre, tableau, liste…). Glisse une image → aperçu inline. Glisse un PDF → clique dessus pour l'ouvrir/prévisualiser.">?</span>
+          <span className="doc-help" title="Tape « / » pour insérer. Glisse une image → aperçu inline. Glisse un PDF → clique dessus pour l'ouvrir en aperçu (nouvel onglet).">?</span>
         </div>
       </div>
 
-      <div className="doc-surface" ref={surfaceRef}>
+      <div className="doc-surface">
         <div className="doc-page">
-          <BlockNoteView editor={editor} theme="light" slashMenu={false}>
-            <SuggestionMenuController
-              triggerCharacter="/"
-              getItems={async (query) =>
-                filterSuggestionItems(
-                  [
-                    ...getDefaultReactSlashMenuItems(editor),
-                    { title: 'Fichier & aperçu', subtext: 'PDF, image, vidéo… avec aperçu', aliases: ['fichier', 'file', 'pdf', 'piece jointe', 'upload'], group: 'Média', icon: <span style={{ fontSize: 16 }}>📎</span>, onItemClick: insertAttachment },
-                  ],
-                  query
-                )
-              }
-            />
-          </BlockNoteView>
+          <BlockNoteView editor={editor} theme="light" />
         </div>
+
+        {/* Safe PDF previews (derived from the doc's file blocks, not stored in it) */}
+        {pdfs.length > 0 && (
+          <div className="doc-page" style={{ marginTop: 26 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--tx-faint)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 12 }}>📄 Aperçu des PDF du document</div>
+            {pdfs.map((a, i) => (
+              <div key={a.url + i} style={{ border: '1px solid var(--line-soft)', borderRadius: 12, overflow: 'hidden', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '9px 12px', background: 'var(--bg-1)', borderBottom: '1px solid var(--line-soft)' }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--tx-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>📄 {a.name}</span>
+                  <a href={a.url} target="_blank" rel="noreferrer" style={{ fontSize: 12, fontWeight: 700, color: 'var(--green)', textDecoration: 'none', whiteSpace: 'nowrap' }}>Ouvrir en grand ↗</a>
+                </div>
+                <iframe src={a.url} title={a.name} style={{ width: '100%', height: 560, border: 0, display: 'block', background: '#fff' }} />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
-      <input ref={fileRef} type="file" onChange={onFilePicked} style={{ display: 'none' }} />
 
       <style jsx>{`
         .doc-card { background: var(--card, #fff); border: 1px solid var(--line-soft); border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 12px 30px rgba(0,0,0,.05); display: flex; flex-direction: column; min-height: calc(100vh - 190px); }
