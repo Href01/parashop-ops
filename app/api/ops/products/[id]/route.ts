@@ -31,7 +31,9 @@ export async function GET(
         stock,
         COALESCE("virtualStock", 0) AS "virtualStock",
         "lowStockThreshold",
-        supplier
+        supplier,
+        COALESCE("importUnavailable", false) AS "importUnavailable",
+        "importEtaWeeks"
       FROM "Product"
       WHERE id = $1`,
       [productId]
@@ -150,12 +152,14 @@ export async function PUT(
     const { id: productId } = await params
     const body = await request.json()
 
-    const { costPrice, lowStockThreshold, supplier, virtualStock } = body
+    const { costPrice, lowStockThreshold, supplier, virtualStock, importUnavailable, importEtaWeeks } = body
 
     // Build update query dynamically
     const updates: string[] = []
     const values: any[] = []
     let paramIndex = 1
+    // Import-unavailable tag changes what the storefront shows → revalidate the site.
+    let siteAffected = false
 
     if (costPrice !== undefined) {
       updates.push(`"costPrice" = $${paramIndex}`)
@@ -186,6 +190,21 @@ export async function PUT(
       paramIndex++
     }
 
+    // Temporarily-unavailable-due-to-import tag (drives the storefront notify block).
+    if (importUnavailable !== undefined) {
+      updates.push(`"importUnavailable" = $${paramIndex}`)
+      values.push(importUnavailable === true)
+      paramIndex++
+      siteAffected = true
+    }
+    if (importEtaWeeks !== undefined) {
+      const w = importEtaWeeks === null || importEtaWeeks === '' ? null : Math.max(1, Math.trunc(Number(importEtaWeeks)) || 0) || null
+      updates.push(`"importEtaWeeks" = $${paramIndex}`)
+      values.push(w)
+      paramIndex++
+      siteAffected = true
+    }
+
     if (updates.length === 0) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
     }
@@ -206,8 +225,8 @@ export async function PUT(
       return NextResponse.json({ error: 'Product not found' }, { status: 404 })
     }
 
-    // Changing the sellable buffer must refresh the public site's cached availability.
-    if (virtualStockChanged) revalidateWebsite(['products']).catch(() => {})
+    // Changing the sellable buffer or the import tag must refresh the public site.
+    if (virtualStockChanged || siteAffected) revalidateWebsite(['products']).catch(() => {})
 
     return NextResponse.json(result.rows[0])
   } catch (error) {

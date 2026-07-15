@@ -12,6 +12,7 @@ interface ProductDetail {
   price?: number | string; costPrice?: number | string | null
   sku?: string; stock?: number; lowStockThreshold?: number
   supplier?: string | null
+  importUnavailable?: boolean; importEtaWeeks?: number | null
   recentOrders?: Array<{ id: number; status: string; createdAt: string; deliveryCity: string | null; sourceChannel: string | null; quantity: number; price: number | string }>
   sold?: { units: number | string; revenue: number | string }
   content?: Array<{ id: number; title: string; platform: string | null; type: string | null; status: string; dueDate: string | null }>
@@ -49,6 +50,7 @@ export default function ProductDetailPage() {
       setP(d)
       setCost(d?.costPrice != null ? String(d.costPrice) : '')
       setSupplier(d?.supplier || '')
+      setEtaWeeks(d?.importEtaWeeks != null ? String(d.importEtaWeeks) : '')
     })
     .catch(() => {})
     .finally(() => setLoading(false))
@@ -71,6 +73,23 @@ export default function ProductDetailPage() {
     await fetch(`/api/ops/products/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ supplier: trimmed || null }) }).catch(() => {})
     await load()
     setSavingSupplier(false)
+  }
+
+  const [savingImport, setSavingImport] = useState(false)
+  const [etaWeeks, setEtaWeeks] = useState('')
+  const toggleImport = async (next: boolean) => {
+    if (savingImport) return
+    setSavingImport(true)
+    await fetch(`/api/ops/products/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ importUnavailable: next }) }).catch(() => {})
+    await load()
+    setSavingImport(false)
+  }
+  const saveEta = async () => {
+    if (savingImport) return
+    setSavingImport(true)
+    await fetch(`/api/ops/products/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ importEtaWeeks: etaWeeks === '' ? null : Number(etaWeeks) }) }).catch(() => {})
+    await load()
+    setSavingImport(false)
   }
 
   const price = num(p?.price)
@@ -122,6 +141,35 @@ export default function ProductDetailPage() {
               <Stat label="Stock" value={`${num(p.stock)} u.`} warn={num(p.stock) <= num(p.lowStockThreshold)} />
               <Stat label="Vendus (total)" value={`${num(p.sold?.units)} u.`} />
               <Stat label="CA livré (total)" value={mad(p.sold?.revenue)} accent />
+            </div>
+
+            {/* Import availability toggle */}
+            <div style={{ background: p.importUnavailable ? '#FFF7ED' : 'var(--bg-1)', border: `1px solid ${p.importUnavailable ? 'var(--amber)' : 'var(--line-soft)'}`, borderRadius: 'var(--radius-lg)', padding: 16, marginBottom: 16, transition: 'background .2s, border-color .2s' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14, flexWrap: 'wrap' }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx-hi)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    Indisponible — problème d&apos;importation
+                    {p.importUnavailable && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--amber)', background: '#FEF3C7', borderRadius: 5, padding: '2px 7px' }}>ACTIF</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginTop: 4, lineHeight: 1.55, maxWidth: 520 }}>
+                    Sur le site, remplace « Ajouter au panier » par un message <b>temporairement indisponible</b>, propose des <b>alternatives</b> en stock, et capture le <b>numéro</b> des clients pour les prévenir du retour. FR &amp; AR.
+                  </div>
+                </div>
+                <button onClick={() => toggleImport(!p.importUnavailable)} disabled={savingImport} aria-pressed={!!p.importUnavailable} title={p.importUnavailable ? 'Rendre disponible' : 'Marquer indisponible'}
+                  style={{ position: 'relative', width: 46, height: 26, borderRadius: 999, border: 'none', cursor: savingImport ? 'default' : 'pointer', background: p.importUnavailable ? 'var(--amber)' : 'var(--line)', transition: 'background .18s', flexShrink: 0, opacity: savingImport ? 0.6 : 1 }}>
+                  <span style={{ position: 'absolute', top: 3, left: p.importUnavailable ? 23 : 3, width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,.25)', transition: 'left .18s' }} />
+                </button>
+              </div>
+              {p.importUnavailable && (
+                <div style={{ marginTop: 13, paddingTop: 13, borderTop: '1px solid var(--line-soft)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 12, color: 'var(--tx-mid)' }}>Délai estimé :</span>
+                  <input value={etaWeeks} onChange={(e) => setEtaWeeks(e.target.value)} type="number" min={1} placeholder="2-3"
+                    style={{ width: 70, background: 'var(--bg-1)', border: '1px solid var(--line)', borderRadius: 7, padding: '5px 8px', fontSize: 14, fontFamily: 'var(--mono)', color: 'var(--tx-hi)' }} />
+                  <span style={{ fontSize: 12, color: 'var(--tx-lo)' }}>semaines</span>
+                  <button className="btn-modern btn-subtle btn-sm" onClick={saveEta} disabled={savingImport}>{savingImport ? '…' : 'Enregistrer'}</button>
+                  <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>Vide = « 2 à 3 semaines » par défaut.</span>
+                </div>
+              )}
             </div>
 
             {/* Price change impact (only shows if this product has a recorded change) */}
