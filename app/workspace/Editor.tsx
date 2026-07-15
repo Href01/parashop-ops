@@ -2,12 +2,19 @@
 
 import '@blocknote/core/fonts/inter.css'
 import '@blocknote/mantine/style.css'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import * as Y from 'yjs'
 import { HocuspocusProvider } from '@hocuspocus/provider'
-import { useCreateBlockNote } from '@blocknote/react'
+import { useCreateBlockNote, SuggestionMenuController, getDefaultReactSlashMenuItems } from '@blocknote/react'
 import { BlockNoteView } from '@blocknote/mantine'
+import { BlockNoteSchema, defaultBlockSpecs, filterSuggestionItems } from '@blocknote/core'
 import type { Awareness } from 'y-protocols/awareness'
+import { AttachmentBlock } from './FileBlock'
+
+// Preview block registered in the schema (same on every client → recognized, not dropped).
+const schema = BlockNoteSchema.create({
+  blockSpecs: { ...defaultBlockSpecs, attachment: AttachmentBlock() },
+})
 
 type User = { name: string; email: string }
 type Presence = { name: string; color: string }
@@ -80,6 +87,7 @@ export default function Editor({ url, token, user, page, onRename }: { url: stri
   }
 
   const editor = useCreateBlockNote({
+    schema,
     collaboration: {
       provider: provider as unknown as { awareness?: Awareness },
       fragment: doc.getXmlFragment('document-store'),
@@ -87,6 +95,36 @@ export default function Editor({ url, token, user, page, onRename }: { url: stri
     },
     uploadFile,
   })
+
+  // Insert files as inline-preview blocks (user action only — as safe as typing; NO
+  // on-load mutation, which was the previous data-loss cause).
+  const fileRef = useRef<HTMLInputElement>(null)
+  const surfaceRef = useRef<HTMLDivElement>(null)
+  const insertFiles = async (files: File[]) => {
+    for (const file of files) {
+      try {
+        const fileUrl = await uploadFile(file)
+        const ref = editor.getTextCursorPosition().block
+        editor.insertBlocks([{ type: 'attachment', props: { url: fileUrl, name: file.name, mime: file.type || '', size: file.size, preview: true } } as never], ref, 'after')
+      } catch { /* ignore individual failures */ }
+    }
+  }
+  const insertAttachment = () => fileRef.current?.click()
+  const onFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => { const f = Array.from(e.target.files || []); e.target.value = ''; if (f.length) insertFiles(f) }
+
+  useEffect(() => {
+    const el = surfaceRef.current
+    if (!el) return
+    const hasFiles = (dt: DataTransfer | null) => !!dt && Array.from(dt.types || []).includes('Files')
+    const onDrop = (e: DragEvent) => { if (!hasFiles(e.dataTransfer)) return; e.preventDefault(); e.stopPropagation(); insertFiles(Array.from(e.dataTransfer!.files)) }
+    const onPaste = (e: ClipboardEvent) => { const f = e.clipboardData?.files; if (!f || f.length === 0) return; e.preventDefault(); e.stopPropagation(); insertFiles(Array.from(f)) }
+    const onDragOver = (e: DragEvent) => { if (hasFiles(e.dataTransfer)) e.preventDefault() }
+    el.addEventListener('drop', onDrop, true)
+    el.addEventListener('paste', onPaste, true)
+    el.addEventListener('dragover', onDragOver, true)
+    return () => { el.removeEventListener('drop', onDrop, true); el.removeEventListener('paste', onPaste, true); el.removeEventListener('dragover', onDragOver, true) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor])
 
   const st = authFailed
     ? { fg: 'var(--red, #dc2626)', bg: 'var(--red-bg, #fee2e2)', dot: '#DC2626', label: 'Token invalide' }
@@ -125,11 +163,25 @@ export default function Editor({ url, token, user, page, onRename }: { url: stri
         </div>
       </div>
 
-      <div className="doc-surface">
+      <div className="doc-surface" ref={surfaceRef}>
         <div className="doc-page">
-          <BlockNoteView editor={editor} theme="light" />
+          <BlockNoteView editor={editor} theme="light" slashMenu={false}>
+            <SuggestionMenuController
+              triggerCharacter="/"
+              getItems={async (query) =>
+                filterSuggestionItems(
+                  [
+                    ...getDefaultReactSlashMenuItems(editor),
+                    { title: 'Fichier & aperçu', subtext: 'PDF, image, vidéo… avec aperçu', aliases: ['fichier', 'file', 'pdf', 'piece jointe', 'upload'], group: 'Média', icon: <span style={{ fontSize: 16 }}>📎</span>, onItemClick: insertAttachment },
+                  ],
+                  query
+                )
+              }
+            />
+          </BlockNoteView>
         </div>
       </div>
+      <input ref={fileRef} type="file" onChange={onFilePicked} style={{ display: 'none' }} />
 
       <style jsx>{`
         .doc-card { background: var(--card, #fff); border: 1px solid var(--line-soft); border-radius: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.04), 0 12px 30px rgba(0,0,0,.05); display: flex; flex-direction: column; min-height: calc(100vh - 190px); }
