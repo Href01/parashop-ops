@@ -488,7 +488,66 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
         .tpl-row { display: flex; gap: 8px; flex-wrap: wrap; }
         .tpl-btn { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; color: var(--tx-hi); padding: 8px 12px; border-radius: 9px; border: 1px solid var(--line-soft); background: var(--card, #fff); cursor: pointer; transition: all .12s; }
         .tpl-btn:hover { border-color: var(--green); background: var(--green-bg); }
-        .doc-page :global(.bn-editor) { padding-inline: 0 !important; }
+        /* ── Pro reading typography for the document body ─────────────────────── */
+        .doc-page :global(.bn-editor) {
+          padding-inline: 0 !important;
+          font-size: 16px;
+          line-height: 1.7;
+          color: var(--tx-hi);
+          -webkit-font-smoothing: antialiased;
+        }
+        .doc-page :global(.bn-block-content) { line-height: 1.7; }
+        .doc-page :global(.bn-block-content[data-content-type="paragraph"]) { font-size: 16px; }
+        .doc-page :global(.bn-block-content li) { line-height: 1.65; }
+
+        /* Clear heading hierarchy (BlockNote sets the level via data-attr) */
+        .doc-page :global(.bn-block-content[data-content-type="heading"][data-level="1"]),
+        .doc-page :global(.bn-editor h1) {
+          font-size: 28px; font-weight: 800; line-height: 1.25; letter-spacing: -.01em;
+          margin-top: 28px; color: var(--tx-hi);
+        }
+        .doc-page :global(.bn-block-content[data-content-type="heading"][data-level="2"]),
+        .doc-page :global(.bn-editor h2) {
+          font-size: 22px; font-weight: 800; line-height: 1.3;
+          margin-top: 24px; color: var(--tx-hi);
+        }
+        .doc-page :global(.bn-block-content[data-content-type="heading"][data-level="3"]),
+        .doc-page :global(.bn-editor h3) {
+          font-size: 18px; font-weight: 700; line-height: 1.35;
+          margin-top: 18px; color: var(--tx-hi);
+        }
+
+        /* ── Tables: readable data, scroll instead of getting cut off ─────────── */
+        .doc-page :global(.bn-block-content[data-content-type="table"]),
+        .doc-page :global(.bn-editor .tableWrapper) {
+          overflow-x: auto;
+          max-width: 100%;
+        }
+        .doc-page :global(.bn-editor table) {
+          border-collapse: collapse;
+          font-size: 14px;
+          line-height: 1.5;
+        }
+        .doc-page :global(.bn-editor th),
+        .doc-page :global(.bn-editor td) {
+          border: 1px solid var(--line-soft);
+          padding: 9px 12px;
+          text-align: left;
+          vertical-align: top;
+          min-width: 90px;
+        }
+        /* First row reads as a header: tinted background + bold */
+        .doc-page :global(.bn-editor tr:first-child th),
+        .doc-page :global(.bn-editor tr:first-child td) {
+          background: var(--bg-1);
+          font-weight: 700;
+          color: var(--tx-hi);
+          white-space: nowrap;
+        }
+        /* Zebra striping on data rows for scannability */
+        .doc-page :global(.bn-editor tr:nth-child(even):not(:first-child) td) {
+          background: rgba(0,0,0,.018);
+        }
 
         .doc-comments { width: 330px; flex-shrink: 0; border-left: 1px solid var(--line-soft); background: var(--bg-1, #fafafa); display: flex; flex-direction: column; }
         .dc-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--line-soft); font-size: 13px; font-weight: 800; color: var(--tx-hi); }
