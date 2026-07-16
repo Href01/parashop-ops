@@ -92,6 +92,24 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
     return n
   })
 
+  // Zoom (per page) — shrink the whole page (text + tables) so a wide table fits
+  // on one screen without horizontal scrolling. Uses CSS `zoom` which reflows
+  // layout (unlike transform: scale) and keeps the caret correct in Chromium.
+  const ZOOMS = [0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.25]
+  const [zoom, setZoom] = useState(1)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    try { const v = parseFloat(localStorage.getItem(`ws-zoom:${page.id}`) || '1'); if (v > 0) setZoom(v) } catch { /* ignore */ }
+  }, [page.id])
+  const applyZoom = (v: number) => {
+    try { localStorage.setItem(`ws-zoom:${page.id}`, String(v)) } catch { /* ignore */ }
+    setZoom(v)
+  }
+  const stepZoom = (dir: 1 | -1) => {
+    const i = ZOOMS.reduce((best, z, idx) => (Math.abs(z - zoom) < Math.abs(ZOOMS[best] - zoom) ? idx : best), 0)
+    applyZoom(ZOOMS[Math.min(ZOOMS.length - 1, Math.max(0, i + dir))])
+  }
+
   const { doc, provider } = useMemo(() => {
     const doc = new Y.Doc()
     const wsUrl = (url || '').replace(/^http(s?):\/\//i, (_m, s) => (s ? 'wss://' : 'ws://')).replace(/\/+$/, '')
@@ -314,6 +332,11 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
               ))}
             </div>
           )}
+          <div className="doc-zoom">
+            <button onClick={() => stepZoom(-1)} title="Rétrécir pour tout voir" disabled={zoom <= ZOOMS[0]}>−</button>
+            <button className="doc-zoom-val" onClick={() => applyZoom(1)} title="Réinitialiser (100%)">{Math.round(zoom * 100)}%</button>
+            <button onClick={() => stepZoom(1)} title="Agrandir" disabled={zoom >= ZOOMS[ZOOMS.length - 1]}>+</button>
+          </div>
           <button className={`doc-cbtn${wide ? ' on' : ''}`} onClick={toggleWide} title={wide ? 'Largeur de lecture' : 'Pleine largeur (grands tableaux)'}>
             {wide ? '↹' : '↔'}
           </button>
@@ -326,7 +349,7 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
       </div>
 
       <div className="doc-body">
-        <div className={`doc-surface${wide ? ' wide' : ''}`}>
+        <div className={`doc-surface${wide ? ' wide' : ''}`} style={{ '--doc-zoom': zoom } as React.CSSProperties}>
           {/* Cover */}
           <input ref={coverInput} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) pickCover(f); e.target.value = '' }} />
           {page.cover ? (
@@ -478,6 +501,11 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
         .doc-cbtn:hover { background: var(--bg-2); }
         .doc-cbtn.on { background: var(--green-bg); border-color: var(--green); }
         .doc-cbadge { font-size: 10px; font-weight: 800; color: #fff; background: var(--green); border-radius: 999px; padding: 0 5px; min-width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; }
+        .doc-zoom { display: inline-flex; align-items: center; height: 30px; border: 1px solid var(--line-soft); border-radius: 8px; overflow: hidden; }
+        .doc-zoom button { border: 0; background: var(--card, #fff); height: 100%; padding: 0 9px; font-size: 15px; line-height: 1; cursor: pointer; color: var(--tx-mid); display: inline-flex; align-items: center; }
+        .doc-zoom button:hover:not(:disabled) { background: var(--bg-2); }
+        .doc-zoom button:disabled { opacity: .4; cursor: default; }
+        .doc-zoom-val { min-width: 46px; justify-content: center; font-size: 11.5px !important; font-weight: 700; color: var(--tx-hi) !important; border-inline: 1px solid var(--line-soft) !important; }
         .doc-help { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--line-soft); color: var(--tx-lo); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; cursor: help; user-select: none; }
         .doc-help:hover { color: var(--tx-hi); border-color: var(--tx-faint); }
 
@@ -490,7 +518,7 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
         .doc-cover:hover .doc-cover-tools { opacity: 1; }
         .doc-cover-tools button { font-size: 11.5px; font-weight: 700; padding: 5px 10px; border-radius: 7px; border: 0; background: rgba(0,0,0,.55); color: #fff; cursor: pointer; backdrop-filter: blur(4px); }
 
-        .doc-page { max-width: 760px; margin: 0 auto; padding-top: 30px; transition: max-width .18s ease; }
+        .doc-page { max-width: 760px; margin: 0 auto; padding-top: 30px; transition: max-width .18s ease; zoom: var(--doc-zoom, 1); }
         .doc-surface.wide .doc-page { max-width: 1180px; }
         .doc-head { display: flex; align-items: center; gap: 12px; min-height: 34px; }
         .doc-head-emoji { font-size: 46px; line-height: 1; }
