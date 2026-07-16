@@ -117,16 +117,41 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
 
   // Upload dropped/pasted/inserted files → Postgres → URL. Native blocks round-trip
   // through Yjs with no data loss (images preview inline; PDFs open inline on click).
+  // Big files (catalogue PDFs, spreadsheets) are chunked to get under Vercel's ~4.5 MB
+  // serverless body limit — otherwise the request is rejected and the block hangs on
+  // "Loading…" forever. Chunks are appended into the same WorkspaceFile row.
+  const CHUNK = 3.5 * 1024 * 1024
   const uploadFile = async (file: File) => {
-    const fd = new FormData()
-    fd.append('file', file)
-    const res = await fetch('/api/ops/workspace/upload', { method: 'POST', body: fd })
-    if (!res.ok) {
-      const d = await res.json().catch(() => ({}))
-      throw new Error(d?.error || 'Échec de l’upload')
+    if (file.size <= CHUNK) {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch('/api/ops/workspace/upload', { method: 'POST', body: fd })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d?.error || 'Échec de l’upload')
+      }
+      const d = await res.json()
+      return d.url as string
     }
-    const d = await res.json()
-    return d.url as string
+    // Chunked path for large files.
+    const total = Math.ceil(file.size / CHUNK)
+    let id: number | undefined
+    for (let i = 0; i < total; i++) {
+      const slice = file.slice(i * CHUNK, (i + 1) * CHUNK)
+      const fd = new FormData()
+      fd.append('index', String(i))
+      fd.append('total', String(total))
+      fd.append('name', file.name)
+      fd.append('mime', file.type || 'application/octet-stream')
+      if (id != null) fd.append('id', String(id))
+      fd.append('chunk', slice)
+      const res = await fetch('/api/ops/workspace/upload-chunk', { method: 'POST', body: fd })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(d?.error || 'Échec de l’upload')
+      id = d.id
+      if (d.url) return d.url as string
+    }
+    throw new Error('Échec de l’upload')
   }
 
   const editor = useCreateBlockNote({
