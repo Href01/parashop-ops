@@ -79,6 +79,19 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
   const [peers, setPeers] = useState<Presence[]>([])
   const color = useMemo(() => colorFor(user.email || user.name), [user])
 
+  // Full-width reading mode (per page) — wide tables/catalogues use the whole
+  // surface instead of the 760px reading column. Persisted so it sticks per doc.
+  const [wide, setWide] = useState(false)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    try { setWide(localStorage.getItem(`ws-wide:${page.id}`) === '1') } catch { /* ignore */ }
+  }, [page.id])
+  const toggleWide = () => setWide((w) => {
+    const n = !w
+    try { localStorage.setItem(`ws-wide:${page.id}`, n ? '1' : '0') } catch { /* ignore */ }
+    return n
+  })
+
   const { doc, provider } = useMemo(() => {
     const doc = new Y.Doc()
     const wsUrl = (url || '').replace(/^http(s?):\/\//i, (_m, s) => (s ? 'wss://' : 'ws://')).replace(/\/+$/, '')
@@ -301,6 +314,9 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
               ))}
             </div>
           )}
+          <button className={`doc-cbtn${wide ? ' on' : ''}`} onClick={toggleWide} title={wide ? 'Largeur de lecture' : 'Pleine largeur (grands tableaux)'}>
+            {wide ? '↹' : '↔'}
+          </button>
           <button className={`doc-cbtn${commentsOpen ? ' on' : ''}`} onClick={openComments} title="Commentaires">
             💬{comments.length > 0 && <span className="doc-cbadge">{comments.length}</span>}
           </button>
@@ -310,7 +326,7 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
       </div>
 
       <div className="doc-body">
-        <div className="doc-surface">
+        <div className={`doc-surface${wide ? ' wide' : ''}`}>
           {/* Cover */}
           <input ref={coverInput} type="file" accept="image/*" hidden onChange={(e) => { const f = e.target.files?.[0]; if (f) pickCover(f); e.target.value = '' }} />
           {page.cover ? (
@@ -474,7 +490,8 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
         .doc-cover:hover .doc-cover-tools { opacity: 1; }
         .doc-cover-tools button { font-size: 11.5px; font-weight: 700; padding: 5px 10px; border-radius: 7px; border: 0; background: rgba(0,0,0,.55); color: #fff; cursor: pointer; backdrop-filter: blur(4px); }
 
-        .doc-page { max-width: 760px; margin: 0 auto; padding-top: 30px; }
+        .doc-page { max-width: 760px; margin: 0 auto; padding-top: 30px; transition: max-width .18s ease; }
+        .doc-surface.wide .doc-page { max-width: 1180px; }
         .doc-head { display: flex; align-items: center; gap: 12px; min-height: 34px; }
         .doc-head-emoji { font-size: 46px; line-height: 1; }
         .doc-cover-add { opacity: 0; transition: opacity .15s; font-size: 12px; font-weight: 600; color: var(--tx-lo); background: transparent; border: 0; cursor: pointer; padding: 5px 8px; border-radius: 7px; }
