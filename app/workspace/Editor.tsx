@@ -518,8 +518,10 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
         .doc-cover:hover .doc-cover-tools { opacity: 1; }
         .doc-cover-tools button { font-size: 11.5px; font-weight: 700; padding: 5px 10px; border-radius: 7px; border: 0; background: rgba(0,0,0,.55); color: #fff; cursor: pointer; backdrop-filter: blur(4px); }
 
-        .doc-page { max-width: 760px; margin: 0 auto; padding-top: 30px; transition: max-width .18s ease; zoom: var(--doc-zoom, 1); }
-        .doc-surface.wide .doc-page { max-width: 1180px; }
+        /* width & max-width divided by zoom so that after CSS zoom shrinks the box
+           it still fills the surface — no giant empty side margins when zoomed out. */
+        .doc-page { width: calc(100% / var(--doc-zoom, 1)); max-width: calc(760px / var(--doc-zoom, 1)); margin: 0 auto; padding-top: 30px; zoom: var(--doc-zoom, 1); }
+        .doc-surface.wide .doc-page { max-width: calc(1180px / var(--doc-zoom, 1)); }
         .doc-head { display: flex; align-items: center; gap: 12px; min-height: 34px; }
         .doc-head-emoji { font-size: 46px; line-height: 1; }
         .doc-cover-add { opacity: 0; transition: opacity .15s; font-size: 12px; font-weight: 600; color: var(--tx-lo); background: transparent; border: 0; cursor: pointer; padding: 5px 8px; border-radius: 7px; }
