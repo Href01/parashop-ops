@@ -103,6 +103,38 @@ export async function POST(req: NextRequest) {
         continue
       }
 
+      // Guard against duplicating a site/manual order that already exists but was
+      // never linked (parcel created directly in Sendit → no tracking to match on).
+      // The staging matcher only links by tracking/reference, not phone, so without
+      // this a same-customer+amount unshipped order gets duplicated. Match by the
+      // normalised phone (last 9 digits, same as phoneKey) + amount, recent & unshipped.
+      const existingOrder = await client.query(
+        `SELECT id FROM "Order"
+         WHERE "senditTrackingId" IS NULL
+           AND status <> 'CANCELLED'
+           AND "sourceChannel" IS DISTINCT FROM 'Sendit'
+           AND RIGHT(regexp_replace(COALESCE("deliveryPhone", ''), '[^0-9]', '', 'g'), 9) = $1
+           AND ABS(COALESCE(total, 0) - $2) < 5
+           AND "createdAt" > NOW() - INTERVAL '14 days'
+         ORDER BY "createdAt" DESC
+         LIMIT 1`,
+        [staging.phoneKey, orderTotal]
+      )
+      if (staging.phoneKey && existingOrder.rows.length > 0) {
+        await client.query('ROLLBACK')
+        await pool.query(
+          `UPDATE "SenditStaging"
+           SET state = 'mismatch', "matchedOrderId" = $1, "updatedAt" = NOW()
+           WHERE id = $2`,
+          [existingOrder.rows[0].id, staging.id]
+        )
+        skipped.push({
+          id: staging.id,
+          reason: `commande site #${existingOrder.rows[0].id} non expediee avec meme tel + montant — rapproche-la (assigne ce tracking a la commande) au lieu de creer un doublon`,
+        })
+        continue
+      }
+
       const customerId = staging.matchedUserId
         || await findOrCreateCustomer(client, staging.name, staging.phone)
       const delivered = status === 'DELIVERED'
