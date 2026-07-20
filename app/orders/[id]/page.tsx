@@ -158,6 +158,35 @@ export default function OrderDetailPage() {
     }
   }
 
+  async function handleLinkShipment() {
+    if (!order) return
+    const trackingId = window.prompt('Colis déjà créé sur Sendit ? Colle son code de suivi pour le LIER à cette commande (évite un doublon) :')
+    if (!trackingId || !trackingId.trim()) return
+
+    setActionLoading(true)
+    setActionError('')
+    setActionSuccess('')
+
+    try {
+      const res = await fetch(`/api/ops/orders/${orderId}/sendit`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trackingId: trackingId.trim() }),
+      })
+      if (!res.ok) {
+        const errorData = await res.json()
+        throw new Error(errorData.details || errorData.error || 'Échec de la liaison')
+      }
+      const data = await res.json()
+      setActionSuccess(`Colis lié ! Tracking: ${data.trackingId} · frais livraison ${data.fee} MAD`)
+      await fetchOrder()
+    } catch (err: any) {
+      setActionError(err.message)
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   async function handleSyncTracking() {
     if (!order) return
 
@@ -790,6 +819,19 @@ export default function OrderDetailPage() {
               >
                 <Package />
                 {actionLoading ? 'Creating...' : 'Create Sendit Shipment'}
+              </button>
+            )}
+
+            {order.status === 'CONFIRMED' && !order.senditTrackingId && (
+              <button
+                type="button"
+                className="btn"
+                onClick={handleLinkShipment}
+                disabled={actionLoading}
+                title="Colis déjà créé directement sur Sendit ? Colle son code de suivi ici au lieu d'en créer un 2e ou de dupliquer la commande."
+                style={{ background: '#f3f4f6', color: '#374151', border: '1px solid #d1d5db' }}
+              >
+                🔗 {actionLoading ? '...' : 'Lier un colis existant'}
               </button>
             )}
 

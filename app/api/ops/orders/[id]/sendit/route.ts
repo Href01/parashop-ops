@@ -164,6 +164,87 @@ export async function POST(
   }
 }
 
+// Link an EXISTING Sendit parcel (created directly on Sendit's site) to this order.
+// Avoids the duplicate that pull+promote would otherwise create, records the real
+// courier fee (so the margin stops being over-optimistic), and — by setting
+// senditTrackingId — triggers the forward-only stock decrement.
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getOpsSession()
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const { id: orderId } = await params
+    const body = await request.json().catch(() => ({}))
+    const trackingId = String(body.trackingId || '').trim()
+    if (!trackingId) return NextResponse.json({ error: 'Code de suivi requis' }, { status: 400 })
+
+    const orderResult = await pool.query(
+      'SELECT id, status, "senditTrackingId" FROM "Order" WHERE id = $1',
+      [orderId]
+    )
+    if (orderResult.rows.length === 0) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+    const order = orderResult.rows[0]
+    if (order.senditTrackingId) {
+      return NextResponse.json({ error: 'Cette commande a déjà un colis lié', trackingId: order.senditTrackingId }, { status: 400 })
+    }
+
+    // Don't cross-link a parcel already attached to another order.
+    const inUse = await pool.query('SELECT id FROM "Order" WHERE "senditTrackingId" = $1 AND id <> $2', [trackingId, orderId])
+    if (inUse.rows.length > 0) {
+      return NextResponse.json({ error: `Ce colis est déjà lié à la commande #${inUse.rows[0].id}` }, { status: 409 })
+    }
+
+    // Validate against Sendit + read the real fee/status.
+    let tracking: any
+    try {
+      tracking = await getShipmentTracking(trackingId)
+    } catch (e: any) {
+      return NextResponse.json({ error: 'Colis introuvable sur Sendit — vérifie le code de suivi', details: e?.message }, { status: 404 })
+    }
+    if (!tracking?.tracking_id) {
+      return NextResponse.json({ error: 'Colis introuvable sur Sendit' }, { status: 404 })
+    }
+
+    const fee = Number(tracking.fee) || 0
+    const senditStatus = tracking.status || 'PENDING'
+    const delivered = String(senditStatus).toUpperCase() === 'DELIVERED'
+
+    // Setting senditTrackingId fires the stock-decrement trigger. estimatedDeliveryCost
+    // is bumped to the real fee if it was still 0 → the margin becomes honest.
+    await pool.query(
+      `UPDATE "Order"
+       SET "senditTrackingId" = $1,
+           "senditStatus" = $2,
+           "actualDeliveryCost" = $3,
+           "estimatedDeliveryCost" = COALESCE(NULLIF("estimatedDeliveryCost", 0), $3),
+           "deliveryStatus" = 'SENDIT_CREATED'
+       WHERE id = $4`,
+      [tracking.tracking_id, senditStatus, fee, orderId]
+    )
+
+    // Link any matching staging row so a later pull doesn't resurface / duplicate it.
+    await pool.query(
+      `UPDATE "SenditStaging"
+       SET promoted = true, "promotedOrderId" = $1, "matchedOrderId" = $1, state = 'matched', "updatedAt" = NOW()
+       WHERE code = $2`,
+      [orderId, tracking.tracking_id]
+    )
+
+    await pool.query(
+      `INSERT INTO "OrderStatusHistory" ("orderId","oldStatus","newStatus",note,"createdAt") VALUES ($1,$2,$2,$3,NOW())`,
+      [orderId, order.status, `Colis Sendit existant lié: ${tracking.tracking_id} (frais ${fee} MAD)`]
+    )
+
+    return NextResponse.json({ success: true, trackingId: tracking.tracking_id, fee, status: senditStatus, delivered })
+  } catch (error: any) {
+    console.error('Link Sendit tracking error:', error)
+    return NextResponse.json({ error: 'Échec de la liaison', details: error?.message || String(error) }, { status: 500 })
+  }
+}
+
 // Get shipment tracking info
 export async function GET(
   request: NextRequest,
