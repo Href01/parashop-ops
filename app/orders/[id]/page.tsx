@@ -103,6 +103,44 @@ export default function OrderDetailPage() {
     void fetchOrder()
   }, [orderId])
 
+  useEffect(() => { void loadCatalog() }, [])
+
+  const [itemForm, setItemForm] = useState({ productId: '', qty: '1', price: '' })
+
+  async function handleAddItem() {
+    if (!itemForm.productId) return
+    setActionLoading(true); setActionError(''); setActionSuccess('')
+    try {
+      const res = await fetch(`/api/ops/orders/${orderId}/items`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          productId: Number(itemForm.productId),
+          quantity: Number(itemForm.qty) || 1,
+          price: itemForm.price === '' ? undefined : Number(itemForm.price),
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Échec de l\'ajout')
+      setActionSuccess(data.costMissing
+        ? 'Produit ajouté — ⚠️ ce produit n\'a pas de coût renseigné (marge encore biaisée : ajoute son coût dans Produits).'
+        : 'Produit ajouté ✓ — marge recalculée.')
+      setItemForm({ productId: '', qty: '1', price: '' })
+      await fetchOrder()
+    } catch (e: any) { setActionError(e.message) } finally { setActionLoading(false) }
+  }
+
+  async function handleRemoveItem(itemId: number) {
+    setActionLoading(true); setActionError(''); setActionSuccess('')
+    try {
+      const res = await fetch(`/api/ops/orders/${orderId}/items?itemId=${itemId}`, { method: 'DELETE' })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Échec du retrait')
+      setActionSuccess('Produit retiré ✓')
+      await fetchOrder()
+    } catch (e: any) { setActionError(e.message) } finally { setActionLoading(false) }
+  }
+
   async function fetchOrder() {
     try {
       setLoading(true)
@@ -920,7 +958,7 @@ export default function OrderDetailPage() {
               <div className="table-scroll">
                 <table className="tbl">
                   <thead>
-                    <tr><th>Product</th><th className="r">Unit price</th><th className="r">Cost</th><th className="r">Qty</th><th className="r">Total</th><th className="r">Profit</th></tr>
+                    <tr><th>Product</th><th className="r">Unit price</th><th className="r">Cost</th><th className="r">Qty</th><th className="r">Total</th><th className="r">Profit</th><th></th></tr>
                   </thead>
                   <tbody>
                     {order.items?.map((item, index) => {
@@ -942,11 +980,34 @@ export default function OrderDetailPage() {
                           <td className="r num">x{item.quantity}</td>
                           <td className="r num t-strong">{formatMoney(total)}</td>
                           <td className={`r num ${profit >= 0 ? 'pos' : 'neg'}`}>{profit >= 0 ? '+' : ''}{formatMoney(profit)}</td>
+                          <td className="r">{item.id ? <button onClick={() => handleRemoveItem(item.id)} disabled={actionLoading} title="Retirer" style={{ border: 'none', background: 'transparent', color: '#e11d74', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button> : null}</td>
                         </tr>
                       )
                     })}
                   </tbody>
                 </table>
+              </div>
+              {/* Éditeur de lignes : ajouter le vrai produit (son coût -> marge réelle) */}
+              <div style={{ padding: '10px 12px', borderTop: '1px solid #eee', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                <select
+                  value={itemForm.productId}
+                  onChange={(e) => {
+                    const p = catalog.find((c) => String(c.id) === e.target.value) as { price?: number } | undefined
+                    setItemForm((f) => ({ ...f, productId: e.target.value, price: p && p.price != null ? String(p.price) : '' }))
+                  }}
+                  style={{ flex: '1 1 220px', minWidth: 180, padding: '6px 8px', borderRadius: 8, border: '1px solid #ddd', fontSize: 13 }}
+                >
+                  <option value="">+ Ajouter un produit…</option>
+                  {catalog.map((p) => {
+                    const noCost = (p as { costPrice?: number | null }).costPrice == null || Number((p as { costPrice?: number }).costPrice) === 0
+                    return <option key={p.id} value={p.id}>{p.name}{p.brand ? ` · ${p.brand}` : ''}{noCost ? ' ⚠️ sans coût' : ''}</option>
+                  })}
+                </select>
+                <input type="number" min="1" value={itemForm.qty} onChange={(e) => setItemForm((f) => ({ ...f, qty: e.target.value }))} title="Quantité" style={{ width: 56, padding: '6px 8px', borderRadius: 8, border: '1px solid #ddd', fontSize: 13 }} />
+                <input type="number" min="0" value={itemForm.price} onChange={(e) => setItemForm((f) => ({ ...f, price: e.target.value }))} title="Prix unitaire" placeholder="Prix" style={{ width: 80, padding: '6px 8px', borderRadius: 8, border: '1px solid #ddd', fontSize: 13 }} />
+                <button onClick={handleAddItem} disabled={!itemForm.productId || actionLoading} className="btn" style={{ background: '#e11d74', color: '#fff', border: 'none', opacity: (!itemForm.productId || actionLoading) ? 0.5 : 1 }}>
+                  {actionLoading ? '…' : 'Ajouter'}
+                </button>
               </div>
             </div>
 
