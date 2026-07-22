@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { AlertTriangle, Download, Plus, ArrowUp, ArrowDown, RefreshCw, Trash2, TrendingUp, Wallet, PiggyBank } from 'lucide-react'
 import Link from 'next/link'
+import RevenueTrendChart from '@/components/RevenueTrendChart'
 
 interface DashboardStats {
   revenueToday: number
@@ -121,7 +122,6 @@ export default function GlowDashboard() {
   const iw = getISOWeek(now)
   const [week, setWeek] = useState({ year: iw.year, w: iw.week })
   const [goals, setGoals] = useState<GoalsData | null>(null)
-  const [hoveredPoint, setHoveredPoint] = useState<number | null>(null)
   // Accounting basis for the delivered/cash cards: 'delivered' = by delivery date
   // (réalisé, reconciles with Sendit) · 'created' = by order-creation date (cohorte).
   const [basis, setBasis] = useState<'delivered' | 'created'>('delivered')
@@ -247,14 +247,6 @@ export default function GlowDashboard() {
     return <DashboardSkeleton />
   }
 
-  // Plot the full selected period (was truncated to 14 points, which made the
-  // curve lie in Mois/90j/1 an mode). Cap dot density for very long ranges.
-  const series = stats.revenueSeries
-  const maxRev = Math.max(1, ...series.map((p) => p.revenue))
-  // Chart summary: period total, daily average, and the peak day (marked on the curve).
-  const seriesTotal = series.reduce((s, p) => s + p.revenue, 0)
-  const avgDay = series.length ? seriesTotal / series.length : 0
-  const bestIdx = series.length ? series.reduce((best, p, i) => (p.revenue > series[best].revenue ? i : best), 0) : -1
 
   // Delivered/cash cards switch between the realized (by delivery date) and the
   // cohort (by creation date) basis. Realized is the default — it reconciles with
@@ -291,13 +283,6 @@ export default function GlowDashboard() {
     a.click()
     URL.revokeObjectURL(url)
   }
-  const W = 800, H = 188
-  const pts = series.map((p, i) => ({
-    x: series.length > 1 ? (i / (series.length - 1)) * W : 0,
-    y: H - (p.revenue / maxRev) * (H - 24) - 8,
-  }))
-  const linePath = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ')
-  const areaPath = pts.length ? `${linePath} L${W},${H} L0,${H} Z` : ''
 
   return (
     <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -466,64 +451,7 @@ export default function GlowDashboard() {
         {/* Chart + goal */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: 16, marginBottom: 16 }} className="dash-hero g-stagger">
           <Card>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4, gap: 12, flexWrap: 'wrap' }}>
-              <div>
-                <Label>Tendance du CA · {periodLabel}</Label>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginTop: 5 }}>
-                  <span style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: '-0.02em', color: 'var(--tx-hi)', lineHeight: 1 }}>{mad(seriesTotal)}</span>
-                  <span style={{ fontSize: 12, color: 'var(--tx-faint)', fontWeight: 500 }}>MAD attendus</span>
-                </div>
-                <div style={{ fontSize: 11.5, color: 'var(--tx-faint)', marginTop: 4 }}>≈ {mad(avgDay)} MAD/jour · commandes créées</div>
-              </div>
-              {bestIdx >= 0 && (
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: 10, color: 'var(--tx-faint)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Meilleur jour</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--rose-bright)', fontFamily: 'var(--mono)' }}>{mad(series[bestIdx].revenue)}</div>
-                  <div style={{ fontSize: 10.5, color: 'var(--tx-faint)' }}>{series[bestIdx].label}</div>
-                </div>
-              )}
-            </div>
-            <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ marginTop: 8 }} onMouseLeave={() => setHoveredPoint(null)}>
-              <defs>
-                <linearGradient id="rev-fill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--rose-bright)" stopOpacity="0.18" />
-                  <stop offset="100%" stopColor="var(--rose-bright)" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              {[0, 1, 2, 3].map((i) => (
-                <line key={i} x1="0" y1={(i * H) / 3} x2={W} y2={(i * H) / 3} stroke="var(--line-soft)" strokeWidth="1" strokeDasharray="4,4" />
-              ))}
-              {areaPath && <path d={areaPath} fill="url(#rev-fill)" />}
-              {linePath && <path d={linePath} fill="none" stroke="var(--rose-bright)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}
-              {pts.length > 0 && <circle cx={pts[pts.length - 1].x} cy={pts[pts.length - 1].y} r="4" fill="var(--rose-bright)" />}
-              {hoveredPoint === null && bestIdx >= 0 && pts[bestIdx] && bestIdx !== pts.length - 1 && (
-                <circle cx={pts[bestIdx].x} cy={pts[bestIdx].y} r="4.5" fill="var(--bg-1)" stroke="var(--rose-bright)" strokeWidth="2.5" />
-              )}
-              {pts.map((p, i) => (
-                <g key={i}>
-                  {hoveredPoint === i && <circle cx={p.x} cy={p.y} r="5" fill="var(--rose-bright)" />}
-                  <circle cx={p.x} cy={p.y} r="12" fill="transparent" style={{ cursor: 'pointer' }} onMouseEnter={() => setHoveredPoint(i)} />
-                </g>
-              ))}
-              {hoveredPoint !== null && (() => {
-                const d = series[hoveredPoint]
-                const p = pts[hoveredPoint]
-                const tx = p.x > W / 2 ? p.x - 10 : p.x + 10
-                const anchor = p.x > W / 2 ? 'end' : 'start'
-                return (
-                  <g>
-                    <rect x={p.x > W / 2 ? tx - 140 : tx} y={p.y - 50} width="140" height="60" rx="6" fill="var(--bg-1)" stroke="var(--rose-bright)" strokeWidth="1.5" />
-                    <text x={p.x > W / 2 ? tx - 70 : tx + 70} y={p.y - 34} textAnchor="middle" fontSize="11" fill="var(--tx-mid)" fontWeight="600">{d.label}</text>
-                    <text x={p.x > W / 2 ? tx - 70 : tx + 70} y={p.y - 20} textAnchor="middle" fontSize="13" fill="var(--tx-hi)" fontWeight="700">{mad(d.revenue)} MAD</text>
-                    <text x={p.x > W / 2 ? tx - 70 : tx + 70} y={p.y - 6} textAnchor="middle" fontSize="10" fill={d.profit >= 0 ? 'var(--green)' : 'var(--red)'}>Profit: {mad(d.profit)} MAD</text>
-                    <text x={p.x > W / 2 ? tx - 70 : tx + 70} y={p.y + 6} textAnchor="middle" fontSize="10" fill="var(--tx-lo)">{d.orders} commande{d.orders > 1 ? 's' : ''}</text>
-                  </g>
-                )
-              })()}
-            </svg>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--tx-faint)', fontFamily: 'var(--mono)', marginTop: 4 }}>
-              {series.filter((_, i) => i % Math.ceil(series.length / 6 || 1) === 0).map((p, i) => <span key={i}>{p.label}</span>)}
-            </div>
+            <RevenueTrendChart series={stats.revenueSeries} from={periodParams().from} to={periodParams().to} periodLabel={periodLabel} />
           </Card>
 
           <GoalCard
