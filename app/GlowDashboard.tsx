@@ -288,8 +288,8 @@ export default function GlowDashboard() {
     <div style={{ flex: 1, overflowY: 'auto' }}>
       <div style={{ maxWidth: 1480, margin: '0 auto', padding: '12px 24px 40px' }}>
 
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 10 }}>
+        {/* Titre */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 10 }}>
           <div>
             <div className="eyebrow" style={{ marginBottom: 3 }}>SHINE COSMETICS · OPÉRATIONS</div>
             <h1 className="serif-display" style={{ fontSize: 21, lineHeight: 1.05 }}>Vue d&apos;ensemble</h1>
@@ -297,73 +297,73 @@ export default function GlowDashboard() {
               {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · Casablanca
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-            {/* Mode tabs */}
-            <div style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 10, background: 'var(--bg-2)', border: '1px solid var(--line-soft)' }}>
-              {([['rolling', 'Glissant'], ['month', 'Mois'], ['week', 'Semaine']] as const).map(([m, lbl]) => (
-                <button key={m} onClick={() => setMode(m)} style={{
-                  fontSize: 12, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', cursor: 'pointer',
-                  background: mode === m ? 'var(--tx-hi)' : 'transparent', color: mode === m ? 'var(--bg-1)' : 'var(--tx-lo)',
-                }}>{lbl}</button>
-              ))}
-            </div>
-
-            {/* Period picker (depends on mode) */}
-            {mode === 'rolling' && (
-              <div style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 10, background: 'var(--bg-2)', border: '1px solid var(--line-soft)' }}>
-                {PERIODS.map((p) => (
-                  <button key={p.days} onClick={() => setDays(p.days)} style={{
-                    fontSize: 12, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', cursor: 'pointer',
-                    background: days === p.days ? 'var(--rose-bright)' : 'transparent', color: days === p.days ? '#fff' : 'var(--tx-lo)',
-                  }}>{p.label}</button>
-                ))}
-              </div>
-            )}
-            {mode === 'month' && (
-              <Stepper
-                label={`${MONTHS_FR[month.m]} ${month.year}`}
-                onPrev={() => { const d = new Date(Date.UTC(month.year, month.m - 1, 1)); setMonth({ year: d.getUTCFullYear(), m: d.getUTCMonth() }) }}
-                onNext={() => { const d = new Date(Date.UTC(month.year, month.m + 1, 1)); setMonth({ year: d.getUTCFullYear(), m: d.getUTCMonth() }) }}
-              />
-            )}
-            {mode === 'week' && (
-              <Stepper
-                label={`Semaine ${week.w} · ${week.year}`}
-                onPrev={() => { const mon = isoWeekMonday(week.year, week.w); mon.setUTCDate(mon.getUTCDate() - 7); const i = getISOWeek(mon); setWeek({ year: i.year, w: i.week }) }}
-                onNext={() => { const mon = isoWeekMonday(week.year, week.w); mon.setUTCDate(mon.getUTCDate() + 7); const i = getISOWeek(mon); setWeek({ year: i.year, w: i.week }) }}
-              />
-            )}
-
-            <button className="btn-modern btn-secondary btn-icon" onClick={refreshSendit} title="Synchroniser Sendit" aria-label="Synchroniser Sendit" disabled={loading}>
-              <RefreshCw className="w-4 h-4" style={loading ? { animation: 'dash-spin 0.8s linear infinite' } : undefined} />
-            </button>
-            <button className="btn-modern btn-secondary" onClick={exportCsv}><Download className="w-4 h-4" />Export</button>
-            <Link href="/orders/new" className="btn-modern btn-primary" style={{ textDecoration: 'none' }}><Plus className="w-4 h-4" />Nouvelle commande</Link>
-          </div>
+          <Link href="/orders/new" className="btn-modern btn-primary" style={{ textDecoration: 'none' }}><Plus className="w-4 h-4" />Nouvelle commande</Link>
         </div>
 
-        {lastUpdated && (
-          <div style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: -8, marginBottom: 10, textAlign: 'right' }}>
-            Dashboard actualisé à {lastUpdated.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-            {stats.sendit?.lastPulledAt && ` · Sendit synchronisé à ${new Date(stats.sendit.lastPulledAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`}
-          </div>
-        )}
-
-        {/* Basis toggle: how the delivered/cash cards attribute a period. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 8 }}>
+        {/* Barre d'outils collante : période · base de calcul · actions */}
+        <div style={{ position: 'sticky', top: 0, zIndex: 30, margin: '0 -24px 12px', padding: '8px 24px', background: 'var(--bg-1)', borderBottom: '1px solid var(--line-soft)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          {/* Mode tabs */}
           <div style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 10, background: 'var(--bg-2)', border: '1px solid var(--line-soft)' }}>
-            {([['delivered', 'Cash réalisé (livraison)'], ['created', 'Cohorte (création)']] as const).map(([b, lbl]) => (
+            {([['rolling', 'Glissant'], ['month', 'Mois'], ['week', 'Semaine']] as const).map(([m, lbl]) => (
+              <button key={m} onClick={() => setMode(m)} style={{
+                fontSize: 12, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', cursor: 'pointer',
+                background: mode === m ? 'var(--tx-hi)' : 'transparent', color: mode === m ? 'var(--bg-1)' : 'var(--tx-lo)',
+              }}>{lbl}</button>
+            ))}
+          </div>
+
+          {/* Period picker (depends on mode) */}
+          {mode === 'rolling' && (
+            <div style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 10, background: 'var(--bg-2)', border: '1px solid var(--line-soft)' }}>
+              {PERIODS.map((p) => (
+                <button key={p.days} onClick={() => setDays(p.days)} style={{
+                  fontSize: 12, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', cursor: 'pointer',
+                  background: days === p.days ? 'var(--rose-bright)' : 'transparent', color: days === p.days ? '#fff' : 'var(--tx-lo)',
+                }}>{p.label}</button>
+              ))}
+            </div>
+          )}
+          {mode === 'month' && (
+            <Stepper
+              label={`${MONTHS_FR[month.m]} ${month.year}`}
+              onPrev={() => { const d = new Date(Date.UTC(month.year, month.m - 1, 1)); setMonth({ year: d.getUTCFullYear(), m: d.getUTCMonth() }) }}
+              onNext={() => { const d = new Date(Date.UTC(month.year, month.m + 1, 1)); setMonth({ year: d.getUTCFullYear(), m: d.getUTCMonth() }) }}
+            />
+          )}
+          {mode === 'week' && (
+            <Stepper
+              label={`Semaine ${week.w} · ${week.year}`}
+              onPrev={() => { const mon = isoWeekMonday(week.year, week.w); mon.setUTCDate(mon.getUTCDate() - 7); const i = getISOWeek(mon); setWeek({ year: i.year, w: i.week }) }}
+              onNext={() => { const mon = isoWeekMonday(week.year, week.w); mon.setUTCDate(mon.getUTCDate() + 7); const i = getISOWeek(mon); setWeek({ year: i.year, w: i.week }) }}
+            />
+          )}
+
+          {/* Base de calcul (libellé court, détail en info-bulle) */}
+          <div
+            title={byDeliv ? 'Cash Sendit par livraison. Comparer avec Sendit → Type de date → Date de livraison.' : 'Cash Sendit par création. Correspond au filtre Date de Création de Sendit.'}
+            style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 10, background: 'var(--bg-2)', border: '1px solid var(--line-soft)' }}
+          >
+            {([['delivered', 'Cash réalisé'], ['created', 'Cohorte']] as const).map(([b, lbl]) => (
               <button key={b} onClick={() => setBasis(b)} style={{
                 fontSize: 12, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', cursor: 'pointer',
                 background: basis === b ? 'var(--tx-hi)' : 'transparent', color: basis === b ? 'var(--bg-1)' : 'var(--tx-lo)',
               }}>{lbl}</button>
             ))}
           </div>
-          <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>
-            {byDeliv
-              ? 'Cash Sendit par livraison. Comparer avec Sendit → Type de date → Date de livraison.'
-              : 'Cash Sendit par création. Correspond au filtre Date de Création de Sendit.'}
-          </span>
+
+          {/* Actions + fraîcheur */}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+            {lastUpdated && (
+              <span style={{ fontSize: 11, color: 'var(--tx-faint)', whiteSpace: 'nowrap' }}>
+                MàJ {lastUpdated.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+                {stats.sendit?.lastPulledAt && ` · Sendit ${new Date(stats.sendit.lastPulledAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`}
+              </span>
+            )}
+            <button className="btn-modern btn-secondary btn-icon" onClick={refreshSendit} title="Synchroniser Sendit" aria-label="Synchroniser Sendit" disabled={loading}>
+              <RefreshCw className="w-4 h-4" style={loading ? { animation: 'dash-spin 0.8s linear infinite' } : undefined} />
+            </button>
+            <button className="btn-modern btn-secondary" onClick={exportCsv}><Download className="w-4 h-4" />Export</button>
+          </div>
         </div>
 
         {dUnmatchedOrders > 0 && (
@@ -415,8 +415,8 @@ export default function GlowDashboard() {
                 </div>
                 <button className="btn-modern btn-secondary" onClick={openExpenses}>Dépenses & emballage</button>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }} className="dash-hero g-stagger">
-                <div className="card-modern" style={{ padding: 16 }}>
+              <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: 'var(--line-soft)' }}>
+                <div style={{ background: 'var(--bg-1)', padding: 16 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }}>🔵 Rentabilité <span style={{ fontWeight: 500, color: 'var(--tx-faint)', fontSize: 11 }}>· ventes livrées</span></div>
                   <PnlRow label="CA livré" value={r.caLivre} />
                   <PnlRow label="Profit livré" sub={`net produits + livraison · ${r.margeLivree.toFixed(0)}%`} value={r.profitLivre} muted />
@@ -425,7 +425,7 @@ export default function GlowDashboard() {
                   {r.retours > 0 && <PnlRow label="Retours / échanges" sub="frais livraison retour" value={-r.retours} neg />}
                   <PnlRow label="Profit net" value={r.net} total pct={r.marginPct} />
                 </div>
-                <div className="card-modern" style={{ padding: 16 }}>
+                <div style={{ background: 'var(--bg-1)', padding: 16 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }}>🟢 Trésorerie <span style={{ fontWeight: 500, color: 'var(--tx-faint)', fontSize: 11 }}>· cash réel</span></div>
                   <PnlRow label="Cash encaissé" sub={`COD ${mad(dEncaisse)}${dBank > 0 ? ` + virements ${mad(dBank)}` : ''} − frais Sendit ${mad(dFees)}`} value={t.encaisse} />
                   <PnlRow label="Achats fournisseur" value={-t.achats} neg />
@@ -458,7 +458,7 @@ export default function GlowDashboard() {
         </div>
 
         {/* Top products + channels (real data, previously unused) */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16 }} className="g-stagger">
+        <div className="dash-lower g-stagger">
           <Card>
             <Label>Top produits · {periodLabel}</Label>
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -503,10 +503,6 @@ export default function GlowDashboard() {
               })}
             </div>
           </Card>
-        </div>
-
-        {/* Pipeline + Alerts + Activity */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, marginTop: 16 }} className="g-stagger">
           {/* Pipeline */}
           <Card>
             <Label>Pipeline des commandes · {periodLabel}</Label>
@@ -649,6 +645,9 @@ export default function GlowDashboard() {
 
       <style jsx>{`
         @media (max-width: 1100px) { .dash-hero { grid-template-columns: 1fr !important; } }
+        .dash-lower { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-items: stretch; }
+        @media (max-width: 1360px) { .dash-lower { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 760px) { .dash-lower { grid-template-columns: 1fr; } }
         @keyframes dash-spin { to { transform: rotate(360deg); } }
 
         /* Cards: soft hover lift + smooth transitions */
@@ -711,6 +710,9 @@ function DashboardSkeleton() {
         </div>
         <style jsx>{`
           @media (max-width: 1100px) { .dash-hero { grid-template-columns: 1fr !important; } }
+        .dash-lower { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; align-items: stretch; }
+        @media (max-width: 1360px) { .dash-lower { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 760px) { .dash-lower { grid-template-columns: 1fr; } }
         `}</style>
       </div>
     </div>
