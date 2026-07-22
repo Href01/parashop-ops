@@ -152,8 +152,13 @@ export default function RevenueTrendChart({ series, from, to, periodLabel }: Pro
   const labelIdx = useMemo(() => {
     const s = new Set<number>()
     if (data.length === 0) return s
-    if (data.length <= 12) data.forEach((_, i) => s.add(i))
-    else { if (bestIdx >= 0) s.add(bestIdx); s.add(data.length - 1) }
+    if (data.length <= 40) data.forEach((_, i) => s.add(i))
+    else {
+      const step = Math.ceil(data.length / 20)
+      data.forEach((_, i) => { if (i % step === 0) s.add(i) })
+      if (bestIdx >= 0) s.add(bestIdx)
+      s.add(data.length - 1)
+    }
     return s
   }, [data, bestIdx])
 
@@ -165,7 +170,7 @@ export default function RevenueTrendChart({ series, from, to, periodLabel }: Pro
     const w = p.width != null ? Number(p.width) : null
     const cx = w != null ? px + w / 2 : px
     return (
-      <text x={cx} y={(Number(p.y) || 0) - 7} textAnchor="middle" fontSize={11} fontWeight={700} fill={i === bestIdx ? m.color : 'var(--tx-mid)'}>
+      <text x={cx} y={(Number(p.y) || 0) - 6} textAnchor="middle" fontSize={10} fontWeight={700} fill={i === bestIdx ? m.color : 'var(--tx-mid)'}>
         {compact(v)}
       </text>
     )
@@ -280,9 +285,9 @@ export default function RevenueTrendChart({ series, from, to, periodLabel }: Pro
       )}
 
       {/* Chart */}
-      <div style={{ width: '100%', height: 200, marginTop: 4 }}>
+      <div style={{ width: '100%', height: 248, marginTop: 4 }}>
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 20, right: 12, left: -8, bottom: 0 }}>
+          <ComposedChart data={data} margin={{ top: 24, right: 12, left: -6, bottom: 0 }} barCategoryGap="18%">
             <defs>
               <linearGradient id="rt-fill" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={m.color} stopOpacity={0.22} />

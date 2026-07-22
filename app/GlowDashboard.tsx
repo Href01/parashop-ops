@@ -375,28 +375,20 @@ export default function GlowDashboard() {
           </div>
         )}
 
-        {/* Trio héros — les 3 chiffres qui comptent : CA · Profit · Cash */}
-        <div className="dash-hero g-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 10 }}>
-          <HeroTile tone="rose" icon={<TrendingUp style={{ width: 14, height: 14 }} />} label={`CA livré · ${periodLabel}`} amount={dRevenue} delta={dRevenueDelta} deltaLabel={compareLabel} />
-          <HeroTile tone="green" icon={<PiggyBank style={{ width: 14, height: 14 }} />} label="Profit net · rentabilité" amount={stats.pnl ? stats.pnl.rentabilite.net : dProfit} sub={`${Math.round(stats.pnl ? stats.pnl.rentabilite.marginPct : dMargin)}% de marge · détail ci-dessous`} />
-          <HeroTile tone="green" icon={<Wallet style={{ width: 14, height: 14 }} />} label="Cash net généré · trésorerie" amount={stats.pnl ? stats.pnl.tresorerie.net : dCash} sub="liquide réel entré − sorti" />
-        </div>
-
-        {/* KPIs secondaires — le plomberie financière vit dans le panneau Résultat */}
-        <div className="g-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(168px, 1fr))', gap: 12, marginBottom: 12 }}>
-          <Kpi label="Commandes livrées" value={String(dOrders)} sub={`panier moyen ${mad(dFinancialOrders > 0 ? dRevenue / dFinancialOrders : stats.averageOrderValue)} MAD`} />
-          <Kpi label="Taux de livraison" value={`${stats.deliveryRate.toFixed(0)}%`} sub="livrées / résolues" />
-          <Kpi label="ROAS global" value={stats.roas != null ? `${stats.roas.toFixed(1)}x` : '—'} sub="CA livré ÷ pub" />
-          <Kpi
-            label={`CA attendu · ${periodLabel}`}
-            value={`${mad(stats.revenueWeek)}`}
-            unit="MAD"
-            sub={
-              stats.revenueWeek > stats.revenueDelivered
-                ? `+ ${mad(stats.revenueWeek - stats.revenueDelivered)} en cours (${stats.ordersWeek - stats.ordersDelivered} cmd)`
-                : 'toutes livrées'
-            }
-          />
+        {/* Bandeau KPI unifié — 3 chiffres clés (CA · Profit · Cash) + 4 secondaires,
+            réunis dans une seule carte à filets fins pour gagner de la hauteur. */}
+        <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden', marginBottom: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: 'var(--line-soft)' }}>
+            <HeroTile tone="rose" icon={<TrendingUp style={{ width: 14, height: 14 }} />} label={`CA livré · ${periodLabel}`} amount={dRevenue} delta={dRevenueDelta} deltaLabel={compareLabel} />
+            <HeroTile tone="green" icon={<PiggyBank style={{ width: 14, height: 14 }} />} label="Profit net · rentabilité" amount={stats.pnl ? stats.pnl.rentabilite.net : dProfit} sub={`${Math.round(stats.pnl ? stats.pnl.rentabilite.marginPct : dMargin)}% de marge`} />
+            <HeroTile tone="green" icon={<Wallet style={{ width: 14, height: 14 }} />} label="Cash net généré · trésorerie" amount={stats.pnl ? stats.pnl.tresorerie.net : dCash} sub="liquide réel entré − sorti" />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: 'var(--line-soft)', borderTop: '1px solid var(--line-soft)' }}>
+            <Kpi label="Commandes livrées" value={String(dOrders)} sub={`panier ${mad(dFinancialOrders > 0 ? dRevenue / dFinancialOrders : stats.averageOrderValue)} MAD`} />
+            <Kpi label="Taux de livraison" value={`${stats.deliveryRate.toFixed(0)}%`} sub="livrées / résolues" />
+            <Kpi label="ROAS global" value={stats.roas != null ? `${stats.roas.toFixed(1)}x` : '—'} sub="CA livré ÷ pub" />
+            <Kpi label="CA attendu" value={`${mad(stats.revenueWeek)}`} unit="MAD" sub={stats.revenueWeek > stats.revenueDelivered ? `+ ${mad(stats.revenueWeek - stats.revenueDelivered)} en cours` : 'toutes livrées'} />
+          </div>
         </div>
 
         {/* Résultat de la période: Rentabilité + Trésorerie */}
@@ -763,7 +755,7 @@ function PnlRow({ label, value, sub, neg, muted, total, pct }: { label: string; 
 
 function Kpi({ label, value, unit, sub, delta, deltaLabel, accent }: { label: string; value: string; unit?: string; sub?: string; delta?: number | null; deltaLabel?: string; accent?: boolean }) {
   return (
-    <div className="g-card" style={{ borderRadius: 'var(--radius)', padding: '10px 14px' }}>
+    <div style={{ background: 'var(--bg-1)', padding: '12px 16px', height: '100%' }}>
       <div style={{ fontSize: 11, color: 'var(--tx-lo)', marginBottom: 4, fontWeight: 500 }}>{label}</div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
         <span style={{ fontSize: 20, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: '-0.02em', color: accent ? 'var(--rose-bright)' : 'var(--tx-hi)' }}>{value}</span>
@@ -952,7 +944,7 @@ function HeroTile({ label, amount, sub, delta, deltaLabel, tone, icon }: { label
   const shown = useCountUp(amount)
   const display = mad(shown === amount ? amount : Math.round(shown))
   return (
-    <div className="g-card" style={{ borderRadius: 'var(--radius-lg)', padding: '10px 15px 8px', position: 'relative', overflow: 'hidden' }}>
+    <div style={{ background: 'var(--bg-1)', padding: '13px 16px 12px', position: 'relative', overflow: 'hidden', height: '100%' }}>
       <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: color }} />
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 5 }}>
         <div style={{ fontSize: 11, color: 'var(--tx-lo)', fontWeight: 600 }}>{label}</div>
