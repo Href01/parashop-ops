@@ -63,7 +63,7 @@ interface DashboardStats {
   activity: Array<{ tone: string; title: string; subtitle: string; timestamp: string }>
 }
 
-const mad = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(v)
+const mad = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v)
 
 const PERIODS: { label: string; days: number }[] = [
   { label: '7j', days: 7 },
@@ -286,13 +286,13 @@ export default function GlowDashboard() {
 
   return (
     <div style={{ flex: 1, overflowY: 'auto' }}>
-      <div style={{ maxWidth: 1480, margin: '0 auto', padding: '16px 24px 60px' }}>
+      <div style={{ maxWidth: 1480, margin: '0 auto', padding: '12px 24px 40px' }}>
 
         {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16, marginBottom: 10 }}>
           <div>
             <div className="eyebrow" style={{ marginBottom: 3 }}>SHINE COSMETICS · OPÉRATIONS</div>
-            <h1 className="serif-display" style={{ fontSize: 25, lineHeight: 1.05 }}>Vue d&apos;ensemble</h1>
+            <h1 className="serif-display" style={{ fontSize: 21, lineHeight: 1.05 }}>Vue d&apos;ensemble</h1>
             <div style={{ fontSize: 12, color: 'var(--tx-lo)', marginTop: 3 }}>
               {new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · Casablanca
             </div>
@@ -952,14 +952,14 @@ function HeroTile({ label, amount, sub, delta, deltaLabel, tone, icon }: { label
   const shown = useCountUp(amount)
   const display = mad(shown === amount ? amount : Math.round(shown))
   return (
-    <div className="g-card" style={{ borderRadius: 'var(--radius-lg)', padding: '12px 16px 11px', position: 'relative', overflow: 'hidden' }}>
+    <div className="g-card" style={{ borderRadius: 'var(--radius-lg)', padding: '10px 15px 8px', position: 'relative', overflow: 'hidden' }}>
       <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: color }} />
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 7 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 5 }}>
         <div style={{ fontSize: 11, color: 'var(--tx-lo)', fontWeight: 600 }}>{label}</div>
         <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 7, background: iconBg, color, flexShrink: 0 }}>{icon}</span>
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-        <span style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: '-0.03em', color, lineHeight: 1 }}>{display}</span>
+        <span style={{ fontSize: 23, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: '-0.03em', color, lineHeight: 1 }}>{display}</span>
         <span style={{ fontSize: 12, color: 'var(--tx-faint)', fontWeight: 500 }}>MAD</span>
       </div>
       {(delta != null || sub) && (

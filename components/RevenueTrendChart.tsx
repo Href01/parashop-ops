@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AreaChart as AreaIcon, LineChart as LineIcon, BarChart3 as BarIcon } from 'lucide-react'
 import {
-  ResponsiveContainer, ComposedChart, Area, Line, Bar, Cell,
+  ResponsiveContainer, ComposedChart, Area, Line, Bar, Cell, LabelList,
   XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ReferenceDot, Brush,
 } from 'recharts'
 
@@ -25,6 +25,7 @@ type ChartType = 'area' | 'line' | 'bar'
 type Compare = 'none' | 'prev' | 'dod' | 'wow' | 'mom' | 'yoy' | 'custom'
 
 type Props = { series: SeriesPoint[]; from: string; to: string; periodLabel: string }
+type LabelProps = { x?: number | string; y?: number | string; width?: number | string; value?: unknown; index?: number }
 
 const mad = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(v)
 const int = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(Math.round(v))
@@ -145,6 +146,31 @@ export default function RevenueTrendChart({ series, from, to, periodLabel }: Pro
   const best = bestIdx >= 0 ? data[bestIdx] : null
   const todayPoint = data.find((d) => d.isToday) || null
 
+  // Inline value labels — pro dashboards surface the numbers without a hover, but
+  // labelling every point in a 30-day range is noise. So: label ALL points when few
+  // (≤ 12), otherwise only the peak and the latest day. Zero days stay unlabelled.
+  const labelIdx = useMemo(() => {
+    const s = new Set<number>()
+    if (data.length === 0) return s
+    if (data.length <= 12) data.forEach((_, i) => s.add(i))
+    else { if (bestIdx >= 0) s.add(bestIdx); s.add(data.length - 1) }
+    return s
+  }, [data, bestIdx])
+
+  const renderCurLabel = (p: LabelProps): React.ReactElement | null => {
+    const i = Number(p.index ?? -1)
+    const v = Number(p.value)
+    if (!labelIdx.has(i) || !Number.isFinite(v) || v === 0) return null
+    const px = Number(p.x) || 0
+    const w = p.width != null ? Number(p.width) : null
+    const cx = w != null ? px + w / 2 : px
+    return (
+      <text x={cx} y={(Number(p.y) || 0) - 7} textAnchor="middle" fontSize={11} fontWeight={700} fill={i === bestIdx ? m.color : 'var(--tx-mid)'}>
+        {compact(v)}
+      </text>
+    )
+  }
+
   return (
     <div>
       {/* Header */}
@@ -254,9 +280,9 @@ export default function RevenueTrendChart({ series, from, to, periodLabel }: Pro
       )}
 
       {/* Chart */}
-      <div style={{ width: '100%', height: 236, marginTop: 4 }}>
+      <div style={{ width: '100%', height: 200, marginTop: 4 }}>
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 10, right: 10, left: -8, bottom: 0 }}>
+          <ComposedChart data={data} margin={{ top: 20, right: 12, left: -8, bottom: 0 }}>
             <defs>
               <linearGradient id="rt-fill" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor={m.color} stopOpacity={0.22} />
@@ -276,16 +302,21 @@ export default function RevenueTrendChart({ series, from, to, periodLabel }: Pro
 
             {/* Current metric */}
             {chartType === 'area' && (
-              <Area type="monotone" dataKey="cur" stroke={m.color} strokeWidth={2.5} fill="url(#rt-fill)" dot={false} activeDot={{ r: 4 }} isAnimationActive={false} />
+              <Area type="monotone" dataKey="cur" stroke={m.color} strokeWidth={2.5} fill="url(#rt-fill)" dot={false} activeDot={{ r: 4 }} isAnimationActive={false}>
+                <LabelList dataKey="cur" content={renderCurLabel} />
+              </Area>
             )}
             {chartType === 'line' && (
-              <Line type="monotone" dataKey="cur" stroke={m.color} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} isAnimationActive={false} />
+              <Line type="monotone" dataKey="cur" stroke={m.color} strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} isAnimationActive={false}>
+                <LabelList dataKey="cur" content={renderCurLabel} />
+              </Line>
             )}
             {chartType === 'bar' && (
               <Bar dataKey="cur" fill={m.color} radius={[4, 4, 0, 0]} maxBarSize={26} isAnimationActive={false}>
                 {data.map((d, i) => (
                   <Cell key={i} fillOpacity={i === bestIdx ? 1 : d.isToday ? 0.38 : 0.85} />
                 ))}
+                <LabelList dataKey="cur" content={renderCurLabel} />
               </Bar>
             )}
 
