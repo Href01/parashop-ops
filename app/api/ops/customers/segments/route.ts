@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
+import { cached } from '@/lib/ops-cache'
 
 /**
  * GET /api/ops/customers/segments
@@ -14,6 +15,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const fresh = request.nextUrl.searchParams.get('fresh') === '1'
+    const { data, cachedAt } = await cached('customer-segments', 60 * 60 * 1000, async () => {
     // Get segment counts
     const segmentCounts = await pool.query(`
       SELECT
@@ -90,13 +93,15 @@ export async function GET(request: NextRequest) {
       FROM "User"
     `)
 
-    return NextResponse.json({
+    return {
       segments: segmentCounts.rows,
       tiers: tierCounts.rows,
       rfmDistribution: rfmDistribution.rows,
       churnDistribution: churnDistribution.rows,
       stats: totalStats.rows[0],
-    })
+    }
+    }, { fresh })
+    return NextResponse.json({ ...data, _cachedAt: new Date(cachedAt).toISOString() })
 
   } catch (error: any) {
     console.error('GET segments error:', error)

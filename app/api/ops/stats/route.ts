@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Pool } from 'pg'
-
-const pool = new Pool({ connectionString: process.env.DATABASE_URL })
+import pool from '@/lib/db'
+import { cached } from '@/lib/ops-cache'
 
 /**
  * GET /api/ops/stats?period=7d|30d
@@ -19,7 +18,9 @@ export async function GET(req: NextRequest) {
   const period = req.nextUrl.searchParams.get('period') === '30d' ? '30d' : '7d'
   const days = period === '30d' ? 30 : 7
 
+  const fresh = req.nextUrl.searchParams.get('fresh') === '1'
   try {
+    const { data, cachedAt } = await cached(`ops-stats:${period}`, 60 * 60 * 1000, async () => {
     // ---- Funnel cohort: ReviewToken created within the period ----
     const funnelRes = await pool.query(
       `SELECT
@@ -116,7 +117,7 @@ export async function GET(req: NextRequest) {
       avgRating: Number.isFinite(row.avgRating) ? row.avgRating : 0,
     }))
 
-    return NextResponse.json({
+    return {
       period,
       sent,
       clicked,
@@ -131,7 +132,9 @@ export async function GET(req: NextRequest) {
       rewardsGranted: completed,
       timeline,
       topProducts,
-    })
+    }
+    }, { fresh })
+    return NextResponse.json({ ...data, _cachedAt: new Date(cachedAt).toISOString() })
   } catch (error) {
     console.error('[stats] Query failed:', error)
     return NextResponse.json({ error: 'Database error' }, { status: 500 })

@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { isFounder } from '@/lib/auth'
 import pool from '@/lib/db'
+import { cached } from '@/lib/ops-cache'
 
 /**
  * Intelligence / Focus — "where do we win, lose, and focus".
@@ -45,6 +46,8 @@ export async function GET(req: NextRequest) {
     if (!isFounder(session.user.email)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
     const { start, end, days } = resolveRange(req.nextUrl.searchParams)
+    const fresh = req.nextUrl.searchParams.get('fresh') === '1'
+    const { data, cachedAt } = await cached(`intelligence:${start}:${end}`, 60 * 60 * 1000, async () => {
     const oDate = `(o."createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date`
 
     const [statusRows, velocityRows, deadStockRows, costRows, channelRows, marginRows, channelPnlRows] = await Promise.all([
@@ -185,7 +188,7 @@ export async function GET(req: NextRequest) {
       negative: marginProducts.filter((p) => p.margin < 0),
     }
 
-    return NextResponse.json({
+    return {
       period: { start, end, days },
       cod,
       velocity: {
@@ -204,7 +207,9 @@ export async function GET(req: NextRequest) {
         }))
         .filter((c) => c.channel !== 'Non taggé' || c.orders > 0),
       readiness,
-    }, { headers: { 'Cache-Control': 'no-store' } })
+    }
+    }, { fresh })
+    return NextResponse.json({ ...data, _cachedAt: new Date(cachedAt).toISOString() }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
     console.error('[Intelligence] error:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
