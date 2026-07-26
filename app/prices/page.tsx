@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import BosShell from '@/components/BosShell'
+import Link from 'next/link'
 import { ArrowUp, ArrowDown, Minus } from 'lucide-react'
 
 type Verdict = { code: 'win' | 'loss' | 'neutral' | 'volume' | 'insufficient'; text: string }
@@ -14,11 +15,12 @@ type BridgeT = { priceMad: number; volumeMad: number; totalMad: number } | null
 type Prod = {
   productId: number; name: string; brand: string | null; currentPrice: number; costPrice: number
   change: { oldPrice: number; newPrice: number; pct: number | null; changedAt: string; source: string }
-  window: { daysAfter: number; from: string; changeAt: string }
+  window: { daysAfter: number; daysBefore: number; from: string; changeAt: string }
   before: Side; after: Side
   deltas: { unitsPerDay: number | null; revenuePerDay: number | null; marginPerDay: number | null; conv: number | null }
   elasticity: number | null
   confidence: Confidence
+  marginUnit: { before: number | null; after: number | null }
   sample: Sample
   bridge: BridgeT
   priceEffect: PriceEffect
@@ -29,6 +31,7 @@ type Data = {
   products: Prod[]
   history: Record<number, Hist[]>
   summary: { changedProducts: number; wins: number; losses: number; pending: number; marginPerDayDelta: number }
+  _cachedAt?: string
 }
 
 const money = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v || 0)
@@ -142,13 +145,24 @@ function Row({ label, before, after, delta, hero, sub }: { label: string; before
 export default function PricesPage() {
   const [data, setData] = useState<Data | null>(null)
   const [loading, setLoading] = useState(true)
+  const [filter, setFilter] = useState<'all' | 'win' | 'loss' | 'insufficient'>('all')
 
-  useEffect(() => {
-    fetch('/api/ops/prices', { cache: 'no-store' })
+  const load = (fresh = false) => {
+    setLoading(true)
+    fetch(`/api/ops/prices${fresh ? '?fresh=1' : ''}`, { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => { if (d && !d.error) setData(d) })
       .finally(() => setLoading(false))
-  }, [])
+  }
+  useEffect(() => { load() }, [])
+
+  const tiles: { l: string; v: number | string; c: string; unit?: string; f?: 'all' | 'win' | 'loss' | 'insufficient' }[] = [
+    { l: 'Produits changés', v: data?.summary.changedProducts ?? '—', c: 'var(--tx-hi)', f: 'all' },
+    { l: 'Hausses gagnantes', v: data?.summary.wins ?? '—', c: 'var(--green)', f: 'win' },
+    { l: 'Hausses perdantes', v: data?.summary.losses ?? '—', c: 'var(--red, #dc2626)', f: 'loss' },
+    { l: 'À surveiller', v: data?.summary.pending ?? '—', c: 'var(--amber)', f: 'insufficient' },
+    { l: 'Δ Marge / jour', v: data ? `${data.summary.marginPerDayDelta >= 0 ? '+' : ''}${money(data.summary.marginPerDayDelta)}` : '—', c: (data?.summary.marginPerDayDelta ?? 0) >= 0 ? 'var(--green)' : 'var(--red, #dc2626)', unit: 'MAD' },
+  ]
 
   return (
     <BosShell active="prices" title="Prix & Marges" crumb="Opérations">
@@ -159,20 +173,27 @@ export default function PricesPage() {
           Pour chaque changement de prix, on répond à une question : <b>as-tu gagné plus grâce au prix… ou juste parce que tu as plus vendu&nbsp;?</b> Chaque carte sépare l&apos;effet <b>🏷️ prix</b> de l&apos;effet <b>📦 volume</b> (pub, saison). Comparaison sur la période depuis le changement vs la même durée avant. Le verdict n&apos;est vert que si le <b>prix</b> lui-même a payé, et qu&apos;on a assez de ventes pour y croire.
         </p>
 
-        {/* Summary */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
+          <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>{data?._cachedAt ? `Chiffres à ${new Date(data._cachedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
+          <button className="btn-modern btn-secondary" onClick={() => load(true)} disabled={loading} style={{ fontSize: 12 }}>Actualiser</button>
+        </div>
+
+        {/* Summary — tiles double as filters */}
         <div className="pz-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, margin: '16px 0 20px' }}>
-          {[
-            { l: 'Produits changés', v: data?.summary.changedProducts ?? '—', c: 'var(--tx-hi)' },
-            { l: 'Hausses gagnantes', v: data?.summary.wins ?? '—', c: 'var(--green)' },
-            { l: 'Hausses perdantes', v: data?.summary.losses ?? '—', c: 'var(--red, #dc2626)' },
-            { l: 'À surveiller', v: data?.summary.pending ?? '—', c: 'var(--amber)' },
-            { l: 'Δ Marge / jour', v: data ? `${data.summary.marginPerDayDelta >= 0 ? '+' : ''}${money(data.summary.marginPerDayDelta)}` : '—', c: (data?.summary.marginPerDayDelta ?? 0) >= 0 ? 'var(--green)' : 'var(--red, #dc2626)', unit: 'MAD' },
-          ].map((k) => (
-            <div key={k.l} className="card-modern pz-card" style={{ padding: 14 }}>
-              <div className="fs12 tx-lo">{k.l}</div>
-              <div style={{ fontSize: 24, fontWeight: 800, color: k.c, fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', marginTop: 4 }}>{k.v}{k.unit && <span style={{ fontSize: 12, color: 'var(--tx-faint)', marginLeft: 3 }}>{k.unit}</span>}</div>
-            </div>
-          ))}
+          {tiles.map((k) => {
+            const active = !!k.f && filter === k.f
+            return (
+              <button
+                key={k.l}
+                onClick={() => k.f && setFilter(k.f)}
+                className="card-modern pz-card"
+                style={{ padding: 14, textAlign: 'left', font: 'inherit', cursor: k.f ? 'pointer' : 'default', border: active ? `1.5px solid ${k.c}` : undefined, background: active ? 'var(--bg-2)' : undefined }}
+              >
+                <div className="fs12 tx-lo">{k.l}</div>
+                <div style={{ fontSize: 24, fontWeight: 800, color: k.c, fontFamily: 'var(--mono)', fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.02em', marginTop: 4 }}>{k.v}{k.unit && <span style={{ fontSize: 12, color: 'var(--tx-faint)', marginLeft: 3 }}>{k.unit}</span>}</div>
+              </button>
+            )
+          })}
         </div>
 
         {loading && (
@@ -194,7 +215,7 @@ export default function PricesPage() {
 
         {/* Products */}
         <div className="pz-stagger" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-          {data?.products.map((p) => {
+          {data?.products.filter((p) => filter === 'all' || p.verdict.code === filter).map((p) => {
             const V = VERDICT[p.verdict.code]
             const hist = data.history[p.productId] || []
             const ladder = priceLadder(hist)
@@ -203,15 +224,17 @@ export default function PricesPage() {
             const convStr = (v: number | null) => (v != null ? `${(v * 100).toFixed(1)}%` : '—')
             // Per-unit margin — the number the founder actually knows (≈120 MAD here).
             // margin/day × days = total margin for the window; ÷ units = margin per sale.
-            const uMargeB = p.sample.unitsBefore > 0 ? (p.before.perDay.margin * days) / p.sample.unitsBefore : null
-            const uMargeA = p.sample.unitsAfter > 0 ? (p.after.perDay.margin * days) / p.sample.unitsAfter : null
+            const uMargeB = p.marginUnit.before
+            const uMargeA = p.marginUnit.after
             const uMargeDelta = uMargeB && uMargeB > 0 && uMargeA != null ? (uMargeA - uMargeB) / uMargeB : null
             return (
               <div key={p.productId} className="card-modern pz-card" style={{ padding: 0, borderLeft: `3px solid ${V.fg}`, overflow: 'hidden' }}>
                 {/* Zone 1 — what changed + verdict */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap', padding: '14px 16px 12px' }}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx-hi)' }}>{p.name}</div>
+                    <Link href={`/products/${p.productId}`} style={{ textDecoration: 'none', color: 'var(--tx-hi)' }}>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>{p.name} <span style={{ fontSize: 11, color: 'var(--rose-bright)', fontWeight: 700 }}>↗</span></div>
+                    </Link>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5, flexWrap: 'wrap' }}>
                       <span style={{ fontFamily: 'var(--mono)', fontSize: 13 }}>
                         <span style={{ color: 'var(--tx-faint)' }}>{money(p.change.oldPrice)}</span>

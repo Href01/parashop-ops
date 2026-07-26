@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { isFounder } from '@/lib/auth'
 import pool from '@/lib/db'
+import { cached } from '@/lib/ops-cache'
 
 /**
  * Price change history + impact analysis.
@@ -126,7 +127,13 @@ async function analyseProduct(row: any) {
   // Cap the AFTER window to daysAfter as well — otherwise a change older than 30 days
   // would sum >30 days of sales but still divide by 30, inflating the per-day rate.
   const afterTo = new Date(Math.min(now.getTime(), changeAt.getTime() + daysAfter * MS_DAY))
-  const beforeFrom = new Date(changeAt.getTime() - daysAfter * MS_DAY)
+  // "Before" window = the same span, but NEVER reaching past the previous price change —
+  // otherwise the baseline mixes two different prices and the comparison lies. Divide the
+  // before metrics by the ACTUAL (possibly shorter) window so the per-day rates stay fair.
+  let beforeFrom = new Date(changeAt.getTime() - daysAfter * MS_DAY)
+  const prevChangeAt = row.prevChangedAt ? new Date(row.prevChangedAt) : null
+  if (prevChangeAt && prevChangeAt.getTime() > beforeFrom.getTime()) beforeFrom = prevChangeAt
+  const daysBefore = Math.max(1, Math.round((changeAt.getTime() - beforeFrom.getTime()) / MS_DAY))
   const pid = row.productId
   const cost = num(row.cost)
 
@@ -159,13 +166,13 @@ async function analyseProduct(row: any) {
   const after: Agg = { units: num(r.ua), revenue: num(r.ra), margin: num(r.ma), orders: num(r.oa), views: num(e.va), carts: num(e.ca) }
   const before: Agg = { units: num(r.ub), revenue: num(r.rb), margin: num(r.mb), orders: num(r.ob), views: num(e.vb), carts: num(e.cb) }
 
-  const perDay = (a: Agg) => ({
-    units: a.units / daysAfter, revenue: a.revenue / daysAfter, margin: a.margin / daysAfter,
+  const perDay = (a: Agg, days: number) => ({
+    units: a.units / days, revenue: a.revenue / days, margin: a.margin / days,
     // Conversion vue→achat = share of viewers who bought → orders (purchases) per view,
     // not units per view (a multi-item order isn't multiple conversions).
     conv: a.views > 0 ? a.orders / a.views : null, cartRate: a.views > 0 ? a.carts / a.views : null,
   })
-  const pdB = perDay(before), pdA = perDay(after)
+  const pdB = perDay(before, daysBefore), pdA = perDay(after, daysAfter)
   const old = num(row.oldPrice), nw = num(row.newPrice)
   const pctPrice = old > 0 ? (nw - old) / old : null
   const pctQ = pdB.units > 0 ? (pdA.units - pdB.units) / pdB.units : null
@@ -186,7 +193,7 @@ async function analyseProduct(row: any) {
     productId: pid, name: row.name, brand: row.brand,
     currentPrice: num(row.curPrice), costPrice: cost,
     change: { oldPrice: old, newPrice: nw, pct: pctPrice, changedAt: row.changedAt, source: row.source },
-    window: { daysAfter, from: beforeFrom.toISOString(), changeAt: changeAt.toISOString() },
+    window: { daysAfter, daysBefore, from: beforeFrom.toISOString(), changeAt: changeAt.toISOString() },
     before: { ...before, perDay: pdB },
     after: { ...after, perDay: pdA },
     deltas: {
@@ -212,13 +219,20 @@ export async function GET(req: NextRequest) {
   if (!(await guard())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   try {
     const pidParam = req.nextUrl.searchParams.get('productId')
-    // Latest change per product (optionally one product).
+    const fresh = req.nextUrl.searchParams.get('fresh') === '1'
+    const { data, cachedAt, hit } = await cached(`prices:${pidParam ?? 'all'}`, 60 * 60 * 1000, async () => {
+    // Latest change per product (+ the PREVIOUS change's timestamp, so the "before"
+    // window can be clamped to it and never mix two prices).
     const latest = await pool.query(
-      `SELECT DISTINCT ON (pc."productId") pc."productId", pc."oldPrice", pc."newPrice", pc."changedAt", pc.source,
-              p.name, p.brand, p.price::numeric AS "curPrice", p."costPrice"::numeric AS cost
-       FROM "PriceChange" pc JOIN "Product" p ON p.id = pc."productId"
-       ${pidParam ? 'WHERE pc."productId" = $1' : ''}
-       ORDER BY pc."productId", pc."changedAt" DESC`,
+      `SELECT * FROM (
+         SELECT pc."productId", pc."oldPrice", pc."newPrice", pc."changedAt", pc.source,
+                LEAD(pc."changedAt") OVER (PARTITION BY pc."productId" ORDER BY pc."changedAt" DESC) AS "prevChangedAt",
+                ROW_NUMBER() OVER (PARTITION BY pc."productId" ORDER BY pc."changedAt" DESC) AS rn,
+                p.name, p.brand, p.price::numeric AS "curPrice", p."costPrice"::numeric AS cost
+         FROM "PriceChange" pc JOIN "Product" p ON p.id = pc."productId"
+         ${pidParam ? 'WHERE pc."productId" = $1' : ''}
+       ) t WHERE rn = 1
+       ORDER BY "changedAt" DESC`,
       pidParam ? [Number(pidParam)] : []
     )
     const products = await Promise.all(latest.rows.map(analyseProduct))
@@ -240,7 +254,9 @@ export async function GET(req: NextRequest) {
       pending: products.filter((p) => p.verdict.code === 'insufficient').length,
       marginPerDayDelta: products.reduce((s, p) => s + (p.after.perDay.margin - p.before.perDay.margin), 0),
     }
-    return NextResponse.json({ products, history, summary })
+    return { products, history, summary }
+    }, { fresh })
+    return NextResponse.json({ ...data, _cachedAt: new Date(cachedAt).toISOString(), _cached: hit })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'error'
     return NextResponse.json({ error: 'Failed', details: message }, { status: 500 })
