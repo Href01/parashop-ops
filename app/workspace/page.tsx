@@ -62,24 +62,31 @@ export default function WorkspacePage() {
   }, [loadPages])
 
   useEffect(() => {
-    const t = setInterval(() => { if (document.visibilityState === 'visible') loadPages() }, 6000)
+    const t = setInterval(() => { if (document.visibilityState === 'visible') loadPages() }, 30000)
     return () => clearInterval(t)
   }, [loadPages])
 
-  // Live KPI strip — a real-time pulse of the business at the top of the workspace.
+  // Live KPI strip. The heavy /dashboard/stats query (scans the whole order history)
+  // is fetched ONCE on mount — never on the interval — and only the light /pulse
+  // endpoint is polled, slowly. Polling the heavy query every 45s kept Neon's compute
+  // awake 24/7 for any open tab and burned the whole monthly compute quota (outage).
   useEffect(() => {
-    const load = async () => {
+    let today: { revenueToday: number | null; ordersToday: number | null } = { revenueToday: null, ordersToday: null }
+    const loadPulse = async () => {
       if (document.visibilityState !== 'visible') return
       try {
-        const [p, s] = await Promise.all([
-          fetch('/api/ops/workspace/pulse', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-          fetch('/api/ops/dashboard/stats', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-        ])
-        if (p) setPulse({ revenueToday: s ? Number(s.revenueToday) || 0 : null, ordersToday: s ? Number(s.ordersToday) || 0 : null, pending: p.pending, lowStock: p.lowStock, leadsToday: p.leadsToday, waitlist: p.waitlist })
+        const p = await fetch('/api/ops/workspace/pulse', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+        if (p) setPulse({ revenueToday: today.revenueToday, ordersToday: today.ordersToday, pending: p.pending, lowStock: p.lowStock, leadsToday: p.leadsToday, waitlist: p.waitlist })
       } catch { /* ignore */ }
     }
-    load()
-    const t = setInterval(load, 45000)
+    ;(async () => {
+      try {
+        const s = await fetch('/api/ops/dashboard/stats', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).catch(() => null)
+        if (s) today = { revenueToday: Number(s.revenueToday) || 0, ordersToday: Number(s.ordersToday) || 0 }
+      } catch { /* ignore */ }
+      await loadPulse()
+    })()
+    const t = setInterval(loadPulse, 120000)
     return () => clearInterval(t)
   }, [])
 
@@ -93,7 +100,7 @@ export default function WorkspacePage() {
       } catch { /* ignore */ }
     }
     beat()
-    const t = setInterval(beat, 5000)
+    const t = setInterval(beat, 30000)
     return () => clearInterval(t)
   }, [])
 

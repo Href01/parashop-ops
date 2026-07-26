@@ -46,7 +46,7 @@ export default function ActivityPage() {
 
   useEffect(() => { load() }, [load])
   useEffect(() => {
-    const t = setInterval(() => { if (document.visibilityState === 'visible') load() }, 7000)
+    const t = setInterval(() => { if (document.visibilityState === 'visible') load() }, 30000)
     const tick = setInterval(() => force((n) => n + 1), 30000) // refresh relative times
     return () => { clearInterval(t); clearInterval(tick) }
   }, [load])

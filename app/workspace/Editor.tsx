@@ -255,7 +255,7 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
   }, [page.id])
   useEffect(() => {
     loadComments()
-    const t = setInterval(() => { if (document.visibilityState === 'visible') loadComments() }, 8000)
+    const t = setInterval(() => { if (document.visibilityState === 'visible') loadComments() }, 30000)
     return () => clearInterval(t)
   }, [loadComments])
   const send = async () => {
