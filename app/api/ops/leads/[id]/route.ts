@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
+import { bustCache } from '@/lib/ops-cache'
 
 /** PATCH /api/ops/leads/[id] — mark a lead contacted. DELETE — remove it. */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -13,6 +14,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!Number.isFinite(leadId)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
     const body = await req.json().catch(() => ({}))
     await pool.query(`UPDATE "AbandonedCheckout" SET contacted = $1, "updatedAt" = NOW() WHERE id = $2`, [body.contacted !== false, leadId])
+    bustCache('leads')
     return NextResponse.json({ success: true })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'error'
@@ -28,6 +30,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     const leadId = parseInt(id)
     if (!Number.isFinite(leadId)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
     await pool.query(`DELETE FROM "AbandonedCheckout" WHERE id = $1`, [leadId])
+    bustCache('leads')
     return NextResponse.json({ success: true })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'error'

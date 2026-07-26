@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
+import { cached } from '@/lib/ops-cache'
 
 /**
  * GET /api/ops/leads
@@ -17,6 +18,7 @@ export async function GET() {
     const session = await getServerSession(authOptions)
     if (!session?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+    const { data } = await cached('leads', 60 * 1000, async () => {
     const [leadsRes, errorsRes, summaryRes] = await Promise.all([
       pool.query(`
         SELECT id, "sessionId", name, phone, city, address, "cartItems",
@@ -52,11 +54,13 @@ export async function GET() {
           (SELECT COUNT(*) FROM "AnalyticsEvent" WHERE name='PURCHASE_FAILED' AND "createdAt" > NOW() - INTERVAL '24 hours')::int AS purchase_failed_24h`),
     ])
 
-    return NextResponse.json({
+    return {
       leads: leadsRes.rows,
       errors: errorsRes.rows,
       summary: summaryRes.rows[0],
+    }
     })
+    return NextResponse.json(data)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'error'
     console.error('[ops/leads]', message)

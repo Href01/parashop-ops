@@ -6,6 +6,7 @@ import { getOpsSession } from '@/lib/auth'
 import { buildSenditProductsDescription, calculateCodAmount } from '@/lib/order-utils'
 import { creditOrderPoints } from '@/lib/loyalty'
 import { fireDeliveredCapi } from '@/lib/meta-capi'
+import { bustCache } from '@/lib/ops-cache'
 
 // GET /api/ops/orders/[id] - Get order detail
 export async function GET(
@@ -462,6 +463,9 @@ export async function PUT(
       [orderId]
     )
 
+    // Status/shipment/payment edits change both the queues and the money numbers.
+    bustCache('orders:'); bustCache('dashboard-stats:')
+
     return NextResponse.json({
       ...finalOrder.rows[0],
       _senditWarning: senditWarning,
@@ -548,6 +552,7 @@ export async function DELETE(
     await pool.query('DELETE FROM "OrderStatusHistory" WHERE "orderId" = $1', [orderId])
     await pool.query('DELETE FROM "Order" WHERE id = $1', [orderId])
 
+    bustCache('orders:'); bustCache('dashboard-stats:')
     return NextResponse.json({ success: true, message: 'Order deleted successfully' })
   } catch (error: any) {
     console.error('DELETE order error:', error)

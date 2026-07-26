@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { isFounder } from '@/lib/auth'
 import { findOrCreateCustomer } from '@/lib/customer'
 import pool from '@/lib/db'
+import { bustCache } from '@/lib/ops-cache'
 import { creditOrderPoints } from '@/lib/loyalty'
 import { fireDeliveredCapi } from '@/lib/meta-capi'
 import { isPrepaidPaymentMethod, normalizePaymentMethod } from '@/lib/order-utils'
@@ -216,5 +217,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  bustCache('orders:'); bustCache('dashboard-stats:'); bustCache('sendit-staging')
   return NextResponse.json({ ok: true, promoted, skipped })
 }

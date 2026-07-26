@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { isFounder } from '@/lib/auth'
 import pool from '@/lib/db'
+import { bustCache } from '@/lib/ops-cache'
 
 async function guard() {
   const session = await getServerSession(authOptions)
@@ -118,5 +119,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     [JSON.stringify(clean), paymentMethod, paidAmount, paidAt, paymentReference, id]
   )
   if (r.rows.length === 0) return NextResponse.json({ error: 'introuvable ou déjà promu' }, { status: 404 })
+  bustCache('sendit-staging'); bustCache('orders:')
   return NextResponse.json({ ok: true })
 }

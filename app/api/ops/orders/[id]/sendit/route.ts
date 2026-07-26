@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import pool from '@/lib/db'
+import { bustCache } from '@/lib/ops-cache'
 import { createSenditShipment, getShipmentTracking } from '@/lib/sendit'
 import { getOpsSession } from '@/lib/auth'
 import { buildSenditProductsDescription, calculateCodAmount, isPrepaidPaymentMethod } from '@/lib/order-utils'
@@ -238,6 +239,7 @@ export async function PATCH(
       [orderId, order.status, `Colis Sendit existant lié: ${tracking.tracking_id} (frais ${fee} MAD)`]
     )
 
+    bustCache('orders:'); bustCache('dashboard-stats:')
     return NextResponse.json({ success: true, trackingId: tracking.tracking_id, fee, status: senditStatus, delivered })
   } catch (error: any) {
     console.error('Link Sendit tracking error:', error)

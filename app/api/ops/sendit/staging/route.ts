@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { isFounder } from '@/lib/auth'
 import pool from '@/lib/db'
 import { creditOrderPoints } from '@/lib/loyalty'
+import { cached, bustCache } from '@/lib/ops-cache'
 import { fireDeliveredCapi } from '@/lib/meta-capi'
 import { isPrepaidPaymentMethod } from '@/lib/order-utils'
 import { getShipmentTracking } from '@/lib/sendit'
@@ -28,6 +29,7 @@ function mapSenditStatus(status: string): string {
 export async function GET() {
   if (!(await guard())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
+  const { data } = await cached('sendit-staging', 60 * 1000, async () => {
   const rows = await pool.query(`
     SELECT id, code, "senditStatus", name, phone, city, amount::float AS amount, fee::float AS fee,
            "productsText", reference, "senditCreatedAt", "matchedOrderId", "matchedUserId",
@@ -54,7 +56,9 @@ export async function GET() {
     FROM "SenditStaging"
   `)
 
-  return NextResponse.json({ rows: rows.rows, counts: counts.rows[0] })
+  return { rows: rows.rows, counts: counts.rows[0] }
+  })
+  return NextResponse.json(data)
 }
 
 export async function POST(req: NextRequest) {
@@ -210,6 +214,8 @@ export async function POST(req: NextRequest) {
         synced++
       }
 
+      // Syncing parcels changes order statuses/costs → refresh queues + money.
+      bustCache('orders:'); bustCache('dashboard-stats:'); bustCache('sendit-staging')
       return NextResponse.json({ ok: true, synced, statusChanged, skipped })
     } catch (error) {
       console.error('[Sendit] sync-matched', error)
@@ -220,7 +226,9 @@ export async function POST(req: NextRequest) {
   if (body.action !== 'pull') return NextResponse.json({ error: 'Action inconnue' }, { status: 400 })
 
   try {
-    return NextResponse.json(await pullSenditStaging())
+    const pulled = await pullSenditStaging()
+    bustCache('sendit-staging')
+    return NextResponse.json(pulled)
   } catch (error) {
     console.error('[Sendit] staging pull', error)
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Erreur serveur' }, { status: 500 })

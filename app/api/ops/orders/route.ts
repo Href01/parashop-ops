@@ -4,6 +4,7 @@ import { buildSenditProductsDescription, calculateCodAmount, generateOrderNumber
 import { createSenditShipment } from '@/lib/sendit'
 import { CreateOrderSchema } from '@/lib/validation/order'
 import { getOpsSession } from '@/lib/auth'
+import { cached, bustCache } from '@/lib/ops-cache'
 
 // GET /api/ops/orders - List all orders
 export async function GET(request: NextRequest) {
@@ -18,6 +19,13 @@ export async function GET(request: NextRequest) {
     const sourceChannel = searchParams.get('sourceChannel')
     const needsReview = searchParams.get('needsReview')
 
+    // Short 60s cache: this list is opened constantly (and re-opened on every
+    // navigation back), but it's an operational queue — so every write below
+    // busts it immediately, meaning you never see a stale order after acting.
+    const { data, cachedAt } = await cached(
+      `orders:${status ?? ''}:${sourceChannel ?? ''}:${needsReview ?? ''}`,
+      60 * 1000,
+      async () => {
     let query = `
       SELECT
         o.*,
@@ -57,18 +65,12 @@ export async function GET(request: NextRequest) {
     `
 
     const result = await pool.query(query, params)
+    return result.rows
+      },
+      { fresh: searchParams.get('fresh') === '1' }
+    )
 
-    // Debug: Check first order
-    if (result.rows.length > 0) {
-      console.log('First order:', {
-        id: result.rows[0].id,
-        orderNumber: result.rows[0].orderNumber,
-        hasId: 'id' in result.rows[0],
-        keys: Object.keys(result.rows[0])
-      })
-    }
-
-    return NextResponse.json(result.rows)
+    return NextResponse.json(data, { headers: { 'X-Cached-At': new Date(cachedAt).toISOString() } })
   } catch (error) {
     console.error('Orders list error:', error)
     return NextResponse.json(
@@ -391,6 +393,9 @@ export async function POST(request: NextRequest) {
         senditTrackingId: createdOrder?.senditTrackingId,
         senditWarning,
       })
+
+      // A new order invalidates the order queues AND the money aggregates.
+      bustCache('orders:'); bustCache('dashboard-stats:')
 
       return NextResponse.json({
         ...createdOrder,
