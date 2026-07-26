@@ -4,6 +4,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { isFounder } from '@/lib/auth'
 import pool from '@/lib/db'
+import { cached } from '@/lib/ops-cache'
 import { getWeeklyGoal, getMonthlyGoal } from '@/app/api/ops/settings/goal/route'
 
 const DAILY_REVENUE_GOAL = 6000
@@ -323,6 +324,14 @@ export async function GET(req: Request) {
       compareFrom = isoDay(cFrom)
       compareTo = isoDay(cTo)
     }
+    // Cache the heavy aggregate. Current period → 1h (numbers barely move hour-to-hour
+    // for a COD store); a fully-past period → 6h (it only changes on late status edits).
+    // ?fresh=1 (the "Actualiser" button) forces a live recompute.
+    const fresh = sp.get('fresh') === '1'
+    const cacheKey = `dashboard-stats:${from}:${to}:${compareFrom}:${compareTo}`
+    const ttlMs = to >= isoDay(new Date()) ? 60 * 60 * 1000 : 6 * 60 * 60 * 1000
+
+    const { data: payload, cachedAt, hit } = await cached(cacheKey, ttlMs, async () => {
     const FINANCIAL_CTE = financialCte(from, to, compareFrom, compareTo)
 
     const [
@@ -852,7 +861,7 @@ export async function GET(req: Request) {
       }
     })
 
-    return NextResponse.json({
+    return {
       generatedAt: new Date().toISOString(),
       periodDays,
       range: { from, to, compareFrom, compareTo },
@@ -923,7 +932,10 @@ export async function GET(req: Request) {
             ],
       },
       activity,
-    })
+    }
+    }, { fresh })
+
+    return NextResponse.json({ ...payload, _cachedAt: new Date(cachedAt).toISOString(), _cached: hit })
   } catch (error) {
     console.error('Dashboard stats error:', error)
 

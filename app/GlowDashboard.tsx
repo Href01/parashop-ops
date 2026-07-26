@@ -61,6 +61,7 @@ interface DashboardStats {
   pipeline: Array<{ label: string; value: number; tone: string }>
   alerts: { total: number; items: Array<{ tone: string; title: string; subtitle: string; href: string }> }
   activity: Array<{ tone: string; title: string; subtitle: string; timestamp: string }>
+  _cachedAt?: string
 }
 
 const mad = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v)
@@ -160,14 +161,14 @@ export default function GlowDashboard() {
     fetchGoals()
   }
 
-  function load() {
+  function load(fresh = false) {
     let qs = `days=${days}`
     if (mode === 'month') { const r = monthRange(month.year, month.m); qs = `from=${r.from}&to=${r.to}&compareFrom=${r.compareFrom}&compareTo=${r.compareTo}` }
     else if (mode === 'week') { const r = weekRange(week.year, week.w); qs = `from=${r.from}&to=${r.to}&compareFrom=${r.compareFrom}&compareTo=${r.compareTo}` }
     setLoading(true)
     setError(false)
     fetchGoals()
-    return fetch(`/api/ops/dashboard/stats?${qs}`, { cache: 'no-store' })
+    return fetch(`/api/ops/dashboard/stats?${qs}${fresh ? '&fresh=1' : ''}`, { cache: 'no-store' })
       .then((r) => { if (!r.ok) throw new Error('fetch'); return r.json() })
       .then((d) => { setStats(d); setLastUpdated(new Date()) })
       .catch((e) => { console.error('Failed to fetch stats:', e); setError(true) })
@@ -186,7 +187,7 @@ export default function GlowDashboard() {
         })
         if (!response.ok) throw new Error(`Sendit ${action} failed`)
       }
-      await load()
+      await load(true)
     } catch (error) {
       console.error('Failed to refresh Sendit:', error)
       setError(true)
@@ -353,14 +354,15 @@ export default function GlowDashboard() {
 
           {/* Actions + fraîcheur */}
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
-            {lastUpdated && (
-              <span style={{ fontSize: 11, color: 'var(--tx-faint)', whiteSpace: 'nowrap' }}>
-                MàJ {lastUpdated.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-                {stats.sendit?.lastPulledAt && ` · Sendit ${new Date(stats.sendit.lastPulledAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`}
-              </span>
-            )}
-            <button className="btn-modern btn-secondary btn-icon" onClick={refreshSendit} title="Synchroniser Sendit" aria-label="Synchroniser Sendit" disabled={loading}>
-              <RefreshCw className="w-4 h-4" style={loading ? { animation: 'dash-spin 0.8s linear infinite' } : undefined} />
+            <span style={{ fontSize: 11, color: 'var(--tx-faint)', whiteSpace: 'nowrap' }} title="Les chiffres sont mis en cache 1h. Clique « Actualiser » pour recalculer en direct.">
+              Chiffres à {new Date(stats._cachedAt || lastUpdated || Date.now()).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+              {stats.sendit?.lastPulledAt && ` · Sendit ${new Date(stats.sendit.lastPulledAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`}
+            </span>
+            <button className="btn-modern btn-secondary" onClick={() => load(true)} title="Recalculer les chiffres maintenant" disabled={loading}>
+              <RefreshCw className="w-4 h-4" style={loading ? { animation: 'dash-spin 0.8s linear infinite' } : undefined} />Actualiser
+            </button>
+            <button className="btn-modern btn-secondary btn-icon" onClick={refreshSendit} title="Synchroniser Sendit (pull colis + recalcul)" aria-label="Synchroniser Sendit" disabled={loading}>
+              <RefreshCw className="w-4 h-4" />
             </button>
             <button className="btn-modern btn-secondary" onClick={exportCsv}><Download className="w-4 h-4" />Export</button>
           </div>
