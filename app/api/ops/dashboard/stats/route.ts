@@ -510,14 +510,18 @@ export async function GET(req: Request) {
       safeQuery<ChannelRow>('channels', `
         ${FINANCIAL_CTE}
         SELECT
+          -- Le TYPE vient de sessionId (présent = passée sur le site), jamais de
+          -- sourceChannel. Avant, une commande manuelle sans canal devenait « Website »
+          -- et « Sendit » (un transporteur) s'affichait comme une source de trafic.
           CASE
-            WHEN LOWER(COALESCE("sourceChannel", '')) LIKE '%whatsapp%' THEN 'WhatsApp'
-            WHEN LOWER(COALESCE("sourceChannel", '')) LIKE '%instagram%' THEN 'Instagram'
-            WHEN LOWER(COALESCE("sourceChannel", '')) LIKE '%tiktok%' THEN 'TikTok'
-            WHEN LOWER(COALESCE("sourceChannel", '')) LIKE '%manual%' THEN 'Manual'
-            WHEN LOWER(COALESCE("sourceChannel", '')) LIKE '%web%' THEN 'Website'
-            WHEN NULLIF(TRIM(COALESCE("sourceChannel", '')), '') IS NULL THEN 'Website'
-            ELSE "sourceChannel"
+            WHEN "sessionId" IS NOT NULL THEN 'Site'
+            WHEN LOWER(COALESCE("sourceChannel", '')) LIKE '%whatsapp%' THEN 'WhatsApp (manuel)'
+            WHEN LOWER(COALESCE("sourceChannel", '')) LIKE '%instagram%' THEN 'Instagram (manuel)'
+            WHEN LOWER(COALESCE("sourceChannel", '')) LIKE '%tiktok%' THEN 'TikTok (manuel)'
+            WHEN LOWER(COALESCE("sourceChannel", '')) LIKE '%sendit%'
+              OR NULLIF(TRIM(COALESCE("sourceChannel", '')), '') IS NULL
+              OR LOWER(COALESCE("sourceChannel", '')) LIKE '%manual%' THEN 'Manuel (origine non renseignée)'
+            ELSE "sourceChannel" || ' (manuel)'
           END AS name,
           COUNT(*)::int AS orders,
           COALESCE(SUM(revenue), 0)::double precision AS revenue
