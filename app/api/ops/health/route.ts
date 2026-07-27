@@ -48,30 +48,43 @@ async function fetchNeonUsage(): Promise<NeonUsage> {
 
   const now = new Date()
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
-  const params = new URLSearchParams({
-    project_ids: projectId,
+  const base = {
     from: monthStart.toISOString(),
     to: now.toISOString(),
     granularity: 'daily',
-    metrics: 'compute_unit_seconds',
-  })
-  if (orgId) params.set('org_id', orgId)
+  }
 
+  // L'API a refusé certaines combinaisons de paramètres selon le type de clé
+  // (personnelle, d'organisation, ou limitée à un projet). Plutôt que de deviner,
+  // on essaie les variantes plausibles dans l'ordre et on garde la première qui
+  // répond — en remontant l'erreur COMPLÈTE si toutes échouent.
+  const variants: Array<{ label: string; params: URLSearchParams }> = []
+  const mk = (extra: Record<string, string>) => new URLSearchParams({ ...base, ...extra })
+  if (orgId) variants.push({ label: 'org_id + project_ids', params: mk({ org_id: orgId, project_ids: projectId, metrics: 'compute_unit_seconds' }) })
+  variants.push({ label: 'project_ids seul', params: mk({ project_ids: projectId, metrics: 'compute_unit_seconds' }) })
+  if (orgId) variants.push({ label: 'org_id seul', params: mk({ org_id: orgId, metrics: 'compute_unit_seconds' }) })
+
+  // Forme documentee, mais on reste permissif : l'API peut omettre des champs.
+  type NeonPayload = { projects?: Array<{ periods?: Array<{ consumption?: Array<{ timeframe_start?: string; metrics?: Array<{ metric_name?: string; value?: number }> }> }> }> }
+  let json: NeonPayload | null = null
+  let lastError = ''
   try {
-    const ctrl = new AbortController()
-    const timer = setTimeout(() => ctrl.abort(), 8000)
-    const res = await fetch(`https://console.neon.tech/api/v2/consumption_history/v2/projects?${params}`, {
-      headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
-      cache: 'no-store',
-      signal: ctrl.signal,
-    })
-    clearTimeout(timer)
-    if (!res.ok) {
+    for (const v of variants) {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), 8000)
+      const res = await fetch(`https://console.neon.tech/api/v2/consumption_history/v2/projects?${v.params}`, {
+        headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
+        cache: 'no-store',
+        signal: ctrl.signal,
+      })
+      clearTimeout(timer)
+      if (res.ok) { json = await res.json(); break }
       const body = await res.text().catch(() => '')
-      return { configured: true, error: `Neon a répondu ${res.status}${body ? ` — ${body.slice(0, 120)}` : ''}` }
+      lastError = `${res.status} (${v.label})${body ? ` — ${body.slice(0, 400)}` : ''}`
+      // 401/403 = problème de clé : inutile d'essayer les autres variantes.
+      if (res.status === 401 || res.status === 403) break
     }
-
-    const json = await res.json()
+    if (json == null) return { configured: true, error: `Neon a répondu ${lastError}` }
     const days: Array<{ date: string; cuHours: number }> = []
     for (const p of json?.projects ?? []) {
       for (const period of p?.periods ?? []) {
