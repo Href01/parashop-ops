@@ -168,6 +168,10 @@ function financialCte(from: string, to: string, cFrom: string, cTo: string) {
       COALESCE(o."orderNumber", CONCAT('Order #', o.id)) AS "orderNumber",
       o."deliveryName",
       o."deliveryCity",
+      -- Requis par la requête « canaux » : le TYPE de commande (Site / Manuel) vient
+      -- de sessionId, jamais de sourceChannel. Sans cette colonne ici, la requête
+      -- échoue et fait tomber TOUT le tableau de bord en 500.
+      o."sessionId",
       o."sourceChannel",
       o."confirmationStatus",
       o."deliveryStatus",
