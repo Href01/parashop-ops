@@ -18,12 +18,85 @@ import { getOpsSession } from '@/lib/auth'
  * Volontairement lu sur le pool partagé et sans cache : cette page doit dire la
  * vérité de l'instant, pas une valeur mise en cache il y a 5 minutes.
  */
+/**
+ * Consommation facturée, lue sur l'API Neon (clé lue côté serveur uniquement,
+ * jamais exposée au navigateur). Forme de réponse documentée :
+ *   { projects: [ { project_id, periods: [ { consumption: [
+ *       { timeframe_start, timeframe_end, metrics: [ { metric_name, value } ] } ] } ] } ] }
+ * Les métriques à zéro peuvent être OMISES — on ne suppose donc jamais leur présence.
+ * Tout échec est non bloquant : la page doit rester utile sans l'API.
+ */
+type NeonUsage =
+  | { configured: false }
+  | { configured: true; error: string }
+  | { configured: true; cuHours: number; days: Array<{ date: string; cuHours: number }>; projectedMonth: number; monthStart: string }
+
+async function fetchNeonUsage(): Promise<NeonUsage> {
+  const key = process.env.NEON_API_KEY
+  const projectId = process.env.NEON_PROJECT_ID
+  const orgId = process.env.NEON_ORG_ID
+  if (!key || !projectId) return { configured: false }
+
+  const now = new Date()
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+  const params = new URLSearchParams({
+    project_ids: projectId,
+    from: monthStart.toISOString(),
+    to: now.toISOString(),
+    granularity: 'daily',
+    metrics: 'compute_unit_seconds',
+  })
+  if (orgId) params.set('org_id', orgId)
+
+  try {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 8000)
+    const res = await fetch(`https://console.neon.tech/api/v2/consumption_history/v2/projects?${params}`, {
+      headers: { Authorization: `Bearer ${key}`, Accept: 'application/json' },
+      cache: 'no-store',
+      signal: ctrl.signal,
+    })
+    clearTimeout(timer)
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      return { configured: true, error: `Neon a répondu ${res.status}${body ? ` — ${body.slice(0, 120)}` : ''}` }
+    }
+
+    const json = await res.json()
+    const days: Array<{ date: string; cuHours: number }> = []
+    for (const p of json?.projects ?? []) {
+      for (const period of p?.periods ?? []) {
+        for (const frame of period?.consumption ?? []) {
+          const metric = (frame?.metrics ?? []).find((m: { metric_name?: string }) => m?.metric_name === 'compute_unit_seconds')
+          const seconds = Number(metric?.value) || 0
+          const date = String(frame?.timeframe_start ?? '').slice(0, 10)
+          if (!date) continue
+          const existing = days.find((d) => d.date === date)
+          if (existing) existing.cuHours += seconds / 3600
+          else days.push({ date, cuHours: seconds / 3600 })
+        }
+      }
+    }
+    days.sort((a, b) => a.date.localeCompare(b.date))
+    const cuHours = days.reduce((s, d) => s + d.cuHours, 0)
+
+    // Projection fin de mois au rythme observé depuis le 1er.
+    const dayOfMonth = now.getUTCDate()
+    const daysInMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)).getUTCDate()
+    const projectedMonth = dayOfMonth > 0 ? (cuHours / dayOfMonth) * daysInMonth : cuHours
+
+    return { configured: true, cuHours, days, projectedMonth, monthStart: monthStart.toISOString().slice(0, 10) }
+  } catch (e) {
+    return { configured: true, error: e instanceof Error ? e.message : 'appel impossible' }
+  }
+}
+
 export async function GET() {
   const session = await getOpsSession()
   if (!session) return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
 
   try {
-    const [db, conn, cache, events, tables] = await Promise.all([
+    const [db, conn, cache, events, tables, neon] = await Promise.all([
       pool.query(`
         SELECT pg_database_size(current_database())::bigint AS bytes,
                pg_size_pretty(pg_database_size(current_database())) AS pretty,
@@ -51,6 +124,7 @@ export async function GET() {
                pg_size_pretty(pg_total_relation_size(relid)) AS pretty
         FROM pg_stat_user_tables
         ORDER BY pg_total_relation_size(relid) DESC LIMIT 8`),
+      fetchNeonUsage(),
     ])
 
     const d = db.rows[0], c = conn.rows[0], k = cache.rows[0], e = events.rows[0]
@@ -77,6 +151,10 @@ export async function GET() {
         perDay, projectedYear: Math.round(perDay * 365),
       },
       tables: tables.rows.map((t) => ({ name: t.name, rows: Number(t.rows), pretty: t.pretty })),
+      // Consommation facturée (Neon). Le quota inclus du plan Launch est de 300 CU-h ;
+      // au-delà, Neon facture à l'usage — ça ne coupe plus le service comme sur Free.
+      neon,
+      neonQuota: 300,
     })
   } catch (error) {
     console.error('[Health]', error)

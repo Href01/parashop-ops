@@ -11,6 +11,11 @@ type Health = {
   cache: { hitRatio: number; commits: number; rollbacks: number }
   events: { last24h: number; last7d: number; total: number; perDay: number; projectedYear: number }
   tables: Array<{ name: string; rows: number; pretty: string }>
+  neonQuota: number
+  neon:
+    | { configured: false }
+    | { configured: true; error: string }
+    | { configured: true; cuHours: number; days: Array<{ date: string; cuHours: number }>; projectedMonth: number; monthStart: string }
 }
 
 const int = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v || 0)
@@ -85,6 +90,84 @@ export default function HealthPage() {
                 </p>
               )}
             </div>
+
+            {/* Consommation réellement facturée par Neon (CU-heures). Le compteur
+                « éveillé depuis » ci-dessus donne le symptôme en direct ; celui-ci
+                donne le cumul du mois et la projection. */}
+            {'error' in d.neon ? (
+              <div className="card-modern" style={{ padding: 14 }}>
+                <div style={{ fontSize: 11, color: 'var(--tx-lo)', fontWeight: 600 }}>CONSOMMATION NEON</div>
+                <p style={{ fontSize: 12, color: 'var(--amber)', marginTop: 4 }}>
+                  Lecture impossible : {d.neon.error}
+                </p>
+                <p style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 3 }}>
+                  Vérifie <code>NEON_API_KEY</code>, <code>NEON_PROJECT_ID</code> et <code>NEON_ORG_ID</code> dans Vercel.
+                </p>
+              </div>
+            ) : d.neon.configured === false ? (
+              <div className="card-modern" style={{ padding: 14 }}>
+                <div style={{ fontSize: 11, color: 'var(--tx-lo)', fontWeight: 600 }}>CONSOMMATION NEON</div>
+                <p style={{ fontSize: 12, color: 'var(--tx-faint)', marginTop: 4 }}>
+                  Non configurée — ajoute <code>NEON_API_KEY</code> et <code>NEON_PROJECT_ID</code> dans Vercel
+                  pour voir les CU-heures facturées ici.
+                </p>
+              </div>
+            ) : (() => {
+              const n = d.neon
+              const pct = d.neonQuota > 0 ? (n.cuHours / d.neonQuota) * 100 : 0
+              const projPct = d.neonQuota > 0 ? (n.projectedMonth / d.neonQuota) * 100 : 0
+              const over = n.projectedMonth > d.neonQuota
+              const max = Math.max(...n.days.map((x) => x.cuHours), 0.01)
+              return (
+                <div className="card-modern" style={{ padding: 16 }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: 'var(--tx-lo)', fontWeight: 600 }}>CONSOMMATION NEON — CE MOIS</div>
+                      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 3 }}>
+                        <span style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--tx-hi)' }}>
+                          {n.cuHours.toFixed(1)}
+                        </span>
+                        <span style={{ fontSize: 12, color: 'var(--tx-faint)' }}>CU-h sur {d.neonQuota} inclus ({pct.toFixed(0)} %)</span>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: 10.5, color: 'var(--tx-faint)' }}>Projection fin de mois</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--mono)', color: over ? 'var(--amber)' : 'var(--green)' }}>
+                        {n.projectedMonth.toFixed(0)} CU-h
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ height: 8, borderRadius: 6, background: 'var(--bg-3)', overflow: 'hidden', marginTop: 10 }}>
+                    <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: pct > 90 ? 'var(--red)' : pct > 70 ? 'var(--amber)' : 'var(--green)', borderRadius: 6, transition: 'width .6s ease' }} />
+                  </div>
+
+                  {over && (
+                    <p style={{ marginTop: 9, fontSize: 11.5, padding: '7px 9px', borderRadius: 8, background: 'var(--amber-bg)', border: '1px solid var(--amber-line)', color: 'var(--tx-hi)' }}>
+                      ⚠ À ce rythme tu dépasserais le quota inclus ({projPct.toFixed(0)} %). Sur le plan Launch
+                      le dépassement est <b>facturé, pas coupé</b> — le site ne s&apos;arrête plus comme sur Free.
+                    </p>
+                  )}
+
+                  {n.days.length > 0 && (
+                    <>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 46, marginTop: 12 }}>
+                        {n.days.map((x) => (
+                          <div key={x.date} title={`${x.date} — ${x.cuHours.toFixed(2)} CU-h`}
+                            style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }}>
+                            <div style={{ height: `${Math.max((x.cuHours / max) * 100, x.cuHours > 0 ? 4 : 0)}%`, background: 'var(--rose-bright)', borderRadius: '3px 3px 0 0', opacity: 0.85 }} />
+                          </div>
+                        ))}
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--tx-faint)', marginTop: 3 }}>
+                        <span>{n.monthStart}</span>
+                        <span>aujourd&apos;hui · un pic isolé = une journée où la base n&apos;a pas dormi</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )
+            })()}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
               <Stat label="Taille de la base" value={d.database.pretty}
