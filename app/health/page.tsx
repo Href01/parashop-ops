@@ -11,9 +11,9 @@ type Health = {
   cache: { hitRatio: number; commits: number; rollbacks: number }
   events: { last24h: number; last7d: number; total: number; perDay: number; projectedYear: number }
   tables: Array<{ name: string; rows: number; pretty: string }>
-  neonQuota: number
+  neonRates: { computePerCuHour: number; storagePerGbMonth: number; currency: string }
   neon:
-    | { configured: false }
+    | { configured: false; missing: string[] }
     | { configured: true; error: string }
     | { configured: true; cuHours: number; days: Array<{ date: string; cuHours: number }>; projectedMonth: number; monthStart: string }
 }
@@ -107,47 +107,53 @@ export default function HealthPage() {
             ) : d.neon.configured === false ? (
               <div className="card-modern" style={{ padding: 14 }}>
                 <div style={{ fontSize: 11, color: 'var(--tx-lo)', fontWeight: 600 }}>CONSOMMATION NEON</div>
-                <p style={{ fontSize: 12, color: 'var(--tx-faint)', marginTop: 4 }}>
-                  Non configurée — ajoute <code>NEON_API_KEY</code> et <code>NEON_PROJECT_ID</code> dans Vercel
-                  pour voir les CU-heures facturées ici.
+                <p style={{ fontSize: 12, color: 'var(--amber)', marginTop: 4 }}>
+                  Variable(s) absente(s) au moment de l&apos;exécution : <b>{d.neon.missing.join(', ') || 'aucune'}</b>
+                </p>
+                <p style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 4, lineHeight: 1.5 }}>
+                  Si tu viens de les ajouter dans Vercel : <b>il faut redéployer</b>. Vercel n&apos;injecte les
+                  variables qu&apos;au build suivant — le déploiement en cours a été construit avant.
+                  Vérifie aussi qu&apos;elles sont sur le projet <b>parashop-ops</b> et cochées pour
+                  l&apos;environnement <b>Production</b>.
                 </p>
               </div>
             ) : (() => {
               const n = d.neon
-              const pct = d.neonQuota > 0 ? (n.cuHours / d.neonQuota) * 100 : 0
-              const projPct = d.neonQuota > 0 ? (n.projectedMonth / d.neonQuota) * 100 : 0
-              const over = n.projectedMonth > d.neonQuota
+              const r = d.neonRates
+              // Launch est 100 % a l'usage : pas de forfait, pas d'heures incluses.
+              // On affiche donc un cout estime, pas un pourcentage de quota.
+              const gb = d.database.bytes / 1024 ** 3
+              const computeCost = n.cuHours * r.computePerCuHour
+              const storageCost = gb * r.storagePerGbMonth
+              const monthCost = computeCost + storageCost
+              const projectedCost = n.projectedMonth * r.computePerCuHour + storageCost
               const max = Math.max(...n.days.map((x) => x.cuHours), 0.01)
+              const usd = (v: number) => `$${v.toFixed(2)}`
               return (
                 <div className="card-modern" style={{ padding: 16 }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                     <div>
-                      <div style={{ fontSize: 11, color: 'var(--tx-lo)', fontWeight: 600 }}>CONSOMMATION NEON — CE MOIS</div>
+                      <div style={{ fontSize: 11, color: 'var(--tx-lo)', fontWeight: 600 }}>COÛT NEON — CE MOIS</div>
                       <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 3 }}>
-                        <span style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--tx-hi)' }}>
-                          {n.cuHours.toFixed(1)}
+                        <span style={{ fontSize: 26, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--tx-hi)' }}>
+                          {usd(monthCost)}
                         </span>
-                        <span style={{ fontSize: 12, color: 'var(--tx-faint)' }}>CU-h sur {d.neonQuota} inclus ({pct.toFixed(0)} %)</span>
+                        <span style={{ fontSize: 12, color: 'var(--tx-faint)' }}>
+                          dont {usd(computeCost)} de compute · {usd(storageCost)} de stockage
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 2 }}>
+                        {n.cuHours.toFixed(1)} CU-h × {usd(r.computePerCuHour)} · {gb.toFixed(2)} Go × {usd(r.storagePerGbMonth)}
                       </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ fontSize: 10.5, color: 'var(--tx-faint)' }}>Projection fin de mois</div>
-                      <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'var(--mono)', color: over ? 'var(--amber)' : 'var(--green)' }}>
-                        {n.projectedMonth.toFixed(0)} CU-h
+                      <div style={{ fontSize: 18, fontWeight: 700, fontFamily: 'var(--mono)', color: 'var(--tx-hi)' }}>
+                        {usd(projectedCost)}
                       </div>
+                      <div style={{ fontSize: 10.5, color: 'var(--tx-faint)' }}>au rythme actuel</div>
                     </div>
                   </div>
-
-                  <div style={{ height: 8, borderRadius: 6, background: 'var(--bg-3)', overflow: 'hidden', marginTop: 10 }}>
-                    <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, background: pct > 90 ? 'var(--red)' : pct > 70 ? 'var(--amber)' : 'var(--green)', borderRadius: 6, transition: 'width .6s ease' }} />
-                  </div>
-
-                  {over && (
-                    <p style={{ marginTop: 9, fontSize: 11.5, padding: '7px 9px', borderRadius: 8, background: 'var(--amber-bg)', border: '1px solid var(--amber-line)', color: 'var(--tx-hi)' }}>
-                      ⚠ À ce rythme tu dépasserais le quota inclus ({projPct.toFixed(0)} %). Sur le plan Launch
-                      le dépassement est <b>facturé, pas coupé</b> — le site ne s&apos;arrête plus comme sur Free.
-                    </p>
-                  )}
 
                   {n.days.length > 0 && (
                     <>

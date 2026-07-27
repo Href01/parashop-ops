@@ -27,7 +27,7 @@ import { getOpsSession } from '@/lib/auth'
  * Tout échec est non bloquant : la page doit rester utile sans l'API.
  */
 type NeonUsage =
-  | { configured: false }
+  | { configured: false; missing: string[] }
   | { configured: true; error: string }
   | { configured: true; cuHours: number; days: Array<{ date: string; cuHours: number }>; projectedMonth: number; monthStart: string }
 
@@ -35,7 +35,16 @@ async function fetchNeonUsage(): Promise<NeonUsage> {
   const key = process.env.NEON_API_KEY
   const projectId = process.env.NEON_PROJECT_ID
   const orgId = process.env.NEON_ORG_ID
-  if (!key || !projectId) return { configured: false }
+  // On nomme LA variable manquante : sinon « non configurée » ne dit pas si le
+  // problème vient d'une faute de frappe, du mauvais projet Vercel, ou d'un
+  // déploiement antérieur à l'ajout des variables (Vercel ne les injecte qu'au
+  // build suivant — cause la plus fréquente).
+  const missing = [
+    !key && 'NEON_API_KEY',
+    !projectId && 'NEON_PROJECT_ID',
+    !orgId && 'NEON_ORG_ID',
+  ].filter(Boolean) as string[]
+  if (!key || !projectId) return { configured: false, missing }
 
   const now = new Date()
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
@@ -151,10 +160,12 @@ export async function GET() {
         perDay, projectedYear: Math.round(perDay * 365),
       },
       tables: tables.rows.map((t) => ({ name: t.name, rows: Number(t.rows), pretty: t.pretty })),
-      // Consommation facturée (Neon). Le quota inclus du plan Launch est de 300 CU-h ;
-      // au-delà, Neon facture à l'usage — ça ne coupe plus le service comme sur Free.
+      // Consommation facturée (Neon). Le plan Launch est 100 % à l'usage : aucun
+      // forfait, aucun minimum, aucune heure incluse. On affiche donc un COÛT, pas
+      // une jauge de quota. Tarifs publics — la facture qui fait foi reste celle de
+      // la console Neon (ces taux peuvent changer).
       neon,
-      neonQuota: 300,
+      neonRates: { computePerCuHour: 0.106, storagePerGbMonth: 0.35, currency: 'USD' },
     })
   } catch (error) {
     console.error('[Health]', error)
