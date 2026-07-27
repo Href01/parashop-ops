@@ -39,12 +39,15 @@ async function fetchNeonUsage(): Promise<NeonUsage> {
   // problème vient d'une faute de frappe, du mauvais projet Vercel, ou d'un
   // déploiement antérieur à l'ajout des variables (Vercel ne les injecte qu'au
   // build suivant — cause la plus fréquente).
+  // org_id est OBLIGATOIRE : l'API le refuse sans, avec
+  // « query parameter "org_id" not set ». On le traite donc comme requis plutot
+  // que de lancer un appel voue a l'echec.
   const missing = [
     !key && 'NEON_API_KEY',
     !projectId && 'NEON_PROJECT_ID',
     !orgId && 'NEON_ORG_ID',
   ].filter(Boolean) as string[]
-  if (!key || !projectId) return { configured: false, missing }
+  if (!key || !projectId || !orgId) return { configured: false, missing }
 
   const now = new Date()
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
@@ -58,11 +61,12 @@ async function fetchNeonUsage(): Promise<NeonUsage> {
   // (personnelle, d'organisation, ou limitée à un projet). Plutôt que de deviner,
   // on essaie les variantes plausibles dans l'ordre et on garde la première qui
   // répond — en remontant l'erreur COMPLÈTE si toutes échouent.
-  const variants: Array<{ label: string; params: URLSearchParams }> = []
   const mk = (extra: Record<string, string>) => new URLSearchParams({ ...base, ...extra })
-  if (orgId) variants.push({ label: 'org_id + project_ids', params: mk({ org_id: orgId, project_ids: projectId, metrics: 'compute_unit_seconds' }) })
-  variants.push({ label: 'project_ids seul', params: mk({ project_ids: projectId, metrics: 'compute_unit_seconds' }) })
-  if (orgId) variants.push({ label: 'org_id seul', params: mk({ org_id: orgId, metrics: 'compute_unit_seconds' }) })
+  const variants: Array<{ label: string; params: URLSearchParams }> = [
+    { label: 'org_id + project_ids', params: mk({ org_id: orgId, project_ids: projectId, metrics: 'compute_unit_seconds' }) },
+    // Repli : certaines cles renvoient toute l'organisation plutot qu'un projet filtre.
+    { label: 'org_id seul', params: mk({ org_id: orgId, metrics: 'compute_unit_seconds' }) },
+  ]
 
   // Forme documentee, mais on reste permissif : l'API peut omettre des champs.
   type NeonPayload = { projects?: Array<{ periods?: Array<{ consumption?: Array<{ timeframe_start?: string; metrics?: Array<{ metric_name?: string; value?: number }> }> }> }> }
