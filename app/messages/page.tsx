@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { Search, Send, Check, CheckCheck, Clock, AlertCircle, MessageCircle, ShoppingBag, Star, Gift, User, ArrowLeft } from 'lucide-react'
+import { Search, Send, Check, CheckCheck, Clock, AlertCircle, MessageCircle, ShoppingBag, Star, Gift, User, ArrowLeft, ImagePlus, X } from 'lucide-react'
 import Link from 'next/link'
 import BosShell from '@/components/BosShell'
 
@@ -99,6 +99,15 @@ function renderBody(text: string, outbound: boolean) {
   )
 }
 
+/**
+ * Images arrive two ways: a customer's photo is a Meta media ID that has to be
+ * proxied (the token lives on the storefront), while a photo WE sent is already a
+ * public Cloudinary URL. Same field, two shapes.
+ */
+function mediaUrl(mediaId: string): string {
+  return /^https?:\/\//.test(mediaId) ? mediaId : `/api/ops/media/${mediaId}`
+}
+
 export default function MessagesPage() {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loadingList, setLoadingList] = useState(true)
@@ -113,7 +122,30 @@ export default function MessagesPage() {
   const [sendError, setSendError] = useState('')
   const [rewardMsg, setRewardMsg] = useState('')
 
+  // Photo attachment for the reply composer.
+  const [photo, setPhoto] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState('')
+
   const scrollRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  function clearPhoto() {
+    setPhoto(null)
+    setPhotoPreview(prev => { if (prev) URL.revokeObjectURL(prev); return '' })
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  function pickPhoto(file: File | null) {
+    if (!file) return
+    if (!file.type.startsWith('image/')) { setSendError('Image uniquement'); return }
+    if (file.size > 5 * 1024 * 1024) { setSendError('Image trop lourde — max 5 Mo'); return }
+    setSendError('')
+    setPhoto(file)
+    setPhotoPreview(prev => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(file) })
+  }
+
+  // Release the last preview when the page unmounts.
+  useEffect(() => () => { if (photoPreview) URL.revokeObjectURL(photoPreview) }, [photoPreview])
 
   useEffect(() => { void fetchConversations() }, [])
 
@@ -136,7 +168,7 @@ export default function MessagesPage() {
   const selectConv = useCallback(async (phone: string) => {
     setSelected(phone)
     setThread(null)
-    setReply(''); setSendError(''); setRewardMsg('')
+    setReply(''); setSendError(''); setRewardMsg(''); clearPhoto()
     setLoadingThread(true)
     const url = new URL(window.location.href)
     url.searchParams.set('phone', phone)
@@ -158,16 +190,28 @@ export default function MessagesPage() {
   const windowOpen = hoursSince <= 24
 
   async function sendReply() {
-    if (!reply.trim() || sending || !selected) return
+    if (sending || !selected) return
+    // A photo can travel alone; text alone still works as before.
+    if (!photo && !reply.trim()) return
     setSending(true); setSendError('')
     try {
-      const res = await fetch('/api/ops/messages/send', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone: selected, text: reply.trim() }),
-      })
+      let res: Response
+      if (photo) {
+        const fd = new FormData()
+        fd.append('file', photo)
+        fd.append('phone', selected)
+        // Whatever is typed becomes the photo's caption — one message, not two.
+        if (reply.trim()) fd.append('caption', reply.trim())
+        res = await fetch('/api/ops/messages/send-media', { method: 'POST', body: fd })
+      } else {
+        res = await fetch('/api/ops/messages/send', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone: selected, text: reply.trim() }),
+        })
+      }
       const json = await res.json()
       if (!res.ok) { setSendError(json.error || 'Échec'); return }
-      setReply('')
+      setReply(''); clearPhoto()
       await selectConv(selected)
     } catch { setSendError('Erreur réseau') }
     finally { setSending(false) }
@@ -322,9 +366,9 @@ export default function MessagesPage() {
                         {m.body?.startsWith('[Image]') ? (
                           m.mediaId ? (
                             <div>
-                              <a href={`/api/ops/media/${m.mediaId}`} target="_blank" rel="noopener noreferrer"
+                              <a href={mediaUrl(m.mediaId)} target="_blank" rel="noopener noreferrer"
                                 style={{ display: 'block', maxWidth: 280, borderRadius: 12, overflow: 'hidden', border: out ? '2px solid rgba(255,255,255,.3)' : '2px solid var(--line-soft)' }}>
-                                <img src={`/api/ops/media/${m.mediaId}`} alt="Image" loading="lazy"
+                                <img src={mediaUrl(m.mediaId)} alt="Image" loading="lazy"
                                   style={{ width: '100%', height: 'auto', display: 'block' }} />
                               </a>
                               {m.body.replace('[Image]', '').trim() && (
@@ -403,12 +447,32 @@ export default function MessagesPage() {
                     <div style={{ fontSize: 11, color: 'var(--green)', fontWeight: 600, marginBottom: 7 }}>
                       ● Fenêtre ouverte · réponse gratuite encore {Math.max(0, Math.round(24 - hoursSince))}h
                     </div>
+                    {photoPreview && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, padding: 8, borderRadius: 'var(--radius)', border: '1px solid var(--line-soft)', background: 'var(--bg-1)' }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={photoPreview} alt="Aperçu" style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 8, flexShrink: 0 }} />
+                        <span style={{ fontSize: 12.5, color: 'var(--tx-mid)', flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {photo?.name} · le texte servira de légende
+                        </span>
+                        <button type="button" onClick={clearPhoto} aria-label="Retirer la photo"
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 26, height: 26, borderRadius: 6, border: '1px solid var(--line-soft)', background: 'var(--bg-0)', cursor: 'pointer', color: 'var(--tx-mid)', flexShrink: 0 }}>
+                          <X style={{ width: 13, height: 13 }} />
+                        </button>
+                      </div>
+                    )}
                     <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                      <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+                        onChange={e => pickPhoto(e.target.files?.[0] || null)} />
+                      <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending}
+                        aria-label="Joindre une photo" title="Joindre une photo"
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 38, height: 38, flexShrink: 0, borderRadius: 'var(--radius)', border: '1px solid var(--line-soft)', background: photo ? 'var(--bg-2)' : 'var(--bg-0)', cursor: sending ? 'default' : 'pointer', color: photo ? 'var(--tx-hi)' : 'var(--tx-mid)', opacity: sending ? 0.5 : 1 }}>
+                        <ImagePlus style={{ width: 16, height: 16 }} />
+                      </button>
                       <textarea value={reply} onChange={e => setReply(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) sendReply() }}
-                        placeholder="Écrire une réponse… (Ctrl+Entrée)" rows={2}
+                        placeholder={photo ? 'Légende (facultatif)…' : 'Écrire une réponse… (Ctrl+Entrée)'} rows={2}
                         style={{ flex: 1, resize: 'none', borderRadius: 'var(--radius)', border: '1px solid var(--line-soft)', padding: '9px 12px', fontSize: 13.5, outline: 'none', fontFamily: 'inherit', color: 'var(--tx-hi)', background: 'var(--bg-0)' }} />
-                      <button onClick={sendReply} disabled={!reply.trim() || sending} className="btn-modern btn-primary" style={{ opacity: (!reply.trim() || sending) ? 0.5 : 1 }}>
+                      <button onClick={sendReply} disabled={(!reply.trim() && !photo) || sending} className="btn-modern btn-primary" style={{ opacity: ((!reply.trim() && !photo) || sending) ? 0.5 : 1 }}>
                         <Send style={{ width: 15, height: 15 }} /> {sending ? 'Envoi…' : 'Envoyer'}
                       </button>
                     </div>
