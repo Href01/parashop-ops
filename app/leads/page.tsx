@@ -9,12 +9,15 @@ type Lead = {
   id: number; sessionId: string; name: string | null; phone: string | null; city: string | null
   address: string | null; cartItems: CartItem[] | null; cartTotal: number | null; lastStep: string | null
   reason: string | null; createdAt: string; updatedAt: string
+  // Historique rattache par les 9 derniers chiffres du telephone (voir l'API).
+  ordersTotal: number; ordersBefore: number; ordersAfter: number
+  ordersDelivered: number; lastOrderAt: string | null; totalSpent: number
 }
 type ErrRow = { kind: string; label: string | null; detail: string | null; at: string }
 type Data = {
   leads: Lead[]
   errors: ErrRow[]
-  summary: { leads: number; otp_failed_24h: number; purchase_failed_24h: number }
+  summary: { leads: number; leads_deja_convertis: number; otp_failed_24h: number; purchase_failed_24h: number }
 }
 
 const money = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v)
@@ -72,7 +75,17 @@ export default function LeadsPage() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, margin: '16px 0 20px' }}>
           <div className="card-modern" style={{ padding: 14 }}>
             <div className="fs12 tx-lo">Leads à rappeler</div>
-            <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--rose-bright)' }}>{data?.summary.leads ?? '—'}</div>
+            <div style={{ fontSize: 26, fontWeight: 700, color: 'var(--rose-bright)' }}>
+              {data ? Math.max(0, data.summary.leads - (data.summary.leads_deja_convertis ?? 0)) : '—'}
+            </div>
+            {/* Le compteur brut comptait des clientes qui avaient deja rachete :
+                on appelait pour rien. On affiche donc le nombre a rappeler
+                REELLEMENT, et on isole les autres juste en dessous. */}
+            {(data?.summary.leads_deja_convertis ?? 0) > 0 && (
+              <div className="fs11" style={{ marginTop: 3, color: 'var(--green)', fontWeight: 600 }}>
+                +{data!.summary.leads_deja_convertis} ont déjà commandé
+              </div>
+            )}
           </div>
           <div className="card-modern" style={{ padding: 14 }}>
             <div className="fs12 tx-lo">OTP échoués (24h)</div>
@@ -108,8 +121,39 @@ export default function LeadsPage() {
                         {l.lastStep === 'summary' ? 'Bloqué au paiement' : `Étape: ${l.lastStep || '—'}`} · {timeAgo(l.updatedAt)}
                         {l.reason ? ` · ${l.reason}` : ''}
                       </div>
+                      {/* Historique client. « orderId IS NULL » ne voit que la
+                          commande passee dans LA MEME session : sans cette
+                          ligne, une cliente revenue le lendemain reste listee
+                          comme a rappeler alors qu'elle a deja achete. */}
+                      {l.ordersTotal > 0 && (
+                        <div className="fs11" style={{ marginTop: 5, display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+                          {l.ordersAfter > 0 && (
+                            <span style={{ fontWeight: 700, color: 'var(--green)' }}>
+                              ✓ {l.ordersAfter} commande{l.ordersAfter > 1 ? 's' : ''} après l&apos;abandon
+                            </span>
+                          )}
+                          {l.ordersBefore > 0 && (
+                            <span style={{ fontWeight: 700, color: 'var(--blue)' }}>
+                              {l.ordersBefore} commande{l.ordersBefore > 1 ? 's' : ''} avant
+                            </span>
+                          )}
+                          <span className="tx-mid">
+                            · {l.ordersTotal} au total · {l.ordersDelivered} livrée{l.ordersDelivered > 1 ? 's' : ''}
+                            {l.totalSpent > 0 ? ` · ${money(l.totalSpent)} MAD dépensés` : ''}
+                          </span>
+                        </div>
+                      )}
                     </div>
-                    <span className="badge amber" style={{ fontSize: 10, whiteSpace: 'nowrap' }}>à rappeler</span>
+                    {/* Le statut d'appel depend de l'historique, pas du seul
+                        abandon : rappeler quelqu'un qui a deja recommande fait
+                        mauvais effet et coute du temps. */}
+                    {l.ordersAfter > 0 ? (
+                      <span className="badge green" style={{ fontSize: 10, whiteSpace: 'nowrap' }}>déjà commandé ✓</span>
+                    ) : l.ordersBefore > 0 ? (
+                      <span className="badge blue" style={{ fontSize: 10, whiteSpace: 'nowrap' }}>cliente fidèle</span>
+                    ) : (
+                      <span className="badge amber" style={{ fontSize: 10, whiteSpace: 'nowrap' }}>à rappeler</span>
+                    )}
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
                     {l.phone && <a href={waLink(l.phone, l.name)} target="_blank" rel="noreferrer" className="btn-modern btn-sm btn-primary" style={{ textDecoration: 'none' }}><MessageCircle style={{ width: 14, height: 14 }} /> WhatsApp</a>}
