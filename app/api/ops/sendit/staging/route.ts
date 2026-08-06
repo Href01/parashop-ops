@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
                  "senditStatus" = $2::text,
                  "deliveryStatus" = $2::varchar,
                  status = $3::"OrderStatus",
-                 "actualDeliveryCost" = $4,
+                 "actualDeliveryCost" = $4::numeric,
                  "codAmount" = NULL,
                  "deliveredAt" = CASE
                    WHEN $3 = 'DELIVERED' AND NULLIF($5::text, '') IS NOT NULL
@@ -166,17 +166,22 @@ export async function POST(req: NextRequest) {
                  "senditStatus" = $2::text,
                  "deliveryStatus" = $2::varchar,
                  status = $3::"OrderStatus",
-                 "actualDeliveryCost" = $4,
-                 total = CASE WHEN $5 > 0 THEN $5 ELSE total END,
-                 "codAmount" = CASE WHEN $5 > 0 THEN $5 ELSE "codAmount" END,
-                 "paidAmount" = CASE WHEN $3 = 'DELIVERED' AND $5 > 0 THEN $5 ELSE "paidAmount" END,
+                 "actualDeliveryCost" = $4::numeric,
+                 -- $5::numeric est OBLIGATOIRE. Sans cast, « $5 > 0 » fait deduire a
+                 -- Postgres que le parametre est un ENTIER (a cause du litteral 0) :
+                 -- tout COD avec des centimes echouait alors sur
+                 -- « invalid input syntax for type integer: "463.5" », et la synchro
+                 -- entiere s'arretait.
+                 total = CASE WHEN $5::numeric > 0 THEN $5::numeric ELSE total END,
+                 "codAmount" = CASE WHEN $5::numeric > 0 THEN $5::numeric ELSE "codAmount" END,
+                 "paidAmount" = CASE WHEN $3 = 'DELIVERED' AND $5::numeric > 0 THEN $5::numeric ELSE "paidAmount" END,
                  "paidAt" = CASE
                    WHEN $3 = 'DELIVERED' AND NULLIF($6::text, '') IS NOT NULL
                      THEN ($6::timestamp AT TIME ZONE 'Africa/Casablanca')
                    ELSE "paidAt"
                  END,
                  "paymentReference" = CASE WHEN $3 = 'DELIVERED' THEN COALESCE("paymentReference", $1) ELSE "paymentReference" END,
-                 "paymentStatus" = CASE WHEN $3 = 'DELIVERED' AND $5 > 0 THEN 'PAID' ELSE "paymentStatus" END,
+                 "paymentStatus" = CASE WHEN $3 = 'DELIVERED' AND $5::numeric > 0 THEN 'PAID' ELSE "paymentStatus" END,
                  "deliveredAt" = CASE
                    WHEN $3 = 'DELIVERED' AND NULLIF($6::text, '') IS NOT NULL
                      THEN ($6::timestamp AT TIME ZONE 'Africa/Casablanca')
