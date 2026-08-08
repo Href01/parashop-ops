@@ -105,6 +105,7 @@ export async function POST(request: NextRequest) {
     // All data is now validated and type-safe!
     const {
       sourceChannel,
+      handToHand,
       deliveryName,
       deliveryPhone,
       deliveryCity,
@@ -195,8 +196,15 @@ export async function POST(request: NextRequest) {
           estimatedDeliveryCost,
           promoCode || null,
           notes || null,
-          confirmImmediately ? 'CONFIRMED' : 'PENDING',
-          confirmImmediately ? 'CONFIRMED' : 'NEEDS_CONFIRMATION',
+          /* Une remise en main propre est deja consommee : la cliente a le
+             produit, l'argent est encaisse. La naître CONFIRMED obligerait a
+             repasser la marquer livree, et c'est cet oubli qui ramene aux
+             ajustements de stock a la main. DELIVERED laisse les triggers
+             faire leur travail : `apply_order_stock_movement` decremente le
+             stock, `stamp_delivered_at` pose la date qui fait entrer la vente
+             dans le CA realise. */
+          handToHand ? 'DELIVERED' : (confirmImmediately ? 'CONFIRMED' : 'PENDING'),
+          handToHand || confirmImmediately ? 'CONFIRMED' : 'NEEDS_CONFIRMATION',
           'NOT_CREATED',
           paymentMethod === 'VIREMENT' ? paidAmount : null,
           paymentMethod === 'VIREMENT' ? paidAt : null,

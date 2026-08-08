@@ -45,6 +45,8 @@ export default function NewOrderPage() {
     deliveryName: '',
     deliveryPhone: '',
     districtId: '',
+    handToHand: false,
+    handToHandCity: '',
     deliveryAddress: '',
     deliveryNotes: '',
     paymentMethod: 'COD',
@@ -134,21 +136,47 @@ export default function NewOrderPage() {
     setError(null)
 
     try {
-      if (!formData.deliveryName || !formData.deliveryPhone || !formData.districtId) {
+      if (!formData.deliveryName || !formData.deliveryPhone) {
         throw new Error('Please fill in all required fields')
       }
 
-      const selectedDistrict = districts.find(d => d.id === parseInt(formData.districtId))
-      if (!selectedDistrict) {
-        throw new Error('Invalid district selected')
+      /* Deux chemins qui s'excluent : soit un transporteur et son district
+         facture, soit une remise en main propre a 0 MAD. On ne lit JAMAIS
+         `selectedDistrict` dans le second cas — c'est precisement ce couplage
+         qui rendait la vente de la main a la main impossible a saisir. */
+      let deliveryCity: string
+      let senditDistrictId: number | undefined
+      let deliveryFee: number
+
+      if (formData.handToHand) {
+        /* La ville reste une vraie ville : elle alimente la geographie des
+           ventes. Un « remise en main propre » colle ici polluerait ce champ. */
+        if (!formData.handToHandCity.trim()) {
+          throw new Error('Indique la ville où le produit a été remis')
+        }
+        deliveryCity = formData.handToHandCity.trim()
+        senditDistrictId = undefined
+        deliveryFee = 0
+      } else {
+        if (!formData.districtId) {
+          throw new Error('Please fill in all required fields')
+        }
+        const selectedDistrict = districts.find(d => d.id === parseInt(formData.districtId))
+        if (!selectedDistrict) {
+          throw new Error('Invalid district selected')
+        }
+        deliveryCity = selectedDistrict.name
+        senditDistrictId = selectedDistrict.id
+        deliveryFee = Number(selectedDistrict.price)
       }
 
       const payload = {
         sourceChannel: formData.sourceChannel,
+        handToHand: formData.handToHand,
         deliveryName: formData.deliveryName,
         deliveryPhone: formData.deliveryPhone,
-        deliveryCity: selectedDistrict.name,
-        senditDistrictId: selectedDistrict.id,
+        deliveryCity,
+        senditDistrictId,
         deliveryAddress: formData.deliveryAddress,
         deliveryNotes: formData.deliveryNotes,
         paymentMethod: formData.paymentMethod,
@@ -159,8 +187,8 @@ export default function NewOrderPage() {
         confirmImmediately: formData.confirmImmediately,
         items: selectedItems,
         discountTotal: formData.discount,
-        deliveryFeeCharged: selectedDistrict.price,
-        estimatedDeliveryCost: selectedDistrict.price,
+        deliveryFeeCharged: deliveryFee,
+        estimatedDeliveryCost: deliveryFee,
       }
 
       const res = await fetch('/api/ops/orders', {
@@ -184,7 +212,12 @@ export default function NewOrderPage() {
     }
   }
 
-  const selectedDistrict = districts.find(d => d.id === parseInt(formData.districtId))
+  /* En main propre il n'y a pas de district — et les lignes de total lisent
+     deja `selectedDistrict ? prix : 0`. L'annuler ici suffit donc a mettre les
+     frais a zero partout, sans repeter la condition dans chaque ligne. */
+  const selectedDistrict = formData.handToHand
+    ? undefined
+    : districts.find(d => d.id === parseInt(formData.districtId))
 
   return (
     <BosShell title="New Order" active="orders" crumb="New Order">
@@ -255,38 +288,82 @@ export default function NewOrderPage() {
                 </div>
               </div>
 
-              <div className="form-field mb16">
-                <label className="form-label">
-                  <MapPin size={14} style={{ marginRight: 6 }} />
-                  Delivery City / District <span style={{ color: 'var(--red)' }}>*</span>
-                </label>
-                <select
-                  className="form-input"
-                  value={formData.districtId}
-                  onChange={(e) => setFormData({ ...formData, districtId: e.target.value })}
-                  required
-                  disabled={loading}
-                >
-                  <option value="">{loading ? 'Loading cities...' : 'Select delivery destination'}</option>
-                  {districts.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {d.name} • {d.price} MAD • {d.delais}
-                    </option>
-                  ))}
-                </select>
-                {selectedDistrict && (
-                  <div className="fee-preview">
-                    <div className="fee-badge">
-                      <span className="fee-label">Delivery Fee</span>
-                      <span className="fee-value">{selectedDistrict.price} MAD</span>
+              <label
+                className="form-field mb16"
+                /* `flexDirection` explicite : la classe `.form-field` empile en
+                   colonne, ce qui rejetait la case a cocher AU-DESSUS de son
+                   libelle — lisible dans le DOM, absurde a l'ecran. */
+                style={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}
+              >
+                <input
+                  type="checkbox"
+                  checked={formData.handToHand}
+                  onChange={(e) => setFormData({ ...formData, handToHand: e.target.checked })}
+                  style={{ marginTop: 3, cursor: 'pointer' }}
+                />
+                <span>
+                  <span className="form-label" style={{ margin: 0 }}>
+                    🤝 Remise en main propre — 0 MAD de livraison
+                  </span>
+                  <span style={{ display: 'block', fontSize: 12, color: 'var(--tx-mid)', marginTop: 3 }}>
+                    Aucun transporteur : la commande est enregistrée comme livrée, le stock
+                    se décrémente tout seul. Plus besoin d&apos;ajuster l&apos;inventaire à la main.
+                  </span>
+                </span>
+              </label>
+
+              {formData.handToHand ? (
+                <div className="form-field mb16">
+                  <label className="form-label">
+                    <MapPin size={14} style={{ marginRight: 6 }} />
+                    Ville de la remise <span style={{ color: 'var(--red)' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={formData.handToHandCity}
+                    onChange={(e) => setFormData({ ...formData, handToHandCity: e.target.value })}
+                    placeholder="Tanger, Casablanca…"
+                    required
+                  />
+                  <span style={{ display: 'block', fontSize: 12, color: 'var(--tx-mid)', marginTop: 6 }}>
+                    Une vraie ville : c&apos;est ce champ qui alimente la géographie des ventes.
+                  </span>
+                </div>
+              ) : (
+                <div className="form-field mb16">
+                  <label className="form-label">
+                    <MapPin size={14} style={{ marginRight: 6 }} />
+                    Delivery City / District <span style={{ color: 'var(--red)' }}>*</span>
+                  </label>
+                  <select
+                    className="form-input"
+                    value={formData.districtId}
+                    onChange={(e) => setFormData({ ...formData, districtId: e.target.value })}
+                    required
+                    disabled={loading}
+                  >
+                    <option value="">{loading ? 'Loading cities...' : 'Select delivery destination'}</option>
+                    {districts.map((d) => (
+                      <option key={d.id} value={d.id}>
+                        {d.name} • {d.price} MAD • {d.delais}
+                      </option>
+                    ))}
+                  </select>
+                  {selectedDistrict && (
+                    <div className="fee-preview">
+                      <div className="fee-badge">
+                        <span className="fee-label">Delivery Fee</span>
+                        <span className="fee-value">{selectedDistrict.price} MAD</span>
+                      </div>
+                      <div className="fee-meta">
+                        <span>⏱ {selectedDistrict.delais}</span>
+                        <span>📍 {selectedDistrict.ville}</span>
+                      </div>
                     </div>
-                    <div className="fee-meta">
-                      <span>⏱ {selectedDistrict.delais}</span>
-                      <span>📍 {selectedDistrict.ville}</span>
-                    </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
 
               <div className="form-field mb16">
                 <label className="form-label">Delivery Address</label>
@@ -468,6 +545,11 @@ export default function NewOrderPage() {
                     onChange={(e) => setFormData({ ...formData, sourceChannel: e.target.value })}
                   >
                     <option value="Manual">💼 Manual</option>
+                    {/* Canal distinct, et pas un simple « Manual » : ces ventes
+                        portent un prix de faveur. Fondues dans les autres, elles
+                        tireraient vers le bas le panier moyen et la marge par
+                        canal — on croirait a une degradation commerciale. */}
+                    <option value="Famille">🤝 Famille / Proches</option>
                     <option value="WhatsApp">💬 WhatsApp</option>
                     <option value="Instagram">📸 Instagram</option>
                     <option value="TikTok">🎵 TikTok</option>

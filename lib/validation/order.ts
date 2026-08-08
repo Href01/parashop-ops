@@ -47,6 +47,20 @@ export const CreateOrderSchema = z.object({
   deliveryNotes: z.string().optional(),
   senditDistrictId: z.number().int().positive().optional(), // Sendit district chosen by customer
 
+  /**
+   * REMISE EN MAIN PROPRE — le produit change de mains, sans transporteur.
+   *
+   * Les districts viennent de l'API Sendit : ce sont tous des zones de livraison
+   * FACTUREES, il n'en existe aucune a 0 MAD. Une vente donnee de la main a la
+   * main n'avait donc aucune facon d'etre saisie, et finissait en ajustement de
+   * stock — le produit disparaissait de l'inventaire sans recette en face, ce
+   * qui se lit comme de la demarque et non comme une vente.
+   *
+   * Quand ce drapeau est leve : pas de district, frais forces a 0, et la
+   * commande naît DELIVERED puisque la marchandise est deja partie.
+   */
+  handToHand: z.boolean().default(false),
+
   // Payment
   paymentMethod: z.preprocess(
     normalizePaymentMethod,
@@ -73,6 +87,23 @@ export const CreateOrderSchema = z.object({
   notes: z.string().optional(),
   confirmImmediately: z.boolean().default(false),
 }).superRefine((data, ctx) => {
+  /* Le district reste obligatoire pour tout ce qui part en livraison : sans lui
+     on ne sait ni ou envoyer, ni combien facturer. La remise en main propre est
+     la seule dispense, et elle exige en retour des frais nuls — accepter des
+     frais sur une remise en main propre serait accepter une incoherence. */
+  if (!data.handToHand && !data.senditDistrictId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ['senditDistrictId'],
+      message: 'Choisis une destination de livraison, ou coche « remise en main propre »',
+    })
+  }
+  if (data.handToHand && Number(data.deliveryFeeCharged) !== 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ['deliveryFeeCharged'],
+      message: 'Une remise en main propre ne peut pas porter de frais de livraison',
+    })
+  }
+
   if (data.paymentMethod === 'VIREMENT') {
     if (!(Number(data.paidAmount) > 0)) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['paidAmount'], message: 'Bank transfer amount is required' })
