@@ -9,18 +9,22 @@
 @import 'tailwindcss/utilities.css' layer(utilities);
 
 :root {
-  /* ---- Shine surfaces: warm rosé-white (beauty identity) ---- */
-  --bg-0: oklch(0.986 0.004 350);  /* app background — soft rosé white */
-  --bg-1: oklch(1 0 0);            /* cards, sidebar, header — pure white */
-  --bg-2: oklch(0.972 0.005 350);  /* hover / subtle tiles — faint blush */
-  --bg-3: oklch(0.935 0.007 350);  /* chips, bar tracks */
-  --bg-inset: oklch(0.96 0.005 350);
-  --bg-soft: oklch(0.972 0.005 350 / 0.7);
+  /* ---- Surfaces : fond teinte, cartes blanches posees dessus ----
+     Le fond etait a 0.986 et les cartes a 1 : deux pour cent d'ecart, donc
+     rien ne se detachait et il fallait un trait autour de chaque carte pour
+     la delimiter. On assombrit le fond pour que le blanc des cartes fasse
+     lui-meme la separation, et l'ombre remplace la bordure. */
+  --bg-0: oklch(0.963 0.011 350);  /* fond appli — blush lisible */
+  --bg-1: oklch(1 0 0);            /* cartes, sidebar, header — blanc pur */
+  --bg-2: oklch(0.978 0.007 350);  /* survol / tuiles discretes */
+  --bg-3: oklch(0.942 0.009 350);  /* puces, pistes de barres */
+  --bg-inset: oklch(0.955 0.008 350);
+  --bg-soft: oklch(0.978 0.007 350 / 0.7);
 
-  /* Borders — subtle warm hairlines */
-  --line: oklch(0.905 0.005 350);
-  --line-soft: oklch(0.94 0.004 350);
-  --line-strong: oklch(0.855 0.006 350);
+  /* Traits — presque effaces : l'ombre porte desormais la separation */
+  --line: oklch(0.928 0.005 350);
+  --line-soft: oklch(0.955 0.004 350);
+  --line-strong: oklch(0.885 0.006 350);
 
   /* Text — ink on white (tuned for AA contrast on light surfaces) */
   --tx-hi: oklch(0.27 0.012 280);
@@ -72,11 +76,13 @@
   --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
 
   /* Radius */
-  --radius: 11px;
-  --radius-sm: 7px;
-  --radius-lg: 16px;
-  --shadow-1: 0 1px 2px oklch(0.4 0.05 350 / 0.07);
-  --shadow-2: 0 4px 16px oklch(0.4 0.05 350 / 0.08);
+  /* Rayons plus genereux et ombres larges et diffuses : c'est ce qui donne
+     son calme a la reference. Une ombre etalee separe mieux qu'un trait. */
+  --radius: 14px;
+  --radius-sm: 10px;
+  --radius-lg: 20px;
+  --shadow-1: 0 1px 2px oklch(0.45 0.06 350 / 0.04), 0 4px 14px oklch(0.45 0.06 350 / 0.055);
+  --shadow-2: 0 2px 4px oklch(0.45 0.06 350 / 0.05), 0 14px 36px oklch(0.45 0.06 350 / 0.10);
   --sidebar-w: 244px;
   --sidebar-w-collapsed: 64px;
   --topbar-h: 56px;
@@ -1045,6 +1051,46 @@ body {
   display: grid;
   gap: 14px;
   grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+/* Cartes KPI du tableau de bord : chacune flotte sur le fond teinte au lieu
+   d'etre fondue dans un bandeau a filets. minmax(0,…) evite qu'un chiffre
+   long fasse deborder sa colonne. */
+.hero-row {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.kpi-quad {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.pnl-duo {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 1240px) {
+  .kpi-quad {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .hero-row,
+  .pnl-duo {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .kpi-quad {
+    grid-template-columns: 1fr;
+  }
 }
 
 .dash-grid {

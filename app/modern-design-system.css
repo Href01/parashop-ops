@@ -119,9 +119,10 @@
      BORDER RADIUS
      ============================================ */
 
-  --radius-sm: 0.375rem;  /* 6px */
+  /* --radius-sm et --radius-lg sont definis dans globals.css. Ce fichier etant
+     importe apres, il les ecrasait en silence : le --radius-lg de 20px
+     demande arrivait a 12px sans que rien ne le signale. Source unique. */
   --radius-md: 0.5rem;    /* 8px */
-  --radius-lg: 0.75rem;   /* 12px */
   --radius-xl: 1rem;      /* 16px */
   --radius-2xl: 1.5rem;   /* 24px */
   --radius-full: 9999px;
@@ -270,9 +271,11 @@
    MODERN CARD/PANEL SYSTEM
    ============================================ */
 
+/* Plus de bordure : la carte blanche se detache du fond teinte, et l'ombre
+   fait le reste. Un trait plus une ombre, c'etait doubler la separation. */
 .card-modern {
   background: var(--bg-1);
-  border: 1px solid var(--line-soft);
+  border: 1px solid transparent;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-1);
   overflow: hidden;

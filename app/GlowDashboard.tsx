@@ -379,16 +379,28 @@ export default function GlowDashboard() {
 
         {/* Bandeau KPI unifié — 3 chiffres clés (CA · Profit · Cash) + 4 secondaires,
             réunis dans une seule carte à filets fins pour gagner de la hauteur. */}
-        <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden', marginBottom: 12 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 1, background: 'var(--line-soft)' }}>
+        <div className="hero-row" style={{ marginBottom: 14 }}>
+          <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
             <HeroTile tone="rose" icon={<TrendingUp style={{ width: 14, height: 14 }} />} label={`CA livré · ${periodLabel}`} amount={dRevenue} delta={dRevenueDelta} deltaLabel={compareLabel} />
+          </div>
+          <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
             <HeroTile tone="green" icon={<PiggyBank style={{ width: 14, height: 14 }} />} label="Profit net · rentabilité" amount={stats.pnl ? stats.pnl.rentabilite.net : dProfit} sub={`${Math.round(stats.pnl ? stats.pnl.rentabilite.marginPct : dMargin)}% de marge`} />
+          </div>
+          <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
             <HeroTile tone="green" icon={<Wallet style={{ width: 14, height: 14 }} />} label="Cash net généré · trésorerie" amount={stats.pnl ? stats.pnl.tresorerie.net : dCash} sub="liquide réel entré − sorti" />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 1, background: 'var(--line-soft)', borderTop: '1px solid var(--line-soft)' }}>
+        </div>
+        <div className="kpi-quad" style={{ marginBottom: 18 }}>
+          <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
             <Kpi label="Commandes livrées" value={String(dOrders)} sub={`panier ${mad(dFinancialOrders > 0 ? dRevenue / dFinancialOrders : stats.averageOrderValue)} MAD`} />
+          </div>
+          <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
             <Kpi label="Taux de livraison" value={`${stats.deliveryRate.toFixed(0)}%`} sub="livrées / résolues" />
+          </div>
+          <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
             <Kpi label="ROAS global" value={stats.roas != null ? `${stats.roas.toFixed(1)}x` : '—'} sub="CA livré ÷ pub" />
+          </div>
+          <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
             <Kpi label="CA attendu" value={`${mad(stats.revenueWeek)}`} unit="MAD" sub={stats.revenueWeek > stats.revenueDelivered ? `+ ${mad(stats.revenueWeek - stats.revenueDelivered)} en cours` : 'toutes livrées'} />
           </div>
         </div>
@@ -417,8 +429,8 @@ export default function GlowDashboard() {
                 </div>
                 <button className="btn-modern btn-secondary" onClick={openExpenses}>Dépenses & emballage</button>
               </div>
-              <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: 'var(--line-soft)' }}>
-                <div style={{ background: 'var(--bg-1)', padding: 16 }}>
+              <div className="pnl-duo">
+                <div className="card-modern g-stagger" style={{ background: 'var(--bg-1)', padding: 16 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }}>🔵 Rentabilité <span style={{ fontWeight: 500, color: 'var(--tx-faint)', fontSize: 11 }}>· ventes livrées</span></div>
                   <PnlRow label="CA livré" value={r.caLivre} />
                   <PnlRow label="Profit livré" sub={`net produits + livraison · ${r.margeLivree.toFixed(0)}%`} value={r.profitLivre} muted />
@@ -427,7 +439,7 @@ export default function GlowDashboard() {
                   {r.retours > 0 && <PnlRow label="Retours / échanges" sub="frais livraison retour" value={-r.retours} neg />}
                   <PnlRow label="Profit net" value={r.net} total pct={r.marginPct} />
                 </div>
-                <div style={{ background: 'var(--bg-1)', padding: 16 }}>
+                <div className="card-modern g-stagger" style={{ background: 'var(--bg-1)', padding: 16 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }}>🟢 Trésorerie <span style={{ fontWeight: 500, color: 'var(--tx-faint)', fontSize: 11 }}>· cash réel</span></div>
                   <PnlRow label="Cash encaissé" sub={`COD ${mad(dEncaisse)}${dBank > 0 ? ` + virements ${mad(dBank)}` : ''} − frais Sendit ${mad(dFees)}`} value={t.encaisse} />
                   <PnlRow label="Achats fournisseur" value={-t.achats} neg />
