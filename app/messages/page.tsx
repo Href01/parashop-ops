@@ -263,6 +263,21 @@ export default function MessagesPage() {
 
   const [showQuick, setShowQuick] = useState(false)
 
+  // Sur telephone les trois panneaux ne tiennent pas : 320px de liste + 280px
+  // de contexte sur un ecran de 390px laissaient une dizaine de pixels au fil,
+  // et le panneau de droite n'avait aucune regle CSS pour se replier.
+  // On bascule donc sur la navigation de WhatsApp mobile : la liste, puis le
+  // fil en plein ecran avec un retour, et la fiche en superposition.
+  const [isNarrow, setIsNarrow] = useState(false)
+  const [showContext, setShowContext] = useState(false)
+  useEffect(() => {
+    const q = window.matchMedia('(max-width: 860px)')
+    const sync = () => setIsNarrow(q.matches)
+    sync()
+    q.addEventListener('change', sync)
+    return () => q.removeEventListener('change', sync)
+  }, [])
+
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const replyRef = useRef<HTMLTextAreaElement>(null)
@@ -317,6 +332,14 @@ export default function MessagesPage() {
       setThread(data)
     } catch { /* ignore */ }
     finally { setLoadingThread(false) }
+  }, [])
+
+  /** Retour a la liste sur telephone. */
+  const closeConv = useCallback(() => {
+    setSelected(null); setThread(null); setShowContext(false)
+    const url = new URL(window.location.href)
+    url.searchParams.delete('phone')
+    window.history.replaceState({}, '', url)
   }, [])
 
   useEffect(() => {
@@ -411,7 +434,12 @@ export default function MessagesPage() {
       <div style={{ display: 'flex', height: 'calc(100vh - 56px)', background: 'var(--bg-0)' }}>
 
         {/* ───────────── Left: conversations ───────────── */}
-        <aside style={{ width: 320, flexShrink: 0, borderRight: '1px solid var(--line-soft)', background: 'var(--bg-1)', display: 'flex', flexDirection: 'column' }}>
+        <aside style={{
+          width: isNarrow ? '100%' : 320, flexShrink: 0,
+          borderRight: isNarrow ? 'none' : '1px solid var(--line-soft)',
+          background: 'var(--bg-1)', flexDirection: 'column',
+          display: isNarrow && selected ? 'none' : 'flex',
+        }}>
           <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid var(--line-soft)' }}>
             <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--tx-hi)', margin: '0 0 10px' }}>Conversations</h2>
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, background: 'var(--bg-2)', borderRadius: 'var(--radius)', padding: '7px 10px' }}>
@@ -509,7 +537,7 @@ export default function MessagesPage() {
         </aside>
 
         {/* ───────────── Center: thread ───────────── */}
-        <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg-0)' }}>
+        <main style={{ flex: 1, minWidth: 0, flexDirection: 'column', background: 'var(--bg-0)', display: isNarrow && !selected ? 'none' : 'flex' }}>
           {!selected ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--tx-faint)' }}>
               <MessageCircle style={{ width: 44, height: 44, marginBottom: 12, opacity: 0.5 }} />
@@ -518,19 +546,32 @@ export default function MessagesPage() {
           ) : (
             <>
               {/* Thread header */}
-              <div style={{ height: 64, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 12, padding: '0 18px', borderBottom: '1px solid var(--line-soft)', background: 'var(--bg-1)' }}>
-                <div style={{ width: 40, height: 40, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, background: `oklch(0.62 0.15 ${avatarHue(headerName)})` }}>
+              <div style={{ height: 64, flexShrink: 0, display: 'flex', alignItems: 'center', gap: isNarrow ? 8 : 12, padding: isNarrow ? '0 10px' : '0 18px', borderBottom: '1px solid var(--line-soft)', background: 'var(--bg-1)' }}>
+                {isNarrow && (
+                  <button type="button" onClick={closeConv} aria-label="Retour aux conversations"
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 40, flexShrink: 0, borderRadius: 'var(--radius)', border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--tx-mid)' }}>
+                    <ArrowLeft style={{ width: 20, height: 20 }} />
+                  </button>
+                )}
+                <div style={{ width: 40, height: 40, flexShrink: 0, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, background: `oklch(0.62 0.15 ${avatarHue(headerName)})` }}>
                   {initials(thread?.userName || null, headerPhone)}
                 </div>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx-hi)' }}>{headerName}</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{headerName}</div>
                   <div style={{ fontSize: 12, color: 'var(--tx-lo)' }}>{headerPhone}</div>
                 </div>
-                {thread?.userId && (
+                {/* Sur telephone la fiche n'a plus de colonne : elle s'ouvre en
+                    superposition, comme les infos de contact dans WhatsApp. */}
+                {isNarrow ? (
+                  <button type="button" onClick={() => setShowContext(true)} aria-label="Infos cliente"
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 40, height: 40, flexShrink: 0, borderRadius: 'var(--radius)', border: '1px solid var(--line-soft)', background: 'var(--bg-0)', cursor: 'pointer', color: 'var(--tx-mid)' }}>
+                    <User style={{ width: 17, height: 17 }} />
+                  </button>
+                ) : thread?.userId ? (
                   <Link href={`/customers/${thread.userId}`} className="btn-modern btn-sm btn-secondary" style={{ flexShrink: 0 }}>
                     <User style={{ width: 14, height: 14 }} /> Fiche
                   </Link>
-                )}
+                ) : null}
               </div>
 
               {/* Messages */}
@@ -717,8 +758,24 @@ export default function MessagesPage() {
         </main>
 
         {/* ───────────── Right: customer context ───────────── */}
-        {selected && (
-          <aside className="msg-context" style={{ width: 280, flexShrink: 0, borderLeft: '1px solid var(--line-soft)', background: 'var(--bg-1)', overflowY: 'auto', padding: 18 }}>
+        {isNarrow && showContext && (
+          <div onClick={() => setShowContext(false)} aria-hidden
+            style={{ position: 'fixed', inset: 0, background: 'oklch(0.2 0.02 350 / 0.4)', zIndex: 60 }} />
+        )}
+        {selected && (!isNarrow || showContext) && (
+          <aside className="msg-context" style={{
+            flexShrink: 0, background: 'var(--bg-1)', overflowY: 'auto', padding: 18,
+            borderLeft: '1px solid var(--line-soft)',
+            ...(isNarrow
+              ? { position: 'fixed', top: 0, right: 0, bottom: 0, width: 'min(340px, 88vw)', zIndex: 61, boxShadow: '0 0 40px oklch(0.2 0.02 350 / 0.25)' }
+              : { width: 280 }),
+          }}>
+            {isNarrow && (
+              <button type="button" onClick={() => setShowContext(false)} aria-label="Fermer"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 34, height: 34, marginBottom: 4, borderRadius: 'var(--radius)', border: '1px solid var(--line-soft)', background: 'var(--bg-0)', cursor: 'pointer', color: 'var(--tx-mid)' }}>
+                <X style={{ width: 16, height: 16 }} />
+              </button>
+            )}
             <div style={{ textAlign: 'center', marginBottom: 18 }}>
               <div style={{ width: 64, height: 64, borderRadius: '50%', margin: '0 auto 10px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700, fontSize: 24, background: `oklch(0.62 0.15 ${avatarHue(headerName)})` }}>
                 {initials(thread?.userName || null, headerPhone)}

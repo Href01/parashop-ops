@@ -818,7 +818,10 @@ body {
   gap: 2px;
   max-width: 100%;
   min-width: 0;
-  height: 38px;
+  /* Hauteur fixe + flex-wrap se contredisaient : des que les onglets passaient
+     a la ligne (4 filtres sur un ecran de telephone), la boite restait a 38px
+     et la deuxieme ligne se superposait aux boutons suivants. */
+  min-height: 36px;
   padding: 4px;
 }
 
