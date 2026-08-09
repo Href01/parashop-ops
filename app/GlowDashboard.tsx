@@ -771,16 +771,18 @@ function PnlRow({ label, value, sub, neg, muted, total, pct }: { label: string; 
 
 function Kpi({ label, value, unit, sub, delta, deltaLabel, accent }: { label: string; value: string; unit?: string; sub?: string; delta?: number | null; deltaLabel?: string; accent?: boolean }) {
   return (
-    <div style={{ background: 'var(--bg-1)', padding: '12px 16px', height: '100%' }}>
-      <div style={{ fontSize: 11, color: 'var(--tx-lo)', marginBottom: 4, fontWeight: 500 }}>{label}</div>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-        <span style={{ fontSize: 20, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: '-0.02em', color: accent ? 'var(--rose-bright)' : 'var(--tx-hi)' }}>{value}</span>
-        {unit && <span style={{ fontSize: 12, color: 'var(--tx-faint)' }}>{unit}</span>}
+    <div style={{ background: 'var(--bg-1)', padding: '18px 20px', height: '100%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 11 }}>
+        <span style={{ fontSize: 12.5, color: 'var(--tx-lo)', fontWeight: 600 }}>{label}</span>
+        {delta != null && <DeltaPill value={delta} small />}
       </div>
-      {(delta != null || sub) && (
-        <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 5 }}>
-          {delta != null ? <DeltaPill value={delta} small /> : <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>{sub}</span>}
-          {delta != null && deltaLabel && <span style={{ fontSize: 10, color: 'var(--tx-faint)' }}>vs {deltaLabel}</span>}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+        <span style={{ fontSize: 27, fontWeight: 700, letterSpacing: '-0.03em', lineHeight: 1, fontVariantNumeric: 'tabular-nums', color: accent ? 'var(--rose-bright)' : 'var(--tx-hi)' }}>{value}</span>
+        {unit && <span style={{ fontSize: 12.5, color: 'var(--tx-faint)' }}>{unit}</span>}
+      </div>
+      {(sub || deltaLabel) && (
+        <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--tx-faint)' }}>
+          {delta != null && deltaLabel ? `vs ${deltaLabel}` : sub}
         </div>
       )}
     </div>
@@ -960,22 +962,25 @@ function HeroTile({ label, amount, sub, delta, deltaLabel, tone, icon }: { label
   const shown = useCountUp(amount)
   const display = mad(shown === amount ? amount : Math.round(shown))
   return (
-    <div style={{ background: 'var(--bg-1)', padding: '13px 16px 12px', position: 'relative', overflow: 'hidden', height: '100%' }}>
-      <span style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: 3, background: color }} />
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 5 }}>
-        <div style={{ fontSize: 11, color: 'var(--tx-lo)', fontWeight: 600 }}>{label}</div>
-        <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 24, height: 24, borderRadius: 7, background: iconBg, color, flexShrink: 0 }}>{icon}</span>
+    // Grammaire de la reference : pastille d'icone coloree et titre en tete,
+    // variation a droite du titre, puis le chiffre en grand et en quasi-noir.
+    // La couleur vit dans la pastille et dans la variation ; le chiffre reste
+    // sobre, sauf s'il est negatif — la ca reste une alerte a voir tout de suite.
+    <div style={{ background: 'var(--bg-1)', padding: '20px 22px', height: '100%' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 15 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: 30, height: 30, borderRadius: 10, background: iconBg, color, flexShrink: 0 }}>{icon}</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx-mid)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+        </div>
+        {delta != null && <DeltaPill value={delta} />}
       </div>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-        <span style={{ fontSize: 23, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: '-0.03em', color, lineHeight: 1 }}>{display}</span>
-        <span style={{ fontSize: 12, color: 'var(--tx-faint)', fontWeight: 500 }}>MAD</span>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
+        <span style={{ fontSize: 34, fontWeight: 700, letterSpacing: '-0.035em', lineHeight: 1, fontVariantNumeric: 'tabular-nums', color: amount < 0 ? 'var(--red)' : 'var(--tx-hi)' }}>{display}</span>
+        <span style={{ fontSize: 13, color: 'var(--tx-faint)', fontWeight: 500 }}>MAD</span>
       </div>
       {(delta != null || sub) && (
-        <div style={{ marginTop: 7, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          {delta != null && <DeltaPill value={delta} />}
-          {delta != null && deltaLabel
-            ? <span style={{ fontSize: 11.5, color: 'var(--tx-faint)' }}>vs {deltaLabel}</span>
-            : sub && <span style={{ fontSize: 11.5, color: 'var(--tx-faint)' }}>{sub}</span>}
+        <div style={{ marginTop: 9, fontSize: 12, color: 'var(--tx-faint)' }}>
+          {delta != null && deltaLabel ? `vs ${deltaLabel}` : sub}
         </div>
       )}
     </div>

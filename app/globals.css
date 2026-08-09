@@ -14,7 +14,7 @@
      rien ne se detachait et il fallait un trait autour de chaque carte pour
      la delimiter. On assombrit le fond pour que le blanc des cartes fasse
      lui-meme la separation, et l'ombre remplace la bordure. */
-  --bg-0: oklch(0.963 0.011 350);  /* fond appli — blush lisible */
+  --bg-0: oklch(0.945 0.014 350);  /* fond appli — blush franchement lisible */
   --bg-1: oklch(1 0 0);            /* cartes, sidebar, header — blanc pur */
   --bg-2: oklch(0.978 0.007 350);  /* survol / tuiles discretes */
   --bg-3: oklch(0.942 0.009 350);  /* puces, pistes de barres */
