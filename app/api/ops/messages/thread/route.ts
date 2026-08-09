@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
         m.body,
         m.status,
         m."waMessageId",
+        m."errorCode",
         m."orderId",
         m."mediaId",
         m."createdAt",
@@ -70,12 +71,32 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Commandes de la cliente, pour repondre sans quitter la conversation.
+    //
+    // On rattache par userId ET par telephone : une bonne partie des commandes
+    // sont passees en invite (userId NULL), et le numero n'est normalise ni
+    // dans "MessageLog" ni dans "Order" (+212, 0..., espaces). Les 9 derniers
+    // chiffres sont le seul denominateur commun fiable — meme jointure que
+    // celle deja utilisee pour /leads.
+    const digits = phone.replace(/\D/g, '').slice(-9)
+    const orders = await pool.query(
+      `SELECT o.id, o."orderNumber", o.status, o."deliveryStatus", o.total::float AS total,
+              o."senditTrackingNumber", o."createdAt"
+       FROM "Order" o
+       WHERE ($1::int IS NOT NULL AND o."userId" = $1)
+          OR ($2 <> '' AND RIGHT(regexp_replace(o."deliveryPhone", '\\D', '', 'g'), 9) = $2)
+       ORDER BY o."createdAt" DESC
+       LIMIT 6`,
+      [userId, digits]
+    ).catch(() => ({ rows: [] as Record<string, unknown>[] }))
+
     return NextResponse.json({
       phone,
       userId,
       userName,
       messages,
       context,
+      orders: orders.rows,
     })
   } catch (error) {
     console.error('[thread] Query failed:', error)
