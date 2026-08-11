@@ -93,8 +93,37 @@ export default function CustomersPage() {
     URL.revokeObjectURL(url)
   }
 
-  const handleAddCustomer = () => {
-    alert('Les clientes sont créées automatiquement lors de leur première commande.')
+  /* Le bouton n'ouvrait qu'un `alert()` disant que les clientes se creent
+     toutes seules. C'est vrai pour une vente en ligne, mais pas pour un compte
+     d'equipe ni pour une cliente inscrite a la main — et il n'existait alors
+     aucun autre endroit pour le faire. */
+  const [showAdd, setShowAdd] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [addErr, setAddErr] = useState('')
+  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', role: 'USER' })
+
+  const handleAddCustomer = () => { setAddErr(''); setShowAdd(true) }
+
+  const submitAdd = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (saving) return
+    setSaving(true); setAddErr('')
+    try {
+      const res = await fetch('/api/ops/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) { setAddErr(d.error || 'Échec de la création'); return }
+      setShowAdd(false)
+      setForm({ name: '', email: '', phone: '', password: '', role: 'USER' })
+      fetchCustomers()
+    } catch {
+      setAddErr('Erreur réseau')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const toNumber = (value: unknown) => {
@@ -329,6 +358,67 @@ export default function CustomersPage() {
           </div>
         </div>
       </div>
+
+      {showAdd && (
+        <div
+          onClick={() => !saving && setShowAdd(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, zIndex: 60 }}
+        >
+          {/* `stopPropagation` : sans lui, un clic DANS le formulaire remonte au
+              fond et referme la fenetre en pleine saisie. */}
+          <form
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={submitAdd}
+            style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-lg)', padding: 22, width: '100%', maxWidth: 430, boxShadow: 'var(--shadow-2)' }}
+          >
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: 'var(--tx-hi)', margin: '0 0 4px' }}>Nouveau compte</h2>
+            <p style={{ fontSize: 12, color: 'var(--tx-lo)', margin: '0 0 16px' }}>
+              Une cliente qui commande en ligne est créée automatiquement. Ceci sert aux inscriptions à la main et aux comptes d’équipe.
+            </p>
+
+            {[
+              { cle: 'name', label: 'Nom', type: 'text', requis: true, ph: 'Nom complet' },
+              { cle: 'email', label: 'E-mail', type: 'email', requis: true, ph: 'nom@exemple.com' },
+              { cle: 'phone', label: 'Téléphone', type: 'tel', requis: false, ph: '06…' },
+              { cle: 'password', label: 'Mot de passe', type: 'password', requis: true, ph: '6 caractères minimum' },
+            ].map((ch) => (
+              <div key={ch.cle} style={{ marginBottom: 12 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--tx-mid)', marginBottom: 5 }}>
+                  {ch.label}{ch.requis && <span style={{ color: 'var(--rose-bright)' }}> *</span>}
+                </label>
+                <input
+                  className="form-input"
+                  type={ch.type}
+                  required={ch.requis}
+                  placeholder={ch.ph}
+                  value={form[ch.cle as keyof typeof form]}
+                  onChange={(e) => setForm({ ...form, [ch.cle]: e.target.value })}
+                  style={{ width: '100%' }}
+                />
+              </div>
+            ))}
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--tx-mid)', marginBottom: 5 }}>Rôle</label>
+              <select className="form-input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} style={{ width: '100%' }}>
+                <option value="USER">Cliente</option>
+                <option value="ADMIN">Administrateur — accès à /admin sur la boutique</option>
+              </select>
+            </div>
+
+            {addErr && <p style={{ fontSize: 12, color: 'var(--rose-bright)', fontWeight: 600, marginBottom: 12 }}>{addErr}</p>}
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button type="button" className="btn-modern btn-sm btn-secondary" disabled={saving} onClick={() => setShowAdd(false)}>
+                Annuler
+              </button>
+              <button type="submit" className="btn-modern btn-sm btn-primary" disabled={saving}>
+                {saving ? 'Création…' : 'Créer le compte'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </BosShell>
   )
 }

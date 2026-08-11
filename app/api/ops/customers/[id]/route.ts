@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
+import bcrypt from 'bcryptjs'
+import { getOpsSession } from '@/lib/auth'
 
 /**
  * GET /api/ops/customers/[id]
@@ -112,6 +114,27 @@ export async function GET(
       LIMIT 10
     `, [customerId]).catch(() => ({ rows: [] }))
 
+    /* Journal de fidelite : le detail derriere le solde de points. Sans lui on
+       voit la cagnotte mais jamais d'ou elle vient, et une cliente qui conteste
+       ses points ne peut pas etre departagee. */
+    const loyaltyResult = await pool.query(`
+      SELECT points, type, reason, pending, "createdAt"
+      FROM "LoyaltyTransaction"
+      WHERE "userId" = $1
+      ORDER BY "createdAt" DESC
+      LIMIT 20
+    `, [customerId]).catch(() => ({ rows: [] }))
+
+    /* Parrainages accordes par cette cliente. `pointsGiven` dit si la prime a
+       deja ete versee — c'est la question qu'on se pose reellement. */
+    const referralsResult = await pool.query(`
+      SELECT r."pointsGiven", r."createdAt", u.name, u.email
+      FROM "Referral" r
+      JOIN "User" u ON u.id = r."referredId"
+      WHERE r."referredById" = $1
+      ORDER BY r."createdAt" DESC
+    `, [customerId]).catch(() => ({ rows: [] }))
+
     return NextResponse.json({
       customer,
       orders: ordersResult.rows,
@@ -119,6 +142,8 @@ export async function GET(
       metrics: m,
       messages: messagesResult.rows,
       reviews: reviewsResult.rows,
+      loyalty: loyaltyResult.rows,
+      referrals: referralsResult.rows,
     })
 
   } catch (error: any) {
@@ -147,6 +172,33 @@ export async function PUT(
     const { id: customerId } = await params
     const body = await request.json()
 
+    /* MOT DE PASSE : traite a part, et jamais melange aux autres champs. Il ne
+       part pas dans le UPDATE dynamique plus bas, sinon on ecrirait un jour le
+       mot de passe en clair a la faveur d'un refactor. Reserve aux fondatrices
+       et fondateurs : reinitialiser un acces n'est pas une edition de fiche. */
+    if ('password' in body) {
+      if (!await getOpsSession()) {
+        return NextResponse.json({ error: 'Réservé aux fondateurs' }, { status: 403 })
+      }
+      const pwd = String(body.password ?? '')
+      if (pwd.length < 6) {
+        return NextResponse.json({ error: 'Minimum 6 caractères' }, { status: 400 })
+      }
+      const hash = await bcrypt.hash(pwd, 10)
+      const r = await pool.query(
+        `UPDATE "User" SET password = $1, "tempPassword" = NULL WHERE id = $2 RETURNING id`,
+        [hash, customerId]
+      )
+      if (r.rows.length === 0) {
+        return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
+      }
+      await pool.query(`
+        INSERT INTO "CustomerActivity" ("userId", "type", "action", "description", "createdAt")
+        VALUES ($1, 'Profile', 'Password reset', $2, NOW())
+      `, [customerId, `Réinitialisé par ${session.user.email}`]).catch(() => {})
+      return NextResponse.json({ success: true })
+    }
+
     const {
       name,
       phone,
@@ -159,6 +211,9 @@ export async function PUT(
       emailOptIn,
       smsOptIn,
       whatsappOptIn,
+      banned,
+      points,
+      role,
     } = body
 
     // Build update query dynamically
@@ -232,6 +287,34 @@ export async function PUT(
       paramIndex++
     }
 
+    if (banned !== undefined) {
+      updates.push(`"banned" = $${paramIndex}`)
+      values.push(Boolean(banned))
+      paramIndex++
+    }
+
+    if (points !== undefined) {
+      updates.push(`"points" = $${paramIndex}`)
+      values.push(Number(points) || 0)
+      paramIndex++
+    }
+
+    /* ROLE : promouvoir en ADMIN ouvre `/admin` sur la boutique. On n'accepte
+       donc que les deux valeurs connues — une chaine libre venue du client
+       ecrirait n'importe quoi dans la colonne qui garde cet acces — et on
+       reserve le geste aux fondatrices et fondateurs. */
+    if (role !== undefined) {
+      if (!await getOpsSession()) {
+        return NextResponse.json({ error: 'Réservé aux fondateurs' }, { status: 403 })
+      }
+      if (role !== 'ADMIN' && role !== 'USER') {
+        return NextResponse.json({ error: 'Rôle invalide' }, { status: 400 })
+      }
+      updates.push(`"role" = $${paramIndex}`)
+      values.push(role)
+      paramIndex++
+    }
+
     if (updates.length === 0) {
       return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
     }
@@ -263,6 +346,79 @@ export async function PUT(
     console.error('PUT customer error:', error)
     return NextResponse.json(
       { error: 'Failed to update customer', details: error.message },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * DELETE /api/ops/customers/[id]
+ *
+ * Ne supprime QUE les comptes sans histoire. C'est deliberement plus strict que
+ * l'ancien ecran du site, dont le `DELETE ... WHERE role != 'ADMIN'` etait un
+ * piege : les cles etrangeres de la base disent que
+ *
+ *   · "Order"."userId"       → SET NULL  : supprimer une cliente DETACHE ses
+ *     commandes pour toujours. Le chiffre d'affaires reste, mais plus personne
+ *     ne sait a qui il appartenait — perte irreversible et silencieuse ;
+ *   · "LoyaltyTransaction", "Review", "Referral", "Address" → RESTRICT : la
+ *     suppression ECHOUE des qu'il existe le moindre historique.
+ *
+ * Autrement dit l'ancien bouton plantait en 500 pour presque toute vraie
+ * cliente, et ne « marchait » que sur les comptes vides — en orphelinant leurs
+ * commandes au passage. On verifie donc AVANT, et on propose le bannissement,
+ * qui est ce qu'on veut reellement dans 99 % des cas.
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    if (!await getOpsSession()) {
+      return NextResponse.json({ error: 'Réservé aux fondateurs' }, { status: 403 })
+    }
+
+    const { id: customerId } = await params
+
+    const who = await pool.query(`SELECT id, role, email FROM "User" WHERE id = $1`, [customerId])
+    if (who.rows.length === 0) {
+      return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
+    }
+    if (who.rows[0].role === 'ADMIN') {
+      return NextResponse.json(
+        { error: 'Un compte administrateur ne se supprime pas ici. Rétrograde-le en cliente d’abord.' },
+        { status: 409 }
+      )
+    }
+
+    const liens = await pool.query(`
+      SELECT
+        (SELECT COUNT(*) FROM "Order"              WHERE "userId"      = $1)::int AS commandes,
+        (SELECT COUNT(*) FROM "Review"             WHERE "userId"      = $1)::int AS avis,
+        (SELECT COUNT(*) FROM "LoyaltyTransaction" WHERE "userId"      = $1)::int AS fidelite,
+        (SELECT COUNT(*) FROM "Referral"           WHERE "referredById" = $1
+                                                      OR "referredId"   = $1)::int AS parrainages,
+        (SELECT COUNT(*) FROM "Address"            WHERE "userId"      = $1)::int AS adresses
+    `, [customerId])
+
+    const l = liens.rows[0]
+    const bloquants = Object.entries(l).filter(([, n]) => Number(n) > 0)
+
+    if (bloquants.length > 0) {
+      return NextResponse.json({
+        error: 'Ce compte a un historique : le supprimer effacerait le lien avec ses commandes.',
+        suggestion: 'Bannis-le plutôt — il perd l’accès, l’historique reste intact.',
+        liens: l,
+      }, { status: 409 })
+    }
+
+    await pool.query(`DELETE FROM "User" WHERE id = $1`, [customerId])
+    return NextResponse.json({ success: true, deleted: who.rows[0].email })
+
+  } catch (error: any) {
+    console.error('DELETE customer error:', error)
+    return NextResponse.json(
+      { error: 'Failed to delete customer', details: error.message },
       { status: 500 }
     )
   }

@@ -8,12 +8,16 @@ import BosShell from '@/components/BosShell'
 
 interface Msg { id: number; direction: string; type: string; body: string | null; status: string | null; createdAt: string; orderId: number | null }
 interface Rev { id: number; rating: number; comment: string | null; approved: boolean | null; createdAt: string; productName: string | null }
+interface Loy { points: number; type: string; reason: string | null; pending: boolean; createdAt: string }
+interface Ref { pointsGiven: boolean; createdAt: string; name: string | null; email: string | null }
 interface Detail {
   customer: Record<string, unknown> | null
   orders: Array<{ id: number; total: number | string; status: string; createdAt: string; deliveryCity: string | null; paymentMethod: string | null }>
   metrics: { totalOrders: number | string; totalSpent: number | string; avgOrderValue: number | string; lastOrderDate: string | null } | null
   messages?: Msg[]
   reviews?: Rev[]
+  loyalty?: Loy[]
+  referrals?: Ref[]
 }
 
 const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : 0 }
@@ -54,6 +58,69 @@ export default function CustomerDetailPage() {
     } finally {
       setSendingReward(false)
     }
+  }
+
+  const [action, setAction] = useState<{ ok: boolean; text: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  function recharger() {
+    return fetch(`/api/ops/customers/${id}`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setData)
+      .catch(() => {})
+  }
+
+  /* Un seul chemin pour les gestes d'administration : ils partagent le meme
+     verrou anti-double-clic et le meme retour d'erreur. L'API repond avec un
+     `suggestion` sur les refus (409) — on l'affiche, car « bannis plutot » est
+     l'information utile, pas « echec ». */
+  async function agir(corps: Record<string, unknown>, confirmation: string, succes: string) {
+    if (busy) return
+    if (!confirm(confirmation)) return
+    setBusy(true); setAction(null)
+    try {
+      const res = await fetch(`/api/ops/customers/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(corps),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setAction({ ok: false, text: [json.error, json.suggestion].filter(Boolean).join(' — ') || 'Échec' })
+        return
+      }
+      await recharger()
+      setAction({ ok: true, text: succes })
+    } catch {
+      setAction({ ok: false, text: 'Erreur réseau' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function supprimer() {
+    if (busy) return
+    if (!confirm('Supprimer définitivement ce compte ? Action irréversible.')) return
+    setBusy(true); setAction(null)
+    try {
+      const res = await fetch(`/api/ops/customers/${id}`, { method: 'DELETE' })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setAction({ ok: false, text: [json.error, json.suggestion].filter(Boolean).join(' — ') || 'Échec' })
+        return
+      }
+      window.location.href = '/customers'
+    } catch {
+      setAction({ ok: false, text: 'Erreur réseau' })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function changerMotDePasse() {
+    const pwd = prompt('Nouveau mot de passe (6 caractères minimum) :')
+    if (!pwd) return
+    await agir({ password: pwd }, 'Confirmer la réinitialisation du mot de passe ?', 'Mot de passe réinitialisé ✓')
   }
 
   useEffect(() => {
@@ -218,6 +285,108 @@ export default function CustomerDetailPage() {
                   </div>
                 )}
               </div>
+            </div>
+
+            {/* Fidélité + parrainages */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 16, marginTop: 16 }}>
+              <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--line-soft)' }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx-hi)' }}>Journal de fidélité</span>
+                  <span style={{ fontSize: 12, color: 'var(--tx-lo)' }}>{num(c.points)} pts</span>
+                </div>
+                {(!data.loyalty || data.loyalty.length === 0) ? (
+                  <p style={{ padding: 24, textAlign: 'center', color: 'var(--tx-faint)', fontSize: 13 }}>Aucun mouvement de points.</p>
+                ) : (
+                  <div>
+                    {data.loyalty.map((t, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '11px 18px', borderBottom: '1px solid var(--line-soft)' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ fontSize: 12.5, color: 'var(--tx-mid)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {t.reason || t.type}
+                          </p>
+                          <span style={{ fontSize: 10, color: 'var(--tx-faint)' }}>
+                            {new Date(t.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            {t.pending ? ' · en attente' : ''}
+                          </span>
+                        </div>
+                        {/* Le signe porte le sens : un gain et un retrait ne se
+                            distinguent pas si les deux s'affichent « 50 ». */}
+                        <span style={{ flexShrink: 0, fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 700, color: num(t.points) < 0 ? 'var(--rose-bright)' : 'var(--green)' }}>
+                          {num(t.points) > 0 ? '+' : ''}{num(t.points)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 18px', borderBottom: '1px solid var(--line-soft)' }}>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx-hi)' }}>Parrainages</span>
+                  <span style={{ fontSize: 12, color: 'var(--tx-lo)' }}>{data.referrals?.length ?? 0}</span>
+                </div>
+                {(!data.referrals || data.referrals.length === 0) ? (
+                  <p style={{ padding: 24, textAlign: 'center', color: 'var(--tx-faint)', fontSize: 13 }}>Aucun parrainage.</p>
+                ) : (
+                  <div>
+                    {data.referrals.map((r, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '11px 18px', borderBottom: '1px solid var(--line-soft)' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <p style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--tx-hi)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {r.name || r.email || 'Sans nom'}
+                          </p>
+                          <span style={{ fontSize: 10, color: 'var(--tx-faint)' }}>
+                            {new Date(r.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}
+                          </span>
+                        </div>
+                        <span className={`badge-modern ${r.pointsGiven ? 'badge-success' : 'badge-warning'} badge-sm`} style={{ flexShrink: 0 }}>
+                          {r.pointsGiven ? 'Prime versée' : 'Prime en attente'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Gestion du compte */}
+            <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 'var(--radius-lg)', marginTop: 16, padding: '16px 18px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx-hi)' }}>Gestion du compte</span>
+                {c.banned ? <span className="badge-modern badge-danger badge-sm">Banni</span> : null}
+                {c.role === 'ADMIN' ? <span className="badge-modern badge-warning badge-sm">Administrateur</span> : null}
+              </div>
+              <p style={{ fontSize: 12, color: 'var(--tx-lo)', margin: '0 0 12px' }}>
+                Réservé aux fondateurs. Bannir retire l’accès sans toucher à l’historique.
+              </p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                <button className="btn-modern btn-sm btn-secondary" disabled={busy}
+                  onClick={() => agir({ banned: !c.banned },
+                    c.banned ? 'Réautoriser ce compte ?' : 'Bannir ce compte ?',
+                    c.banned ? 'Compte réautorisé ✓' : 'Compte banni ✓')}>
+                  {c.banned ? '↩ Réautoriser' : '⛔ Bannir'}
+                </button>
+                <button className="btn-modern btn-sm btn-secondary" disabled={busy} onClick={changerMotDePasse}>
+                  🔑 Réinitialiser le mot de passe
+                </button>
+                <button className="btn-modern btn-sm btn-secondary" disabled={busy}
+                  onClick={() => agir({ role: c.role === 'ADMIN' ? 'USER' : 'ADMIN' },
+                    c.role === 'ADMIN'
+                      ? 'Retirer les droits administrateur ?'
+                      : 'Donner les droits administrateur ? Ce compte pourra ouvrir /admin sur la boutique.',
+                    'Rôle mis à jour ✓')}>
+                  {c.role === 'ADMIN' ? '↓ Retirer admin' : '↑ Passer admin'}
+                </button>
+                <button className="btn-modern btn-sm" disabled={busy} onClick={supprimer}
+                  style={{ background: 'transparent', color: 'var(--rose-bright)', border: '1px solid var(--line-soft)' }}>
+                  🗑 Supprimer
+                </button>
+              </div>
+              {action && (
+                <p style={{ fontSize: 12, marginTop: 10, fontWeight: 600, color: action.ok ? 'var(--green)' : 'var(--rose-bright)' }}>
+                  {action.text}
+                </p>
+              )}
             </div>
           </>
         )}
