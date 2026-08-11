@@ -119,7 +119,8 @@ function TeamAccounts() {
         <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx-hi)' }}>Comptes de l’équipe</h3>
       </div>
       <p style={{ fontSize: 12.5, color: 'var(--tx-lo)', marginBottom: 16 }}>
-        Réinitialise le mot de passe d’un compte sans avoir besoin de l’ancien.
+        Mot de passe, rôle, bannissement et suppression. Un compte fondateur et le tien
+        ne sont pas modifiables ici — c’est ce qui évite de se fermer la porte.
       </p>
 
       {loadErr && <span style={{ fontSize: 12, color: 'var(--red)' }}>{loadErr}</span>}
@@ -132,6 +133,7 @@ function TeamAccounts() {
             account={a}
             open={openId === a.id}
             onToggle={() => setOpenId((v) => (v === a.id ? null : a.id))}
+            onChanged={load}
           />
         ))}
       </div>
@@ -139,14 +141,37 @@ function TeamAccounts() {
   )
 }
 
-function AccountRow({ account, open, onToggle }: { account: Account; open: boolean; onToggle: () => void }) {
+function AccountRow({ account, open, onToggle, onChanged }: { account: Account; open: boolean; onToggle: () => void; onChanged: () => Promise<void> | void }) {
   const [pw, setPw] = useState('')
   const [confirm, setConfirm] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState(false)
+  const [busy, setBusy] = useState(false)
 
   const canSave = pw.length >= 8 && pw === confirm
+
+  /* Un compte fondateur, ou le sien, ne se modifie pas ici : l'API le refuse
+     deja, mais un bouton actif qui repond toujours « non » est une promesse
+     cassee. On le retire plutot que de le laisser echouer. */
+  const modifiable = !account.isFounder && !account.isSelf
+
+  const agir = async (methode: 'PATCH' | 'DELETE', corps: Record<string, unknown> | null, question: string) => {
+    if (busy || !confirm_(question)) return
+    setBusy(true); setError(null)
+    try {
+      const res = await fetch(`/api/ops/accounts/${account.id}`, {
+        method: methode,
+        headers: { 'Content-Type': 'application/json' },
+        body: corps ? JSON.stringify(corps) : undefined,
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error([d.error, d.suggestion].filter(Boolean).join(' — ') || `Erreur ${res.status}`)
+      await onChanged()
+    } catch (e) { setError(e instanceof Error ? e.message : 'Échec') }
+    finally { setBusy(false) }
+  }
+  const confirm_ = (q: string) => (typeof window === 'undefined' ? false : window.confirm(q))
 
   const reset = async () => {
     if (!canSave || saving) return
@@ -172,6 +197,8 @@ function AccountRow({ account, open, onToggle }: { account: Account; open: boole
             <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx-hi)' }}>{account.name}</span>
             {account.isSelf && <Tag text="Vous" />}
             {account.isFounder && <Tag text="Fondateur" tone="rose" />}
+            {account.role === 'ADMIN' && !account.isFounder && <Tag text="Admin" />}
+            {account.banned && <Tag text="Banni" tone="rose" />}
           </div>
           <div style={{ fontSize: 12, color: 'var(--tx-lo)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{account.email}</div>
         </div>
@@ -184,6 +211,31 @@ function AccountRow({ account, open, onToggle }: { account: Account; open: boole
           {open ? 'Annuler' : 'Mot de passe'}
         </button>
       </div>
+
+      {modifiable && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+          <button className="btn-modern" disabled={busy} style={{ fontSize: 12, padding: '6px 10px' }}
+            onClick={() => agir('PATCH', { role: account.role === 'ADMIN' ? 'USER' : 'ADMIN' },
+              account.role === 'ADMIN'
+                ? `Retirer les droits administrateur à ${account.email} ?`
+                : `Donner les droits administrateur à ${account.email} ?`)}>
+            {account.role === 'ADMIN' ? '↓ Retirer admin' : '↑ Passer admin'}
+          </button>
+          <button className="btn-modern" disabled={busy} style={{ fontSize: 12, padding: '6px 10px' }}
+            onClick={() => agir('PATCH', { banned: !account.banned },
+              account.banned ? `Réautoriser ${account.email} ?` : `Bannir ${account.email} ?`)}>
+            {account.banned ? '↩ Réautoriser' : '⛔ Bannir'}
+          </button>
+          <button className="btn-modern" disabled={busy}
+            style={{ fontSize: 12, padding: '6px 10px', color: 'var(--rose-bright)' }}
+            onClick={() => agir('DELETE', null, `Supprimer définitivement ${account.email} ? Action irréversible.`)}>
+            🗑 Supprimer
+          </button>
+        </div>
+      )}
+      {error && !open && (
+        <p style={{ fontSize: 12, color: 'var(--rose-bright)', fontWeight: 600, marginTop: 8 }}>{error}</p>
+      )}
 
       {open && (
         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
