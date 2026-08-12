@@ -21,7 +21,7 @@
  */
 
 import {
-  acquisitionChannelSql, basisDateExpr, BOT_FILTER_CLAUSE, MIN_OBS, TZ,
+  acquisitionChannelSql, sessionChannelSql, basisDateExpr, BOT_FILTER_CLAUSE, MIN_OBS, TZ,
   type MoneyBasis,
 } from './metrics'
 
@@ -71,7 +71,15 @@ export const DIMENSIONS: Record<string, Dimension> = {
     definition:
       "D'où vient la commande. Les publicités sont lues dans les paramètres utm ; " +
       "les commandes saisies à la main portent leur origine (DM Instagram, WhatsApp).",
-    sql: { commandes: acquisitionChannelSql('o', 's') },
+    /* `pages` ouvre le croisement canal x TRAFIC, qui n'existait pas : la
+       dimension ne savait classer qu'une commande, donc Acquisition ne pouvait
+       montrer que des commandes. Les deux expressions partagent leurs regles
+       (voir `reglesUtm`) — c'est ce qui rend « sessions par canal » et
+       « commandes par canal » divisibles l'une par l'autre. */
+    sql: {
+      commandes: acquisitionChannelSql('o', 's'),
+      pages: sessionChannelSql('s'),
+    },
   },
   appareil: {
     cle: 'appareil',

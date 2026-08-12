@@ -25,7 +25,13 @@ import { useReport, interroger } from '../_components/useReport'
 
 type Reponse = Awaited<ReturnType<typeof interroger>>
 
-const MESURES = ['commandes', 'livrees', 'tauxLivraison', 'caLivre', 'marge', 'margeParCommande'] as const
+/* `sessions` en tete, et ce n'est pas cosmetique : ce module ne montrait QUE
+   des commandes, donc on ne pouvait ni voir la part de trafic d'une source, ni
+   son evolution, ni — surtout — combien de visites il faut pour une commande.
+   Le trafic vient de la source `pages`, les commandes de la source `commandes` ;
+   le modele les recolle sur la valeur de dimension, et les deux partagent leurs
+   regles de classement (voir `reglesUtm`) sans quoi le rapport serait faux. */
+const MESURES = ['sessions', 'commandes', 'livrees', 'tauxLivraison', 'caLivre', 'marge'] as const
 const CANAUX_PAYANTS = ['Instagram Ads', 'Facebook Ads', 'TikTok Ads']
 
 export default function Acquisition() {
@@ -70,14 +76,56 @@ export default function Acquisition() {
     }
   }, [table, dimension, depense])
 
-  const colonnes: ColonneMesure[] = useMemo(
-    () => (table?.modele.mesures ?? []).map((m) => ({
+  /* LA PART DE TRAFIC SE CALCULE ICI, PAS EN SQL.
+     Une part depend de l'ENSEMBLE des lignes ; l'exprimer en base demanderait
+     une fonction de fenetrage, et surtout elle serait fausse des qu'un filtre
+     ou une limite retire des lignes. Calculee sur ce que le tableau montre
+     vraiment, elle somme toujours a 100 %.
+     La part de la periode precedente se calcule sur le total PRECEDENT — pas
+     sur le total courant : sinon un canal stable paraitrait s'effondrer chaque
+     fois que le trafic total augmente. */
+  const tableEnrichie = useMemo(() => {
+    if (!table) return null
+    const somme = (k: 'valeur' | 'precedent') =>
+      table.lignes.reduce((a, l) => a + (l.mesures.sessions?.[k] ?? 0), 0)
+    const total = somme('valeur'), totalPrec = somme('precedent')
+    if (total <= 0) return table
+    return {
+      ...table,
+      lignes: table.lignes.map((l) => ({
+        ...l,
+        mesures: {
+          ...l.mesures,
+          partTrafic: {
+            valeur: ((l.mesures.sessions?.valeur ?? 0) / total) * 100,
+            precedent: totalPrec > 0 && l.mesures.sessions?.precedent != null
+              ? (l.mesures.sessions.precedent / totalPrec) * 100
+              : null,
+          },
+        },
+      })),
+    }
+  }, [table])
+
+  const colonnes: ColonneMesure[] = useMemo(() => {
+    const base = (table?.modele.mesures ?? []).map((m) => ({
       cle: m.cle, label: m.label, definition: m.definition, format: m.format,
       portee: m.portee, hausseEstBonne: m.hausseEstBonne,
       derivee: (m as { derivee?: boolean }).derivee,
-    })),
-    [table]
-  )
+    }))
+    const i = base.findIndex((c) => c.cle === 'sessions')
+    if (i < 0) return base
+    // Juste apres les sessions : on lit le nombre, puis sa part.
+    return [
+      ...base.slice(0, i + 1),
+      {
+        cle: 'partTrafic', label: 'Part du trafic', format: 'pourcent' as const,
+        portee: 'session', hausseEstBonne: true, derivee: true,
+        definition: "Part de cette source dans le trafic de la période. Les parts somment à 100 % ; l'évolution compare à la part qu'avait cette source sur la période précédente, pas à son volume.",
+      },
+      ...base.slice(i + 1),
+    ]
+  }, [table])
 
   return (
     <ReportShell
@@ -126,7 +174,7 @@ export default function Acquisition() {
       )}
       tableau={!table ? <Squelette lignes={6} hauteur={16} /> : (
         <DimensionTable
-          lignes={table.lignes as LigneTable[]}
+          lignes={(tableEnrichie ?? table).lignes as LigneTable[]}
           colonnes={colonnes}
           labelDimension={table.modele.dimension?.label ?? 'Dimension'}
           dimensions={[

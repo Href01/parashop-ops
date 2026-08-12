@@ -113,6 +113,70 @@ export const BASIS_LABEL: Record<MoneyBasis, { titre: string; explication: strin
    ───────────────────────────────────────────────────────────────────────────── */
 
 /**
+ * LES REGLES DE CLASSEMENT PAR UTM — ECRITES UNE SEULE FOIS.
+ *
+ * Elles servent a la fois aux SESSIONS (d'ou vient la visite) et aux COMMANDES
+ * du site (d'ou vient l'achat). Les dupliquer serait la pire des economies :
+ * le taux de conversion par canal se calcule en divisant les secondes par les
+ * premieres, et deux classements qui derivent d'un cheveu donnent un taux faux
+ * sans que rien ne le signale.
+ *
+ * `utmMedium = 'paid'` est le discriminant, et il correspond exactement a la
+ * convention en place : `ig` arrive en `paid` avec un identifiant de campagne
+ * et un `fbclid` (c'est la publicite), `Instagram` arrive en `referral` sans
+ * campagne (c'est l'organique). Verifie sur 30 j : ig/paid 1 214 sessions
+ * reparties sur 4 campagnes, Instagram/referral 315.
+ *
+ * @param prefixe condition ajoutee devant chaque regle (les commandes ne
+ *   classent par utm que si elles viennent du site), '' pour les sessions.
+ */
+function reglesUtm(src: string, med: string, prefixe = ''): string {
+  const p = prefixe ? `${prefixe} AND ` : ''
+  return `
+    WHEN ${p}${med} = 'paid' AND (${src} LIKE '%insta%' OR ${src} = 'ig') THEN 'Instagram Ads'
+    WHEN ${p}${med} = 'paid' AND (${src} LIKE '%face%' OR ${src} = 'fb') THEN 'Facebook Ads'
+    WHEN ${p}${med} = 'paid' AND (${src} LIKE '%tiktok%' OR ${src} = 'tt') THEN 'TikTok Ads'
+    WHEN ${p}${med} = 'paid' AND ${src} = 'an' THEN 'Audience Network'
+    WHEN ${p}${med} = 'paid' AND ${src} = 'th' THEN 'Threads Ads'
+    WHEN ${p}${med} = 'paid' AND ${src} IS NOT NULL THEN 'Pub ' || INITCAP(${src})
+    WHEN ${p}(${src} LIKE '%insta%' OR ${src} = 'ig') THEN 'Instagram (organique)'
+    WHEN ${p}(${src} LIKE '%face%' OR ${src} = 'fb') THEN 'Facebook (organique)'
+    WHEN ${p}(${src} LIKE '%tiktok%' OR ${src} = 'tt') THEN 'TikTok (organique)'
+    WHEN ${p}(${src} LIKE '%search%' OR ${src} LIKE '%google%' OR ${src} = 'bing') THEN 'Recherche'
+    /* Les assistants deviennent une source d'acquisition reelle : 84 visites en
+       30 jours viennent de chatgpt.com. Sans cette regle elles tombaient dans
+       le repli generique et s'affichaient « Chatgpt.Com » — lisible, mais
+       eparpille des qu'un autre assistant s'y met. */
+    WHEN ${p}(${src} LIKE '%chatgpt%' OR ${src} LIKE '%openai%') THEN 'ChatGPT'
+    WHEN ${p}(${src} LIKE '%perplexity%' OR ${src} LIKE '%claude%' OR ${src} LIKE '%gemini%' OR ${src} LIKE '%copilot%') THEN 'Assistants IA'
+    WHEN ${p}${src} IS NOT NULL THEN INITCAP(${src})`
+}
+
+/**
+ * D'ou vient une SESSION. Meme classement que les commandes du site, applique
+ * aux colonnes de "AnalyticsSession" — c'est ce qui permet de diviser les unes
+ * par les autres.
+ *
+ * @param s alias de la table "AnalyticsSession"
+ */
+export function sessionChannelSql(s = 's'): string {
+  const src = `LOWER(NULLIF(TRIM(${s}."utmSource"),''))`
+  const med = `LOWER(NULLIF(TRIM(${s}."utmMedium"),''))`
+  /* Un referent connu vaut mieux que « Direct » : une visite arrivee depuis
+     chatgpt.com sans utm est tout sauf directe, et c'est un canal qu'on ne
+     saurait pas avoir autrement. */
+  const ref = `LOWER(NULLIF(TRIM(${s}."landingReferrer"),''))`
+  return `CASE ${reglesUtm(src, med)}
+    WHEN ${ref} LIKE '%chatgpt%' OR ${ref} LIKE '%openai%' THEN 'ChatGPT'
+    WHEN ${ref} LIKE '%perplexity%' OR ${ref} LIKE '%claude%' OR ${ref} LIKE '%gemini%' THEN 'Assistants IA'
+    WHEN ${ref} LIKE '%google%' OR ${ref} LIKE '%bing%' THEN 'Recherche'
+    WHEN ${ref} LIKE '%insta%' THEN 'Instagram (organique)'
+    WHEN ${ref} LIKE '%face%' THEN 'Facebook (organique)'
+    ELSE 'Direct'
+  END`
+}
+
+/**
  * @param o alias de la table "Order"
  * @param s alias de la table "AnalyticsSession" jointe sur sessionId (LEFT JOIN)
  */
@@ -123,20 +187,13 @@ export function acquisitionChannelSql(o = 'o', s = 's'): string {
   const site = `${o}."sessionId" IS NOT NULL`
   return `CASE
     -- Commandes passees sur le site : l'acquisition vient des utm.
-    WHEN ${site} AND ${med} = 'paid' AND (${src} LIKE '%insta%' OR ${src} = 'ig') THEN 'Instagram Ads'
-    WHEN ${site} AND ${med} = 'paid' AND (${src} LIKE '%face%' OR ${src} = 'fb') THEN 'Facebook Ads'
-    WHEN ${site} AND ${med} = 'paid' AND (${src} LIKE '%tiktok%' OR ${src} = 'tt') THEN 'TikTok Ads'
-    WHEN ${site} AND ${med} = 'paid' AND ${src} IS NOT NULL THEN 'Pub ' || INITCAP(${src})
-    WHEN ${site} AND (${src} LIKE '%insta%' OR ${src} = 'ig') THEN 'Instagram (organique)'
-    WHEN ${site} AND (${src} LIKE '%face%' OR ${src} = 'fb') THEN 'Facebook (organique)'
-    WHEN ${site} AND (${src} LIKE '%tiktok%' OR ${src} = 'tt') THEN 'TikTok (organique)'
-    WHEN ${site} AND (${src} LIKE '%search%' OR ${src} LIKE '%google%' OR ${src} = 'bing') THEN 'Recherche'
-    WHEN ${site} AND ${src} IS NOT NULL THEN INITCAP(${src})
+    ${reglesUtm(src, med, site)}
     WHEN ${site} THEN 'Direct'
     -- Commandes saisies a la main : l'origine est ce que l'equipe a renseigne.
     WHEN ${ch} LIKE '%insta%' THEN 'Instagram (DM)'
     WHEN ${ch} LIKE '%whats%' THEN 'WhatsApp (DM)'
     WHEN ${ch} LIKE '%tiktok%' THEN 'TikTok (DM)'
+    WHEN ${ch} LIKE '%famille%' THEN 'Famille / Proches'
     -- 'sendit' = commande creee depuis un colis, 'website' sans session = saisie
     -- manuelle mal etiquetee : dans les deux cas l'origine n'a jamais ete saisie.
     ELSE 'Origine non renseignée'
