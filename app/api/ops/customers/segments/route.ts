@@ -59,25 +59,38 @@ export async function GET(request: NextRequest) {
       LIMIT 10
     `)
 
-    // Get churn risk distribution
+    /* Repartition du risque de perte.
+       Le classement passe par une SOUS-REQUETE, et ce n'est pas un detail de
+       style : Postgres accepte un alias de sortie nu dans `ORDER BY`, mais pas
+       a l'interieur d'une expression. Ecrit `ORDER BY CASE risk WHEN …`, il
+       cherchait `risk` parmi les colonnes de "User", ne l'y trouvait pas, et
+       toute la route tombait en 500 — la page Clientes perdait ses segments
+       sans qu'aucun message ne dise pourquoi.
+       Calculer le palier une fois dans la sous-requete evite aussi d'ecrire le
+       meme CASE a deux endroits, ou l'un des deux finirait par diverger. */
     const churnDistribution = await pool.query(`
       SELECT
-        CASE
-          WHEN "churnRisk" >= 70 THEN 'High'
-          WHEN "churnRisk" >= 40 THEN 'Medium'
-          WHEN "churnRisk" >= 10 THEN 'Low'
-          ELSE 'None'
-        END as risk,
-        COUNT(*) as count,
-        SUM("lifetimeValue") as "totalValue"
-      FROM "User"
+        risk,
+        COUNT(*)::int AS count,
+        COALESCE(SUM("lifetimeValue"), 0) AS "totalValue"
+      FROM (
+        SELECT
+          CASE
+            WHEN "churnRisk" >= 70 THEN 'High'
+            WHEN "churnRisk" >= 40 THEN 'Medium'
+            WHEN "churnRisk" >= 10 THEN 'Low'
+            ELSE 'None'
+          END AS risk,
+          "lifetimeValue"
+        FROM "User"
+      ) AS paliers
       GROUP BY risk
       ORDER BY
         CASE risk
           WHEN 'High' THEN 1
           WHEN 'Medium' THEN 2
           WHEN 'Low' THEN 3
-          WHEN 'None' THEN 4
+          ELSE 4
         END
     `)
 
