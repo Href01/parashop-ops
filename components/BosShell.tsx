@@ -47,6 +47,11 @@ const sections: Array<{ label: string; items: NavItem[] }> = [
       { label: 'Tableau de bord', href: '/', icon: LayoutDashboard },
       { label: 'Focus', href: '/intelligence', icon: Target },
       { label: 'Activité', href: '/activity', icon: Activity },
+      /* Analytics vit dans l'Apercu et non dans « Relation client » : il ne
+         parle pas d'une cliente en particulier mais de ce que fait l'audience.
+         « Stats » plus bas est un autre sujet — le rendement des demandes
+         d'avis — et garde donc sa place. */
+      { label: 'Analytics', href: '/analytics', icon: ChartBar },
     ],
   },
   {
@@ -101,7 +106,7 @@ export default function BosShell({
   crumb,
   children,
 }: {
-  active: 'dashboard' | 'intelligence' | 'activity' | 'orders' | 'sendit' | 'products' | 'customers' | 'inventory' | 'prices' | 'leads' | 'restock' | 'campaigns' | 'ads' | 'events' | 'content' | 'work' | 'workspace' | 'guide' | 'settings' | 'health'
+  active: 'dashboard' | 'intelligence' | 'activity' | 'analytics' | 'orders' | 'sendit' | 'products' | 'customers' | 'inventory' | 'prices' | 'leads' | 'restock' | 'campaigns' | 'ads' | 'events' | 'content' | 'work' | 'workspace' | 'guide' | 'settings' | 'health'
   title: string
   crumb: string
   children: ReactNode

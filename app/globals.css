@@ -5,6 +5,36 @@
    no-op under @tailwindcss/postcss, which is why utility classes (fixed,
    inset-0, z-50, bg-*, etc.) were never generated and modals/overlays broke.
    Import theme + utilities (no preflight, to preserve the custom design system). */
+/* LE RESET OUVRE LA COUCHE `base`, ET IL DOIT LE FAIRE AVANT L'IMPORT DES
+   UTILITAIRES. Une couche prend son rang a sa PREMIERE APPARITION dans la
+   feuille : ecrit plus bas, `base` se classait apres `utilities` et gagnait
+   donc contre lui. Resultat, `* { padding: 0 }` annulait en silence toutes les
+   classes d'espacement de Tailwind (p-*, px-*, mt-*, …) dans tout le BOS.
+   L'ecrire ICI fixe l'ordre base < utilities, et une classe Tailwind gagne. */
+@layer base {
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* CE QUE `preflight` FAISAIT, ET QU'ON N'IMPORTE PAS.
+     Tailwind remet normalement `border-width: 0` sur tout, pour qu'une classe
+     comme `border-b` ne pose QUE le bas. Sans lui, `border-dotted` reveillait
+     la largeur par defaut du navigateur (`medium`, soit 3 px) sur les trois
+     autres cotes : une simple soulignure de definition devenait un cadre
+     pointille complet autour de chaque libelle.
+     Portee limitee a `.analytique` a DESSEIN : applique partout, ce reset
+     effacerait la bordure native des champs de saisie du reste du BOS, qui
+     eux ne declarent pas toujours la leur. */
+  .analytique *,
+  .analytique *::before,
+  .analytique *::after {
+    border-width: 0;
+    border-style: solid;
+  }
+}
+
 @import 'tailwindcss/theme.css' layer(theme);
 @import 'tailwindcss/utilities.css' layer(utilities);
 
@@ -88,11 +118,8 @@
   --topbar-h: 56px;
 }
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+/* (Le reset vit desormais tout en haut de ce fichier, avant l'import des
+   utilitaires Tailwind — voir le commentaire qui l'accompagne.) */
 
 html {
   -webkit-font-smoothing: antialiased;
