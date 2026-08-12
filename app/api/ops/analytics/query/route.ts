@@ -77,7 +77,11 @@ function valide(body: unknown): { ok: true; req: Requete } | { ok: false; erreur
     return { ok: false, erreur: 'Comparaison invalide' }
   }
 
-  const filtres = (b.filtres ?? []).filter(
+  /* `Array.isArray` et pas `?? []` : sur un corps malforme — `filtres: {}` —
+     l'appel a `.filter` levait une exception happee plus haut, et la route
+     repondait 500 « Erreur serveur ». Un corps invalide doit rendre 400 et dire
+     ce qui ne va pas ; un 500 fait chercher la panne du mauvais cote. */
+  const filtres = (Array.isArray(b.filtres) ? b.filtres : []).filter(
     (x) => x && DIMENSIONS[x.dimension] && Array.isArray(x.valeurs) && x.valeurs.length > 0
   )
 

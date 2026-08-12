@@ -36,14 +36,13 @@ export default function AnalyticsNav() {
           </Link>
         )
       })}
-      <Link
-        href="/analytics/legacy"
-        className="px-3 py-2 text-[12px] whitespace-nowrap border-b-2 -mb-px ms-auto"
-        style={{ borderColor: pathname.startsWith('/analytics/legacy') ? V.ink : 'transparent', color: V.muted }}
-        title="L'ancien tableau de bord, conservé le temps de la transition."
-      >
-        ancien tableau
-      </Link>
+      {/* L'onglet « ancien tableau » a ete retire avec la page qu'il ouvrait.
+          Ses trois sections sans equivalent direct ont ete verifiees avant :
+          « refus par ville » et « commandes par statut » se composent dans
+          Explorer (ville et statut sont des dimensions declarees), les frictions
+          OTP et les clics de rage sont dans Qualite, et le stock a sa propre
+          page. Garder un onglet vers un doublon fige, c'est garantir qu'un jour
+          on lira deux chiffres differents pour la meme question. */}
     </nav>
   )
 }
