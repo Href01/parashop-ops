@@ -47,11 +47,13 @@ export default function NewOrderPage() {
     districtId: '',
     handToHand: false,
     handToHandCity: '',
-    /* Le TAUX sert a la saisie, le MONTANT est ce qu'on enregistre : une
-       commission se lit en pourcentage sur le contrat, mais c'est le montant
-       preleve qui grignote la marge, et c'est lui qui doit etre fige. */
+    /* Le TAUX et le FIXE servent a la saisie, le MONTANT est ce qu'on
+       enregistre : une commission se lit « 15 % + 6 MAD » sur le contrat, mais
+       c'est le montant preleve qui grignote la marge, et c'est lui qui doit
+       etre fige. Jumia facture les deux — un pourcentage seul aurait sous-estime
+       chaque commande de 6 MAD. */
     commissionTaux: '',
-    commissionMontant: '',
+    commissionFixe: '',
     deliveryAddress: '',
     deliveryNotes: '',
     paymentMethod: 'COD',
@@ -141,7 +143,10 @@ export default function NewOrderPage() {
     setError(null)
 
     try {
-      if (!formData.deliveryName || !formData.deliveryPhone) {
+      /* Jumia ne transmet pas le numero de la cliente : l'exiger rendait la
+         saisie impossible. Il reste obligatoire partout ailleurs — c'est par lui
+         qu'on rappelle, qu'on reconnait et qu'on demande un avis. */
+      if (!formData.deliveryName || (!estMarketplace && !formData.deliveryPhone)) {
         throw new Error('Please fill in all required fields')
       }
 
@@ -182,7 +187,8 @@ export default function NewOrderPage() {
         handToHand: sansLivraison,
         channelCommission: commission,
         deliveryName: formData.deliveryName,
-        deliveryPhone: formData.deliveryPhone,
+        deliveryPhone: formData.deliveryPhone || undefined,
+        marketplace: estMarketplace,
         deliveryCity,
         senditDistrictId,
         deliveryAddress: formData.deliveryAddress,
@@ -224,8 +230,14 @@ export default function NewOrderPage() {
      notre cote. Elle suit donc exactement le meme chemin que la remise en main
      propre — d'ou un seul drapeau plutot que deux chemins paralleles qui
      divergeraient. */
-  const MARKETPLACES = ['Jumia', 'Marjane Mall']
-  const estMarketplace = MARKETPLACES.includes(formData.sourceChannel)
+  /* Les taux connus, pre-remplis pour eviter la saisie de tete a chaque vente.
+     Ils restent modifiables : un contrat change, et c'est le montant fige sur
+     la commande qui fait foi, pas cette table. */
+  const MARKETPLACES: Record<string, { taux: number; fixe: number }> = {
+    'Jumia': { taux: 15, fixe: 6 },
+    'Marjane Mall': { taux: 15, fixe: 0 },
+  }
+  const estMarketplace = formData.sourceChannel in MARKETPLACES
   const sansLivraison = formData.handToHand || estMarketplace
 
   /* Sans district, les lignes de total lisent deja `selectedDistrict ? prix : 0`.
@@ -235,7 +247,13 @@ export default function NewOrderPage() {
     ? undefined
     : districts.find(d => d.id === parseInt(formData.districtId))
 
-  const commission = Number(formData.commissionMontant) || 0
+  /* La commission se RECALCULE a partir du total des produits : si on ajoute
+     une ligne apres avoir saisi le taux, un montant fige serait faux. Elle est
+     arrondie au centime, comme ce qui sera preleve. */
+  const commission = estMarketplace
+    ? Math.round(((productsTotal * (Number(formData.commissionTaux) || 0)) / 100
+        + (Number(formData.commissionFixe) || 0)) * 100) / 100
+    : 0
 
   return (
     <BosShell title="New Order" active="orders" crumb="New Order">
@@ -289,7 +307,7 @@ export default function NewOrderPage() {
                 </div>
                 <div className="form-field">
                   <label className="form-label">
-                    Phone Number <span style={{ color: 'var(--red)' }}>*</span>
+                    Phone Number {!estMarketplace && <span style={{ color: 'var(--red)' }}>*</span>}
                   </label>
                   <div className="input-icon">
                     <Phone size={14} style={{ color: 'var(--tx-lo)' }} />
@@ -299,10 +317,16 @@ export default function NewOrderPage() {
                       style={{ paddingLeft: 34 }}
                       value={formData.deliveryPhone}
                       onChange={(e) => setFormData({ ...formData, deliveryPhone: e.target.value })}
-                      placeholder="06XXXXXXXX"
-                      required
+                      placeholder={estMarketplace ? 'Non communiqué par la place de marché' : '06XXXXXXXX'}
+                      required={!estMarketplace}
                     />
                   </div>
+                  {estMarketplace && (
+                    <p style={{ fontSize: 11, color: 'var(--tx-lo)', marginTop: 5 }}>
+                      Facultatif : {formData.sourceChannel} ne le transmet pas. Ces ventes ne
+                      compteront donc pas dans « clientes », qui dénombre les numéros distincts.
+                    </p>
+                  )}
                 </div>
               </div>
 
@@ -344,37 +368,42 @@ export default function NewOrderPage() {
                     enregistré et figé, parce que c’est lui qui réduit la marge.
                   </p>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                    <div style={{ flex: '0 0 110px' }}>
+                    <div style={{ flex: '0 0 100px' }}>
                       <label style={{ display: 'block', fontSize: 11, color: 'var(--tx-mid)', marginBottom: 4 }}>Taux (%)</label>
                       <input
                         type="number" min="0" max="100" step="0.1" className="form-input" placeholder="15"
                         value={formData.commissionTaux}
-                        onChange={(e) => {
-                          const taux = e.target.value
-                          const m = taux === '' ? '' : ((productsTotal * (Number(taux) || 0)) / 100).toFixed(2)
-                          setFormData({ ...formData, commissionTaux: taux, commissionMontant: m })
-                        }}
+                        onChange={(e) => setFormData({ ...formData, commissionTaux: e.target.value })}
                         style={{ width: '100%' }}
                       />
                     </div>
-                    <div style={{ flex: '0 0 140px' }}>
-                      <label style={{ display: 'block', fontSize: 11, color: 'var(--tx-mid)', marginBottom: 4 }}>Montant (MAD)</label>
+                    <span style={{ fontSize: 15, color: 'var(--tx-lo)', paddingBottom: 9 }}>+</span>
+                    <div style={{ flex: '0 0 120px' }}>
+                      <label style={{ display: 'block', fontSize: 11, color: 'var(--tx-mid)', marginBottom: 4 }}>Fixe (MAD)</label>
                       <input
-                        type="number" min="0" step="0.01" className="form-input" placeholder="0.00"
-                        value={formData.commissionMontant}
-                        /* Modifier le montant vide le taux : garder les deux
-                           laisserait croire qu'ils s'accordent alors que le
-                           montant vient d'etre corrige a la main. */
-                        onChange={(e) => setFormData({ ...formData, commissionMontant: e.target.value, commissionTaux: '' })}
+                        type="number" min="0" step="0.01" className="form-input" placeholder="6"
+                        value={formData.commissionFixe}
+                        onChange={(e) => setFormData({ ...formData, commissionFixe: e.target.value })}
                         style={{ width: '100%' }}
                       />
                     </div>
-                    {commission > 0 && productsTotal > 0 && (
-                      <span style={{ fontSize: 12, color: 'var(--tx-lo)', paddingBottom: 9 }}>
-                        soit {((commission / productsTotal) * 100).toFixed(1)} % des produits
+                    <div style={{ paddingBottom: 6 }}>
+                      <span style={{ fontSize: 11, color: 'var(--tx-mid)', display: 'block', marginBottom: 4 }}>Commission retenue</span>
+                      <span className="mono" style={{ fontSize: 17, fontWeight: 700, color: 'var(--rose-bright)' }}>
+                        {commission.toFixed(2)} MAD
                       </span>
-                    )}
+                      {productsTotal > 0 && commission > 0 && (
+                        <span style={{ fontSize: 11, color: 'var(--tx-lo)', marginInlineStart: 8 }}>
+                          soit {((commission / productsTotal) * 100).toFixed(1)} % du total
+                        </span>
+                      )}
+                    </div>
                   </div>
+                  {productsTotal === 0 && (
+                    <p style={{ fontSize: 11, color: 'var(--amber)', marginTop: 8 }}>
+                      Ajoute les produits : la part variable se calcule sur leur total.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -618,7 +647,19 @@ export default function NewOrderPage() {
                   <select
                     className="form-input"
                     value={formData.sourceChannel}
-                    onChange={(e) => setFormData({ ...formData, sourceChannel: e.target.value })}
+                    /* Choisir une place de marche pre-remplit son bareme : on ne
+                       retape pas « 15 et 6 » a chaque vente, et on ne risque pas
+                       de l'oublier — une commission oubliee gonfle la marge. */
+                    onChange={(e) => {
+                      const canal = e.target.value
+                      const bareme = MARKETPLACES[canal]
+                      setFormData({
+                        ...formData,
+                        sourceChannel: canal,
+                        commissionTaux: bareme ? String(bareme.taux) : '',
+                        commissionFixe: bareme ? String(bareme.fixe) : '',
+                      })
+                    }}
                   >
                     <option value="Manual">💼 Manual</option>
                     {/* Places de marche : notre stock, LEUR prix, LEUR commission.

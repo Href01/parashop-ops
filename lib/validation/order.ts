@@ -41,7 +41,13 @@ export const CreateOrderSchema = z.object({
 
   // Delivery info
   deliveryName: z.string().min(2, 'Name must be at least 2 characters'),
-  deliveryPhone: MoroccoPhoneSchema,
+  /* Optionnel au niveau du schema, EXIGE plus bas pour tout ce qui n'est pas
+     une place de marche : Jumia ne communique pas le numero de la cliente, et
+     un champ obligatoire rendait la saisie tout simplement impossible.
+     Consequence assumee : ces ventes ne comptent pas dans « clientes », qui
+     denombre les numeros distincts. C'est exact — on ne sait pas qui elles
+     sont — plutot que de gonfler le compte avec un numero invente. */
+  deliveryPhone: MoroccoPhoneSchema.optional(),
   deliveryCity: z.string().min(2),
   deliveryAddress: z.string().optional(),
   deliveryNotes: z.string().optional(),
@@ -60,6 +66,10 @@ export const CreateOrderSchema = z.object({
    * commande naît DELIVERED puisque la marchandise est deja partie.
    */
   handToHand: z.boolean().default(false),
+
+  /** Vrai pour Jumia, Marjane Mall… : elles livrent, facturent leur commission
+   *  et ne transmettent pas le numero de la cliente. */
+  marketplace: z.boolean().default(false),
 
   /**
    * COMMISSION DE PLACE DE MARCHE, en MAD, figee a la vente.
@@ -111,6 +121,17 @@ export const CreateOrderSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom, path: ['deliveryFeeCharged'],
       message: 'Une remise en main propre ne peut pas porter de frais de livraison',
+    })
+  }
+
+  /* Le numero reste OBLIGATOIRE partout ailleurs : c'est par lui qu'on rappelle
+     une cliente, qu'on la reconnait d'une commande a l'autre et qu'on lui
+     envoie sa demande d'avis. Seule une place de marche en dispense, parce
+     qu'elle ne le donne pas. */
+  if (!data.marketplace && !data.deliveryPhone) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ['deliveryPhone'],
+      message: 'Le numéro est obligatoire (sauf vente sur une place de marché)',
     })
   }
 

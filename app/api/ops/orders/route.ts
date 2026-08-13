@@ -292,8 +292,14 @@ export async function POST(request: NextRequest) {
       // Auto-create Sendit shipment if order was confirmed immediately
       let senditWarning = null
       if (confirmImmediately) {
-        if (!senditDistrictId) {
-          senditWarning = 'Order created but Sendit shipment was not created: exact Sendit district is required.'
+        /* Le numero rejoint le district dans la garde, et ce n'est pas pour
+           satisfaire le typage : Sendit refuse une expedition sans telephone.
+           Une place de marche n'a ni l'un ni l'autre — elle livre elle-meme —
+           donc elle passe par ici sans jamais tenter l'appel. */
+        if (!senditDistrictId || !deliveryPhone) {
+          senditWarning = !deliveryPhone
+            ? 'Commande créée sans expédition Sendit : aucun numéro de téléphone (vente sur place de marché).'
+            : 'Order created but Sendit shipment was not created: exact Sendit district is required.'
           console.warn(senditWarning)
         } else {
           try {
