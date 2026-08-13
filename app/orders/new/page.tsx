@@ -47,6 +47,11 @@ export default function NewOrderPage() {
     districtId: '',
     handToHand: false,
     handToHandCity: '',
+    /* Le TAUX sert a la saisie, le MONTANT est ce qu'on enregistre : une
+       commission se lit en pourcentage sur le contrat, mais c'est le montant
+       preleve qui grignote la marge, et c'est lui qui doit etre fige. */
+    commissionTaux: '',
+    commissionMontant: '',
     deliveryAddress: '',
     deliveryNotes: '',
     paymentMethod: 'COD',
@@ -148,11 +153,13 @@ export default function NewOrderPage() {
       let senditDistrictId: number | undefined
       let deliveryFee: number
 
-      if (formData.handToHand) {
+      if (sansLivraison) {
         /* La ville reste une vraie ville : elle alimente la geographie des
            ventes. Un « remise en main propre » colle ici polluerait ce champ. */
         if (!formData.handToHandCity.trim()) {
-          throw new Error('Indique la ville où le produit a été remis')
+          throw new Error(estMarketplace
+            ? 'Indique la ville de livraison indiquée par la place de marché'
+            : 'Indique la ville où le produit a été remis')
         }
         deliveryCity = formData.handToHandCity.trim()
         senditDistrictId = undefined
@@ -172,7 +179,8 @@ export default function NewOrderPage() {
 
       const payload = {
         sourceChannel: formData.sourceChannel,
-        handToHand: formData.handToHand,
+        handToHand: sansLivraison,
+        channelCommission: commission,
         deliveryName: formData.deliveryName,
         deliveryPhone: formData.deliveryPhone,
         deliveryCity,
@@ -212,12 +220,22 @@ export default function NewOrderPage() {
     }
   }
 
-  /* En main propre il n'y a pas de district — et les lignes de total lisent
-     deja `selectedDistrict ? prix : 0`. L'annuler ici suffit donc a mettre les
-     frais a zero partout, sans repeter la condition dans chaque ligne. */
-  const selectedDistrict = formData.handToHand
+  /* Une place de marche livre elle-meme : pas de district, pas de frais de
+     notre cote. Elle suit donc exactement le meme chemin que la remise en main
+     propre — d'ou un seul drapeau plutot que deux chemins paralleles qui
+     divergeraient. */
+  const MARKETPLACES = ['Jumia', 'Marjane Mall']
+  const estMarketplace = MARKETPLACES.includes(formData.sourceChannel)
+  const sansLivraison = formData.handToHand || estMarketplace
+
+  /* Sans district, les lignes de total lisent deja `selectedDistrict ? prix : 0`.
+     L'annuler ici suffit donc a mettre les frais a zero partout, sans repeter
+     la condition dans chaque ligne. */
+  const selectedDistrict = sansLivraison
     ? undefined
     : districts.find(d => d.id === parseInt(formData.districtId))
+
+  const commission = Number(formData.commissionMontant) || 0
 
   return (
     <BosShell title="New Order" active="orders" crumb="New Order">
@@ -288,8 +306,12 @@ export default function NewOrderPage() {
                 </div>
               </div>
 
+              {/* Masquee sur une place de marche : elle livre elle-meme, donc le
+                  chemin « sans expedition » est deja pris. Laisser une case a
+                  cocher qui ne change rien invite a se demander ce qu'elle fait. */}
               <label
                 className="form-field mb16"
+                hidden={estMarketplace}
                 /* `flexDirection` explicite : la classe `.form-field` empile en
                    colonne, ce qui rejetait la case a cocher AU-DESSUS de son
                    libelle — lisible dans le DOM, absurde a l'ecran. */
@@ -312,11 +334,55 @@ export default function NewOrderPage() {
                 </span>
               </label>
 
-              {formData.handToHand ? (
+              {estMarketplace && (
+                <div className="form-field mb16" style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', borderRadius: 10, padding: 14 }}>
+                  <label className="form-label" style={{ margin: 0 }}>
+                    🛒 Commission {formData.sourceChannel}
+                  </label>
+                  <p style={{ fontSize: 12, color: 'var(--tx-lo)', margin: '4px 0 10px' }}>
+                    Saisis le taux, le montant se calcule — c’est le <strong>montant</strong> qui est
+                    enregistré et figé, parce que c’est lui qui réduit la marge.
+                  </p>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    <div style={{ flex: '0 0 110px' }}>
+                      <label style={{ display: 'block', fontSize: 11, color: 'var(--tx-mid)', marginBottom: 4 }}>Taux (%)</label>
+                      <input
+                        type="number" min="0" max="100" step="0.1" className="form-input" placeholder="15"
+                        value={formData.commissionTaux}
+                        onChange={(e) => {
+                          const taux = e.target.value
+                          const m = taux === '' ? '' : ((productsTotal * (Number(taux) || 0)) / 100).toFixed(2)
+                          setFormData({ ...formData, commissionTaux: taux, commissionMontant: m })
+                        }}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    <div style={{ flex: '0 0 140px' }}>
+                      <label style={{ display: 'block', fontSize: 11, color: 'var(--tx-mid)', marginBottom: 4 }}>Montant (MAD)</label>
+                      <input
+                        type="number" min="0" step="0.01" className="form-input" placeholder="0.00"
+                        value={formData.commissionMontant}
+                        /* Modifier le montant vide le taux : garder les deux
+                           laisserait croire qu'ils s'accordent alors que le
+                           montant vient d'etre corrige a la main. */
+                        onChange={(e) => setFormData({ ...formData, commissionMontant: e.target.value, commissionTaux: '' })}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    {commission > 0 && productsTotal > 0 && (
+                      <span style={{ fontSize: 12, color: 'var(--tx-lo)', paddingBottom: 9 }}>
+                        soit {((commission / productsTotal) * 100).toFixed(1)} % des produits
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {sansLivraison ? (
                 <div className="form-field mb16">
                   <label className="form-label">
                     <MapPin size={14} style={{ marginRight: 6 }} />
-                    Ville de la remise <span style={{ color: 'var(--red)' }}>*</span>
+                    {estMarketplace ? 'Ville de livraison' : 'Ville de la remise'} <span style={{ color: 'var(--red)' }}>*</span>
                   </label>
                   <input
                     type="text"
@@ -522,6 +588,16 @@ export default function NewOrderPage() {
                           {(productsTotal - formData.discount + (selectedDistrict ? Number(selectedDistrict.price) : 0)).toFixed(2)} MAD
                         </span>
                       </div>
+                      {/* La commission n'entre PAS dans le total : la cliente paie
+                          le prix affiche, c'est nous qui touchons moins. La
+                          montrer ici, en retrait, evite de croire qu'on encaisse
+                          la totalite — sans fausser ce que doit la cliente. */}
+                      {commission > 0 && (
+                        <div className="pricing-row" style={{ color: 'var(--tx-lo)' }}>
+                          <span>dont commission {formData.sourceChannel} (retenue sur notre part)</span>
+                          <span className="mono">− {commission.toFixed(2)} MAD</span>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -545,6 +621,10 @@ export default function NewOrderPage() {
                     onChange={(e) => setFormData({ ...formData, sourceChannel: e.target.value })}
                   >
                     <option value="Manual">💼 Manual</option>
+                    {/* Places de marche : notre stock, LEUR prix, LEUR commission.
+                        Elles livrent elles-memes, d'ou l'absence de district. */}
+                    <option value="Jumia">🛒 Jumia</option>
+                    <option value="Marjane Mall">🛒 Marjane Mall</option>
                     {/* Canal distinct, et pas un simple « Manual » : ces ventes
                         portent un prix de faveur. Fondues dans les autres, elles
                         tireraient vers le bas le panier moyen et la marge par

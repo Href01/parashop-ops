@@ -61,6 +61,16 @@ export const CreateOrderSchema = z.object({
    */
   handToHand: z.boolean().default(false),
 
+  /**
+   * COMMISSION DE PLACE DE MARCHE, en MAD, figee a la vente.
+   *
+   * Jumia et Marjane Mall vendent NOTRE stock a LEUR prix et prelevent leur
+   * part. Sans elle, une vente marketplace paraitrait plus rentable qu'elle ne
+   * l'est — et on deplacerait son effort dans la mauvaise direction avec des
+   * chiffres qui ont l'air justes.
+   */
+  channelCommission: NonNegativeNumberSchema.default(0),
+
   // Payment
   paymentMethod: z.preprocess(
     normalizePaymentMethod,
@@ -101,6 +111,17 @@ export const CreateOrderSchema = z.object({
     ctx.addIssue({
       code: z.ZodIssueCode.custom, path: ['deliveryFeeCharged'],
       message: 'Une remise en main propre ne peut pas porter de frais de livraison',
+    })
+  }
+
+  /* La commission ne peut pas depasser ce que la vente rapporte : au-dela, la
+     saisie est fausse (un taux pris pour un montant, par exemple), et la laisser
+     passer creerait une marge negative silencieuse dans le tableau de bord. */
+  const produits = data.items.reduce((s, i) => s + i.unitPrice * i.quantity, 0)
+  if (Number(data.channelCommission) > produits) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ['channelCommission'],
+      message: `La commission (${data.channelCommission} MAD) dépasse le total des produits (${produits} MAD)`,
     })
   }
 

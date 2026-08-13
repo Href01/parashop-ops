@@ -106,6 +106,7 @@ export async function POST(request: NextRequest) {
     const {
       sourceChannel,
       handToHand,
+      channelCommission,
       deliveryName,
       deliveryPhone,
       deliveryCity,
@@ -173,10 +174,11 @@ export async function POST(request: NextRequest) {
           "paidAt",
           "paymentReference",
           "paymentStatus",
+          "channelCommission",
           "createdAt"
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-          $21, $22::timestamptz, $23, $24, NOW()
+          $21, $22::timestamptz, $23, $24, $25, NOW()
         ) RETURNING *`,
         [
           orderNumber,
@@ -212,6 +214,7 @@ export async function POST(request: NextRequest) {
           paymentMethod === 'VIREMENT'
             ? Math.abs(Number(paidAmount) - total) <= 0.01 ? 'PAID' : 'PARTIAL'
             : 'PENDING',
+          channelCommission,
         ]
       )
 

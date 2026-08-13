@@ -194,6 +194,10 @@ export function acquisitionChannelSql(o = 'o', s = 's'): string {
     WHEN ${ch} LIKE '%whats%' THEN 'WhatsApp (DM)'
     WHEN ${ch} LIKE '%tiktok%' THEN 'TikTok (DM)'
     WHEN ${ch} LIKE '%famille%' THEN 'Famille / Proches'
+    /* Places de marche : notre stock, leur prix, leur commission. Elles doivent
+       apparaitre a part — leur marge n'est pas comparable a celle du site. */
+    WHEN ${ch} LIKE '%jumia%' THEN 'Jumia'
+    WHEN ${ch} LIKE '%marjane%' THEN 'Marjane Mall'
     -- 'sendit' = commande creee depuis un colis, 'website' sans session = saisie
     -- manuelle mal etiquetee : dans les deux cas l'origine n'a jamais ete saisie.
     ELSE 'Origine non renseignée'
