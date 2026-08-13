@@ -358,54 +358,6 @@ export default function NewOrderPage() {
                 </span>
               </label>
 
-              {estMarketplace && (
-                <div className="form-field mb16" style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', borderRadius: 10, padding: 14 }}>
-                  <label className="form-label" style={{ margin: 0 }}>
-                    🛒 Commission {formData.sourceChannel}
-                  </label>
-                  <p style={{ fontSize: 12, color: 'var(--tx-lo)', margin: '4px 0 10px' }}>
-                    Saisis le taux, le montant se calcule — c’est le <strong>montant</strong> qui est
-                    enregistré et figé, parce que c’est lui qui réduit la marge.
-                  </p>
-                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                    <div style={{ flex: '0 0 100px' }}>
-                      <label style={{ display: 'block', fontSize: 11, color: 'var(--tx-mid)', marginBottom: 4 }}>Taux (%)</label>
-                      <input
-                        type="number" min="0" max="100" step="0.1" className="form-input" placeholder="15"
-                        value={formData.commissionTaux}
-                        onChange={(e) => setFormData({ ...formData, commissionTaux: e.target.value })}
-                        style={{ width: '100%' }}
-                      />
-                    </div>
-                    <span style={{ fontSize: 15, color: 'var(--tx-lo)', paddingBottom: 9 }}>+</span>
-                    <div style={{ flex: '0 0 120px' }}>
-                      <label style={{ display: 'block', fontSize: 11, color: 'var(--tx-mid)', marginBottom: 4 }}>Fixe (MAD)</label>
-                      <input
-                        type="number" min="0" step="0.01" className="form-input" placeholder="6"
-                        value={formData.commissionFixe}
-                        onChange={(e) => setFormData({ ...formData, commissionFixe: e.target.value })}
-                        style={{ width: '100%' }}
-                      />
-                    </div>
-                    <div style={{ paddingBottom: 6 }}>
-                      <span style={{ fontSize: 11, color: 'var(--tx-mid)', display: 'block', marginBottom: 4 }}>Commission retenue</span>
-                      <span className="mono" style={{ fontSize: 17, fontWeight: 700, color: 'var(--rose-bright)' }}>
-                        {commission.toFixed(2)} MAD
-                      </span>
-                      {productsTotal > 0 && commission > 0 && (
-                        <span style={{ fontSize: 11, color: 'var(--tx-lo)', marginInlineStart: 8 }}>
-                          soit {((commission / productsTotal) * 100).toFixed(1)} % du total
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  {productsTotal === 0 && (
-                    <p style={{ fontSize: 11, color: 'var(--amber)', marginTop: 8 }}>
-                      Ajoute les produits : la part variable se calcule sur leur total.
-                    </p>
-                  )}
-                </div>
-              )}
 
               {sansLivraison ? (
                 <div className="form-field mb16">
@@ -693,6 +645,62 @@ export default function NewOrderPage() {
                   </select>
                 </div>
               </div>
+
+                {/* LA COMMISSION SE LIT ICI, SOUS LE CANAL QUI LA DECLENCHE.
+                    Elle vivait dans « Customer Information », 300 lignes plus
+                    haut : on choisissait Jumia en bas de page et rien ne
+                    changeait sous les yeux — au point de croire que la
+                    fonctionnalite n'etait pas deployee. Un effet doit se voir
+                    la ou se trouve sa cause. */}
+              {estMarketplace && (
+                <div className="form-field mb16" style={{ background: 'var(--bg-2)', border: '1px solid var(--line)', borderRadius: 10, padding: 14 }}>
+                  <label className="form-label" style={{ margin: 0 }}>
+                    🛒 Commission {formData.sourceChannel}
+                  </label>
+                  <p style={{ fontSize: 12, color: 'var(--tx-lo)', margin: '4px 0 10px' }}>
+                    Pré-rempli d’après le barème. Le montant se recalcule sur le total des
+                    produits — c’est lui qui est <strong>enregistré et figé</strong>, parce que
+                    c’est lui qui réduit la marge.
+                  </p>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    <div style={{ flex: '0 0 100px' }}>
+                      <label style={{ display: 'block', fontSize: 11, color: 'var(--tx-mid)', marginBottom: 4 }}>Taux (%)</label>
+                      <input
+                        type="number" min="0" max="100" step="0.1" className="form-input" placeholder="15"
+                        value={formData.commissionTaux}
+                        onChange={(e) => setFormData({ ...formData, commissionTaux: e.target.value })}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    <span style={{ fontSize: 15, color: 'var(--tx-lo)', paddingBottom: 9 }}>+</span>
+                    <div style={{ flex: '0 0 120px' }}>
+                      <label style={{ display: 'block', fontSize: 11, color: 'var(--tx-mid)', marginBottom: 4 }}>Fixe (MAD)</label>
+                      <input
+                        type="number" min="0" step="0.01" className="form-input" placeholder="6"
+                        value={formData.commissionFixe}
+                        onChange={(e) => setFormData({ ...formData, commissionFixe: e.target.value })}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    <div style={{ paddingBottom: 6 }}>
+                      <span style={{ fontSize: 11, color: 'var(--tx-mid)', display: 'block', marginBottom: 4 }}>Commission retenue</span>
+                      <span className="mono" style={{ fontSize: 17, fontWeight: 700, color: 'var(--rose-bright)' }}>
+                        {commission.toFixed(2)} MAD
+                      </span>
+                      {productsTotal > 0 && commission > 0 && (
+                        <span style={{ fontSize: 11, color: 'var(--tx-lo)', marginInlineStart: 8 }}>
+                          soit {((commission / productsTotal) * 100).toFixed(1)} % du total
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {productsTotal === 0 && (
+                    <p style={{ fontSize: 11, color: 'var(--amber)', marginTop: 8 }}>
+                      Ajoute les produits : la part variable se calcule sur leur total.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {formData.paymentMethod === 'VIREMENT' && (
                 <div className="form-grid-2 mb16">
