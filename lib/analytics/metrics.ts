@@ -31,11 +31,7 @@ export const BOT_FILTER_CLAUSE = `
   AND NOT EXISTS (
     SELECT 1 FROM "AnalyticsSession" s2
     WHERE s2."sessionId" = "PageView"."sessionId"
-      AND (
-        COALESCE(s2."userAgent", '') ~* 'bot|crawler|spider|googlebot|bingbot|slurp|facebookexternalhit|facebot|twitterbot'
-        OR (SELECT COUNT(*) FROM "AnalyticsEvent" e3
-             WHERE e3."sessionId" = s2."sessionId" AND e3.name = 'SESSION_START') > 10
-      )
+      AND s2."isBot"
       AND NOT EXISTS (
         SELECT 1 FROM "AnalyticsEvent" e4
         WHERE e4."sessionId" = s2."sessionId"
@@ -43,6 +39,28 @@ export const BOT_FILTER_CLAUSE = `
       )
   )
 `
+/* CE FILTRE LIT DESORMAIS LA COLONNE, IL NE LA RECALCULE PLUS.
+ *
+ * Il portait sa propre expression regexp, en DOUBLE de la colonne generee
+ * "isBot" (`is_bot_user_agent`) — deux definitions du meme mot, qui ne
+ * s'accordaient pas : la colonne marquait 1 414 sessions, la regexp ZERO.
+ *
+ * Et il comptait les SESSION_START de chaque session dans une sous-requete
+ * correlee AVEC AGREGAT IMBRIQUE. Mesure sur 30 jours : 6 261 boucles, 69 ms
+ * -> 262 ms, et 23,4 MILLIONS de lectures d'index sur une table de 91 000
+ * lignes. Ce que ce calcul retirait : 5 sessions sur 2 957.
+ *
+ * Ce critere des « plus de 10 SESSION_START » n'est pas un signal de robot,
+ * c'est le symptome d'un defaut client : 433 sessions emettent plusieurs
+ * SESSION_START. C'est CE defaut qu'il faut corriger, pas le contourner a
+ * chaque lecture du tableau de bord.
+ *
+ * Ce qui est CONSERVE, parce que c'est ce qui compte : une session qui a
+ * achete ou mis au panier n'est jamais ecartee. L'ancienne version en jetait
+ * 46 sur 30 jours, dont 6 QUI AVAIENT ACHETE.
+ *
+ * S'utilise dans un WHERE portant sur "PageView".
+ */
 
 /* ─────────────────────────────────────────────────────────────────────────────
    1. LA BASE DE DATE — deux questions, deux reponses, jamais melangees
