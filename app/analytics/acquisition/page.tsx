@@ -181,6 +181,8 @@ export default function Acquisition() {
             { cle: 'canal', label: "Canal d'acquisition" },
             { cle: 'ville', label: 'Ville' },
             { cle: 'appareil', label: 'Appareil' },
+            { cle: 'gammeAppareil', label: "Gamme d'appareil" },
+            { cle: 'modeleAppareil', label: 'Modèle' },
             { cle: 'jour', label: 'Jour' },
           ]}
           onDimension={setDimension}

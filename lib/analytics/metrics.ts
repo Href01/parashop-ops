@@ -222,6 +222,79 @@ export function acquisitionChannelSql(o = 'o', s = 's'): string {
   END`
 }
 
+/* ─────────────────────────────────────────────────────────────────────────────
+   L'APPAREIL — ce que la donnee prouve, et rien de plus
+
+   Le navigateur integre d'Instagram publie l'identifiant materiel complet, la
+   version d'iOS, l'echelle et la resolution :
+
+     Instagram 439.0.0.35.60 (iPhone18,2; iOS 26_5_2; fr_FR; scale=3.00; 1320x2868)
+
+   Safari en direct ne le donne JAMAIS, et Chrome Android l'a retire de son
+   cote (« Android 10; K »). Couverture mesuree : 1 711 iPhone sur 2 578 (66 %)
+   et 829 Android sur 2 027 (41 %). Ces trous ne sont pas comblables — ce sont
+   des decisions d'Apple et de Google, pas un defaut de notre code.
+
+   ON NE TRADUIT PAS EN NOM COMMERCIAL. L'identifiant Apple court en avance sur
+   le nom vendu : `iPhone10,2` plafonne a iOS 16.7, c'est donc du materiel de
+   2017. Ecrire « iPhone 18 » a cote de `iPhone18,2` serait faux et se verrait
+   immediatement. On expose l'identifiant brut, exact, et on en tire ce qui sert
+   VRAIMENT a decider : depuis quand, et de quelle taille.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/** Le modele declare : identifiant Apple, reference Android, ou l'aveu qu'on ne sait pas. */
+export function modeleAppareilSql(s = 's'): string {
+  const ua = `${s}."userAgent"`
+  return `CASE
+    WHEN ${ua} ~ 'iPhone[0-9]+,[0-9]+' THEN (regexp_match(${ua}, '(iPhone[0-9]+,[0-9]+)'))[1]
+    WHEN ${ua} ~ 'SM-[A-Z0-9]+'        THEN (regexp_match(${ua}, '(SM-[A-Z0-9]+)'))[1]
+    WHEN ${ua} ~* 'Pixel [0-9]+'       THEN (regexp_match(${ua}, '(Pixel [0-9]+)'))[1]
+    WHEN ${ua} ILIKE '%iPhone%'        THEN 'iPhone (modèle non déclaré)'
+    WHEN ${ua} ILIKE '%iPad%'          THEN 'iPad'
+    WHEN ${ua} ILIKE '%Android%'       THEN 'Android (modèle non déclaré)'
+    WHEN ${ua} IS NULL OR ${ua} = ''   THEN '—'
+    ELSE 'Ordinateur'
+  END`
+}
+
+/**
+ * La gamme, deduite de DEUX signaux mesurables et d'aucun nom :
+ *
+ *  · la GENERATION materielle — `iPhoneN,M` : N ordonne le materiel de facon
+ *    fiable, meme sans savoir comment Apple l'a baptise ;
+ *  · la RESOLUTION que l'appareil declare lui-meme — un grand ecran est un
+ *    modele Max/Pro, un petit ecran un modele d'entree ou ancien.
+ *
+ * C'est ce couple qui approche le pouvoir d'achat, et c'est lui qui sert a
+ * decider — bien plus qu'un numero de modele.
+ */
+export function gammeAppareilSql(s = 's'): string {
+  const ua = `${s}."userAgent"`
+  const gen = `NULLIF((regexp_match(${ua}, 'iPhone([0-9]+),'))[1], '')::int`
+  const larg = `NULLIF((regexp_match(${ua}, 'scale=[0-9.]+; ([0-9]+)x'))[1], '')::int`
+  return `CASE
+    WHEN ${ua} IS NULL OR ${ua} = '' THEN '—'
+    -- iPhone : la generation situe dans le temps, la largeur situe dans la gamme.
+    WHEN ${gen} IS NOT NULL AND ${gen} >= 17 AND COALESCE(${larg}, 0) >= 1280 THEN 'iPhone récent · grand écran'
+    WHEN ${gen} IS NOT NULL AND ${gen} >= 17                                  THEN 'iPhone récent'
+    WHEN ${gen} IS NOT NULL AND ${gen} >= 14                                  THEN 'iPhone intermédiaire'
+    WHEN ${gen} IS NOT NULL                                                   THEN 'iPhone ancien'
+    -- Samsung : la serie EST la gamme. S = haut, A = milieu/entree, J/M = entree.
+    WHEN ${ua} ~ 'SM-S[0-9]' THEN 'Samsung haut de gamme (S)'
+    WHEN ${ua} ~ 'SM-N[0-9]' THEN 'Samsung haut de gamme (Note)'
+    WHEN ${ua} ~ 'SM-A[0-9]' THEN 'Samsung milieu de gamme (A)'
+    -- Guillemets SIMPLES : en SQL les doubles designent une COLONNE. Ecrit
+    -- avec des doubles, Postgres cherchait une colonne « Samsung entrée de
+    -- gamme » et toute la route rendait 500 — invisible au typage, invisible
+    -- au build, visible seulement en appelant.
+    WHEN ${ua} ~ 'SM-[JM][0-9]' THEN 'Samsung entrée de gamme'
+    WHEN ${ua} ~* 'Pixel [0-9]+' THEN 'Google Pixel'
+    WHEN ${ua} ILIKE '%iPhone%'  THEN 'iPhone (gamme non déclarée)'
+    WHEN ${ua} ILIKE '%Android%' THEN 'Android (gamme non déclarée)'
+    ELSE 'Ordinateur'
+  END`
+}
+
 /** Les canaux qui consomment du budget publicitaire — pour rapprocher ROAS et depense. */
 export const PAID_CHANNELS = ['Instagram Ads', 'Facebook Ads', 'TikTok Ads'] as const
 export function isPaidChannel(c: string): boolean {

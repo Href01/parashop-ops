@@ -125,6 +125,8 @@ export default function Engagement() {
           dimensions={[
             { cle: 'page', label: 'Page' },
             { cle: 'appareil', label: 'Appareil' },
+            { cle: 'gammeAppareil', label: "Gamme d'appareil" },
+            { cle: 'modeleAppareil', label: 'Modèle' },
             { cle: 'langue', label: 'Langue' },
             { cle: 'ville', label: 'Ville' },
             { cle: 'jour', label: 'Jour' },

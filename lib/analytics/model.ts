@@ -21,7 +21,8 @@
  */
 
 import {
-  acquisitionChannelSql, sessionChannelSql, basisDateExpr, BOT_FILTER_CLAUSE, MIN_OBS, TZ,
+  acquisitionChannelSql, sessionChannelSql, modeleAppareilSql, gammeAppareilSql,
+  basisDateExpr, BOT_FILTER_CLAUSE, MIN_OBS, TZ,
   type MoneyBasis,
 } from './metrics'
 
@@ -90,6 +91,28 @@ export const DIMENSIONS: Record<string, Dimension> = {
       pages: `COALESCE(s."device", '—')`,
       commandes: `COALESCE(s."device", '—')`,
     },
+  },
+  modeleAppareil: {
+    cle: 'modeleAppareil',
+    label: 'Modèle',
+    definition:
+      "Le modèle exact, quand l'appareil le déclare. Le navigateur intégré d'Instagram donne " +
+      "l'identifiant matériel Apple (iPhone18,2) ; Android donne sa référence (SM-A155F). " +
+      "Safari en direct ne le donne JAMAIS, et Chrome Android l'a supprimé de son côté : " +
+      "c'est pourquoi une partie du trafic reste « non déclaré ». " +
+      "Attention : l'identifiant Apple n'est PAS le nom commercial — il court en avance " +
+      "d'environ deux générations (iPhone10,2 est un appareil de 2017).",
+    sql: { pages: modeleAppareilSql('s'), commandes: modeleAppareilSql('s') },
+  },
+  gammeAppareil: {
+    cle: 'gammeAppareil',
+    label: "Gamme d'appareil",
+    definition:
+      "Le niveau de l'appareil, déduit de sa génération et de la taille de son écran — " +
+      "jamais d'un nom commercial, qu'on ne peut pas établir de façon sûre pour les modèles " +
+      "récents. C'est un indice de pouvoir d'achat : croisée avec le panier moyen, cette " +
+      "dimension dit à quel prix ton audience achète réellement.",
+    sql: { pages: gammeAppareilSql('s'), commandes: gammeAppareilSql('s') },
   },
   langue: {
     cle: 'langue',

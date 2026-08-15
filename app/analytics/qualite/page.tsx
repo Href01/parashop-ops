@@ -113,6 +113,8 @@ export default function Qualite() {
           dimensions={[
             { cle: 'page', label: 'Page' },
             { cle: 'appareil', label: 'Appareil' },
+            { cle: 'gammeAppareil', label: "Gamme d'appareil" },
+            { cle: 'modeleAppareil', label: 'Modèle' },
             { cle: 'langue', label: 'Langue' },
             { cle: 'jour', label: 'Jour' },
           ]}
