@@ -573,6 +573,30 @@ function diagnosticBlockage(evenements: Evenement[]): Blocage | null {
     return { quoi: 'A démarré le paiement sans le finir — part sans rien dire', montant: valeurPanier }
   if (a('PRODUCT_ADD_TO_CART'))
     return { quoi: 'A mis au panier sans jamais ouvrir le paiement', montant: valeurPanier }
+  /* PAS DE DIAGNOSTIC SANS MATIÈRE.
+     Une visite de cinq secondes ne « bloque » rien : personne n'a eu le temps
+     d'y renoncer. Le module annonçait pourtant « a ouvert 1 fiche produit sans
+     rien mettre au panier » pour une visiteuse venue d'une publicité et repartie
+     aussitôt — un rebond présenté comme un échec du site, ce qui envoie corriger
+     une fiche produit alors que le problème est en amont, dans le ciblage.
+
+     LE SEUIL N'EST PAS QU'UN CHRONOMÈTRE, ET C'EST VOULU. Mesuré sur 412 vraies
+     mises au panier : 5 % surviennent dans la seconde qui suit l'ouverture de la
+     fiche, 25 % en moins de 7,4 s. Écarter sur la seule durée excuserait donc des
+     sessions où une acheteuse aurait largement eu le temps d'agir. On exige les
+     trois signes réunis d'une visite sans contenu : aucun défilement, une seule
+     page, et moins de dix secondes. Dès qu'un seul manque, le diagnostic normal
+     reprend la main — mieux vaut un blocage annoncé de trop qu'un blocage tu. */
+  const instants = evenements.map((e) => Date.parse(e.at)).filter((n) => Number.isFinite(n))
+  const secondes = instants.length > 1 ? (Math.max(...instants) - Math.min(...instants)) / 1000 : 0
+  const pages = new Set(evenements.map((e) => e.path).filter(Boolean)).size
+  if (!a('SCROLL_DEPTH') && pages <= 1 && secondes < 10) {
+    return {
+      quoi: `Repartie au bout de ${Math.round(secondes)} s, sans faire défiler — trop court pour conclure`,
+      montant: null,
+    }
+  }
+
   if (a('PRODUCT_VIEW_DETAIL')) {
     const n = evenements.filter((e) => e.name === 'PRODUCT_VIEW_DETAIL').length
     return { quoi: `A ouvert ${n} fiche${n > 1 ? 's' : ''} produit sans rien mettre au panier`, montant: null }
