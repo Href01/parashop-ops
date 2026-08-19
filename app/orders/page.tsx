@@ -7,7 +7,9 @@ import { useRouter } from 'next/navigation'
 import BosShell from '@/components/BosShell'
 
 type OrderStatus = 'PENDING' | 'CONFIRMED' | 'SHIPPED' | 'DELIVERED' | 'RETURNED' | 'CANCELLED' | 'FAILED'
-type OrderFilter = 'all' | 'pending' | 'no-shipment' | 'incomplete' | 'delivered-no-review'
+/* Les six cases des cartes du haut sont des filtres a part entiere : `Case` est
+   declare plus bas, les alias de type etant remontes a la compilation. */
+type OrderFilter = 'all' | 'pending' | 'no-shipment' | 'incomplete' | 'delivered-no-review' | Case
 type DateFilter = 'today' | 'week' | 'month' | 'all'
 
 const PAGE_SIZE = 25
@@ -111,6 +113,8 @@ const SENDIT_DELIVERY: Record<string, { text: string; cls: string }> = {
 const SENDIT_EN_MOUVEMENT = new Set(['WAREHOUSE', 'PICKED_UP', 'IN_TRANSIT', 'DISTRIBUTION'])
 
 type Case = 'attente' | 'confirmee' | 'transit' | 'livree' | 'retournee' | 'annulee'
+
+const CASES = new Set<string>(['attente', 'confirmee', 'transit', 'livree', 'retournee', 'annulee'])
 
 /**
  * LA CASE D'UNE COMMANDE — une seule, jamais deux.
@@ -323,12 +327,12 @@ export default function OrdersPage() {
     for (const o of orders) n[caseDe(o)] += 1
 
     return [
-      { label: 'En attente', value: n.attente, color: 'var(--amber)', className: 'st-pending' },
-      { label: 'Confirmées', value: n.confirmee, color: 'var(--blue)', className: 'st-confirmed' },
-      { label: 'En transit', value: n.transit, color: 'var(--violet)', className: 'st-shipped' },
-      { label: 'Livrées', value: n.livree, color: 'var(--green)', className: 'st-delivered' },
-      { label: 'Retournées', value: n.retournee, color: 'var(--red)', className: 'st-returned' },
-      { label: 'Annulées', value: n.annulee, color: 'var(--tx-mid)', className: 'st-cancelled' },
+      { label: 'En attente', value: n.attente, color: 'var(--amber)', className: 'st-pending', cas: 'attente' as Case },
+      { label: 'Confirmées', value: n.confirmee, color: 'var(--blue)', className: 'st-confirmed', cas: 'confirmee' as Case },
+      { label: 'En transit', value: n.transit, color: 'var(--violet)', className: 'st-shipped', cas: 'transit' as Case },
+      { label: 'Livrées', value: n.livree, color: 'var(--green)', className: 'st-delivered', cas: 'livree' as Case },
+      { label: 'Retournées', value: n.retournee, color: 'var(--red)', className: 'st-returned', cas: 'retournee' as Case },
+      { label: 'Annulées', value: n.annulee, color: 'var(--tx-mid)', className: 'st-cancelled', cas: 'annulee' as Case },
     ]
   }, [orders])
 
@@ -361,6 +365,14 @@ export default function OrdersPage() {
       if (activeFilter === 'incomplete' && orderCompleteness(order) >= 100) return false
       if (activeFilter === 'delivered-no-review' && (order.status !== 'DELIVERED' || !!order.reviewRequestSentAt)) return false
 
+      /* LA MEME FONCTION COMPTE ET FILTRE. Les cartes annoncaient un nombre sans
+         offrir de chemin vers les lignes : « 2 confirmees » etait exact, mais ces
+         deux commandes dormaient aux rangs 48 et 67 sur 215, pages 2 et 3, sans
+         aucun filtre pour les atteindre. Passer par `caseDe` des deux cotes
+         garantit que le nombre affiche et la liste obtenue ne peuvent pas
+         diverger. */
+      if (CASES.has(activeFilter) && caseDe(order) !== activeFilter) return false
+
       if (dateFilter !== 'all') {
         const createdAt = new Date(order.createdAt)
         if (Number.isNaN(createdAt.getTime())) return false
@@ -383,12 +395,15 @@ export default function OrdersPage() {
   const currentPageInRange = Math.min(currentPage, totalPages)
   const pageStart = (currentPageInRange - 1) * PAGE_SIZE
   const paginatedOrders = filteredOrders.slice(pageStart, pageStart + PAGE_SIZE)
-  const hasActiveFilters = search.trim() || activeFilter !== 'all' || dateFilter !== 'week'
+  /* `'week'` figurait ici alors que l'etat initial est `'all'` : « Reinitialiser »
+     retrecissait la liste a sept jours au lieu de la rendre entiere, et le bouton
+     s'affichait comme actif sur une page qu'on venait d'ouvrir. */
+  const hasActiveFilters = search.trim() || activeFilter !== 'all' || dateFilter !== 'all'
 
   const resetFilters = () => {
     setSearch('')
     setActiveFilter('all')
-    setDateFilter('week')
+    setDateFilter('all')
     setCurrentPage(1)
   }
 
@@ -422,8 +437,25 @@ export default function OrdersPage() {
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-          {stats.map((item) => (
-            <div key={item.label} className="card-modern">
+          {stats.map((item) => {
+            const actif = activeFilter === item.cas
+            return (
+            /* Un bouton, pas un `div` : la carte agit, elle doit donc s'annoncer
+               comme telle au clavier et aux lecteurs d'ecran. Recliquer la carte
+               active revient a « Toutes » — sans quoi on reste enferme dans un
+               filtre sans savoir comment en sortir. */
+            <button
+              key={item.label}
+              type="button"
+              aria-pressed={actif}
+              onClick={() => selectFilter(actif ? 'all' : item.cas)}
+              className="card-modern text-left"
+              style={{
+                cursor: 'pointer',
+                borderColor: actif ? item.color : undefined,
+                boxShadow: actif ? `inset 0 0 0 1px ${item.color}` : undefined,
+              }}
+            >
               <div className="card-body">
                 <p className="text-xs font-medium text-tx-lo uppercase tracking-wide mb-2">{item.label}</p>
                 <p className="text-3xl font-bold mb-1" style={{ color: item.color }}>
@@ -431,11 +463,12 @@ export default function OrdersPage() {
                 </p>
                 <div className="flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full" style={{ background: item.color }}></span>
-                  <span className="text-xs text-tx-faint">{item.label}</span>
+                  <span className="text-xs text-tx-faint">{actif ? 'Filtre actif' : item.label}</span>
                 </div>
               </div>
-            </div>
-          ))}
+            </button>
+            )
+          })}
         </div>
 
         <div className="card-modern">

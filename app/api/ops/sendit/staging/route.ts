@@ -19,11 +19,31 @@ function referenceKey(value: unknown): string {
   return typeof value === 'string' ? value.trim().toUpperCase() : ''
 }
 
-function mapSenditStatus(status: string): string {
+/**
+ * L'ETAT SENDIT TRADUIT EN STATUT DE COMMANDE — ou `null` quand il ne dit rien.
+ *
+ * CE `null` EST LE CORRECTIF. La fonction rendait `CONFIRMED` par defaut, donc
+ * `PENDING` — « etiquette creee, colis jamais ramasse » — valait confirmation.
+ * Comme la reconciliation ecrit `status` sans condition, chaque passage
+ * RESSUSCITAIT les commandes annulees a la main : #246 annulee le 22 juillet,
+ * reconfirmee par la synchro le 1er aout ; #211 reconfirmee le 6 aout. Deux cas
+ * sur deux, et les deux ont ete re-annulees ce matin — elles seraient revenues
+ * au prochain passage.
+ *
+ * `PENDING` n'est pas une nouvelle, c'est une absence de nouvelle : le colis
+ * dort chez nous. Une absence de nouvelle ne doit jamais defaire une decision
+ * humaine. Idem pour un etat inconnu : si Sendit en ajoute un demain, mieux vaut
+ * ne rien toucher que de tout confirmer. Les etats qui portent une VRAIE
+ * information decident comme avant.
+ */
+const SENDIT_EN_MOUVEMENT = ['WAREHOUSE', 'PICKED_UP', 'IN_TRANSIT', 'DISTRIBUTION']
+
+function mapSenditStatus(status: string): string | null {
   const value = String(status || '').toUpperCase()
   if (value === 'DELIVERED') return 'DELIVERED'
   if (['CANCELED', 'CANCELLED', 'REJECTED', 'REFUSED', 'RETURNED', 'RETURN'].includes(value)) return 'CANCELLED'
-  return 'CONFIRMED'
+  if (SENDIT_EN_MOUVEMENT.includes(value)) return 'CONFIRMED'
+  return null
 }
 
 export async function GET() {
@@ -148,7 +168,10 @@ export async function POST(req: NextRequest) {
              SET "senditTrackingId" = COALESCE("senditTrackingId", $1),
                  "senditStatus" = $2::text,
                  "deliveryStatus" = $2::varchar,
-                 status = $3::"OrderStatus",
+                 -- COALESCE, PAS UNE AFFECTATION SECHE : quand la traduction rend
+                 -- NULL (« Sendit n'a rien a dire »), on garde le statut en place
+                 -- plutot que d'ecraser une annulation faite a la main.
+                 status = COALESCE($3::"OrderStatus", status),
                  "actualDeliveryCost" = $4::numeric,
                  "codAmount" = NULL,
                  "deliveredAt" = CASE
@@ -165,7 +188,9 @@ export async function POST(req: NextRequest) {
              SET "senditTrackingId" = COALESCE("senditTrackingId", $1),
                  "senditStatus" = $2::text,
                  "deliveryStatus" = $2::varchar,
-                 status = $3::"OrderStatus",
+                 -- Meme raison que dans la branche prepayee : NULL veut dire
+                 -- « aucune information », pas « remets la commande a confirmee ».
+                 status = COALESCE($3::"OrderStatus", status),
                  "actualDeliveryCost" = $4::numeric,
                  -- $5::numeric est OBLIGATOIRE. Sans cast, « $5 > 0 » fait deduire a
                  -- Postgres que le parametre est un ENTIER (a cause du litteral 0) :
@@ -192,7 +217,8 @@ export async function POST(req: NextRequest) {
           )
         }
 
-        if (mapped !== oldStatus) {
+        // `mapped` a NULL : rien n'a change, donc rien a inscrire a l'historique.
+        if (mapped && mapped !== oldStatus) {
           await pool.query(
             `INSERT INTO "OrderStatusHistory" ("orderId", "oldStatus", "newStatus", "source", "note", "createdAt")
              VALUES ($1, $2, $3, 'sendit', $4, NOW())`,
