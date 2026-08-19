@@ -89,6 +89,11 @@ function completenessColor(value: number) {
 
 // Real Sendit delivery states → French (so the column matches what's on Sendit).
 const SENDIT_DELIVERY: Record<string, { text: string; cls: string }> = {
+  /* PENDING manquait ici, et `deliveryLabel` retombait sur sa branche de secours :
+     la colonne affichait le mot anglais brut « PENDING » en style expédié. Chez
+     Sendit il ne veut pas dire « en route » mais « étiquette créée, colis pas
+     encore ramassé » — donc en attente, pas en mouvement. */
+  PENDING: { text: 'Étiquette créée', cls: 'st-pending' },
   WAREHOUSE: { text: 'Au dépôt', cls: 'st-shipped' },
   PICKED_UP: { text: 'Ramassée', cls: 'st-shipped' },
   IN_TRANSIT: { text: 'En transit', cls: 'st-shipped' },
@@ -99,6 +104,44 @@ const SENDIT_DELIVERY: Record<string, { text: string; cls: string }> = {
   REFUSED: { text: 'Refusée', cls: 'st-returned' },
   CANCELED: { text: 'Annulée', cls: 'st-cancelled' },
   CANCELLED: { text: 'Annulée', cls: 'st-cancelled' },
+}
+
+/* LES SEULS ÉTATS OÙ LE COLIS BOUGE VRAIMENT. `PENDING` en est exclu a dessein :
+   l'étiquette existe, le colis est encore chez nous. */
+const SENDIT_EN_MOUVEMENT = new Set(['WAREHOUSE', 'PICKED_UP', 'IN_TRANSIT', 'DISTRIBUTION'])
+
+type Case = 'attente' | 'confirmee' | 'transit' | 'livree' | 'retournee' | 'annulee'
+
+/**
+ * LA CASE D'UNE COMMANDE — une seule, jamais deux.
+ *
+ * Les six compteurs se calculaient chacun de leur côté, et « En transit » ne
+ * comptait pas la même chose que les cinq autres : eux lisaient `status`, lui
+ * lisait la présence d'un numéro de suivi. Deux axes différents, donc des cases
+ * qui se chevauchent — les six affichaient 217 pour 215 commandes, et les deux
+ * seules commandes confirmées étaient comptées DEUX fois, une fois en
+ * « Confirmées » et une fois en « En transit », alors qu'aucune ne bougeait.
+ *
+ * POURQUOI L'AUTEUR N'AVAIT PAS PU FAIRE AUTREMENT : `mapSenditStatus` ne rend
+ * jamais `SHIPPED` — tout ce qui n'est ni livré ni annulé devient `CONFIRMED`.
+ * Compter `SHIPPED` aurait donc toujours donné zéro, d'où l'approximation par le
+ * numéro de suivi. Mais ce numéro existe dès l'impression de l'étiquette, bien
+ * avant le ramassage : il annonce un départ, pas un trajet.
+ *
+ * La vérité est dans `senditStatus`, que le transporteur tient à jour. Une
+ * commande confirmée est soit en attente de ramassage, soit déjà en route ; les
+ * séparer là-dessus donne un vrai partage. Passer par UNE fonction plutôt que
+ * six filtres rend le chevauchement impossible a réintroduire.
+ */
+function caseDe(o: OrderRow): Case {
+  // Les états finaux d'abord : ils priment sur tout suivi resté en chemin.
+  if (o.status === 'DELIVERED') return 'livree'
+  if (o.status === 'CANCELLED') return 'annulee'
+  if (o.status === 'RETURNED' || o.status === 'FAILED') return 'retournee'
+  if (o.status === 'SHIPPED') return 'transit'
+  if (SENDIT_EN_MOUVEMENT.has((o.senditStatus || '').toUpperCase())) return 'transit'
+  if (o.status === 'PENDING') return 'attente'
+  return 'confirmee'
 }
 
 /** Delivery label — shows the real Sendit status when present, else derives it. */
@@ -274,15 +317,18 @@ export default function OrdersPage() {
   }
 
   const stats = useMemo(() => {
-    const count = (status: string) => orders.filter((order) => order.status === status).length
+    // Un seul passage, une seule case par commande : la somme des six cartes
+    // redonne donc exactement le total annoncé en haut de page.
+    const n: Record<Case, number> = { attente: 0, confirmee: 0, transit: 0, livree: 0, retournee: 0, annulee: 0 }
+    for (const o of orders) n[caseDe(o)] += 1
 
     return [
-      { label: 'En attente', value: count('PENDING'), color: 'var(--amber)', className: 'st-pending' },
-      { label: 'Confirmées', value: count('CONFIRMED'), color: 'var(--blue)', className: 'st-confirmed' },
-      { label: 'En transit', value: orders.filter((o) => !!o.senditTrackingId && o.status !== 'DELIVERED' && o.status !== 'CANCELLED').length, color: 'var(--violet)', className: 'st-shipped' },
-      { label: 'Livrées', value: count('DELIVERED'), color: 'var(--green)', className: 'st-delivered' },
-      { label: 'Retournées', value: count('RETURNED') + count('FAILED'), color: 'var(--red)', className: 'st-returned' },
-      { label: 'Annulées', value: count('CANCELLED'), color: 'var(--tx-mid)', className: 'st-cancelled' },
+      { label: 'En attente', value: n.attente, color: 'var(--amber)', className: 'st-pending' },
+      { label: 'Confirmées', value: n.confirmee, color: 'var(--blue)', className: 'st-confirmed' },
+      { label: 'En transit', value: n.transit, color: 'var(--violet)', className: 'st-shipped' },
+      { label: 'Livrées', value: n.livree, color: 'var(--green)', className: 'st-delivered' },
+      { label: 'Retournées', value: n.retournee, color: 'var(--red)', className: 'st-returned' },
+      { label: 'Annulées', value: n.annulee, color: 'var(--tx-mid)', className: 'st-cancelled' },
     ]
   }, [orders])
 
