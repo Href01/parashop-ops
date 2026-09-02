@@ -10,6 +10,29 @@ type Health = {
   connections: { total: number; active: number; idle: number; max: number; usage: number }
   cache: { hitRatio: number; commits: number; rollbacks: number }
   events: { last24h: number; last7d: number; total: number; perDay: number; projectedYear: number }
+  sendit: {
+    lastPull: string | null
+    staleHours: number | null
+    stale: boolean
+    total: number
+    unmatched: number
+    mismatches: number
+    recentIssues: number
+    lastRun: null | {
+      id: number
+      status: 'running' | 'success' | 'partial' | 'failed' | 'skipped'
+      startedAt: string
+      finishedAt: string | null
+      durationMs: number
+      apiCalls: number
+      pulled: number
+      ordersSynced: number
+      statusesChanged: number
+      failures: number
+      avoidedTrackingCalls: number
+      error: string | null
+    }
+  }
   tables: Array<{ name: string; rows: number; pretty: string }>
   neonRates: { computePerCuHour: number; storagePerGbMonth: number; currency: string }
   neon:
@@ -42,7 +65,10 @@ export default function HealthPage() {
     finally { setLoading(false) }
   }, [])
 
-  useEffect(() => { void load() }, [load])
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load() }, 0)
+    return () => window.clearTimeout(timer)
+  }, [load])
 
   return (
     <BosShell active="health" title="Santé technique" crumb="Aide">
@@ -88,6 +114,38 @@ export default function HealthPage() {
                   trop fréquent, ou service de ping pointé sur une URL qui touche la base.
                   <b> C&apos;est exactement ce qui a provoqué la panne du 26 juillet.</b>
                 </p>
+              )}
+            </div>
+
+            <div className="card-modern" style={{ padding: 16, borderLeft: `3px solid ${d.sendit.stale || d.sendit.lastRun?.status === 'failed' ? 'var(--red)' : d.sendit.lastRun?.status === 'partial' ? 'var(--amber)' : 'var(--green)'}` }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--tx-lo)', fontWeight: 600 }}>SYNCHRONISATION SENDIT</div>
+                  <div style={{ fontSize: 20, fontWeight: 700, marginTop: 3, color: d.sendit.stale ? 'var(--red)' : 'var(--green)' }}>
+                    {d.sendit.stale ? 'Données obsolètes' : 'À jour'}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 3 }}>
+                    Dernier pull {d.sendit.lastPull ? new Date(d.sendit.lastPull).toLocaleString('fr-FR') : 'jamais'}
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(90px, 1fr))', gap: 14 }}>
+                  <Mini label="Colis" value={int(d.sendit.total)} />
+                  <Mini label="Non liés" value={int(d.sendit.unmatched)} tone={d.sendit.unmatched ? 'amber' : undefined} />
+                  <Mini label="Divergents" value={int(d.sendit.mismatches)} tone={d.sendit.mismatches ? 'red' : undefined} />
+                </div>
+              </div>
+              {d.sendit.lastRun ? (
+                <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid var(--line-soft)', display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 11.5, color: 'var(--tx-lo)' }}>
+                  <span>Dernier run: <b style={{ color: 'var(--tx-hi)' }}>{d.sendit.lastRun.status}</b></span>
+                  <span>{d.sendit.lastRun.pulled} colis</span>
+                  <span>{d.sendit.lastRun.ordersSynced} commandes</span>
+                  <span>{d.sendit.lastRun.apiCalls} appels API</span>
+                  <span style={{ color: 'var(--green)' }}>{d.sendit.lastRun.avoidedTrackingCalls} appels individuels évités</span>
+                  <span>{(d.sendit.lastRun.durationMs / 1000).toFixed(1)} s</span>
+                  {d.sendit.lastRun.error && <span style={{ color: 'var(--red)' }}>{d.sendit.lastRun.error}</span>}
+                </div>
+              ) : (
+                <p style={{ fontSize: 11.5, color: 'var(--amber)', marginTop: 10 }}>Aucune exécution enregistrée depuis l’activation du suivi.</p>
               )}
             </div>
 
@@ -220,6 +278,16 @@ function Stat({ label, value, sub, tone }: { label: string; value: string; sub?:
       <div style={{ fontSize: 11, color: 'var(--tx-lo)', fontWeight: 600 }}>{label}</div>
       <div style={{ fontSize: 20, fontWeight: 700, color, marginTop: 3, fontFamily: 'var(--mono)' }}>{value}</div>
       {sub && <div style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 2, lineHeight: 1.4 }}>{sub}</div>}
+    </div>
+  )
+}
+
+function Mini({ label, value, tone }: { label: string; value: string; tone?: 'amber' | 'red' }) {
+  const color = tone === 'red' ? 'var(--red)' : tone === 'amber' ? 'var(--amber)' : 'var(--tx-hi)'
+  return (
+    <div>
+      <div style={{ fontSize: 10, color: 'var(--tx-faint)' }}>{label}</div>
+      <div style={{ fontSize: 17, fontWeight: 700, color, fontFamily: 'var(--mono)' }}>{value}</div>
     </div>
   )
 }

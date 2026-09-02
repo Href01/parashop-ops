@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
-import { syncSenditStatuses } from '@/lib/sendit-sync'
-import { pullSenditStaging } from '@/lib/sendit-staging-sync'
+import { runSenditSync } from '@/lib/sendit-orchestrator'
+
+export const maxDuration = 60
+export const dynamic = 'force-dynamic'
 
 /**
  * Vercel Cron: keep Sendit delivery statuses fresh automatically.
@@ -10,17 +12,17 @@ import { pullSenditStaging } from '@/lib/sendit-staging-sync'
 export async function GET(req: Request) {
   // Verify cron secret (Vercel sets this header from the CRON_SECRET env var).
   const authHeader = req.headers.get('authorization')
-  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+  const cronSecret = process.env.CRON_SECRET
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {
-    const result = await syncSenditStatuses()
-    const staging = await pullSenditStaging()
-    console.log(`[Cron] Sendit sync: checked ${result.checked}, updated ${result.updated.length}, failed ${result.failed.length}, ledger ${staging.pulled}`)
-    return NextResponse.json({ success: true, ...result, staging })
-  } catch (error: any) {
+    const result = await runSenditSync({ trigger: 'cron' })
+    console.log(`[Cron] Sendit sync: ${result.status}, ${result.apiCalls} API call(s), ${result.pulled} parcel(s), ${result.ordersSynced} order(s)`)
+    return NextResponse.json(result, { status: result.ok ? 200 : 500 })
+  } catch (error: unknown) {
     console.error('[Cron] Sendit sync error:', error)
-    return NextResponse.json({ error: error?.message || 'sync failed' }, { status: 500 })
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'sync failed' }, { status: 500 })
   }
 }

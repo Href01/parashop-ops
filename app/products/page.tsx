@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { ChevronLeft, ChevronRight, Download, Edit3, MoreHorizontal, Package, Percent, Plus, Search, TriangleAlert, Upload, Wallet } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import BosShell from '@/components/BosShell'
+import PageHead from '@/components/PageHead'
 import EditCostPriceModal from './EditCostPriceModal'
 import BulkEditCostModal from './BulkEditCostModal'
 import ImportSuppliersCSV from './ImportSuppliersCSV'
@@ -167,31 +168,33 @@ export default function ProductsPage() {
   return (
     <BosShell active="products" title="Produits" crumb="Opérations">
       <div className="page-inner page-wide">
-        <div className="page-head">
-          <div>
-            <h1 className="serif-display">Produits</h1>
-            <div className="sub">Catalogue, coûts &amp; marges — synchronisé avec shinecosmetics.ma</div>
-          </div>
-          <div className="spacer"></div>
-          <button type="button" className="btn-modern btn-secondary" onClick={handleBulkEditCosts}>
-            <Edit3 className="w-4 h-4" />
-            Coûts en masse
-          </button>
-          <button type="button" className="btn-modern btn-secondary" onClick={() => setShowImportCSV(true)}>
-            <Upload className="w-4 h-4" />
-            Import CSV
-          </button>
-          <button type="button" className="btn-modern btn-secondary" onClick={handleExport}>
-            <Download className="w-4 h-4" />
-            Exporter
-          </button>
-          <button type="button" className="btn-modern btn-primary" onClick={handleAddProduct}>
-            <Plus className="w-4 h-4" />
-            Ajouter
-          </button>
-        </div>
+        <PageHead
+          title="Produits"
+          count={stats.activeSkus}
+          note="Catalogue, coûts et marges — synchronisé avec shinecosmetics.ma."
+          actions={
+            <>
+              <button type="button" className="btn-modern btn-secondary" onClick={handleBulkEditCosts}>
+                <Edit3 className="w-4 h-4" />
+                Coûts en masse
+              </button>
+              <button type="button" className="btn-modern btn-secondary" onClick={() => setShowImportCSV(true)}>
+                <Upload className="w-4 h-4" />
+                Import CSV
+              </button>
+              <button type="button" className="btn-modern btn-secondary" onClick={handleExport}>
+                <Download className="w-4 h-4" />
+                Exporter
+              </button>
+              <button type="button" className="btn-modern btn-primary" onClick={handleAddProduct}>
+                <Plus className="w-4 h-4" />
+                Ajouter
+              </button>
+            </>
+          }
+        />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <ProductStat icon={<Package />} title="Produits actifs" value={stats.activeSkus} subtitle="au catalogue" tone="blue" />
           <ProductStat icon={<Wallet />} title="Valeur du stock" value={stats.inventoryValue} unit="MAD" subtitle="au coût d'achat" tone="green" />
           <ProductStat icon={<Percent />} title="Marge moyenne" value={stats.avgMargin} unit="%" subtitle="produits suivis" tone="rose" decimals={1} />
@@ -239,7 +242,7 @@ export default function ProductsPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="table-modern">
+            <table className="table-modern prod-table">
               <thead>
                 <tr>
                   <th>Produit</th>
@@ -307,7 +310,7 @@ export default function ProductsPage() {
                         <td>
                           <span className="badge">{product.category || 'Sans catégorie'}</span>
                         </td>
-                        <td className="r num">{formatMoney(product.price)} <span className="tx-lo fs11">MAD</span></td>
+                        <td className="r num">{formatMoney(product.price)} <span className="tx-lo fs11 bo-hint-desktop">MAD</span></td>
                         <td className="r">
                           {hasCost ? (
                             <button type="button" className="cost-edit num" onClick={() => setSelectedProduct(product)}>

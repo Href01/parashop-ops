@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import BosShell from '@/components/BosShell'
+import PageHead from '@/components/PageHead'
 import { PhoneCall, MessageCircle, Check, Trash2, AlertTriangle, ShoppingBag } from 'lucide-react'
 
 type CartItem = { id: number; name: string; quantity: number; price: number }
@@ -65,11 +66,10 @@ export default function LeadsPage() {
   return (
     <BosShell active="leads" title="Leads & Alertes" crumb="Relation client">
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '22px 24px 60px' }}>
-        <div className="eyebrow" style={{ marginBottom: 4 }}>RELATION CLIENT</div>
-        <h1 className="serif-display" style={{ fontSize: 28, lineHeight: 1.05 }}>Leads &amp; Alertes</h1>
-        <p style={{ fontSize: 13, color: 'var(--tx-mid)', marginTop: 7, maxWidth: 680, lineHeight: 1.55 }}>
-          Les clients qui ont saisi leurs infos <b>sans finaliser</b> — à rappeler manuellement. Et les <b>erreurs</b> récentes (OTP, commande) pour réagir vite.
-        </p>
+        <PageHead
+          title="Leads & Alertes"
+          note={<>Les clientes qui ont saisi leurs infos <b>sans finaliser</b> — à rappeler à la main. Et les <b>erreurs</b> récentes (OTP, commande) pour réagir vite.</>}
+        />
 
         {/* Summary */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, margin: '16px 0 20px' }}>

@@ -122,7 +122,7 @@ export async function GET() {
   if (!session) return NextResponse.json({ error: 'Non autorisé' }, { status: 401 })
 
   try {
-    const [db, conn, cache, events, tables, neon] = await Promise.all([
+    const [db, conn, cache, events, tables, sendit, neon] = await Promise.all([
       pool.query(`
         SELECT pg_database_size(current_database())::bigint AS bytes,
                pg_size_pretty(pg_database_size(current_database())) AS pretty,
@@ -150,12 +150,37 @@ export async function GET() {
                pg_size_pretty(pg_total_relation_size(relid)) AS pretty
         FROM pg_stat_user_tables
         ORDER BY pg_total_relation_size(relid) DESC LIMIT 8`),
+      pool.query(`
+        WITH staging AS (
+          SELECT
+            MAX("pulledAt") AS "lastPull",
+            COUNT(*) FILTER (WHERE state IS DISTINCT FROM 'ignored')::int AS total,
+            COUNT(*) FILTER (WHERE state = 'sendit_only')::int AS unmatched,
+            COUNT(*) FILTER (WHERE state = 'mismatch')::int AS mismatches
+          FROM "SenditStaging"
+        ), latest AS (
+          SELECT id, status, "startedAt", "finishedAt", "durationMs", "apiCalls",
+                 pulled, "ordersSynced", "statusesChanged", failures, error, details
+          FROM "IntegrationSyncRun"
+          WHERE integration = 'sendit'
+          ORDER BY "startedAt" DESC
+          LIMIT 1
+        ), recent AS (
+          SELECT COUNT(*) FILTER (WHERE status IN ('failed', 'partial'))::int AS issues
+          FROM "IntegrationSyncRun"
+          WHERE integration = 'sendit' AND "startedAt" > NOW() - INTERVAL '7 days'
+        )
+        SELECT staging.*, latest.*, recent.issues
+        FROM staging CROSS JOIN recent LEFT JOIN latest ON true`),
       fetchNeonUsage(),
     ])
 
     const d = db.rows[0], c = conn.rows[0], k = cache.rows[0], e = events.rows[0]
     const perDay = Number(e.d7) / 7
     const awakeHours = Number(d.awake_seconds) / 3600
+    const senditRow = sendit.rows[0] || {}
+    const lastPull = senditRow.lastPull ? new Date(senditRow.lastPull) : null
+    const staleHours = lastPull ? (Date.now() - lastPull.getTime()) / 3_600_000 : null
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(),
@@ -175,6 +200,29 @@ export async function GET() {
       events: {
         last24h: Number(e.d1), last7d: Number(e.d7), total: Number(e.total),
         perDay, projectedYear: Math.round(perDay * 365),
+      },
+      sendit: {
+        lastPull: lastPull?.toISOString() || null,
+        staleHours,
+        stale: staleHours == null || staleHours > 26,
+        total: Number(senditRow.total) || 0,
+        unmatched: Number(senditRow.unmatched) || 0,
+        mismatches: Number(senditRow.mismatches) || 0,
+        recentIssues: Number(senditRow.issues) || 0,
+        lastRun: senditRow.id ? {
+          id: Number(senditRow.id),
+          status: senditRow.status,
+          startedAt: senditRow.startedAt,
+          finishedAt: senditRow.finishedAt,
+          durationMs: Number(senditRow.durationMs) || 0,
+          apiCalls: Number(senditRow.apiCalls) || 0,
+          pulled: Number(senditRow.pulled) || 0,
+          ordersSynced: Number(senditRow.ordersSynced) || 0,
+          statusesChanged: Number(senditRow.statusesChanged) || 0,
+          failures: Number(senditRow.failures) || 0,
+          avoidedTrackingCalls: Number(senditRow.details?.avoidedTrackingCalls) || 0,
+          error: senditRow.error || null,
+        } : null,
       },
       tables: tables.rows.map((t) => ({ name: t.name, rows: Number(t.rows), pretty: t.pretty })),
       // Consommation facturée (Neon). Le plan Launch est 100 % à l'usage : aucun

@@ -1,11 +1,12 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { AlertTriangle, Download, Plus, ArrowUp, ArrowDown, RefreshCw, Trash2, TrendingUp, Wallet, PiggyBank } from 'lucide-react'
+import { AlertTriangle, Download, Plus, ArrowUp, ArrowDown, RefreshCw, Trash2, TrendingUp, Wallet, PiggyBank, CheckCircle2, ChevronDown } from 'lucide-react'
 import Link from 'next/link'
 import RevenueTrendChart from '@/components/RevenueTrendChart'
 
 interface DashboardStats {
+  generatedAt: string
   revenueToday: number
   revenue7d: number
   revenue30d: number
@@ -39,12 +40,12 @@ interface DashboardStats {
     created: { cod: number; fees: number; bank: number; cash: number; orders: number; unmatchedOrders: number; unmatchedCod: number }
     delivered: { cod: number; fees: number; bank: number; cash: number; orders: number; unmatchedOrders: number; unmatchedCod: number }
   }
-  pnl?: {
-    rentabilite: { caLivre: number; profitLivre: number; margeLivree: number; pub: number; emballage: number; retours: number; net: number; marginPct: number }
-    tresorerie: { encaisse: number; achats: number; pub: number; emballage: number; emballageEstime: boolean; frais: number; retours: number; net: number }
-    packagingRate: number
-    deliveredParcels: number
+  reconciliation?: {
+    created: ReconciliationBasis
+    delivered: ReconciliationBasis
   }
+  pnl?: DashboardPnl
+  pnlByBasis?: { created: DashboardPnl; delivered: DashboardPnl }
   revenueDelta: number | null
   estimatedProfit: number
   marginPercent: number
@@ -53,7 +54,12 @@ interface DashboardStats {
   averageOrderValue: number
   deliveryRate: number
   roas: number | null
+  adSpend?: number
   adDataThrough?: string | null
+  analytics?: {
+    created: DashboardAnalytics
+    delivered: DashboardAnalytics
+  }
   revenueSeries: Array<{ date: string; label: string; revenue: number; profit: number; orders: number }>
   topProducts: Array<{ productId: number | null; name: string; units: number; revenue: number }>
   topCities: Array<{ name: string; orders: number }>
@@ -64,7 +70,65 @@ interface DashboardStats {
   _cachedAt?: string
 }
 
+interface DashboardPnl {
+  rentabilite: { caLivre: number; profitLivre: number; margeLivree: number; pub: number; emballage: number; retours: number; net: number; marginPct: number }
+  tresorerie: { encaisse: number; achats: number; pub: number; emballage: number; emballageEstime: boolean; frais: number; retours: number; net: number }
+  packagingRate: number
+  deliveredParcels: number
+}
+
+interface ReconciliationBasis {
+  ok: boolean
+  senditParcels: number
+  matchedParcels: number
+  senditCod: number
+  senditFees: number
+  matchedCod: number
+  matchedFees: number
+  verifiedBank: number
+  verifiedBankOrders: number
+  unverifiedBank: number
+  cash: number
+  matchedCash: number
+  unresolvedCash: number
+  bosOrders: number
+  bosGross: number
+  bosRevenue: number
+  deliveryCharged: number
+  checks: {
+    unresolvedParcels: number
+    unverifiedBankOrders: number
+    amountMismatchOrders: number
+    amountMismatchValue: number
+    feeMismatchOrders: number
+    feeMismatchValue: number
+    statusMismatchOrders: number
+    dateMismatchOrders: number
+    ordersWithoutTracking: number
+  }
+}
+
+interface DashboardAnalytics {
+  revenueSeries: Array<{ date: string; label: string; revenue: number; profit: number; orders: number }>
+  topProducts: Array<{ productId: number | null; name: string; units: number; revenue: number }>
+  topCities: Array<{ name: string; orders: number }>
+  channels: Array<{ name: string; revenue: number; color: string }>
+  orders: number
+  averageOrderValue: number
+}
+
 const mad = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v)
+
+function formatSyncStamp(value: string | Date): string {
+  const date = new Date(value)
+  const today = new Date()
+  const sameDay = date.getFullYear() === today.getFullYear()
+    && date.getMonth() === today.getMonth()
+    && date.getDate() === today.getDate()
+  return sameDay
+    ? date.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
+    : date.toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
 
 const PERIODS: { label: string; days: number }[] = [
   { label: '7j', days: 7 },
@@ -123,6 +187,8 @@ export default function GlowDashboard() {
   const iw = getISOWeek(now)
   const [week, setWeek] = useState({ year: iw.year, w: iw.week })
   const [goals, setGoals] = useState<GoalsData | null>(null)
+  const goalsRequest = useRef(0)
+  const statsRequest = useRef(0)
   // Accounting basis for the delivered/cash cards: 'delivered' = by delivery date
   // (réalisé, reconciles with Sendit) · 'created' = by order-creation date (cohorte).
   const [basis, setBasis] = useState<'delivered' | 'created'>('delivered')
@@ -139,15 +205,22 @@ export default function GlowDashboard() {
     : (PERIODS.find((p) => p.days === days)?.label || `${days}j`)
   const compareLabel = mode === 'month' ? 'mois préc.' : mode === 'week' ? 'sem. préc.' : 'période préc.'
 
-  function fetchGoals() {
-    return fetch('/api/ops/goals', { cache: 'no-store' })
+  function fetchGoals(anchor?: string) {
+    const requestId = ++goalsRequest.current
+    const query = anchor ? `?anchor=${encodeURIComponent(anchor)}` : ''
+    return fetch(`/api/ops/goals${query}`, { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d && !d.error) setGoals(d) })
+      .then((d) => {
+        if (requestId === goalsRequest.current && d && !d.error) setGoals(d)
+      })
       .catch(() => {})
   }
 
   const saveGoalSmart = async (kind: 'week' | 'month', target: number) => {
     if (!Number.isFinite(target) || target < 0) return
+    const currentGoal = goals?.[kind].current
+    if (!currentGoal?.live) return
+    const periodKey = currentGoal.key
     // Optimistic: update the current period locally, then persist + refetch history.
     setGoals((g) => {
       if (!g) return g
@@ -157,35 +230,48 @@ export default function GlowDashboard() {
       const cur = { ...blk.current, target, pct, achieved: blk.current.actual >= target }
       return { ...g, [kind]: { ...blk, current: cur, periods: blk.periods.map((p) => (p.current ? cur : p)) } }
     })
-    await fetch('/api/ops/goals', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind, target }) }).catch(() => {})
-    fetchGoals()
+    await fetch('/api/ops/goals', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind, target, periodKey }) }).catch(() => {})
+    fetchGoals(periodParams().to)
   }
 
   function load(fresh = false) {
+    const requestId = ++statsRequest.current
     let qs = `days=${days}`
-    if (mode === 'month') { const r = monthRange(month.year, month.m); qs = `from=${r.from}&to=${r.to}&compareFrom=${r.compareFrom}&compareTo=${r.compareTo}` }
-    else if (mode === 'week') { const r = weekRange(week.year, week.w); qs = `from=${r.from}&to=${r.to}&compareFrom=${r.compareFrom}&compareTo=${r.compareTo}` }
+    let goalAnchor = isoDay(new Date())
+    if (mode === 'month') { const r = monthRange(month.year, month.m); qs = `from=${r.from}&to=${r.to}&compareFrom=${r.compareFrom}&compareTo=${r.compareTo}`; goalAnchor = r.to }
+    else if (mode === 'week') { const r = weekRange(week.year, week.w); qs = `from=${r.from}&to=${r.to}&compareFrom=${r.compareFrom}&compareTo=${r.compareTo}`; goalAnchor = r.to }
     setLoading(true)
     setError(false)
-    fetchGoals()
+    fetchGoals(goalAnchor)
     return fetch(`/api/ops/dashboard/stats?${qs}${fresh ? '&fresh=1' : ''}`, { cache: 'no-store' })
       .then((r) => { if (!r.ok) throw new Error('fetch'); return r.json() })
-      .then((d) => { setStats(d); setLastUpdated(new Date()) })
-      .catch((e) => { console.error('Failed to fetch stats:', e); setError(true) })
-      .finally(() => setLoading(false))
+      .then((d) => {
+        if (requestId !== statsRequest.current) return
+        setStats(d)
+        setLastUpdated(new Date())
+      })
+      .catch((e) => {
+        if (requestId !== statsRequest.current) return
+        console.error('Failed to fetch stats:', e)
+        setError(true)
+      })
+      .finally(() => {
+        if (requestId === statsRequest.current) setLoading(false)
+      })
   }
 
   async function refreshSendit() {
     setLoading(true)
     setError(false)
     try {
-      for (const action of ['pull', 'sync-matched']) {
-        const response = await fetch('/api/ops/sendit/staging', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action }),
-        })
-        if (!response.ok) throw new Error(`Sendit ${action} failed`)
+      const response = await fetch('/api/ops/sendit/staging', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'run-sync' }),
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        throw new Error(data.error || 'Sendit sync failed')
       }
       await load(true)
     } catch (error) {
@@ -196,7 +282,8 @@ export default function GlowDashboard() {
   }
 
   useEffect(() => {
-    load()
+    const timer = window.setTimeout(() => { void load() }, 0)
+    return () => window.clearTimeout(timer)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, days, month, week])
 
@@ -271,16 +358,30 @@ export default function GlowDashboard() {
   const dOrders = senditBasis?.orders ?? (byDeliv ? R.orders : stats.ordersDelivered)
   const dUnmatchedOrders = senditBasis?.unmatchedOrders ?? 0
   const dUnmatchedCod = senditBasis?.unmatchedCod ?? 0
-  const dFinancialOrders = byDeliv ? (R.matchedOrders ?? stats.ordersDelivered) : stats.ordersDelivered
-  const basisSub = byDeliv ? 'par date de livraison' : 'par date de création'
+  const reconciliation = byDeliv ? stats.reconciliation?.delivered : stats.reconciliation?.created
+  const fallbackDeliveredOrders = R.matchedOrders ?? R.orders
+  const analyticsFallback: DashboardAnalytics = {
+    revenueSeries: stats.revenueSeries,
+    topProducts: stats.topProducts,
+    topCities: stats.topCities || [],
+    channels: stats.channels,
+    orders: byDeliv ? fallbackDeliveredOrders : stats.ordersWeek,
+    averageOrderValue: byDeliv && fallbackDeliveredOrders > 0
+      ? R.revenue / fallbackDeliveredOrders
+      : byDeliv ? 0 : stats.averageOrderValue,
+  }
+  const activeAnalytics = (byDeliv ? stats.analytics?.delivered : stats.analytics?.created) ?? analyticsFallback
+  const analyticsBasisLabel = byDeliv ? 'livraison' : 'création'
+  const activePnl = stats.pnlByBasis?.[basis] ?? stats.pnl
+  const activeRoas = (stats.adSpend ?? 0) > 0 ? dRevenue / (stats.adSpend || 1) : stats.roas
 
   const exportCsv = () => {
-    const rows = [['date', 'revenue', 'profit'], ...stats.revenueSeries.map((p) => [p.date, String(p.revenue), String(p.profit)])]
+    const rows = [['date', 'revenue', 'profit', 'orders'], ...activeAnalytics.revenueSeries.map((p) => [p.date, String(p.revenue), String(p.profit), String(p.orders)])]
     const csv = rows.map((r) => r.join(',')).join('\n')
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }))
     const a = document.createElement('a')
     a.href = url
-    a.download = `shine-dashboard-${new Date().toISOString().slice(0, 10)}.csv`
+    a.download = `shine-dashboard-${basis}-${periodParams().from}-${periodParams().to}.csv`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -352,11 +453,17 @@ export default function GlowDashboard() {
             ))}
           </div>
 
-          {/* Actions + fraîcheur */}
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Actions + fraîcheur.
+              `flexWrap` EST LE CORRECTIF, ET IL RÉPARE UN VRAI DÉCOUPAGE : sans lui
+              cette rangée mesurait 516 px dans un écran de 390 et le bouton
+              « Export » sortait de l'écran, hors d'atteinte — constaté à la capture,
+              invisible au DOM où il était bien présent. Le `marginLeft: auto` ne
+              tient que quand il reste de la place ; sur un petit écran la rangée
+              passe simplement à la ligne. */}
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', rowGap: 8 }}>
             <span style={{ fontSize: 11, color: 'var(--tx-faint)', whiteSpace: 'nowrap' }} title="Les chiffres sont mis en cache 1h. Clique « Actualiser » pour recalculer en direct.">
-              Chiffres à {new Date(stats._cachedAt || lastUpdated || Date.now()).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
-              {stats.sendit?.lastPulledAt && ` · Sendit ${new Date(stats.sendit.lastPulledAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`}
+              Chiffres à {new Date(stats._cachedAt || lastUpdated || stats.generatedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}
+              {stats.sendit?.lastPulledAt && ` · Sendit ${formatSyncStamp(stats.sendit.lastPulledAt)}`}
             </span>
             <button className="btn-modern btn-secondary" onClick={() => load(true)} title="Recalculer les chiffres maintenant" disabled={loading}>
               <RefreshCw className="w-4 h-4" style={loading ? { animation: 'dash-spin 0.8s linear infinite' } : undefined} />Actualiser
@@ -381,39 +488,39 @@ export default function GlowDashboard() {
             réunis dans une seule carte à filets fins pour gagner de la hauteur. */}
         <div className="hero-row" style={{ marginBottom: 14 }}>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
-            <HeroTile tone="rose" icon={<TrendingUp style={{ width: 14, height: 14 }} />} label={`CA livré · ${periodLabel}`} amount={dRevenue} delta={dRevenueDelta} deltaLabel={compareLabel} />
+            <HeroTile tone="rose" icon={<TrendingUp style={{ width: 14, height: 14 }} />} label={`CA livré · ${analyticsBasisLabel} · ${periodLabel}`} amount={dRevenue} delta={dRevenueDelta} deltaLabel={compareLabel} />
           </div>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
-            <HeroTile tone="green" icon={<PiggyBank style={{ width: 14, height: 14 }} />} label="Profit net · rentabilité" amount={stats.pnl ? stats.pnl.rentabilite.net : dProfit} sub={`${Math.round(stats.pnl ? stats.pnl.rentabilite.marginPct : dMargin)}% de marge`} />
+            <HeroTile tone="green" icon={<PiggyBank style={{ width: 14, height: 14 }} />} label={`Profit net · ${analyticsBasisLabel}`} amount={activePnl?.rentabilite.net ?? dProfit} sub={`${Math.round(activePnl?.rentabilite.marginPct ?? dMargin)}% de marge`} />
           </div>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
-            <HeroTile tone="green" icon={<Wallet style={{ width: 14, height: 14 }} />} label="Cash net généré · trésorerie" amount={stats.pnl ? stats.pnl.tresorerie.net : dCash} sub="liquide réel entré − sorti" />
+            <HeroTile tone="green" icon={<Wallet style={{ width: 14, height: 14 }} />} label={byDeliv ? 'Cash net généré · trésorerie' : 'Cash net attribué · cohorte'} amount={activePnl?.tresorerie.net ?? dCash} sub={byDeliv ? 'liquide réel entré − sorti' : 'cash Sendit des colis créés − dépenses'} />
           </div>
         </div>
         <div className="kpi-quad" style={{ marginBottom: 18 }}>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
-            <Kpi label="Commandes livrées" value={String(dOrders)} sub={`panier ${mad(dFinancialOrders > 0 ? dRevenue / dFinancialOrders : stats.averageOrderValue)} MAD`} />
+            <Kpi label={byDeliv ? 'Livraisons' : 'Livrées · cohorte création'} value={String(dOrders)} sub={`panier ${mad(activeAnalytics.averageOrderValue)} MAD`} />
           </div>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
-            <Kpi label="Taux de livraison" value={`${stats.deliveryRate.toFixed(0)}%`} sub="livrées / résolues" />
+            <Kpi label="Taux livraison · cohorte" value={`${stats.deliveryRate.toFixed(0)}%`} sub="livrées / résolues par création" />
           </div>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
-            <Kpi label="ROAS global" value={stats.roas != null ? `${stats.roas.toFixed(1)}x` : '—'} sub="CA livré ÷ pub" />
+            <Kpi label={`ROAS · ${analyticsBasisLabel}`} value={activeRoas != null ? `${activeRoas.toFixed(1)}x` : '—'} sub="CA livré ÷ pub de la période" />
           </div>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
-            <Kpi label="CA attendu" value={`${mad(stats.revenueWeek)}`} unit="MAD" sub={stats.revenueWeek > stats.revenueDelivered ? `+ ${mad(stats.revenueWeek - stats.revenueDelivered)} en cours` : 'toutes livrées'} />
+            <Kpi label="CA attendu · cohorte création" value={`${mad(stats.revenueWeek)}`} unit="MAD" sub={stats.revenueWeek > stats.revenueDelivered ? `+ ${mad(stats.revenueWeek - stats.revenueDelivered)} en cours` : 'toutes livrées'} />
           </div>
         </div>
 
         {/* Résultat de la période: Rentabilité + Trésorerie */}
-        {stats.pnl && (() => {
-          const r = stats.pnl.rentabilite, t = stats.pnl.tresorerie
+        {activePnl && (() => {
+          const r = activePnl.rentabilite, t = activePnl.tresorerie
           return (
             <div style={{ marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
                 <div>
-                  <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx-hi)' }}>Résultat · {periodLabel}</h3>
-                  <p style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 2 }}>Rentabilité = marge sur ventes livrées · Trésorerie = cash réel entré/sorti sur la période</p>
+                  <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx-hi)' }}>Résultat · {periodLabel} · {analyticsBasisLabel}</h3>
+                  <p style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 2 }}>{byDeliv ? 'Rentabilité = ventes livrées dans la période · Trésorerie = cash réel entré/sorti' : 'Rentabilité et cash attribués aux commandes créées dans la période'}</p>
                   {(() => {
                     const { from, to } = periodParams()
                     const through = stats.adDataThrough
@@ -431,16 +538,16 @@ export default function GlowDashboard() {
               </div>
               <div className="pnl-duo">
                 <div className="card-modern g-stagger" style={{ background: 'var(--bg-1)', padding: 16 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }}>🔵 Rentabilité <span style={{ fontWeight: 500, color: 'var(--tx-faint)', fontSize: 11 }}>· ventes livrées</span></div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }}>🔵 Rentabilité <span style={{ fontWeight: 500, color: 'var(--tx-faint)', fontSize: 11 }}>· {byDeliv ? 'date de livraison' : 'cohorte création'}</span></div>
                   <PnlRow label="CA livré" value={r.caLivre} />
                   <PnlRow label="Profit livré" sub={`net produits + livraison · ${r.margeLivree.toFixed(0)}%`} value={r.profitLivre} muted />
                   <PnlRow label="Pub" value={-r.pub} neg />
-                  <PnlRow label={`Emballage`} sub={`${stats.pnl.deliveredParcels} colis × ${stats.pnl.packagingRate} DH`} value={-r.emballage} neg />
+                  <PnlRow label="Emballage" sub={`${activePnl.deliveredParcels} colis × ${activePnl.packagingRate} DH`} value={-r.emballage} neg />
                   {r.retours > 0 && <PnlRow label="Retours / échanges" sub="frais livraison retour" value={-r.retours} neg />}
                   <PnlRow label="Profit net" value={r.net} total pct={r.marginPct} />
                 </div>
                 <div className="card-modern g-stagger" style={{ background: 'var(--bg-1)', padding: 16 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }}>🟢 Trésorerie <span style={{ fontWeight: 500, color: 'var(--tx-faint)', fontSize: 11 }}>· cash réel</span></div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }}>🟢 {byDeliv ? 'Trésorerie' : 'Cash cohorte'} <span style={{ fontWeight: 500, color: 'var(--tx-faint)', fontSize: 11 }}>· {byDeliv ? 'cash réel' : 'attribution Sendit'}</span></div>
                   <PnlRow label="Cash encaissé" sub={`COD ${mad(dEncaisse)}${dBank > 0 ? ` + virements ${mad(dBank)}` : ''} − frais Sendit ${mad(dFees)}`} value={t.encaisse} />
                   <PnlRow label="Achats fournisseur" value={-t.achats} neg />
                   <PnlRow label="Pub" value={-t.pub} neg />
@@ -454,19 +561,31 @@ export default function GlowDashboard() {
           )
         })()}
 
+        {reconciliation && (
+          <ReconciliationPanel
+            key={`${basis}-${periodLabel}-${stats.sendit?.lastPulledAt || 'never'}`}
+            data={reconciliation}
+            periodLabel={periodLabel}
+            basisLabel={byDeliv ? 'date de livraison' : 'date de création'}
+            lastPulledAt={stats.sendit?.lastPulledAt || null}
+            checkedAt={stats.generatedAt}
+          />
+        )}
+
         {/* Chart + goal */}
         <div style={{ display: 'grid', gridTemplateColumns: '1.7fr 1fr', gap: 16, marginBottom: 16 }} className="dash-hero g-stagger">
           <Card>
-            <RevenueTrendChart series={stats.revenueSeries} from={periodParams().from} to={periodParams().to} periodLabel={periodLabel} />
+            <RevenueTrendChart series={activeAnalytics.revenueSeries} from={periodParams().from} to={periodParams().to} periodLabel={periodLabel} basis={basis} />
           </Card>
 
           <GoalCard
+            key={`${goals?.week.current?.key || 'week'}-${goals?.month.current?.key || 'month'}`}
             data={goals}
             onSave={saveGoalSmart}
             extra={[
-              { label: `Commandes · ${periodLabel}`, value: String(stats.ordersWeek) },
-              { label: 'Panier moyen', value: `${mad(stats.averageOrderValue)} MAD` },
-              { label: 'Taux livraison', value: `${stats.deliveryRate.toFixed(0)}%` },
+              { label: byDeliv ? 'Commandes livrées' : 'Commandes confirmées + livrées', value: String(activeAnalytics.orders) },
+              { label: `Panier moyen · ${analyticsBasisLabel}`, value: `${mad(activeAnalytics.averageOrderValue)} MAD` },
+              { label: 'Taux livraison · cohorte création', value: `${stats.deliveryRate.toFixed(0)}%` },
             ]}
           />
         </div>
@@ -474,10 +593,10 @@ export default function GlowDashboard() {
         {/* Top products + channels (real data, previously unused) */}
         <div className="dash-lower g-stagger">
           <Card>
-            <Label>Top produits · {periodLabel}</Label>
+            <Label>Top produits · {periodLabel} · {analyticsBasisLabel}</Label>
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {stats.topProducts.length === 0 ? <Empty /> : stats.topProducts.slice(0, 6).map((p, i) => {
-                const max = stats.topProducts[0]?.revenue || 1
+              {activeAnalytics.topProducts.length === 0 ? <Empty /> : activeAnalytics.topProducts.slice(0, 6).map((p, i) => {
+                const max = activeAnalytics.topProducts[0]?.revenue || 1
                 const inner = (
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
@@ -497,10 +616,10 @@ export default function GlowDashboard() {
           </Card>
 
           <Card>
-            <Label>Canaux de vente · {periodLabel}</Label>
+            <Label>Canaux de vente · {periodLabel} · {analyticsBasisLabel}</Label>
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {stats.channels.length === 0 ? <Empty /> : stats.channels.slice(0, 6).map((c, i) => {
-                const max = Math.max(...stats.channels.map((x) => x.revenue), 1)
+              {activeAnalytics.channels.length === 0 ? <Empty /> : activeAnalytics.channels.slice(0, 6).map((c, i) => {
+                const max = Math.max(...activeAnalytics.channels.map((x) => x.revenue), 1)
                 return (
                   <div key={i}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
@@ -519,7 +638,7 @@ export default function GlowDashboard() {
           </Card>
           {/* Pipeline */}
           <Card>
-            <Label>Pipeline des commandes · {periodLabel}</Label>
+            <Label>Pipeline · cohorte création · {periodLabel}</Label>
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
               {stats.pipeline.map((item, i) => {
                 const colors: Record<string, string> = { amber: 'var(--amber)', blue: 'var(--blue)', violet: 'var(--violet)', green: 'var(--green)', red: 'var(--red)', rose: 'var(--rose-bright)' }
@@ -585,10 +704,10 @@ export default function GlowDashboard() {
 
           {/* Top cities */}
           <Card>
-            <Label>Top villes · {periodLabel}</Label>
+            <Label>Top villes · {periodLabel} · {analyticsBasisLabel}</Label>
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {(!stats.topCities || stats.topCities.length === 0) ? <Empty /> : stats.topCities.slice(0, 6).map((c, i) => {
-                const max = stats.topCities[0]?.orders || 1
+              {activeAnalytics.topCities.length === 0 ? <Empty /> : activeAnalytics.topCities.slice(0, 6).map((c, i) => {
+                const max = activeAnalytics.topCities[0]?.orders || 1
                 return (
                   <div key={i}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
@@ -752,14 +871,189 @@ function Label({ children }: { children: React.ReactNode }) {
 }
 function Empty() { return <p style={{ fontSize: 13, color: 'var(--tx-faint)', textAlign: 'center', padding: '16px 0' }}>Pas de données.</p> }
 
+function ReconciliationPanel({ data, periodLabel, basisLabel, lastPulledAt, checkedAt }: {
+  data: ReconciliationBasis
+  periodLabel: string
+  basisLabel: string
+  lastPulledAt: string | null
+  checkedAt: string
+}) {
+  const syncAgeHours = lastPulledAt
+    ? (new Date(checkedAt).getTime() - new Date(lastPulledAt).getTime()) / 3_600_000
+    : Number.POSITIVE_INFINITY
+  const syncStale = !Number.isFinite(syncAgeHours) || syncAgeHours > 24
+  const attention = !data.ok || syncStale
+  const [expanded, setExpanded] = useState(attention)
+
+  const amount = (value: number) => `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(value)} MAD`
+  const checks = data.checks
+  const issueRows = [
+    { label: 'Colis Sendit sans commande fiable', count: checks.unresolvedParcels, value: data.unresolvedCash, href: '/sendit' },
+    { label: 'Virements livrés à valider', count: checks.unverifiedBankOrders, value: data.unverifiedBank, href: '/orders' },
+    { label: 'Écarts de montant COD', count: checks.amountMismatchOrders, value: checks.amountMismatchValue, href: '/sendit' },
+    { label: 'Écarts de frais Sendit', count: checks.feeMismatchOrders, value: checks.feeMismatchValue, href: '/sendit' },
+    { label: 'Statuts Sendit / BOS différents', count: checks.statusMismatchOrders, value: 0, href: '/sendit' },
+    { label: `Dates hors ${basisLabel}`, count: checks.dateMismatchOrders, value: 0, href: '/sendit' },
+    { label: 'Commandes livrées sans tracking', count: checks.ordersWithoutTracking, value: 0, href: '/orders' },
+  ].filter((row) => row.count > 0)
+
+  const line = (label: string, value: number, operator?: string, total?: boolean) => (
+    <div className={total ? 'recon-line recon-total' : 'recon-line'}>
+      <span>{operator && <b className="recon-operator">{operator}</b>}{label}<span aria-hidden="true"> :</span></span>
+      <b className="num">{amount(operator ? Math.abs(value) : value)}</b>
+    </div>
+  )
+
+  return (
+    <section className="recon-panel card-modern" style={{ padding: 0, marginBottom: 16, overflow: 'hidden' }}>
+      <button
+        type="button"
+        className="recon-toggle"
+        onClick={() => setExpanded((value) => !value)}
+        aria-expanded={expanded}
+        aria-controls="dashboard-reconciliation-details"
+      >
+        <span className="recon-title-icon" data-attention={attention}>
+          {attention ? <AlertTriangle aria-hidden="true" /> : <CheckCircle2 aria-hidden="true" />}
+        </span>
+        <span className="recon-heading">
+          <strong>Réconciliation des données</strong>
+          <small>{periodLabel} · {basisLabel}</small>
+        </span>
+        <span className="recon-coverage">
+          <b>{data.matchedParcels}/{data.senditParcels}</b>
+          <small>colis reliés</small>
+        </span>
+        <span className="recon-cash">
+          <b className="num">{amount(data.cash)}</b>
+          <small>cash après frais</small>
+        </span>
+        <span className="recon-status" data-attention={attention}>{attention ? 'À vérifier' : 'Réconcilié'}</span>
+        <ChevronDown className="recon-chevron" data-expanded={expanded} aria-hidden="true" />
+      </button>
+
+      {expanded && (
+        <div id="dashboard-reconciliation-details" className="recon-body">
+          {syncStale && (
+            <div className="recon-sync-warning" role="status">
+              <AlertTriangle aria-hidden="true" />
+              <span>
+                {lastPulledAt
+                  ? `Données Sendit non synchronisées depuis le ${formatSyncStamp(lastPulledAt)}.`
+                  : 'Aucune synchronisation Sendit enregistrée.'}
+                {' '}Lance la synchronisation avant de valider les chiffres.
+              </span>
+            </div>
+          )}
+
+          <p className="recon-explainer">Sendit fait foi pour les colis, le COD et les frais. Le BOS fait foi pour les produits, les virements vérifiés et le profit.</p>
+
+          <div className="recon-grid">
+            <div className="recon-column">
+              <Label>Cash opérationnel</Label>
+              {line('COD encaissé par Sendit', data.senditCod)}
+              {line(`Virements vérifiés (${data.verifiedBankOrders})`, data.verifiedBank, '+')}
+              {line('Frais retenus par Sendit', -data.senditFees, '−')}
+              {line('Cash après frais', data.cash, undefined, true)}
+            </div>
+
+            <div className="recon-column">
+              <Label>Pont vers le CA</Label>
+              {line(`Total client · ${data.bosOrders} cmd`, data.bosGross)}
+              {line('Livraison facturée au client', -data.deliveryCharged, '−')}
+              {line('CA produits livré', data.bosRevenue, undefined, true)}
+            </div>
+
+            <div className="recon-column">
+              <Label>Contrôles automatiques</Label>
+              {issueRows.length === 0 ? (
+                <div className="recon-all-good"><CheckCircle2 aria-hidden="true" /> Montants, frais, statuts, dates et paiements concordent.</div>
+              ) : issueRows.map((row) => (
+                <Link key={row.label} href={row.href} className="recon-issue">
+                  <span><AlertTriangle aria-hidden="true" />{row.label}</span>
+                  <b>{row.count}{row.value > 0 ? ` · ${amount(row.value)}` : ''}</b>
+                </Link>
+              ))}
+            </div>
+          </div>
+
+          {Math.abs(data.unresolvedCash) >= 0.01 && (
+            <div className="recon-footnote">
+              <span><b>{amount(data.unresolvedCash)}</b> de cash net Sendit n&apos;a pas encore de commande BOS fiable. Il reste inclus dans la trésorerie, mais exclu du CA et du profit.</span>
+              <Link href="/sendit">Rapprocher les colis</Link>
+            </div>
+          )}
+        </div>
+      )}
+
+      <style jsx>{`
+        .recon-toggle { width: 100%; min-height: 72px; display: grid; grid-template-columns: auto minmax(180px, 1fr) auto auto auto auto; align-items: center; gap: 14px; padding: 14px 16px; border: 0; background: var(--bg-1); color: var(--tx-hi); text-align: left; cursor: pointer; }
+        .recon-toggle:hover { background: var(--bg-2); }
+        .recon-toggle:focus-visible { outline: 2px solid var(--rose-bright); outline-offset: -2px; }
+        .recon-title-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; color: var(--green); background: var(--green-bg); }
+        .recon-title-icon[data-attention='true'] { color: var(--amber); background: var(--amber-bg); }
+        .recon-title-icon :global(svg) { width: 17px; height: 17px; }
+        .recon-heading, .recon-coverage, .recon-cash { display: grid; gap: 2px; }
+        .recon-heading strong { font-size: 14px; }
+        .recon-heading small, .recon-coverage small, .recon-cash small { font-size: 10.5px; color: var(--tx-faint); }
+        .recon-coverage, .recon-cash { text-align: right; }
+        .recon-coverage b, .recon-cash b { font-size: 13px; color: var(--tx-hi); }
+        .recon-status { padding: 4px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; color: var(--green); background: var(--green-bg); white-space: nowrap; }
+        .recon-status[data-attention='true'] { color: #92400e; background: var(--amber-bg); }
+        .recon-chevron { width: 16px; height: 16px; color: var(--tx-faint); transition: transform .16s ease; }
+        .recon-chevron[data-expanded='true'] { transform: rotate(180deg); }
+        .recon-body { padding: 0 16px 16px; border-top: 1px solid var(--line-soft); }
+        .recon-explainer { margin: 12px 0; font-size: 11.5px; color: var(--tx-lo); }
+        .recon-sync-warning { margin-top: 12px; display: flex; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid var(--amber-line); border-radius: 7px; background: var(--amber-bg); color: var(--tx-mid); font-size: 11.5px; }
+        .recon-sync-warning :global(svg) { width: 15px; height: 15px; flex: 0 0 auto; color: var(--amber); }
+        .recon-grid { display: grid; grid-template-columns: 1fr 1fr 1.2fr; gap: 0; border: 1px solid var(--line-soft); border-radius: 8px; overflow: hidden; }
+        .recon-column { min-width: 0; padding: 14px; background: var(--bg-1); }
+        .recon-column + .recon-column { border-left: 1px solid var(--line-soft); }
+        .recon-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 14px; padding: 5px 0; color: var(--tx-mid); font-size: 11.5px; }
+        .recon-line > span { min-width: 0; line-height: 1.35; }
+        .recon-line > b { padding-left: 8px; color: var(--tx-hi); font-size: 12px; white-space: nowrap; }
+        .recon-operator { display: inline-block; width: 17px; margin-right: 3px; color: var(--tx-faint); }
+        .recon-total { margin-top: 5px; padding-top: 9px; border-top: 1px solid var(--line-soft); font-weight: 700; color: var(--tx-hi); }
+        .recon-total > b { font-size: 14px; color: var(--green); }
+        .recon-all-good { display: flex; align-items: flex-start; gap: 7px; margin-top: 10px; color: var(--green); font-size: 11.5px; line-height: 1.45; }
+        .recon-all-good :global(svg), .recon-issue :global(svg) { width: 14px; height: 14px; flex: 0 0 auto; }
+        :global(.recon-issue) { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 0; color: var(--tx-mid); text-decoration: none; font-size: 11px; border-bottom: 1px solid var(--line-soft); }
+        :global(.recon-issue:last-child) { border-bottom: 0; }
+        :global(.recon-issue:hover) { color: var(--rose-bright); }
+        :global(.recon-issue) span { display: flex; align-items: center; gap: 6px; min-width: 0; }
+        :global(.recon-issue) b { color: var(--tx-hi); white-space: nowrap; font-size: 10.5px; }
+        :global(.recon-issue) svg { color: var(--amber); }
+        .recon-footnote { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; padding: 9px 10px; border-radius: 7px; background: var(--amber-bg); color: var(--tx-mid); font-size: 11px; }
+        .recon-footnote :global(a) { color: var(--rose-bright); font-weight: 700; text-decoration: none; white-space: nowrap; }
+        @media (max-width: 900px) {
+          .recon-toggle { grid-template-columns: auto minmax(150px, 1fr) auto auto; }
+          .recon-coverage, .recon-cash { display: none; }
+          .recon-grid { grid-template-columns: 1fr 1fr; }
+          .recon-column:last-child { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--line-soft); }
+        }
+        @media (max-width: 600px) {
+          .recon-toggle { grid-template-columns: auto minmax(0, 1fr) auto; gap: 9px; padding: 12px; }
+          .recon-status { display: none; }
+          .recon-heading strong { font-size: 13px; }
+          .recon-heading small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+          .recon-body { padding: 0 12px 12px; }
+          .recon-grid { grid-template-columns: 1fr; }
+          .recon-column + .recon-column, .recon-column:last-child { grid-column: auto; border-left: 0; border-top: 1px solid var(--line-soft); }
+          .recon-footnote { align-items: flex-start; flex-direction: column; }
+        }
+      `}</style>
+    </section>
+  )
+}
+
 function PnlRow({ label, value, sub, neg, muted, total, pct }: { label: string; value: number; sub?: string; neg?: boolean; muted?: boolean; total?: boolean; pct?: number }) {
   const fmt = (v: number) => `${v < 0 ? '−' : ''}${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(Math.abs(v))}`
   const color = total ? (value >= 0 ? 'var(--green)' : 'var(--red, #dc2626)') : neg ? 'var(--tx-mid)' : muted ? 'var(--tx-mid)' : 'var(--tx-hi)'
   return (
     <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, padding: total ? '10px 0 0' : '4px 0', marginTop: total ? 4 : 0, borderTop: total ? '1px solid var(--line-soft)' : undefined }}>
       <div style={{ minWidth: 0 }}>
-        <span style={{ fontSize: total ? 13 : 12.5, fontWeight: total ? 700 : 500, color: total ? 'var(--tx-hi)' : 'var(--tx-mid)' }}>{label}</span>
-        {sub && <span style={{ fontSize: 10.5, color: 'var(--tx-faint)', marginLeft: 6 }}>{sub}</span>}
+        <span style={{ display: 'block', fontSize: total ? 13 : 12.5, fontWeight: total ? 700 : 500, color: total ? 'var(--tx-hi)' : 'var(--tx-mid)' }}>{label}</span>
+        {sub && <span style={{ display: 'block', fontSize: 10.5, lineHeight: 1.35, color: 'var(--tx-faint)', marginTop: 1 }}>{sub}</span>}
       </div>
       <span className="num" style={{ fontSize: total ? 16 : 13, fontWeight: total ? 700 : 600, color, whiteSpace: 'nowrap' }}>
         {fmt(value)}<span style={{ fontSize: 10, color: 'var(--tx-faint)', marginLeft: 3 }}>MAD</span>
@@ -789,7 +1083,7 @@ function Kpi({ label, value, unit, sub, delta, deltaLabel, accent }: { label: st
   )
 }
 
-type GoalPeriod = { key: string; label: string; start: string; target: number; actual: number; orders: number; pct: number; achieved: boolean; current: boolean }
+type GoalPeriod = { key: string; label: string; start: string; target: number; actual: number; orders: number; pct: number; achieved: boolean; current: boolean; live: boolean }
 type GoalBlock = {
   periods: GoalPeriod[]
   current: GoalPeriod | null
@@ -821,7 +1115,7 @@ function GoalCard({ data, onSave, extra }: {
     <Card>
       {/* Header: title + streak + hit-rate */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-        <Label>Objectif de la semaine</Label>
+        <Label>Objectif · {cur?.label || 'semaine'}</Label>
         {wk && (wk.summary.streak > 0 || wk.summary.hitRate.total > 0) && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11 }}>
             {wk.summary.streak > 0 && <span style={{ color: 'var(--green)', fontWeight: 600 }}>🔥 {wk.summary.streak} sem.</span>}
@@ -841,8 +1135,10 @@ function GoalCard({ data, onSave, extra }: {
               style={{ width: 90, fontSize: 13, padding: '3px 6px', borderRadius: 6, border: '1px solid var(--rose-bright)', background: 'var(--bg-2)', color: 'var(--tx-hi)' }} />
             <button onClick={() => commit('week')} style={{ fontSize: 12, padding: '3px 8px', borderRadius: 6, border: 'none', background: 'var(--rose-bright)', color: '#fff', cursor: 'pointer' }}>OK</button>
           </span>
-        ) : (
+        ) : cur?.live ? (
           <button onClick={() => startEdit('week', cur?.target ?? 0)} title="Modifier l'objectif" style={{ fontSize: 13, color: 'var(--tx-lo)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>de {mad(cur?.target ?? 0)} MAD ✏️</button>
+        ) : (
+          <span style={{ fontSize: 13, color: 'var(--tx-lo)' }}>de {mad(cur?.target ?? 0)} MAD</span>
         )}
       </div>
 
@@ -851,7 +1147,7 @@ function GoalCard({ data, onSave, extra }: {
         <div style={{ width: `${Math.min(cur?.pct ?? 0, 100)}%`, height: '100%', borderRadius: 6, background: (cur?.pct ?? 0) >= 100 ? 'var(--green)' : 'linear-gradient(90deg, var(--rose), var(--rose-bright))', transition: 'width .5s cubic-bezier(.16,1,.3,1)' }} />
       </div>
       <p style={{ fontSize: 12, color: 'var(--tx-mid)' }}>
-        <b style={{ color: 'var(--tx-hi)' }}>{mad(cur?.actual ?? 0)} MAD</b> de CA confirmé + livré
+        <b style={{ color: 'var(--tx-hi)' }}>{mad(cur?.actual ?? 0)} MAD</b> de CA confirmé + livré · création
       </p>
 
       {/* Projection */}
@@ -889,7 +1185,7 @@ function GoalCard({ data, onSave, extra }: {
       )}
 
       {/* Suggested target */}
-      {wk && wk.summary.suggested > 0 && editing !== 'week' && cur && cur.target !== wk.summary.suggested && (
+      {wk && wk.summary.suggested > 0 && editing !== 'week' && cur?.live && cur.target !== wk.summary.suggested && (
         <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '7px 10px', borderRadius: 8, background: 'var(--bg-3)' }}>
           <span style={{ fontSize: 11, color: 'var(--tx-mid)' }}>💡 Cible conseillée <b style={{ color: 'var(--tx-hi)' }}>{mad(wk.summary.suggested)} MAD</b> <span style={{ color: 'var(--tx-faint)' }}>· moy. 4 sem. +10%</span></span>
           <button onClick={() => onSave('week', wk.summary.suggested)} style={{ fontSize: 11, padding: '3px 9px', borderRadius: 6, border: '1px solid var(--rose-bright)', background: 'transparent', color: 'var(--rose-bright)', cursor: 'pointer', whiteSpace: 'nowrap', fontWeight: 600 }}>Appliquer</button>
@@ -900,7 +1196,7 @@ function GoalCard({ data, onSave, extra }: {
       <div style={{ marginTop: 14, paddingTop: 12, borderTop: '1px solid var(--line-soft)' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
           <span style={{ fontSize: 12, color: 'var(--tx-mid)' }}>
-            Objectif du mois · <b style={{ color: (curMo?.pct ?? 0) >= 100 ? 'var(--green)' : 'var(--tx-hi)' }}>{curMo?.pct ?? 0}%</b>
+            Objectif · {curMo?.label || 'mois'} · <b style={{ color: (curMo?.pct ?? 0) >= 100 ? 'var(--green)' : 'var(--tx-hi)' }}>{curMo?.pct ?? 0}%</b>
             {mo && mo.summary.streak > 0 && <span style={{ color: 'var(--green)', marginLeft: 6 }}>🔥{mo.summary.streak}</span>}
           </span>
           {editing === 'month' ? (
@@ -910,8 +1206,10 @@ function GoalCard({ data, onSave, extra }: {
                 style={{ width: 90, fontSize: 12, padding: '2px 6px', borderRadius: 6, border: '1px solid var(--rose-bright)', background: 'var(--bg-2)', color: 'var(--tx-hi)' }} />
               <button onClick={() => commit('month')} style={{ fontSize: 11, padding: '2px 7px', borderRadius: 6, border: 'none', background: 'var(--rose-bright)', color: '#fff', cursor: 'pointer' }}>OK</button>
             </span>
-          ) : (
+          ) : curMo?.live ? (
             <button onClick={() => startEdit('month', curMo?.target ?? 0)} style={{ fontSize: 11, color: 'var(--tx-lo)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>de {mad(curMo?.target ?? 0)} MAD ✏️</button>
+          ) : (
+            <span style={{ fontSize: 11, color: 'var(--tx-lo)' }}>de {mad(curMo?.target ?? 0)} MAD</span>
           )}
         </div>
         <div style={{ height: 7, borderRadius: 4, background: 'var(--bg-3)', overflow: 'hidden' }}>

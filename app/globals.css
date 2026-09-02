@@ -1,5 +1,5 @@
 /* Shine Cosmetics identity — DM Sans (body) + Playfair Display (titles), matching shinecosmetics.ma */
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
 /* Tailwind v4: the old `@tailwind base/components/utilities` directives are a
    no-op under @tailwindcss/postcss, which is why utility classes (fixed,

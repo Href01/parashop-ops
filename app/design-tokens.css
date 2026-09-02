@@ -1,0 +1,818 @@
+/* ============================================================================
+   SYSTÈME BOS — la couche de jetons.
+
+   Ce fichier est importé EN DERNIER dans app/layout.tsx, et il ne fait presque
+   que redéfinir des variables déjà lues partout ailleurs. C'est délibéré : le
+   `body`, `.card-modern`, `.table-modern` et les 45 pages tirent toutes leur
+   couleur de `--bg-*`, `--tx-*` et `--line*`. Redéfinir les jetons repeint donc
+   l'ensemble du back-office sans toucher au markup d'une seule page.
+
+   ATTENTION — pourquoi il n'y a AUCUN sélecteur universel ici.
+   Le CSS non layé bat toujours le CSS layé, quelle que soit la spécificité. Un
+   `* { … }` écrit dans ce fichier écraserait donc `layer(utilities)` et tuerait
+   en silence toutes les classes d'espacement de Tailwind dans tout le BOS —
+   c'est exactement l'accident déjà vécu avec le reset de `globals.css`. On ne
+   cible ici que des classes nommées.
+
+   DIRECTION : reprise du langage des tableaux de bord d'opérations —
+   fond gris FROID (jamais teinté), cartes blanches à filet fin, une teinte par
+   métrique, et le rose réservé à l'action principale.
+   ========================================================================== */
+
+:root {
+  /* ---- Surfaces ----
+     Le fond passe du blush oklch(0.945 0.014 350) à un gris froid. Le blush
+     écrasait les couleurs de données : tout ce qui était rose ou ambré se
+     battait avec lui. Un outil de pilotage se lit sur du neutre. */
+  --bg-0: #F6F7F9;   /* fond de l'application */
+  --bg-1: #FFFFFF;   /* cartes, rail, en-tête */
+  --bg-2: #FBFCFD;   /* survol de ligne */
+  --bg-3: #F2F4F7;   /* pistes de barres, puces */
+  --bg-inset: #F2F4F7;
+  --bg-soft: #F9FAFB;
+
+  /* ---- Traits ----
+     Inversion assumée : avant, l'ombre portait la séparation et les cartes
+     n'avaient pas de bordure. Ici c'est le FILET qui découpe, et l'ombre ne
+     fait plus qu'un soupçon de relief. */
+  --line: #ECEEF2;
+  --line-soft: #F2F4F7;
+  --line-strong: #D0D5DD;
+
+  /* ---- Encre ---- */
+  --tx-hi: #101828;
+  --tx-mid: #475467;
+  --tx-lo: #667085;
+  --tx-faint: #98A2B3;
+
+  /* ---- Rose : IDENTITÉ, PAS DONNÉE ----
+     Action principale, logo, courbe du mois en cours. Jamais un statut, jamais
+     une part, jamais une catégorie — sinon on ne sait plus si la couleur veut
+     dire « Shine » ou « attention ». */
+  --rose: #E11D74;
+  --rose-bright: #F63D91;
+  --rose-dim: #BE125F;
+  --rose-bg: #FEF3F2;
+  --rose-line: rgba(225, 29, 116, 0.24);
+
+  /* ---- Or ---- */
+  --gold: #B54708;
+  --gold-bright: #F79009;
+  --gold-bg: #FFFAEB;
+  --gold-line: rgba(247, 144, 9, 0.28);
+  --champagne: #FEDF89;
+
+  /* ---- Sémantique : six teintes, un sens fixe sur les 45 pages ----
+     vert = réussi · bleu = en cours · violet = en mouvement
+     ambre = à traiter · rouge = échec · gris = neutre
+     Le fond pastel porte le texte foncé assorti (contraste AA). */
+  --green: #027A48;
+  --green-bg: #ECFDF3;
+  --green-line: rgba(18, 183, 106, 0.26);
+  --red: #B42318;
+  --red-bg: #FEF3F2;
+  --red-line: rgba(240, 68, 56, 0.26);
+  --amber: #B54708;
+  --amber-bg: #FFFAEB;
+  --amber-line: rgba(247, 144, 9, 0.28);
+  --blue: #175CD3;
+  --blue-bg: #EFF8FF;
+  --violet: #5925DC;
+  --violet-bg: #F4F3FF;
+  --teal: #107569;
+  --teal-bg: #F0FDF9;
+
+  /* Teintes pleines, pour les barres et les points où le contraste sur blanc
+     n'est pas en jeu. Les `--*` ci-dessus sont assombries pour rester lisibles
+     EN TEXTE sur pastel ; celles-ci sont les versions saturées. */
+  --green-solid: #12B76A;
+  --red-solid: #F04438;
+  --amber-solid: #F79009;
+  --blue-solid: #2E90FA;
+  --violet-solid: #7A5AF8;
+  --grey-solid: #98A2B3;
+
+  /* ---- Canaux ---- */
+  --c-website: #175CD3;
+  --c-whatsapp: #027A48;
+  --c-instagram: #B42318;
+  --c-tiktok: #344054;
+  --c-manual: #667085;
+
+  /* ---- Typographie ----
+     Plus Jakarta Sans remplace DM Sans : hauteur d'x plus grande, formes plus
+     rondes, et surtout un 800 que DM Sans n'a pas — c'est lui qui donne leur
+     assise aux chiffres. `--serif` pointe volontairement vers la MÊME famille :
+     les titres Playfair de 30 à 48 px étaient la première cause de gâchis
+     vertical, et un back-office n'a pas besoin d'un titre de magazine. */
+  --font: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --serif: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', monospace;
+
+  /* ---- Rayons & ombres ---- */
+  --radius: 8px;
+  --radius-sm: 7px;
+  --radius-lg: 8px;
+  --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-2: 0 4px 10px rgba(16, 24, 40, 0.08);
+
+  /* Le rail perd 32 px : 244 → 212. Sur 1440, c'est 17 % de l'écran rendus
+     au contenu. */
+  --sidebar-w: 212px;
+  --sidebar-w-collapsed: 64px;
+}
+
+/* ============================================================================
+   CARTES — le filet découpe, l'ombre effleure.
+   ========================================================================== */
+.card-modern {
+  border-color: var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-1);
+}
+
+/* ============================================================================
+   TABLES — la densité.
+
+   Mesuré avant refonte sur /orders à 1440 px : 142 px par ligne, soit quatre
+   commandes visibles sur 225. La cause n'était pas le padding mais la
+   répartition des largeurs — le nom du produit, coincé dans une colonne de
+   115 px, se déchirait sur six lignes. On rend ici les cellules incapables de
+   fabriquer ces accordéons : une ligne, et l'ellipse au-delà.
+   ========================================================================== */
+.table-modern thead th {
+  height: 34px;
+  padding-top: 0;
+  padding-bottom: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--tx-faint);
+  border-bottom-color: var(--line);
+}
+
+.table-modern tbody td {
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12.5px;
+}
+
+.table-modern tbody tr {
+  height: 47px;
+}
+
+.table-modern tbody tr:hover {
+  background: var(--bg-2);
+}
+
+/* La densité est une décision de page, pas une fatalité : `.dense` resserre,
+   `.roomy` desserre. Les deux existent pour que le sélecteur Compact/Détaillé
+   déjà présent sur /inventory puisse s'étendre au reste sans réécrire de CSS. */
+.table-modern.dense tbody tr { height: 40px; }
+.table-modern.roomy tbody tr { height: 60px; }
+
+/* UNE LIGNE, ET L'ELLIPSE AU-DELÀ.
+   Sans cela, fixer la hauteur des lignes ne sert à rien : le contenu la repousse.
+   `table-layout: fixed` fait respecter le <colgroup> — sans lui le navigateur
+   redistribue les largeurs selon le contenu et on retrouve les colonnes
+   étranglées qu'on vient de corriger. */
+.ord-table {
+  table-layout: fixed;
+}
+
+.ord-table tbody td {
+  overflow: hidden;
+}
+
+.ord-clip {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================================================================
+   TITRES — Playfair sort des en-têtes de page.
+   La famille est déjà neutralisée par `--serif` ci-dessus ; on rétablit ici la
+   graisse et la chasse d'une grotesque, que les réglages pensés pour un serif
+   rendaient trop légères.
+   ========================================================================== */
+.serif-display {
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+/* Le fil d'Ariane répétait ce que le titre disait déjà, et ce que la barre du
+   haut disait une troisième fois. On le garde — il porte parfois une
+   information de section — mais il redevient une mention, pas un bandeau. */
+.eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--tx-faint);
+}
+
+/* ============================================================================
+   BOUTONS & PUCES — alignés sur la hauteur de contrôle du système (34 px).
+   ========================================================================== */
+.btn-modern {
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+}
+
+.badge-modern {
+  border-radius: 999px;
+  font-weight: 700;
+}
+
+/* ============================================================================
+   BRIQUES PARTAGÉES — préfixe `bo-` pour ne heurter aucune classe existante
+   (vérifié : .btn, .chip et .num sont déjà pris dans les trois feuilles).
+   ========================================================================== */
+.bo-sect {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--tx-faint);
+}
+
+.bo-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Le carré d'icône teinté : la signature visuelle du système. Fond pastel,
+   trait saturé, une teinte par métrique. */
+.bo-isq {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.bo-isq svg {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2;
+}
+
+.bo-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.bo-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.bo-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+/* Pastille à initiale. Donne un point d'accroche visuel dans une liste longue :
+   l'œil retrouve une cliente par sa couleur avant d'avoir lu son nom. */
+.bo-av {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 10.5px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+/* Barre de mesure. 24 px pour celle qu'on lit de loin, 6 px pour celle qui
+   vit dans une cellule. */
+.bo-bar {
+  height: 24px;
+  border-radius: 7px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+
+.bo-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 7px;
+}
+
+.bo-bar.thin {
+  height: 6px;
+  border-radius: 999px;
+}
+
+.bo-bar.thin > i {
+  border-radius: 999px;
+}
+
+/* Carte pastel pleine, pour les exceptions qu'on veut voir sans lire. */
+.bo-flat {
+  border-radius: var(--radius);
+  padding: 12px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+/* ============================================================================
+   RAIL — l'item actif passe en pastille noire.
+   La couleur du texte est posée en style inline par BosShell, donc réglée là-bas ;
+   ce qui suit tient la géométrie.
+   ========================================================================== */
+.nav-item {
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+}
+
+.bo-page-head-row,
+.bo-page-actions {
+  display: flex;
+  align-items: center;
+}
+
+.bo-page-head-row {
+  gap: 11px;
+  flex-wrap: wrap;
+}
+
+.bo-page-actions {
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bo-page-meta {
+  color: var(--tx-faint);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.bo-mobile-only {
+  display: none;
+}
+
+.bo-tabs-rail {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.bo-tabs-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.bo-tabs {
+  width: max-content;
+  min-width: 100%;
+}
+
+/* ============================================================================
+   RESPONSIVE — un seul jeu de points de rupture.
+   L'existant en comptait SEPT (560, 640, 760, 768, 900, 1180, 1240), soit deux
+   valeurs pour la même intention, d'où des sauts incohérents d'une page à
+   l'autre. On s'aligne sur 640 / 1024 / 1280.
+   ========================================================================== */
+@media (max-width: 1024px) {
+  :root {
+    --sidebar-w: 196px;
+  }
+}
+
+@media (min-width: 641px) and (max-width: 1100px) {
+  .bo-mobile-only {
+    display: inline;
+  }
+
+  .ord-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .ord-table col {
+    width: auto !important;
+  }
+
+  .ord-table col:nth-child(1),
+  .ord-table col:nth-child(2),
+  .ord-table col:nth-child(5),
+  .ord-table col:nth-child(9),
+  .ord-table col:nth-child(10),
+  .ord-table col:nth-child(11),
+  .ord-table col:nth-child(13),
+  .ord-table th:nth-child(1), .ord-table td:nth-child(1),
+  .ord-table th:nth-child(2), .ord-table td:nth-child(2),
+  .ord-table th:nth-child(5), .ord-table td:nth-child(5),
+  .ord-table th:nth-child(9), .ord-table td:nth-child(9),
+  .ord-table th:nth-child(10), .ord-table td:nth-child(10),
+  .ord-table th:nth-child(11), .ord-table td:nth-child(11),
+  .ord-table th:nth-child(13), .ord-table td:nth-child(13) {
+    display: none;
+  }
+
+  .ord-table col:nth-child(3) { width: 24% !important; }
+  .ord-table col:nth-child(4) { width: 27% !important; }
+  .ord-table col:nth-child(6) { width: 14% !important; }
+  .ord-table col:nth-child(7) { width: 16% !important; }
+  .ord-table col:nth-child(8) { width: 9% !important; }
+  .ord-table col:nth-child(12) { width: 10% !important; }
+
+  .prod-table th:nth-child(7),
+  .prod-table td:nth-child(7),
+  .inv-table th:nth-child(5),
+  .inv-table td:nth-child(5),
+  .inv-table th:nth-child(7),
+  .inv-table td:nth-child(7),
+  .sendit-table th:nth-child(4),
+  .sendit-table td:nth-child(4),
+  .sendit-table th:nth-child(6),
+  .sendit-table td:nth-child(6) {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .bo-page-head-row {
+    align-items: flex-start;
+  }
+
+  .bo-page-actions {
+    flex: 1 0 100%;
+    flex-wrap: nowrap;
+    max-width: 100%;
+    margin-top: 2px;
+    padding-bottom: 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .bo-page-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .bo-page-actions > * {
+    flex: 0 0 auto;
+    min-height: 42px;
+  }
+
+  .bo-page-actions > .btn-primary {
+    order: -1;
+  }
+
+  .orders-head-spacer {
+    display: none;
+  }
+
+  .orders-page-actions {
+    flex: 1 0 100%;
+    flex-wrap: nowrap !important;
+    max-width: 100%;
+    padding-bottom: 2px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .orders-page-actions::-webkit-scrollbar {
+    display: none;
+  }
+
+  .orders-page-actions > * {
+    flex: 0 0 auto;
+    min-height: 42px;
+  }
+
+  .orders-page-actions > .btn-primary {
+    order: -1;
+  }
+
+  .bo-page-note {
+    margin-top: 6px !important;
+  }
+
+  .bo-mobile-only {
+    display: inline;
+  }
+
+  .table-modern tbody tr {
+    height: auto;
+  }
+
+  .table-modern tbody td {
+    padding-top: 9px;
+    padding-bottom: 9px;
+  }
+
+  /* ── LA TABLE DES COMMANDES SUR TÉLÉPHONE ──
+     Elle mesurait 1196 px dans un écran de 390 : pour lire une commande il
+     fallait la balayer de gauche à droite, colonne par colonne. Une table de
+     treize colonnes n'a pas sa place sur un téléphone.
+
+     On garde les quatre qui répondent à « où en est cette commande » —
+     numéro, cliente, statut, montant — et on cache les neuf autres. Elles
+     restent une ligne de code plus loin, sur la fiche de la commande.
+
+     `table-layout: auto` ET des largeurs neutralisées — deux essais ont été
+     nécessaires pour en arriver là, les deux relevés à la capture :
+
+     • en `fixed` avec les <col> cachés remis à 0, la table gonflait à 982 px,
+       puis, une fois les zéros posés, le modèle de colonnes se désalignait :
+       la colonne N° disparaissait et la cliente se réduisait à son avatar.
+       `display: none` sur des cellules et `table-layout: fixed` ne s'entendent
+       pas — la répartition ne suit plus le <colgroup>.
+     • en `auto`, la table tombe à 398 px pour 390. Les huit derniers pixels se
+       récupèrent au rembourrage, sans toucher au modèle de colonnes.
+
+     `width: auto !important` est indispensable : le <colgroup> pose ses largeurs
+     en style inline, lequel bat une feuille de style. */
+  .ord-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .ord-table col {
+    width: auto !important;
+  }
+
+  .ord-table col:nth-child(1),
+  .ord-table col:nth-child(2),
+  .ord-table col:nth-child(4),
+  .ord-table col:nth-child(5),
+  .ord-table col:nth-child(7),
+  .ord-table col:nth-child(9),
+  .ord-table col:nth-child(10),
+  .ord-table col:nth-child(11),
+  .ord-table col:nth-child(12),
+  .ord-table col:nth-child(13) {
+    display: none;
+  }
+
+  .ord-table col:nth-child(3) { width: 57% !important; }
+  .ord-table col:nth-child(6) { width: 27% !important; }
+  .ord-table col:nth-child(8) { width: 16% !important; }
+
+  .ord-table th:nth-child(1),  .ord-table td:nth-child(1),
+  .ord-table th:nth-child(2),  .ord-table td:nth-child(2),
+  .ord-table th:nth-child(4),  .ord-table td:nth-child(4),
+  .ord-table th:nth-child(5),  .ord-table td:nth-child(5),
+  .ord-table th:nth-child(7),  .ord-table td:nth-child(7),
+  .ord-table th:nth-child(9),  .ord-table td:nth-child(9),
+  .ord-table th:nth-child(10), .ord-table td:nth-child(10),
+  .ord-table th:nth-child(11), .ord-table td:nth-child(11),
+  .ord-table th:nth-child(12), .ord-table td:nth-child(12),
+  .ord-table th:nth-child(13), .ord-table td:nth-child(13) {
+    display: none;
+  }
+
+  /* Les quatre restantes se serrent : padding réduit, et la cliente prend ce
+     qui reste puisque c'est la seule dont la longueur varie. */
+  .ord-table th,
+  .ord-table td {
+    padding-left: 5px;
+    padding-right: 5px;
+  }
+
+  .ord-table th:nth-child(3),
+  .ord-table td:nth-child(3) {
+    width: auto;
+  }
+
+  .ord-table th:nth-child(6),
+  .ord-table td:nth-child(6) {
+    width: 94px;
+  }
+
+  .ord-table th:nth-child(8),
+  .ord-table td:nth-child(8) {
+    width: 54px;
+  }
+
+  /* Les derniers pixels : à ce stade la table faisait encore 413 px pour 390 et
+     la colonne CA finissait 38 px hors écran. L'avatar et la pastille de statut
+     rendent ce qu'il faut — mesuré, pas estimé. */
+  .ord-table .bo-av {
+    width: 22px;
+    height: 22px;
+    font-size: 9.5px;
+  }
+
+  .ord-table .st {
+    padding-left: 6px;
+    padding-right: 6px;
+    font-size: 10.5px;
+  }
+
+  .prod-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .prod-table th:nth-child(2), .prod-table td:nth-child(2),
+  .prod-table th:nth-child(6), .prod-table td:nth-child(6),
+  .prod-table th:nth-child(7), .prod-table td:nth-child(7) {
+    display: none;
+  }
+
+  .prod-table th,
+  .prod-table td {
+    padding-left: 5px;
+    padding-right: 5px;
+  }
+
+  .prod-table th:nth-child(1), .prod-table td:nth-child(1) { width: 58%; }
+  .prod-table th:nth-child(3), .prod-table td:nth-child(3),
+  .prod-table th:nth-child(4), .prod-table td:nth-child(4),
+  .prod-table th:nth-child(5), .prod-table td:nth-child(5) { width: 14%; }
+
+  .prod-table .thumb {
+    width: 30px;
+    height: 30px;
+  }
+
+  .prod-table td:first-child .cellstack {
+    min-width: 0;
+  }
+
+  .prod-table td:first-child .t-strong,
+  .prod-table td:first-child .t-sub {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .inv-table {
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .inv-table th:nth-child(2), .inv-table td:nth-child(2),
+  .inv-table th:nth-child(4), .inv-table td:nth-child(4),
+  .inv-table th:nth-child(5), .inv-table td:nth-child(5),
+  .inv-table th:nth-child(7), .inv-table td:nth-child(7) {
+    display: none;
+  }
+
+  .inv-table th,
+  .inv-table td {
+    padding-left: 5px !important;
+    padding-right: 5px !important;
+  }
+
+  .inv-table th:nth-child(1), .inv-table td:nth-child(1) { width: 50%; }
+  .inv-table th:nth-child(3), .inv-table td:nth-child(3) { width: 14%; }
+  .inv-table th:nth-child(6), .inv-table td:nth-child(6) { width: 14%; }
+  .inv-table th:nth-child(8), .inv-table td:nth-child(8) { width: 22%; }
+
+  .inv-table th:nth-child(6) {
+    font-size: 0 !important;
+  }
+
+  .inv-table th:nth-child(6)::after {
+    content: 'Achat';
+    font-size: 10px;
+  }
+
+  .inv-table .product-thumb {
+    display: none;
+  }
+
+  .inv-table td:first-child .t-strong {
+    -webkit-line-clamp: 1 !important;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .sendit-table,
+  .sendit-table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .sendit-table thead {
+    display: none;
+  }
+
+  .sendit-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+    width: 100%;
+    min-height: 0;
+    padding: 12px;
+  }
+
+  .sendit-table tbody td {
+    display: block;
+    min-width: 0;
+    padding: 0 !important;
+    border: 0;
+  }
+
+  .sendit-table tbody td:nth-child(1) { grid-column: 1; grid-row: 1; }
+  .sendit-table tbody td:nth-child(2) { grid-column: 1; grid-row: 2; font-size: 11px; }
+  .sendit-table tbody td:nth-child(3) { grid-column: 2; grid-row: 1; }
+  .sendit-table tbody td:nth-child(4) { grid-column: 2; grid-row: 2; }
+  .sendit-table tbody td:nth-child(5) {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    margin-top: 4px;
+    padding: 9px 10px !important;
+    border-left: 2px solid var(--rose);
+    border-radius: 6px;
+    background: var(--bg-2);
+  }
+  .sendit-table tbody td:nth-child(5)::before {
+    content: 'Produit Sendit';
+    display: block;
+    margin-bottom: 3px;
+    color: var(--tx-faint);
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .sendit-table tbody td:nth-child(6) { display: none; }
+  .sendit-table tbody td:nth-child(7) { grid-column: 1; grid-row: 4; align-self: center; }
+  .sendit-table tbody td:nth-child(8) { grid-column: 2; grid-row: 4; }
+
+  /* ── CE QUI SÉPARE ENCORE L'ÉCRAN DE LA DONNÉE ──
+     Après avoir ramené l'en-tête à une ligne, il restait ~900 px avant la
+     première commande. Deux coupables, tous deux réparables en CSS. */
+
+  /* 1. La mention « Cliquer pour filtrer » coûtait une ligne sur CHACUNE des six
+        cartes. Sur un écran tactile, une carte se tape : l'affordance qui manquait
+        sur ordinateur est ici superflue. */
+  .bo-hint-desktop {
+    display: none;
+  }
+
+  /* 2. La bande de filtres passait à la ligne trois fois. Elle défile
+        horizontalement — c'est le geste attendu pour une série d'onglets. */
+  .filter-strip {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    max-width: 100%;
+    scrollbar-width: none;
+  }
+
+  .filter-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .filter-strip > * {
+    flex-shrink: 0;
+  }
+
+  /* 3. Les six cartes de statut en 2×3 mangeaient 300 px. En bande horizontale
+        elles en prennent 90 : on voit les trois premières, on fait défiler pour
+        les autres, et la liste des commandes remonte d'autant.
+        `display: flex !important` parce que Tailwind pose `display: grid` en
+        `layer(utilities)` — et cette feuille est HORS couche, donc elle gagne
+        déjà ; le `!important` protège seulement d'une variante `sm:grid` qu'on
+        ajouterait plus tard sans y penser. */
+  .bo-kpi-strip {
+    display: flex !important;
+    overflow-x: auto;
+    gap: 9px;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+    /* Le débord latéral part sous le bord de l'écran plutôt que de s'arrêter
+       net dans la marge : c'est ce qui signale qu'il y a une suite. */
+    margin-inline: -16px;
+    padding-inline: 16px;
+  }
+
+  .bo-kpi-strip::-webkit-scrollbar {
+    display: none;
+  }
+
+  .bo-kpi-strip > * {
+    flex: 0 0 138px;
+    scroll-snap-align: start;
+  }
+}

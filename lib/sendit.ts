@@ -9,6 +9,60 @@ const SENDIT_API_URL = 'https://app.sendit.ma/api/v1'
 const PUBLIC_KEY = process.env.SENDIT_PUBLIC_KEY || ''
 const PRIVATE_KEY = process.env.SENDIT_PRIVATE_KEY || ''
 const PICKUP_DISTRICT_ID = parseInt(process.env.SENDIT_PICKUP_DISTRICT_ID || '1') // Default: Casablanca
+const REQUEST_TIMEOUT_MS = 12_000
+const MAX_RETRIES = 2
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+interface SenditRequestMetrics {
+  httpCalls: number
+  retries: number
+  authCalls: number
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
+async function requestWithRetry(
+  url: string,
+  init: RequestInit = {},
+  metrics?: SenditRequestMetrics,
+  options: { allowUnsafeRetry?: boolean } = {}
+): Promise<Response> {
+  const method = String(init.method || 'GET').toUpperCase()
+  const idempotent = ['GET', 'HEAD', 'OPTIONS', 'DELETE'].includes(method)
+  // Never replay a parcel-creation POST after a timeout: Sendit may have
+  // accepted the first request even when its response never reached us.
+  const maxRetries = idempotent || options.allowUnsafeRetry ? MAX_RETRIES : 0
+  let lastError: unknown
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    try {
+      if (metrics) {
+        metrics.httpCalls++
+        if (attempt > 0) metrics.retries++
+      }
+      const response = await fetch(url, { ...init, cache: 'no-store', signal: controller.signal })
+      const retryable = response.status === 429 || response.status >= 500
+      if (!retryable || attempt === maxRetries) return response
+
+      await response.body?.cancel().catch(() => {})
+      const retryAfter = Number(response.headers.get('retry-after'))
+      await sleep(Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(retryAfter * 1000, 3000)
+        : 300 * (attempt + 1))
+    } catch (error) {
+      lastError = error
+      if (attempt === maxRetries) throw error
+      await sleep(300 * (attempt + 1))
+    } finally {
+      clearTimeout(timer)
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Sendit request failed')
+}
 
 interface SenditLoginResponse {
   success: boolean
@@ -136,16 +190,17 @@ let tokenExpiry: number = 0
 /**
  * Login to Sendit API and get Bearer token
  */
-async function getAuthToken(): Promise<string> {
+async function getAuthToken(metrics?: SenditRequestMetrics): Promise<string> {
   // Return cached token if still valid
   if (cachedToken && Date.now() < tokenExpiry) {
     return cachedToken
   }
 
-  console.log('🔐 Logging in to Sendit API...')
+  if (!PUBLIC_KEY || !PRIVATE_KEY) throw new Error('SENDIT_PUBLIC_KEY / SENDIT_PRIVATE_KEY missing')
 
   try {
-    const response = await fetch(`${SENDIT_API_URL}/login`, {
+    if (metrics) metrics.authCalls++
+    const response = await requestWithRetry(`${SENDIT_API_URL}/login`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -154,7 +209,7 @@ async function getAuthToken(): Promise<string> {
         public_key: PUBLIC_KEY,
         secret_key: PRIVATE_KEY,
       }),
-    })
+    }, metrics, { allowUnsafeRetry: true })
 
     if (!response.ok) {
       const errorText = await response.text()
@@ -170,13 +225,30 @@ async function getAuthToken(): Promise<string> {
 
     cachedToken = data.data.token
     tokenExpiry = Date.now() + 3600000 // 1 hour
-    console.log('✅ Sendit login successful')
-
     return cachedToken
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Sendit login error:', error)
-    throw new Error(`Failed to authenticate with Sendit: ${error.message}`)
+    throw new Error(`Failed to authenticate with Sendit: ${errorMessage(error)}`)
   }
+}
+
+async function senditRequest(path: string, init: RequestInit = {}, metrics?: SenditRequestMetrics): Promise<Response> {
+  let token = await getAuthToken(metrics)
+  const headers = new Headers(init.headers)
+  headers.set('Authorization', `Bearer ${token}`)
+  let response = await requestWithRetry(`${SENDIT_API_URL}${path}`, { ...init, headers }, metrics)
+
+  // A token can be revoked before our one-hour cache expires. Refresh it once;
+  // retrying the same invalid token for every parcel only burns API calls.
+  if (response.status === 401) {
+    await response.body?.cancel().catch(() => {})
+    cachedToken = null
+    tokenExpiry = 0
+    token = await getAuthToken(metrics)
+    headers.set('Authorization', `Bearer ${token}`)
+    response = await requestWithRetry(`${SENDIT_API_URL}${path}`, { ...init, headers }, metrics)
+  }
+  return response
 }
 
 /**
@@ -200,12 +272,9 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
         original: shipment.recipient_phone,
         formatted: formattedPhone
       })
-    } catch (error: any) {
-      throw new Error(`Invalid phone number: ${shipment.recipient_phone}. ${error.message}`)
+    } catch (error: unknown) {
+      throw new Error(`Invalid phone number: ${shipment.recipient_phone}. ${errorMessage(error)}`)
     }
-
-    // Get auth token
-    const token = await getAuthToken()
 
     // Use the exact Sendit district selected by the operator/customer.
     console.log('📍 District:', {
@@ -261,11 +330,10 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
 
     console.log('📝 Delivery payload:', JSON.stringify(deliveryData, null, 2))
 
-    const response = await fetch(`${SENDIT_API_URL}/deliveries`, {
+    const response = await senditRequest('/deliveries', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
       },
       body: JSON.stringify(deliveryData),
     })
@@ -298,13 +366,13 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
       message: data.message,
     }
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Create shipment error:', {
-      name: error.name,
-      message: error.message,
-      cause: error.cause,
+      name: error instanceof Error ? error.name : 'UnknownError',
+      message: errorMessage(error),
+      cause: error instanceof Error ? error.cause : undefined,
     })
-    throw new Error(`Sendit shipment creation failed: ${error.message}`)
+    throw new Error(`Sendit shipment creation failed: ${errorMessage(error)}`)
   }
 }
 
@@ -315,13 +383,7 @@ export async function getShipmentTracking(trackingId: string): Promise<SenditTra
   console.log('🔍 Getting tracking for:', trackingId)
 
   try {
-    const token = await getAuthToken()
-
-    const response = await fetch(`${SENDIT_API_URL}/deliveries/${trackingId}`, {
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
-    })
+    const response = await senditRequest(`/deliveries/${encodeURIComponent(trackingId)}`)
 
     if (!response.ok) {
       const errorText = await response.text()
@@ -351,9 +413,9 @@ export async function getShipmentTracking(trackingId: string): Promise<SenditTra
       })),
     }
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Get tracking error:', error)
-    throw new Error(`Failed to get tracking: ${error.message}`)
+    throw new Error(`Failed to get tracking: ${errorMessage(error)}`)
   }
 }
 
@@ -362,13 +424,8 @@ export async function getShipmentTracking(trackingId: string): Promise<SenditTra
  */
 export async function cancelShipment(trackingId: string): Promise<{ success: boolean; message: string }> {
   try {
-    const token = await getAuthToken()
-
-    const response = await fetch(`${SENDIT_API_URL}/deliveries/${trackingId}`, {
+    const response = await senditRequest(`/deliveries/${encodeURIComponent(trackingId)}`, {
       method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-      },
     })
 
     if (!response.ok) {
@@ -379,9 +436,9 @@ export async function cancelShipment(trackingId: string): Promise<{ success: boo
     const data = await response.json()
     return data
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Cancel shipment error:', error)
-    throw new Error(`Failed to cancel shipment: ${error.message}`)
+    throw new Error(`Failed to cancel shipment: ${errorMessage(error)}`)
   }
 }
 
@@ -418,20 +475,27 @@ export interface SenditDeliveryListItem {
   lastActionAt: string | null
 }
 
+export interface SenditDeliverySnapshot {
+  deliveries: SenditDeliveryListItem[]
+  pages: number
+  lastPage: number
+  apiCalls: number
+  retries: number
+  authCalls: number
+}
+
 /**
  * List ALL deliveries from Sendit (paginated). Read-only — used by the
  * reconciliation lab to compare Sendit (source of truth for delivered + COD)
  * against the BOS.
  */
-export async function listAllSenditDeliveries(maxPages = 60): Promise<SenditDeliveryListItem[]> {
-  const token = await getAuthToken()
+export async function listSenditDeliveriesSnapshot(maxPages = 60): Promise<SenditDeliverySnapshot> {
   const all: SenditDeliveryListItem[] = []
+  const metrics: SenditRequestMetrics = { httpCalls: 0, retries: 0, authCalls: 0 }
   let page = 1
   let lastPage = 1
   do {
-    const res = await fetch(`${SENDIT_API_URL}/deliveries?page=${page}`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    const res = await senditRequest(`/deliveries?page=${page}`, {}, metrics)
     if (!res.ok) throw new Error(`Failed to list deliveries: ${res.status} ${await res.text()}`)
     const data = await res.json()
     for (const d of (data.data || [])) {
@@ -451,9 +515,23 @@ export async function listAllSenditDeliveries(maxPages = 60): Promise<SenditDeli
       })
     }
     lastPage = data.last_page || 1
+    if (lastPage > maxPages) {
+      throw new Error(`Sendit history has ${lastPage} pages; safety limit is ${maxPages}. Refusing a truncated ledger.`)
+    }
     page++
-  } while (page <= lastPage && page <= maxPages)
-  return all
+  } while (page <= lastPage)
+  return {
+    deliveries: all,
+    pages: Math.max(0, page - 1),
+    lastPage,
+    apiCalls: metrics.httpCalls,
+    retries: metrics.retries,
+    authCalls: metrics.authCalls,
+  }
+}
+
+export async function listAllSenditDeliveries(maxPages = 60): Promise<SenditDeliveryListItem[]> {
+  return (await listSenditDeliveriesSnapshot(maxPages)).deliveries
 }
 
 /**
@@ -463,18 +541,13 @@ export async function getAllDistricts(): Promise<SenditDistrict[]> {
   console.log('🏙️  Fetching Sendit districts...')
 
   try {
-    const token = await getAuthToken()
     const allDistricts: SenditDistrict[] = []
     let currentPage = 1
     let lastPage = 1
 
     // Fetch all pages
     do {
-      const response = await fetch(`${SENDIT_API_URL}/districts?page=${currentPage}&pickup-district=${PICKUP_DISTRICT_ID}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-      })
+      const response = await senditRequest(`/districts?page=${currentPage}&pickup-district=${PICKUP_DISTRICT_ID}`)
 
       if (!response.ok) {
         const errorText = await response.text()
@@ -498,8 +571,8 @@ export async function getAllDistricts(): Promise<SenditDistrict[]> {
     console.log(`✅ Total districts fetched: ${allDistricts.length}`)
     return allDistricts
 
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('❌ Get districts error:', error)
-    throw new Error(`Failed to get districts: ${error.message}`)
+    throw new Error(`Failed to get districts: ${errorMessage(error)}`)
   }
 }

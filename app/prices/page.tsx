@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import BosShell from '@/components/BosShell'
+import PageHead from '@/components/PageHead'
 import Link from 'next/link'
 import { ArrowUp, ArrowDown, Minus } from 'lucide-react'
 
@@ -167,16 +168,12 @@ export default function PricesPage() {
   return (
     <BosShell active="prices" title="Prix & Marges" crumb="Opérations">
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '22px 24px 60px' }}>
-        <div className="eyebrow" style={{ marginBottom: 4 }}>OPÉRATIONS</div>
-        <h1 className="serif-display" style={{ fontSize: 28, lineHeight: 1.05 }}>Prix &amp; Marges</h1>
-        <p style={{ fontSize: 13, color: 'var(--tx-mid)', marginTop: 7, maxWidth: 740, lineHeight: 1.55 }}>
-          Pour chaque changement de prix, on répond à une question : <b>as-tu gagné plus grâce au prix… ou juste parce que tu as plus vendu&nbsp;?</b> Chaque carte sépare l&apos;effet <b>🏷️ prix</b> de l&apos;effet <b>📦 volume</b> (pub, saison). Comparaison sur la période depuis le changement vs la même durée avant. Le verdict n&apos;est vert que si le <b>prix</b> lui-même a payé, et qu&apos;on a assez de ventes pour y croire.
-        </p>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 12 }}>
-          <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>{data?._cachedAt ? `Chiffres à ${new Date(data._cachedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : ''}</span>
-          <button className="btn-modern btn-secondary" onClick={() => load(true)} disabled={loading} style={{ fontSize: 12 }}>Actualiser</button>
-        </div>
+        <PageHead
+          title="Prix & Marges"
+          meta={data?._cachedAt ? `Chiffres à ${new Date(data._cachedAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : undefined}
+          note={<>Pour chaque changement de prix, une seule question : <b>as-tu gagné plus grâce au prix… ou juste parce que tu as plus vendu&nbsp;?</b> Chaque carte sépare l&apos;effet <b>prix</b> de l&apos;effet <b>volume</b> (pub, saison), sur la période depuis le changement contre la même durée avant. Le verdict n&apos;est vert que si le prix lui-même a payé, et qu&apos;il y a assez de ventes pour y croire.</>}
+          actions={<button className="btn-modern btn-secondary" onClick={() => load(true)} disabled={loading}>Actualiser</button>}
+        />
 
         {/* Summary — tiles double as filters */}
         <div className="pz-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, margin: '16px 0 20px' }}>

@@ -24,7 +24,7 @@ type Metric = 'revenue' | 'profit' | 'orders'
 type ChartType = 'area' | 'line' | 'bar'
 type Compare = 'none' | 'prev' | 'dod' | 'wow' | 'mom' | 'yoy' | 'custom'
 
-type Props = { series: SeriesPoint[]; from: string; to: string; periodLabel: string }
+type Props = { series: SeriesPoint[]; from: string; to: string; periodLabel: string; basis: 'created' | 'delivered' }
 type LabelProps = { x?: number | string; y?: number | string; width?: number | string; value?: unknown; index?: number }
 
 const mad = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 }).format(v)
@@ -32,10 +32,10 @@ const int = (v: number) => new Intl.NumberFormat('fr-FR', { maximumFractionDigit
 const MA_COLOR = '#f59e0b'
 const WEEKDAYS = ['dim.', 'lun.', 'mar.', 'mer.', 'jeu.', 'ven.', 'sam.']
 
-const METRICS: Record<Metric, { label: string; color: string; unit: string; fmt: (v: number) => string; perDay: string }> = {
-  revenue: { label: 'CA', color: 'var(--rose-bright)', unit: 'MAD', fmt: mad, perDay: 'MAD/jour · CA confirmé + livré' },
-  profit: { label: 'Profit', color: 'var(--green)', unit: 'MAD', fmt: mad, perDay: 'MAD/jour · profit estimé' },
-  orders: { label: 'Commandes', color: '#6366f1', unit: '', fmt: int, perDay: 'commandes/jour' },
+const METRICS: Record<Metric, { label: string; color: string; unit: string; fmt: (v: number) => string }> = {
+  revenue: { label: 'CA', color: 'var(--rose-bright)', unit: 'MAD', fmt: mad },
+  profit: { label: 'Profit', color: 'var(--green)', unit: 'MAD', fmt: mad },
+  orders: { label: 'Commandes', color: '#6366f1', unit: '', fmt: int },
 }
 
 const CMP_LABEL: Record<Exclude<Compare, 'none'>, string> = {
@@ -46,16 +46,35 @@ const DAY = 86400000
 const parseISO = (s: string) => new Date(s + 'T00:00:00Z')
 const fmtISO = (d: Date) => d.toISOString().slice(0, 10)
 
+function shiftMonthsClamped(date: Date, months: number) {
+  const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1))
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate()
+  target.setUTCDate(Math.min(date.getUTCDate(), lastDay))
+  return target
+}
+
+function isFullCalendarMonth(from: Date, to: Date) {
+  const lastDay = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 0)).getUTCDate()
+  return from.getUTCDate() === 1
+    && to.getUTCFullYear() === from.getUTCFullYear()
+    && to.getUTCMonth() === from.getUTCMonth()
+    && to.getUTCDate() === lastDay
+}
+
 // Shift the [from,to] window to the comparison window for the chosen preset.
 function shiftRange(from: string, to: string, mode: Exclude<Compare, 'none' | 'custom'>): { from: string; to: string } {
   const f = parseISO(from), t = parseISO(to)
   const periodDays = Math.round((t.getTime() - f.getTime()) / DAY) + 1
-  const nf = new Date(f), nt = new Date(t)
-  if (mode === 'prev') { nt.setTime(f.getTime() - DAY); nf.setTime(nt.getTime() - (periodDays - 1) * DAY) }
+  let nf = new Date(f), nt = new Date(t)
+  if (mode === 'prev' && isFullCalendarMonth(f, t)) {
+    nf = new Date(Date.UTC(f.getUTCFullYear(), f.getUTCMonth() - 1, 1))
+    nt = new Date(Date.UTC(f.getUTCFullYear(), f.getUTCMonth(), 0))
+  }
+  else if (mode === 'prev') { nt.setTime(f.getTime() - DAY); nf.setTime(nt.getTime() - (periodDays - 1) * DAY) }
   else if (mode === 'dod') { nf.setTime(f.getTime() - DAY); nt.setTime(t.getTime() - DAY) }
   else if (mode === 'wow') { nf.setTime(f.getTime() - 7 * DAY); nt.setTime(t.getTime() - 7 * DAY) }
-  else if (mode === 'mom') { nf.setUTCMonth(nf.getUTCMonth() - 1); nt.setUTCMonth(nt.getUTCMonth() - 1) }
-  else if (mode === 'yoy') { nf.setUTCFullYear(nf.getUTCFullYear() - 1); nt.setUTCFullYear(nt.getUTCFullYear() - 1) }
+  else if (mode === 'mom') { nf = shiftMonthsClamped(f, -1); nt = shiftMonthsClamped(t, -1) }
+  else if (mode === 'yoy') { nf = shiftMonthsClamped(f, -12); nt = shiftMonthsClamped(t, -12) }
   return { from: fmtISO(nf), to: fmtISO(nt) }
 }
 
@@ -78,7 +97,7 @@ function movingAverage(vals: number[], win: number): (number | null)[] {
   return out
 }
 
-export default function RevenueTrendChart({ series, from, to, periodLabel }: Props) {
+export default function RevenueTrendChart({ series, from, to, periodLabel, basis }: Props) {
   const [metric, setMetric] = useState<Metric>('revenue')
   const [chartType, setChartType] = useState<ChartType>('bar')
   const [compare, setCompare] = useState<Compare>('none')
@@ -90,6 +109,12 @@ export default function RevenueTrendChart({ series, from, to, periodLabel }: Pro
   const [cmpErr, setCmpErr] = useState(false)
 
   const m = METRICS[metric]
+  const basisLabel = basis === 'delivered' ? 'livraison' : 'création'
+  const perDayLabel = metric === 'orders'
+    ? (basis === 'delivered' ? 'livraisons/jour' : 'commandes créées/jour')
+    : metric === 'profit'
+      ? (basis === 'delivered' ? 'MAD/jour · profit livré' : 'MAD/jour · profit estimé')
+      : (basis === 'delivered' ? 'MAD/jour · CA livré' : 'MAD/jour · CA confirmé + livré')
   const maWin = series.length >= 14 ? 7 : Math.max(2, Math.floor(series.length / 2))
 
   // Local (Morocco) today, to flag the in-progress day.
@@ -108,17 +133,24 @@ export default function RevenueTrendChart({ series, from, to, periodLabel }: Pro
   // Fetch the comparison period's daily series from the same stats endpoint.
   const reqId = useRef(0)
   useEffect(() => {
-    if (!cmpRange) { setCmpSeries(null); setCmpErr(false); setCmpLoading(false); return }
     const id = ++reqId.current
-    setCmpLoading(true); setCmpErr(false)
-    fetch(`/api/ops/dashboard/stats?from=${cmpRange.from}&to=${cmpRange.to}`, { cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('fetch'))))
-      .then((d) => { if (id === reqId.current) setCmpSeries(Array.isArray(d.revenueSeries) ? d.revenueSeries : []) })
-      .catch(() => { if (id === reqId.current) { setCmpErr(true); setCmpSeries(null) } })
-      .finally(() => { if (id === reqId.current) setCmpLoading(false) })
-  }, [cmpRange])
+    if (!cmpRange) return
+    const timer = window.setTimeout(() => {
+      if (id !== reqId.current) return
+      setCmpLoading(true); setCmpErr(false)
+      fetch(`/api/ops/dashboard/stats?from=${cmpRange.from}&to=${cmpRange.to}`, { cache: 'no-store' })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error('fetch'))))
+        .then((d) => {
+          const nextSeries = d.analytics?.[basis]?.revenueSeries ?? d.revenueSeries
+          if (id === reqId.current) setCmpSeries(Array.isArray(nextSeries) ? nextSeries : [])
+        })
+        .catch(() => { if (id === reqId.current) { setCmpErr(true); setCmpSeries(null) } })
+        .finally(() => { if (id === reqId.current) setCmpLoading(false) })
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [basis, cmpRange])
 
-  const hasCmp = !!cmpSeries && cmpSeries.length > 0
+  const hasCmp = !!cmpRange && !!cmpSeries && cmpSeries.length > 0
 
   const ma = useMemo(() => movingAverage(series.map((p) => p[metric]), maWin), [series, metric, maWin])
 
@@ -182,7 +214,7 @@ export default function RevenueTrendChart({ series, from, to, periodLabel }: Pro
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--tx-faint)' }}>
-            Tendance · {periodLabel}
+            Tendance · {periodLabel} · {basisLabel}
           </div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginTop: 5, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 24, fontWeight: 700, fontFamily: 'var(--mono)', letterSpacing: '-0.02em', color: 'var(--tx-hi)', lineHeight: 1 }}>{headline}</span>
@@ -195,7 +227,7 @@ export default function RevenueTrendChart({ series, from, to, periodLabel }: Pro
             )}
           </div>
           <div style={{ fontSize: 11.5, color: 'var(--tx-faint)', marginTop: 4 }}>
-            ≈ {m.fmt(avg)} {m.perDay}
+            ≈ {m.fmt(avg)} {perDayLabel}
           </div>
         </div>
         {best && (
@@ -255,8 +287,8 @@ export default function RevenueTrendChart({ series, from, to, periodLabel }: Pro
           <span style={{ width: 12, height: 2, background: MA_COLOR, borderRadius: 2, opacity: showMA ? 1 : 0.5 }} />
           Tendance
         </button>
-        {cmpLoading && <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>chargement…</span>}
-        {cmpErr && <span style={{ fontSize: 11, color: 'var(--red)' }}>comparaison indisponible</span>}
+        {cmpRange && cmpLoading && <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>chargement…</span>}
+        {cmpRange && cmpErr && <span style={{ fontSize: 11, color: 'var(--red)' }}>comparaison indisponible</span>}
       </div>
 
       {/* Legend when comparing / MA on */}
@@ -285,8 +317,13 @@ export default function RevenueTrendChart({ series, from, to, periodLabel }: Pro
       )}
 
       {/* Chart */}
-      <div style={{ width: '100%', height: 248, marginTop: 4 }}>
-        <ResponsiveContainer width="100%" height="100%">
+      <div style={{ width: '100%', minWidth: 0, height: 248, marginTop: 4 }}>
+        <ResponsiveContainer
+          width="100%"
+          height="100%"
+          minWidth={0}
+          initialDimension={{ width: 640, height: 248 }}
+        >
           <ComposedChart data={data} margin={{ top: 24, right: 12, left: -6, bottom: 0 }} barCategoryGap="18%">
             <defs>
               <linearGradient id="rt-fill" x1="0" y1="0" x2="0" y2="1">

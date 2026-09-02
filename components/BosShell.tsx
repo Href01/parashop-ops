@@ -279,9 +279,15 @@ export default function BosShell({
                       alignItems: 'center',
                       gap: '10px',
                       padding: isMobile ? '11px 10px' : shellCollapsed ? '9px' : '8px 10px',
-                      borderRadius: '8px',
-                      color: isActive ? 'var(--rose)' : 'var(--tx-mid)',
-                      fontWeight: isActive ? 600 : 500,
+                      borderRadius: '9px',
+                      /* PASTILLE NOIRE POUR L'ITEM ACTIF.
+                         Le rose est réservé à l'action principale ; s'il sert aussi
+                         à marquer la page courante, on ne sait plus s'il veut dire
+                         « Shine » ou « ici ». Le noir tranche mieux sur le blanc du
+                         rail et laisse le rose à son seul rôle. */
+                      background: isActive ? 'var(--tx-hi)' : undefined,
+                      color: isActive ? '#fff' : 'var(--tx-mid)',
+                      fontWeight: isActive ? 700 : 600,
                       fontSize: isMobile ? '14px' : '13px',
                       position: 'relative',
                       whiteSpace: 'nowrap',
@@ -297,8 +303,15 @@ export default function BosShell({
                           <span style={{
                             fontFamily: 'var(--mono)',
                             fontSize: '11px',
-                            background: item.alert ? 'var(--rose-bg)' : 'var(--bg-3)',
-                            color: item.alert ? 'var(--rose-bright)' : 'var(--tx-mid)',
+                            /* Sur la pastille noire, le compteur passe en blanc
+                               translucide : gardé tel quel, son fond clair et son
+                               texte gris se seraient perdus sur du noir. */
+                            background: isActive
+                              ? 'rgba(255,255,255,0.16)'
+                              : item.alert ? 'var(--rose-bg)' : 'var(--bg-3)',
+                            color: isActive
+                              ? '#fff'
+                              : item.alert ? 'var(--rose)' : 'var(--tx-mid)',
                             padding: '1px 7px',
                             borderRadius: '20px'
                           }}>

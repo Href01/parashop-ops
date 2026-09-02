@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { RefreshCw, X, AlertCircle, Truck } from 'lucide-react'
 import BosShell from '@/components/BosShell'
+import PageHead from '@/components/PageHead'
 
 interface Row {
   id: number
@@ -127,10 +128,12 @@ export default function SenditLabPage() {
     if (pulling) return
     setPulling(true); setError(null); setNotice(null)
     try {
-      const res = await fetch('/api/ops/sendit/staging', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'pull' }) })
+      const res = await fetch('/api/ops/sendit/staging', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'run-sync' }) })
       const d = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(d.error || `Erreur ${res.status}`)
-      setNotice(`Sendit synchronisé : ${d.pulled} colis (${d.inserted} nouveaux, ${d.updated} mis à jour).`)
+      setNotice(d.status === 'skipped'
+        ? d.skippedReason === 'already-running' ? 'Une synchronisation Sendit est déjà en cours.' : 'Sendit a déjà été synchronisé récemment.'
+        : `Sendit synchronisé : ${d.pulled} colis, ${d.ordersSynced} commandes · ${d.apiCalls} appels API.`)
       load()
       setTimeout(() => setNotice(null), 6000)
     } catch (e) { setError(e instanceof Error ? e.message : 'Pull impossible') }
@@ -141,26 +144,24 @@ export default function SenditLabPage() {
 
   return (
     <BosShell active="sendit" title="Sendit" crumb="Opérations">
-      <div style={{ maxWidth: 1280, margin: '0 auto', padding: '22px 24px 60px' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 14 }}>
-          <div style={{ flex: 1 }}>
-            <div className="eyebrow" style={{ marginBottom: 4 }}>RÉCONCILIATION · LABO</div>
-            <h1 className="serif-display" style={{ fontSize: 28, lineHeight: 1.05 }}>Sendit</h1>
-            <p style={{ fontSize: 13, color: 'var(--tx-mid)', marginTop: 7, lineHeight: 1.55, maxWidth: 680 }}>
-              Zone <b>isolée</b> : on importe les colis Sendit ici, on affecte les produits, on vérifie — <b>rien ne touche le BOS officiel</b> tant que tu n&apos;as pas cliqué « Rendre officiel ».
-            </p>
-          </div>
-          <div style={{ display: 'flex', gap: 8, flexShrink: 0, marginTop: 4 }}>
-            {(counts.matched > 0 || counts.mismatch > 0) && (
-              <button className="btn-modern btn-subtle" onClick={syncMatched} disabled={busy} title="Pousse le statut + COD Sendit sur les commandes déjà liées">
-                Sync statut/COD ({counts.matched + counts.mismatch})
+      <div className="page-inner page-wide">
+        <PageHead
+          title="Sendit"
+          meta="Réconciliation · labo"
+          note={<>Zone <b>isolée</b> : on importe les colis Sendit ici, on affecte les produits, on vérifie — <b>rien ne touche le BOS officiel</b> tant que tu n&apos;as pas cliqué « Rendre officiel ».</>}
+          actions={
+            <>
+              {(counts.matched > 0 || counts.mismatch > 0) && (
+                <button className="btn-modern btn-subtle" onClick={syncMatched} disabled={busy} title="Réapplique le snapshot déjà importé sans appeler Sendit">
+                  Réconcilier localement ({counts.matched + counts.mismatch})
+                </button>
+              )}
+              <button className="btn-modern btn-primary" onClick={pull} disabled={pulling}>
+                <RefreshCw style={{ width: 15, height: 15 }} />{pulling ? 'Sync…' : 'Synchroniser Sendit'}
               </button>
-            )}
-            <button className="btn-modern btn-primary" onClick={pull} disabled={pulling}>
-              <RefreshCw style={{ width: 15, height: 15 }} />{pulling ? 'Sync…' : 'Pull Sendit'}
-            </button>
-          </div>
-        </div>
+            </>
+          }
+        />
 
         {/* Counts */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 10, marginBottom: 14 }}>
@@ -190,11 +191,11 @@ export default function SenditLabPage() {
           <div style={{ textAlign: 'center', padding: '40px 20px', background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 14 }}>
             <Truck style={{ width: 28, height: 28, color: 'var(--tx-faint)', margin: '0 auto 10px' }} />
             <p style={{ fontSize: 14, color: 'var(--tx-hi)', fontWeight: 600 }}>Aucun colis importé</p>
-            <p style={{ fontSize: 13, color: 'var(--tx-lo)', marginTop: 6 }}>Clique <b>Pull Sendit</b> pour récupérer tes colis (zone isolée, sans risque).</p>
+            <p style={{ fontSize: 13, color: 'var(--tx-lo)', marginTop: 6 }}>Clique <b>Synchroniser Sendit</b> pour récupérer tes colis (zone isolée, sans risque).</p>
           </div>
         ) : (
-          <div style={{ background: 'var(--bg-1)', border: '1px solid var(--line-soft)', borderRadius: 14, overflow: 'hidden' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <div className="card-modern" style={{ overflow: 'hidden' }}>
+            <table className="table-modern sendit-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--line-soft)', textAlign: 'left' }}>
                   <th style={th}>Client</th>

@@ -17,7 +17,8 @@ export async function GET(req: Request) {
   try {
     // Verify cron secret (Vercel sets this header)
     const authHeader = req.headers.get('authorization')
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    const cronSecret = process.env.CRON_SECRET
+    if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
@@ -84,10 +85,10 @@ export async function GET(req: Request) {
       stats: stats.rows[0],
       timestamp: new Date().toISOString(),
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[Cron] Error:', error)
     return NextResponse.json(
-      { error: 'Failed to compute metrics', details: error.message },
+      { error: 'Failed to compute metrics', details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     )
   }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import BosShell from '@/components/BosShell'
+import PageHead from '@/components/PageHead'
 import { Search, Filter, Download, UserPlus, TrendingUp, TrendingDown, Clock, DollarSign } from 'lucide-react'
 
 type Customer = {
@@ -184,19 +185,20 @@ export default function CustomersPage() {
   return (
     <BosShell active="customers" title="Clientes" crumb="Croissance">
       <div className="page-inner page-wide">
-        {/* Header */}
-        <div className="page-head">
-          <div>
-            <h1 className="serif-display">Clientes</h1>
-            <div className="sub">Relation client & segmentation</div>
-          </div>
-          <div className="spacer"></div>
-          <button className="btn-modern btn-secondary" onClick={handleBackfill} disabled={linking} title="Lier les commandes guests (sans fiche) à une cliente">
-            <UserPlus className="w-4 h-4" />{linking ? 'Liaison…' : 'Lier les guests'}
-          </button>
-          <button className="btn-modern btn-secondary" onClick={handleExport}><Download className="w-4 h-4" />Exporter</button>
-          <button className="btn-modern btn-primary" onClick={handleAddCustomer}><UserPlus className="w-4 h-4" />Ajouter</button>
-        </div>
+        <PageHead
+          title="Clientes"
+          count={customers.length}
+          note="Relation client et segmentation."
+          actions={
+            <>
+              <button className="btn-modern btn-secondary" onClick={handleBackfill} disabled={linking} title="Lier les commandes guests (sans fiche) à une cliente">
+                <UserPlus className="w-4 h-4" />{linking ? 'Liaison…' : 'Lier les guests'}
+              </button>
+              <button className="btn-modern btn-secondary" onClick={handleExport}><Download className="w-4 h-4" />Exporter</button>
+              <button className="btn-modern btn-primary" onClick={handleAddCustomer}><UserPlus className="w-4 h-4" />Ajouter</button>
+            </>
+          }
+        />
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">

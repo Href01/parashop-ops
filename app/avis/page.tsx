@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Star, CheckCircle, XCircle, ShoppingBag, User } from 'lucide-react'
 import Link from 'next/link'
 import BosShell from '@/components/BosShell'
+import PageHead from '@/components/PageHead'
 
 interface Review {
   id: number
@@ -85,15 +86,10 @@ export default function AvisPage() {
     <BosShell active="customers" title="Avis" crumb="Relation client / Avis">
       <div style={{ padding: '22px 24px 60px', maxWidth: 1200, margin: '0 auto' }}>
 
-        {/* Header */}
-        <div style={{ marginBottom: 22 }}>
-          <h1 className="serif-display" style={{ fontSize: 26, lineHeight: 1.1, color: 'var(--tx-hi)', marginBottom: 6 }}>
-            Modération des avis
-          </h1>
-          <p style={{ fontSize: 13.5, color: 'var(--tx-lo)' }}>
-            Publiez les avis de vos clientes — visibles sur la boutique une fois approuvés
-          </p>
-        </div>
+        <PageHead
+          title="Modération des avis"
+          note="Publiez les avis de vos clientes — visibles sur la boutique une fois approuvés."
+        />
 
         {/* Filters */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 22 }}>

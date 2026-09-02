@@ -1,6 +1,6 @@
 'use client'
 
-import { ChevronDown, ChevronLeft, ChevronRight, Download, Filter, Plus, RefreshCw, Search, Star, Trash2 } from 'lucide-react'
+import { Check, ChevronDown, ChevronLeft, ChevronRight, Clock, Download, Filter, Plus, RefreshCw, Search, ShieldCheck, Star, Trash2, Truck, Undo2, XCircle } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -87,6 +87,33 @@ function completenessColor(value: number) {
   if (value >= 100) return 'var(--green)'
   if (value >= 75) return 'var(--amber)'
   return 'var(--red)'
+}
+
+/* LA PASTILLE À INITIALE.
+   Sa teinte est tirée du nom, pas d'un compteur de ligne : la même cliente garde
+   donc la même couleur d'un chargement, d'un tri et d'une page à l'autre. C'est
+   ce qui en fait un repère plutôt qu'une décoration. Les six paires sont celles
+   du système — fond pastel, texte foncé assorti, contraste AA sur blanc. */
+const AVATAR_TONES: Array<{ background: string; color: string }> = [
+  { background: 'var(--rose-bg)', color: 'var(--red)' },
+  { background: 'var(--blue-bg)', color: 'var(--blue)' },
+  { background: 'var(--green-bg)', color: 'var(--green)' },
+  { background: 'var(--violet-bg)', color: 'var(--violet)' },
+  { background: 'var(--amber-bg)', color: 'var(--amber)' },
+  { background: 'var(--teal-bg)', color: 'var(--teal)' },
+]
+
+function initialOf(name?: string | null): string {
+  const clean = (name || '').trim()
+  return clean ? clean[0].toUpperCase() : '?'
+}
+
+function avatarStyle(name?: string | null) {
+  const clean = (name || '').trim()
+  if (!clean) return { background: 'var(--bg-3)', color: 'var(--tx-lo)' }
+  let sum = 0
+  for (let i = 0; i < clean.length; i += 1) sum += clean.charCodeAt(i)
+  return AVATAR_TONES[sum % AVATAR_TONES.length]
 }
 
 // Real Sendit delivery states → French (so the column matches what's on Sendit).
@@ -326,13 +353,19 @@ export default function OrdersPage() {
     const n: Record<Case, number> = { attente: 0, confirmee: 0, transit: 0, livree: 0, retournee: 0, annulee: 0 }
     for (const o of orders) n[caseDe(o)] += 1
 
+    /* La part se lit à côté du nombre : « 192 » ne dit rien seul, « 192 · 84 % »
+       situe. Le total est celui des commandes chargées, et comme `caseDe` range
+       chaque commande dans une case et une seule, les six parts font 100. */
+    const total = orders.length || 1
+    const part = (v: number) => `${Math.round((v / total) * 100)}%`
+
     return [
-      { label: 'En attente', value: n.attente, color: 'var(--amber)', className: 'st-pending', cas: 'attente' as Case },
-      { label: 'Confirmées', value: n.confirmee, color: 'var(--blue)', className: 'st-confirmed', cas: 'confirmee' as Case },
-      { label: 'En transit', value: n.transit, color: 'var(--violet)', className: 'st-shipped', cas: 'transit' as Case },
-      { label: 'Livrées', value: n.livree, color: 'var(--green)', className: 'st-delivered', cas: 'livree' as Case },
-      { label: 'Retournées', value: n.retournee, color: 'var(--red)', className: 'st-returned', cas: 'retournee' as Case },
-      { label: 'Annulées', value: n.annulee, color: 'var(--tx-mid)', className: 'st-cancelled', cas: 'annulee' as Case },
+      { label: 'En attente', value: n.attente, share: part(n.attente), color: 'var(--amber)', tint: 'var(--amber-bg)', Icon: Clock, className: 'st-pending', cas: 'attente' as Case },
+      { label: 'Confirmées', value: n.confirmee, share: part(n.confirmee), color: 'var(--blue)', tint: 'var(--blue-bg)', Icon: Check, className: 'st-confirmed', cas: 'confirmee' as Case },
+      { label: 'En transit', value: n.transit, share: part(n.transit), color: 'var(--violet)', tint: 'var(--violet-bg)', Icon: Truck, className: 'st-shipped', cas: 'transit' as Case },
+      { label: 'Livrées', value: n.livree, share: part(n.livree), color: 'var(--green)', tint: 'var(--green-bg)', Icon: ShieldCheck, className: 'st-delivered', cas: 'livree' as Case },
+      { label: 'Retournées', value: n.retournee, share: part(n.retournee), color: 'var(--red)', tint: 'var(--red-bg)', Icon: Undo2, className: 'st-returned', cas: 'retournee' as Case },
+      { label: 'Annulées', value: n.annulee, share: part(n.annulee), color: 'var(--tx-mid)', tint: 'var(--bg-3)', Icon: XCircle, className: 'st-cancelled', cas: 'annulee' as Case },
     ]
   }, [orders])
 
@@ -410,17 +443,22 @@ export default function OrdersPage() {
   return (
     <BosShell active="orders" title="Commandes" crumb="Opérations">
       <div style={{ maxWidth: '1640px', margin: '0 auto', padding: '22px 24px 60px' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '16px' }}>
-          <div>
-            <div className="eyebrow" style={{ marginBottom: '6px' }}>
-              OPÉRATIONS · COMMANDES
-            </div>
-            <h1 className="serif-display" style={{ fontSize: '30px', lineHeight: 1.05, marginBottom: '6px' }}>Commandes</h1>
-            <div style={{ fontSize: '13px', color: 'var(--tx-lo)' }}>
-              {orders.length} commande{orders.length !== 1 ? 's' : ''} au total
-            </div>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+        {/* L'EN-TÊTE TENAIT SUR QUATRE RANGÉES POUR DIRE TROIS FOIS LA MÊME CHOSE.
+            Un fil d'Ariane « OPÉRATIONS · COMMANDES », un titre de 30 px, un
+            sous-titre — alors que la barre du haut affiche déjà « Commandes /
+            Opérations ». Sur mobile il fallait faire défiler ~1700 px avant la
+            première commande. Tout tient désormais sur une ligne : le titre, le
+            compte, les actions. */}
+        <div className="orders-page-head" style={{ display: 'flex', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap', gap: '11px' }}>
+          <h1 className="serif-display" style={{ fontSize: '19px', lineHeight: 1.1, margin: 0 }}>Commandes</h1>
+          <span
+            className="bo-num"
+            style={{ fontSize: '11.5px', fontWeight: 700, color: 'var(--tx-lo)', background: 'var(--bg-3)', padding: '3px 8px', borderRadius: '999px' }}
+          >
+            {orders.length}
+          </span>
+          <div className="orders-head-spacer" style={{ flex: 1 }} />
+          <div className="orders-page-actions" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <button type="button" className="btn-modern btn-secondary" onClick={handleSyncSendit}>
               <RefreshCw className="w-4 h-4" />
               Sync Sendit
@@ -436,7 +474,9 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+        {/* `bo-kpi-strip` : grille sur ordinateur, bande qui défile sur téléphone.
+            En 2×3, ces six cartes occupaient 300 px avant la première commande. */}
+        <div className="bo-kpi-strip grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
           {stats.map((item) => {
             const actif = activeFilter === item.cas
             return (
@@ -456,15 +496,30 @@ export default function OrdersPage() {
                 boxShadow: actif ? `inset 0 0 0 1px ${item.color}` : undefined,
               }}
             >
-              <div className="card-body">
-                <p className="text-xs font-medium text-tx-lo uppercase tracking-wide mb-2">{item.label}</p>
-                <p className="text-3xl font-bold mb-1" style={{ color: item.color }}>
-                  {item.value}
-                </p>
-                <div className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full" style={{ background: item.color }}></span>
-                  <span className="text-xs text-tx-faint">{actif ? 'Filtre actif' : item.label}</span>
+              {/* Carré d'icône teinté puis chiffre : la tuile passe de 122 à ~78 px
+                  et se lit d'un regard. Le pastel porte la teinte, le trait la
+                  sature — une teinte par état, la même sur toutes les pages. */}
+              <div style={{ padding: '12px 13px', display: 'flex', flexDirection: 'column', gap: '9px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '9px' }}>
+                  <span className="bo-isq" style={{ background: item.tint, color: item.color }}>
+                    <item.Icon style={{ width: 16, height: 16 }} />
+                  </span>
+                  <span className="bo-sect">{item.label}</span>
                 </div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                  <span className="bo-num" style={{ fontSize: '24px', fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1, color: item.color }}>
+                    {item.value}
+                  </span>
+                  <span className="bo-num" style={{ fontSize: '11px', fontWeight: 700, color: 'var(--tx-faint)' }}>
+                    {item.share}
+                  </span>
+                </div>
+                {/* Masquée sous 640 px : sur un écran tactile la carte se tape,
+                    et six mentions identiques repoussaient la première commande
+                    de six lignes. Voir `.bo-hint-desktop` dans design-tokens.css. */}
+                <span className="bo-hint-desktop" style={{ fontSize: '10.5px', fontWeight: 600, color: actif ? item.color : 'var(--tx-faint)' }}>
+                  {actif ? 'Filtre actif — recliquer pour tout voir' : 'Cliquer pour filtrer'}
+                </span>
               </div>
             </button>
             )
@@ -482,7 +537,11 @@ export default function OrdersPage() {
                   setSearch(event.target.value)
                   setCurrentPage(1)
                 }}
-                placeholder="Rechercher par nom, téléphone, n°…"
+                /* Raccourci : `.search-box` a un min-width de 240 px et se fait
+                   comprimer par la bande de filtres à côté. L'ancienne formule
+                   « Rechercher par nom, téléphone, n°… » se coupait donc en plein
+                   mot. Mieux vaut un libellé qui tient que trois mots amputés. */
+                placeholder="Nom, téléphone, n°…"
               />
             </div>
 
@@ -535,7 +594,32 @@ export default function OrdersPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="table-modern">
+            <table className="table-modern ord-table">
+              {/* LARGEURS FIXÉES, ET C'EST TOUT LE CORRECTIF DE DENSITÉ.
+                  Mesuré avant : « Commande » recevait 115 px et devait y loger le
+                  numéro, la référence ET le nom du produit — qui se déchirait sur
+                  six lignes et poussait la ligne à 142 px. Pendant ce temps
+                  « Canal » et « Livraison » s'octroyaient 269 px à eux deux pour
+                  afficher deux pastilles. On rend la largeur au contenu qui varie. */}
+              <colgroup>
+                <col style={{ width: '32px' }} />
+                <col style={{ width: '62px' }} />
+                <col style={{ width: '170px' }} />
+                <col style={{ width: '176px' }} />
+                <col style={{ width: '116px' }} />
+                <col style={{ width: '104px' }} />
+                {/* 126 : à 112, « Étiquette créée » perdait son dernier caractère —
+                    relevé sur capture, pas déduit du DOM, où le texte était entier. */}
+                <col style={{ width: '126px' }} />
+                <col style={{ width: '68px' }} />
+                <col style={{ width: '66px' }} />
+                <col style={{ width: '62px' }} />
+                {/* 106 et non 96 : à 96 la barre et son pourcentage ne tenaient pas
+                    ensemble, et « 100% » se coupait en « 10( » — vu à l'écran. */}
+                <col style={{ width: '106px' }} />
+                <col style={{ width: '74px' }} />
+                <col style={{ width: '34px' }} />
+              </colgroup>
               <thead>
                 <tr>
                   <th className="select-col">
@@ -548,8 +632,9 @@ export default function OrdersPage() {
                       }}
                     />
                   </th>
-                  <th>Commande</th>
+                  <th>N°</th>
                   <th>Client</th>
+                  <th>Produit</th>
                   <th>Canal</th>
                   <th>Statut</th>
                   <th>Livraison</th>
@@ -565,14 +650,14 @@ export default function OrdersPage() {
                 {loading ? (
                   [1, 2, 3, 4, 5].map((item) => (
                     <tr key={item}>
-                      <td colSpan={12}>
+                      <td colSpan={13}>
                         <div className="skeleton-line"></div>
                       </td>
                     </tr>
                   ))
                 ) : filteredOrders.length === 0 ? (
                   <tr>
-                    <td colSpan={12}>
+                    <td colSpan={13}>
                       <div style={{ textAlign: 'center', padding: '46px 20px' }}>
                         <div style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--bg-2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
                           {orders.length === 0
@@ -617,25 +702,37 @@ export default function OrdersPage() {
                           />
                         </td>
                         <td>
-                          <div className="cellstack">
-                            <span className="num fs12 t-strong">#{order.id}</span>
-                            <span className="t-sub mono">{order.orderNumber || 'Commande manuelle'}</span>
-                            {order.product_names && (
-                              <span className="t-sub" style={{ fontSize: '11px', color: 'var(--tx-mid)' }}>
-                                {order.product_names.length > 50
-                                  ? order.product_names.substring(0, 50) + '...'
-                                  : order.product_names}
+                          <span className="num fs12 t-strong" title={order.orderNumber || 'Commande manuelle'}>#{order.id}</span>
+                        </td>
+                        <td>
+                          {/* La pastille à initiale donne un point d'accroche : dans une
+                              liste de 228 lignes, l'œil retrouve une cliente à sa couleur
+                              avant d'avoir lu son nom. La teinte est dérivée du nom, donc
+                              stable d'un chargement à l'autre. */}
+                          <div className="row gap8" style={{ minWidth: 0 }}>
+                            <span className="bo-av" style={avatarStyle(order.deliveryName)}>
+                              {initialOf(order.deliveryName)}
+                            </span>
+                            <span className="cellstack" style={{ minWidth: 0 }}>
+                              <span className="t-strong ord-clip">{order.deliveryName || 'Sans nom'}</span>
+                              {/* Ville et téléphone séparés, pour que le numéro puisse
+                                  disparaître sous 640 px : c'est lui qui forçait la
+                                  table à 474 px dans un écran de 390. Il reste à un
+                                  tap, sur la fiche de la commande. */}
+                              <span className="t-sub ord-clip">
+                                <span className="bo-mobile-only">#{order.id} · </span>
+                                {order.deliveryCity || 'Ville ?'}
+                                <span className="bo-hint-desktop"> · {order.deliveryPhone || 'Tél ?'}</span>
                               </span>
-                            )}
+                            </span>
                           </div>
                         </td>
                         <td>
-                          <div className="cellstack">
-                            <span className="t-strong">{order.deliveryName || 'Sans nom'}</span>
-                            <span className="t-sub">
-                              {order.deliveryCity || 'Ville ?'} · {order.deliveryPhone || 'Tél ?'}
-                            </span>
-                          </div>
+                          {/* Sa propre colonne, et une seule ligne. C'est ce nom, écrasé
+                              dans une colonne de 115 px, qui gonflait chaque ligne. */}
+                          <span className="ord-clip t-sub" style={{ fontSize: '12px', color: 'var(--tx-mid)' }} title={order.product_names || ''}>
+                            {order.product_names || '—'}
+                          </span>
                         </td>
                         <td onClick={(e) => e.stopPropagation()}>
                           <span className="row gap6">
@@ -664,7 +761,10 @@ export default function OrdersPage() {
                           <span className={`st ${deliv.cls}`}><span className="sd"></span>{deliv.text}</span>
                         </td>
                         <td className="r">
-                          <span className="num t-strong">{formatMoney(order.revenue)}</span> <span className="tx-lo fs11">MAD</span>
+                          {/* « MAD » disparaît sous 640 px : tout le BOS est en dirhams,
+                              et ces trois lettres étaient les dernières à pousser la
+                              colonne CA hors de l'écran. */}
+                          <span className="num t-strong">{formatMoney(order.revenue)}</span> <span className="tx-lo fs11 bo-hint-desktop">MAD</span>
                         </td>
                         <td className="r">
                           {order.estimatedProfit === null || order.estimatedProfit === undefined ? (

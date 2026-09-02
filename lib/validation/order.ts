@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { normalizePaymentMethod } from '@/lib/order-utils'
 
+const MARKETPLACE_CHANNELS = new Set(['Jumia', 'Marjane Mall'])
+
 /**
  * Phone number validation and formatting
  * Morocco format: 06XXXXXXXX or 07XXXXXXXX (10 digits)
@@ -49,7 +51,7 @@ export const CreateOrderSchema = z.object({
      sont — plutot que de gonfler le compte avec un numero invente. */
   deliveryPhone: MoroccoPhoneSchema.optional(),
   deliveryCity: z.string().min(2),
-  deliveryAddress: z.string().optional(),
+  deliveryAddress: z.string().trim().optional(),
   deliveryNotes: z.string().optional(),
   senditDistrictId: z.number().int().positive().optional(), // Sendit district chosen by customer
 
@@ -95,7 +97,7 @@ export const CreateOrderSchema = z.object({
     productId: z.number().int().positive(),
     quantity: z.number().int().positive().max(100),
     unitPrice: PositiveNumberSchema,
-  })),
+  })).min(1, 'Ajoute au moins un produit'),
 
   // Pricing (CRITICAL: Must be numbers, not strings!)
   discountTotal: NonNegativeNumberSchema.default(0),
@@ -107,20 +109,55 @@ export const CreateOrderSchema = z.object({
   notes: z.string().optional(),
   confirmImmediately: z.boolean().default(false),
 }).superRefine((data, ctx) => {
+  const produits = data.items.reduce((s, i) => s + i.unitPrice * i.quantity, 0)
+  const total = produits - Number(data.discountTotal) + Number(data.deliveryFeeCharged)
+  const marketplaceExpected = MARKETPLACE_CHANNELS.has(data.sourceChannel)
+
+  if (data.marketplace !== marketplaceExpected) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ['marketplace'],
+      message: 'Le mode marketplace ne correspond pas au canal sélectionné',
+    })
+  }
+
+  const duplicateProduct = data.items.find((item, index) =>
+    data.items.findIndex((candidate) => candidate.productId === item.productId) !== index
+  )
+  if (duplicateProduct) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ['items'],
+      message: 'Un produit ne peut apparaître qu’une seule fois',
+    })
+  }
+
+  if (Number(data.discountTotal) > produits) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ['discountTotal'],
+      message: `La remise ne peut pas dépasser ${produits.toFixed(2)} MAD`,
+    })
+  }
+
   /* Le district reste obligatoire pour tout ce qui part en livraison : sans lui
      on ne sait ni ou envoyer, ni combien facturer. La remise en main propre est
      la seule dispense, et elle exige en retour des frais nuls — accepter des
      frais sur une remise en main propre serait accepter une incoherence. */
-  if (!data.handToHand && !data.senditDistrictId) {
+  if (!data.handToHand && !data.marketplace && !data.senditDistrictId) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom, path: ['senditDistrictId'],
       message: 'Choisis une destination de livraison, ou coche « remise en main propre »',
     })
   }
-  if (data.handToHand && Number(data.deliveryFeeCharged) !== 0) {
+  if ((data.handToHand || data.marketplace) && Number(data.deliveryFeeCharged) !== 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom, path: ['deliveryFeeCharged'],
-      message: 'Une remise en main propre ne peut pas porter de frais de livraison',
+      message: 'Une vente sans transporteur ne peut pas porter de frais de livraison',
+    })
+  }
+
+  if (!data.handToHand && !data.marketplace && (!data.deliveryAddress || data.deliveryAddress.length < 5)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom, path: ['deliveryAddress'],
+      message: 'L’adresse de livraison Sendit doit contenir au moins 5 caractères',
     })
   }
 
@@ -138,7 +175,6 @@ export const CreateOrderSchema = z.object({
   /* La commission ne peut pas depasser ce que la vente rapporte : au-dela, la
      saisie est fausse (un taux pris pour un montant, par exemple), et la laisser
      passer creerait une marge negative silencieuse dans le tableau de bord. */
-  const produits = data.items.reduce((s, i) => s + i.unitPrice * i.quantity, 0)
   if (Number(data.channelCommission) > produits) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom, path: ['channelCommission'],
@@ -146,12 +182,24 @@ export const CreateOrderSchema = z.object({
     })
   }
 
-  if (data.paymentMethod === 'VIREMENT') {
+  if (data.paymentMethod === 'VIREMENT' || data.paymentMethod === 'CARD') {
     if (!(Number(data.paidAmount) > 0)) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['paidAmount'], message: 'Bank transfer amount is required' })
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['paidAmount'], message: 'Le montant encaissé est obligatoire' })
     }
     if (!data.paidAt) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['paidAt'], message: 'Bank transfer date is required' })
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['paidAt'], message: 'La date d’encaissement est obligatoire' })
+    }
+    if (Number(data.paidAmount) > total + 0.01) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: ['paidAmount'],
+        message: `Le montant encaissé dépasse le total client (${total.toFixed(2)} MAD)`,
+      })
+    }
+    if (data.paymentMethod === 'CARD' && Math.abs(Number(data.paidAmount) - total) > 0.01) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom, path: ['paidAmount'],
+        message: `Un paiement carte doit correspondre au total client (${total.toFixed(2)} MAD)`,
+      })
     }
   }
 }).transform(data => {

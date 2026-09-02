@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import BosShell from '@/components/BosShell'
+import PageHead from '@/components/PageHead'
 import { Bell, Check, MessageCircle, PackageCheck } from 'lucide-react'
 
 type Pending = { id: number; phone: string; locale: string; createdAt: string }
@@ -60,11 +61,10 @@ export default function RestockWaitlistPage() {
   return (
     <BosShell active="restock" title="Liste d'attente" crumb="Relation client">
       <div style={{ maxWidth: 1000, margin: '0 auto', padding: '22px 24px 60px' }}>
-        <div className="eyebrow" style={{ marginBottom: 4 }}>RELATION CLIENT</div>
-        <h1 className="serif-display" style={{ fontSize: 28, lineHeight: 1.05 }}>Liste d&apos;attente</h1>
-        <p style={{ fontSize: 13, color: 'var(--tx-mid)', marginTop: 7, maxWidth: 720, lineHeight: 1.55 }}>
-          Les clients qui ont laissé leur numéro sur un produit <b>indisponible (importation)</b>. Dès qu&apos;un produit revient, préviens-les en un clic sur WhatsApp — ce sont des ventes quasi garanties.
-        </p>
+        <PageHead
+          title="Liste d'attente"
+          note={<>Les clientes qui ont laissé leur numéro sur un produit <b>indisponible (importation)</b>. Dès qu&apos;un produit revient, préviens-les en un clic sur WhatsApp — ce sont des ventes quasi garanties.</>}
+        />
 
         {loading ? (
           <div className="card-modern" style={{ padding: 24, marginTop: 18 }}><div className="skeleton-line" style={{ width: '40%', height: 14 }} /></div>

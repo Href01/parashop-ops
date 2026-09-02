@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import BosShell from '@/components/BosShell'
+import PageHead from '@/components/PageHead'
 import {
   Search, AlertTriangle, Package, PackageCheck, TrendingDown, CheckCircle, XCircle,
   Download, Plus, Minus, DollarSign, History, ArrowUpCircle, ArrowDownCircle,
@@ -377,19 +378,15 @@ export default function InventoryPage() {
   return (
     <BosShell active="inventory" title="Stock & Réappro" crumb="Opérations">
       <div className="page-inner page-wide">
-        {/* Header */}
-        <div className="page-head">
-          <div>
-            <h1 className="serif-display">Stock &amp; Réappro</h1>
-            <div className="sub">Niveaux, demande réelle des commandes & réapprovisionnement — au même endroit</div>
-          </div>
-          <div className="spacer" />
-          <button className="btn-modern btn-secondary" onClick={handleExport}><Download className="w-4 h-4" />Exporter</button>
-        </div>
+        <PageHead
+          title="Stock & Réappro"
+          note="Niveaux, demande réelle des commandes et réapprovisionnement — au même endroit."
+          actions={<button className="btn-modern btn-secondary" onClick={handleExport}><Download className="w-4 h-4" />Exporter</button>}
+        />
 
         {/* Tabs */}
-        <div style={{ marginBottom: 22, borderBottom: '1px solid var(--line-soft)' }}>
-          <div style={{ display: 'flex', gap: 4 }}>
+        <div className="bo-tabs-rail" style={{ marginBottom: 22, borderBottom: '1px solid var(--line-soft)' }}>
+          <div className="bo-tabs" style={{ display: 'flex', gap: 4 }}>
             <TabBtn active={activeTab === 'stock'} onClick={() => setActiveTab('stock')} icon={<Package style={{ width: 16, height: 16 }} />} label="Stock & demande" />
             <TabBtn active={activeTab === 'ship'} onClick={() => setActiveTab('ship')} icon={<Truck style={{ width: 16, height: 16 }} />} label="À expédier" count={summary?.toShipOrders} />
             <TabBtn active={activeTab === 'purchases'} onClick={() => setActiveTab('purchases')} icon={<ShoppingCart style={{ width: 16, height: 16 }} />} label="Achats" />

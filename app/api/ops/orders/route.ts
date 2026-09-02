@@ -5,6 +5,94 @@ import { createSenditShipment } from '@/lib/sendit'
 import { CreateOrderSchema } from '@/lib/validation/order'
 import { getOpsSession } from '@/lib/auth'
 import { cached, bustCache } from '@/lib/ops-cache'
+import type { PoolClient } from 'pg'
+
+class StockConflictError extends Error {}
+
+async function assertOrderItemsAvailable(
+  client: PoolClient,
+  items: Array<{ productId: number; quantity: number }>
+) {
+  const productIds = [...new Set(items.map((item) => item.productId))].sort((a, b) => a - b)
+  const selected = await client.query<{
+    id: number
+    name: string
+    active: boolean
+    importUnavailable: boolean
+  }>(
+    `SELECT id, name, active, COALESCE("importUnavailable", false) AS "importUnavailable"
+     FROM "Product" WHERE id = ANY($1::int[]) ORDER BY id FOR UPDATE`,
+    [productIds]
+  )
+
+  if (selected.rows.length !== productIds.length) {
+    throw new StockConflictError('Un produit sélectionné n’existe plus')
+  }
+  const unavailable = selected.rows.find((product) => !product.active || product.importUnavailable)
+  if (unavailable) {
+    throw new StockConflictError(`${unavailable.name} n’est plus disponible à la vente`)
+  }
+
+  // Lock every physical product required by normal lines and bundle
+  // components. A second statement then sees demand committed while waiting
+  // for these locks, preventing two founder orders from consuming the same
+  // final units.
+  const requirements = await client.query<{
+    id: number
+    name: string
+    stock: number
+    trackInventory: boolean
+    required: number
+  }>(
+    `WITH requested AS (
+       SELECT * FROM jsonb_to_recordset($1::jsonb) AS r("productId" int, quantity int)
+     ), expanded AS (
+       SELECT r."productId" AS id, r.quantity
+       FROM requested r
+       WHERE NOT EXISTS (SELECT 1 FROM "Bundle" b WHERE b."productId" = r."productId")
+       UNION ALL
+       SELECT bi."productId" AS id, r.quantity * bi.quantity
+       FROM requested r
+       JOIN "Bundle" b ON b."productId" = r."productId"
+       JOIN "BundleItem" bi ON bi."bundleId" = b.id
+     ), required AS (
+       SELECT id, SUM(quantity)::int AS required FROM expanded GROUP BY id
+     )
+     SELECT p.id, p.name, p.stock, COALESCE(p."trackInventory", true) AS "trackInventory", r.required
+     FROM required r JOIN "Product" p ON p.id = r.id
+     ORDER BY p.id FOR UPDATE OF p`,
+    [JSON.stringify(items)]
+  )
+
+  const demand = await client.query<{ id: number; committed: number }>(
+    `WITH expanded AS (
+       SELECT oi."productId" AS id, oi.quantity
+       FROM "OrderItem" oi
+       JOIN "Order" o ON o.id = oi."orderId"
+       WHERE o.status IN ('PENDING', 'CONFIRMED') AND o."senditTrackingId" IS NULL
+         AND NOT EXISTS (SELECT 1 FROM "Bundle" b WHERE b."productId" = oi."productId")
+       UNION ALL
+       SELECT bi."productId" AS id, oi.quantity * bi.quantity
+       FROM "OrderItem" oi
+       JOIN "Order" o ON o.id = oi."orderId"
+       JOIN "Bundle" b ON b."productId" = oi."productId"
+       JOIN "BundleItem" bi ON bi."bundleId" = b.id
+       WHERE o.status IN ('PENDING', 'CONFIRMED') AND o."senditTrackingId" IS NULL
+     )
+     SELECT id, SUM(quantity)::int AS committed FROM expanded GROUP BY id`
+  )
+  const committedByProduct = new Map(demand.rows.map((row) => [row.id, Number(row.committed) || 0]))
+
+  for (const product of requirements.rows) {
+    if (!product.trackInventory) continue
+    const available = Number(product.stock) - (committedByProduct.get(product.id) || 0)
+    if (product.required > available) {
+      throw new StockConflictError(
+        `${product.name}: ${product.required} demandé${product.required > 1 ? 's' : ''}, ${Math.max(0, available)} disponible${available > 1 ? 's' : ''}`
+      )
+    }
+  }
+}
 
 // GET /api/ops/orders - List all orders
 export async function GET(request: NextRequest) {
@@ -36,7 +124,7 @@ export async function GET(request: NextRequest) {
       LEFT JOIN "Product" p ON p.id = oi."productId"
       WHERE 1=1
     `
-    const params: any[] = []
+    const params: string[] = []
     let paramIndex = 1
 
     if (status) {
@@ -106,6 +194,7 @@ export async function POST(request: NextRequest) {
     const {
       sourceChannel,
       handToHand,
+      marketplace,
       channelCommission,
       deliveryName,
       deliveryPhone,
@@ -128,6 +217,9 @@ export async function POST(request: NextRequest) {
       revenue,
       total,
     } = validation.data
+    const fulfilledWithoutSendit = handToHand || marketplace
+    const prepaid = paymentMethod === 'VIREMENT' || paymentMethod === 'CARD'
+    const createdStatus = fulfilledWithoutSendit ? 'DELIVERED' : (confirmImmediately ? 'CONFIRMED' : 'PENDING')
 
     // Generate order number
     const orderNumber = generateOrderNumber()
@@ -136,6 +228,7 @@ export async function POST(request: NextRequest) {
     const client = await pool.connect()
     try {
       await client.query('BEGIN')
+      await assertOrderItemsAvailable(client, items)
 
       // Total is already calculated and validated by Zod schema
       console.log('💰 Order calculation (validated):', {
@@ -205,13 +298,13 @@ export async function POST(request: NextRequest) {
              faire leur travail : `apply_order_stock_movement` decremente le
              stock, `stamp_delivered_at` pose la date qui fait entrer la vente
              dans le CA realise. */
-          handToHand ? 'DELIVERED' : (confirmImmediately ? 'CONFIRMED' : 'PENDING'),
-          handToHand || confirmImmediately ? 'CONFIRMED' : 'NEEDS_CONFIRMATION',
+          createdStatus,
+          fulfilledWithoutSendit || confirmImmediately ? 'CONFIRMED' : 'NEEDS_CONFIRMATION',
           'NOT_CREATED',
-          paymentMethod === 'VIREMENT' ? paidAmount : null,
-          paymentMethod === 'VIREMENT' ? paidAt : null,
-          paymentMethod === 'VIREMENT' ? paymentReference || null : null,
-          paymentMethod === 'VIREMENT'
+          prepaid ? paidAmount : null,
+          prepaid ? paidAt : null,
+          prepaid ? paymentReference || null : null,
+          prepaid
             ? Math.abs(Number(paidAmount) - total) <= 0.01 ? 'PAID' : 'PARTIAL'
             : 'PENDING',
           channelCommission,
@@ -224,8 +317,12 @@ export async function POST(request: NextRequest) {
       // Create order items (if any)
       if (items && items.length > 0) {
         // Get product cost prices
-        const productIds = items.map((item: any) => item.productId)
-        const productsResult = await client.query(
+        const productIds = items.map((item) => item.productId)
+        const productsResult = await client.query<{
+          id: number
+          name: string
+          costPrice: number | string | null
+        }>(
           `SELECT id, name, "costPrice" FROM "Product" WHERE id = ANY($1)`,
           [productIds]
         )
@@ -234,7 +331,7 @@ export async function POST(request: NextRequest) {
           productsResult.rows.map(p => [p.id, { name: p.name, costPrice: p.costPrice || 0 }])
         )
         senditProductsDescription = buildSenditProductsDescription(
-          items.map((item: any) => ({
+          items.map((item) => ({
             productId: item.productId,
             productName: productsById.get(item.productId)?.name,
             quantity: item.quantity,
@@ -244,8 +341,7 @@ export async function POST(request: NextRequest) {
 
         // Create order items
         for (const item of items) {
-        const unitCost = productsById.get(item.productId)?.costPrice || 0
-        const totalPrice = item.unitPrice * item.quantity
+        const unitCost = Number(productsById.get(item.productId)?.costPrice) || 0
         const totalCost = unitCost * item.quantity
 
         await client.query(
@@ -282,7 +378,7 @@ export async function POST(request: NextRequest) {
         ) VALUES ($1, NULL, $2, 'manual', $3, NOW())`,
         [
           order.id,
-          confirmImmediately ? 'CONFIRMED' : 'PENDING',
+          createdStatus,
           `Order created via BOS by ${session.user.email}`,
         ]
       )
@@ -291,7 +387,7 @@ export async function POST(request: NextRequest) {
 
       // Auto-create Sendit shipment if order was confirmed immediately
       let senditWarning = null
-      if (confirmImmediately) {
+      if (confirmImmediately && !fulfilledWithoutSendit) {
         /* Le numero rejoint le district dans la garde, et ce n'est pas pour
            satisfaire le typage : Sendit refuse une expedition sans telephone.
            Une place de marche n'a ni l'un ni l'autre — elle livre elle-meme —
@@ -368,15 +464,14 @@ export async function POST(request: NextRequest) {
           }
 
           console.log(`✅ Sendit shipment created: ${shipment.tracking_id}`)
-          } catch (senditError: any) {
+          } catch (senditError: unknown) {
           // Log error but don't fail the order creation
           console.error(`❌ Failed to auto-create Sendit shipment for order ${order.id}:`, senditError)
           console.error(`Error details:`, {
-            message: senditError.message,
-            stack: senditError.stack,
-            response: senditError.response,
+            message: senditError instanceof Error ? senditError.message : String(senditError),
+            stack: senditError instanceof Error ? senditError.stack : undefined,
           })
-          senditWarning = `Order created but Sendit shipment failed: ${senditError.message}`
+          senditWarning = `Commande créée, mais l’expédition Sendit a échoué : ${senditError instanceof Error ? senditError.message : String(senditError)}`
           // Order stays CONFIRMED, user can manually create shipment later
           }
         }
@@ -424,13 +519,19 @@ export async function POST(request: NextRequest) {
     } finally {
       client.release()
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Create order error:', error)
+    if (error instanceof StockConflictError) {
+      return NextResponse.json(
+        { error: 'Stock insuffisant', details: error.message },
+        { status: 409 }
+      )
+    }
     return NextResponse.json(
       {
         error: 'Failed to create order',
-        details: error.message,
-        stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+        details: error instanceof Error ? error.message : String(error),
+        stack: process.env.NODE_ENV === 'development' && error instanceof Error ? error.stack : undefined
       },
       { status: 500 }
     )

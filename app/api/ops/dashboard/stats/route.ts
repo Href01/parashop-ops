@@ -9,6 +9,7 @@ import { getWeeklyGoal, getMonthlyGoal } from '@/app/api/ops/settings/goal/route
 
 const DAILY_REVENUE_GOAL = 6000
 const BUSINESS_TIMEZONE = 'Africa/Casablanca'
+const PREPAID_METHODS_SQL = "'VIREMENT', 'TRANSFER', 'BANK', 'BANK_TRANSFER', 'PREPAID', 'CARD', 'CARTE'"
 
 type Tone = 'rose' | 'green' | 'amber' | 'blue' | 'violet' | 'red'
 
@@ -48,6 +49,7 @@ interface SummaryRow {
 }
 
 interface SeriesRow {
+  basis: 'created' | 'delivered'
   day: string
   label: string
   revenue: number | string | null
@@ -66,6 +68,7 @@ interface PipelineRow {
 }
 
 interface ProductRow {
+  basis: 'created' | 'delivered'
   productId: number | null
   name: string | null
   units: number | string | null
@@ -73,6 +76,7 @@ interface ProductRow {
 }
 
 interface CityRow {
+  basis: 'created' | 'delivered'
   name: string | null
   orders: number | string | null
 }
@@ -98,6 +102,7 @@ interface RoasRow {
 }
 
 interface ChannelRow {
+  basis: 'created' | 'delivered'
   name: string | null
   orders: number | string | null
   revenue: number | string | null
@@ -133,6 +138,34 @@ interface SenditLedgerRow {
   lastPulledAt: string | Date | null
 }
 
+interface ReconciliationRow {
+  basis: 'created' | 'delivered'
+  senditParcels: number | string | null
+  senditCod: number | string | null
+  senditFees: number | string | null
+  matchedParcels: number | string | null
+  matchedCod: number | string | null
+  matchedFees: number | string | null
+  unresolvedParcels: number | string | null
+  unresolvedCod: number | string | null
+  unresolvedFees: number | string | null
+  bosOrders: number | string | null
+  bosGross: number | string | null
+  bosRevenue: number | string | null
+  deliveryCharged: number | string | null
+  verifiedBank: number | string | null
+  verifiedBankOrders: number | string | null
+  unverifiedBank: number | string | null
+  unverifiedBankOrders: number | string | null
+  ordersWithoutTracking: number | string | null
+  amountMismatchOrders: number | string | null
+  amountMismatchValue: number | string | null
+  feeMismatchOrders: number | string | null
+  feeMismatchValue: number | string | null
+  statusMismatchOrders: number | string | null
+  dateMismatchOrders: number | string | null
+}
+
 // Period-aware financial CTE. The selected range is [range_start, range_end);
 // the comparison range is [compare_start, compare_end) (previous month/week, or
 // same period last year). All dates are validated YYYY-MM-DD (no injection).
@@ -163,8 +196,11 @@ function financialCte(from: string, to: string, cFrom: string, cTo: string) {
     SELECT
       o.id,
       o.status::text AS status,
-      o."createdAt",
-      o."deliveredAt",
+      -- Keep every business-day boundary in Casablanca. Comparing timestamptz
+      -- columns to bare timestamps used the database session timezone (UTC on
+      -- Neon), which could move orders created around midnight to the wrong day.
+      o."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}' AS "createdAt",
+      o."deliveredAt" AT TIME ZONE '${BUSINESS_TIMEZONE}' AS "deliveredAt",
       COALESCE(o."orderNumber", CONCAT('Order #', o.id)) AS "orderNumber",
       o."deliveryName",
       o."deliveryCity",
@@ -180,17 +216,17 @@ function financialCte(from: string, to: string, cFrom: string, cTo: string) {
       COALESCE(o."revenue", o."productsTotal", o.total::numeric, 0)::numeric AS revenue,
       COALESCE(o.total::numeric, o."revenue", o."productsTotal", 0)::numeric AS order_total,
       CASE
-        WHEN UPPER(COALESCE(o."paymentMethod", 'COD')) IN ('VIREMENT', 'TRANSFER', 'CARD') THEN
+        WHEN UPPER(COALESCE(o."paymentMethod", 'COD')) IN (${PREPAID_METHODS_SQL}) THEN
           CASE WHEN o."paymentStatus" IN ('PAID', 'PARTIAL') THEN COALESCE(o."paidAmount", 0) ELSE 0 END
         ELSE COALESCE(o."paidAmount", o.total::numeric, 0)
       END::numeric AS cash_collected,
       CASE
-        WHEN UPPER(COALESCE(o."paymentMethod", 'COD')) NOT IN ('VIREMENT', 'TRANSFER', 'CARD')
+        WHEN UPPER(COALESCE(o."paymentMethod", 'COD')) NOT IN (${PREPAID_METHODS_SQL})
           THEN COALESCE(o."paidAmount", o.total::numeric, 0)
         ELSE 0
       END::numeric AS cod_collected,
       CASE
-        WHEN UPPER(COALESCE(o."paymentMethod", 'COD')) IN ('VIREMENT', 'TRANSFER', 'CARD')
+        WHEN UPPER(COALESCE(o."paymentMethod", 'COD')) IN (${PREPAID_METHODS_SQL})
              AND o."paymentStatus" IN ('PAID', 'PARTIAL')
           THEN COALESCE(o."paidAmount", 0)
         ELSE 0
@@ -351,6 +387,7 @@ export async function GET(req: Request) {
       activityHistoryRows,
       recentOrdersRows,
       senditLedgerRows,
+      reconciliationRows,
       pnlRows,
     ] = await Promise.all([
       safeQuery<SummaryRow>('summary', `
@@ -416,21 +453,47 @@ export async function GET(req: Request) {
             (SELECT range_end FROM bounds) - INTERVAL '1 day',
             INTERVAL '1 day'
           ) AS day_bucket
+        ),
+        basis_series AS (
+          SELECT
+            'created'::text AS basis,
+            d.day_bucket,
+            COALESCE(SUM(ofn.revenue) FILTER (WHERE ofn.status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS revenue,
+            COALESCE(SUM(ofn.profit) FILTER (WHERE ofn.status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS profit,
+            COUNT(ofn.id) FILTER (WHERE ofn.status IN ('CONFIRMED', 'DELIVERED'))::int AS orders,
+            COUNT(ofn.id) FILTER (WHERE ofn.status = 'DELIVERED')::int AS delivered,
+            COUNT(ofn.id) FILTER (WHERE ofn.status = 'CANCELLED')::int AS cancelled
+          FROM days d
+          LEFT JOIN order_financials ofn
+            ON ofn."createdAt" >= d.day_bucket
+           AND ofn."createdAt" < d.day_bucket + INTERVAL '1 day'
+          GROUP BY d.day_bucket
+          UNION ALL
+          SELECT
+            'delivered'::text AS basis,
+            d.day_bucket,
+            COALESCE(SUM(ofn.revenue) FILTER (WHERE ofn.status = 'DELIVERED'), 0)::double precision AS revenue,
+            COALESCE(SUM(ofn.profit) FILTER (WHERE ofn.status = 'DELIVERED'), 0)::double precision AS profit,
+            COUNT(ofn.id) FILTER (WHERE ofn.status = 'DELIVERED')::int AS orders,
+            COUNT(ofn.id) FILTER (WHERE ofn.status = 'DELIVERED')::int AS delivered,
+            0::int AS cancelled
+          FROM days d
+          LEFT JOIN order_financials ofn
+            ON ofn."deliveredAt" >= d.day_bucket
+           AND ofn."deliveredAt" < d.day_bucket + INTERVAL '1 day'
+          GROUP BY d.day_bucket
         )
         SELECT
-          to_char(d.day_bucket, 'YYYY-MM-DD') AS day,
-          to_char(d.day_bucket, 'Mon DD') AS label,
-          COALESCE(SUM(ofn.revenue) FILTER (WHERE ofn.status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS revenue,
-          COALESCE(SUM(ofn.profit) FILTER (WHERE ofn.status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS profit,
-          COUNT(ofn.id) FILTER (WHERE ofn.status <> 'CANCELLED')::int AS orders,
-          COUNT(ofn.id) FILTER (WHERE ofn.status = 'DELIVERED')::int AS delivered,
-          COUNT(ofn.id) FILTER (WHERE ofn.status = 'CANCELLED')::int AS cancelled
-        FROM days d
-        LEFT JOIN order_financials ofn
-          ON ofn."createdAt" >= d.day_bucket
-         AND ofn."createdAt" < d.day_bucket + INTERVAL '1 day'
-        GROUP BY d.day_bucket
-        ORDER BY d.day_bucket ASC
+          basis,
+          to_char(day_bucket, 'YYYY-MM-DD') AS day,
+          to_char(day_bucket, 'Mon DD') AS label,
+          revenue,
+          profit,
+          orders,
+          delivered,
+          cancelled
+        FROM basis_series
+        ORDER BY basis, day_bucket ASC
       `),
       safeQuery<PipelineRow>('pipeline', `
         ${FINANCIAL_CTE}
@@ -451,32 +514,72 @@ export async function GET(req: Request) {
         FROM order_financials
       `),
       safeQuery<ProductRow>('top-products', `
-        ${FINANCIAL_CTE}
-        SELECT
-          oi."productId" AS "productId",
-          COALESCE(NULLIF(TRIM(p.name), ''), CONCAT('Product #', COALESCE(oi."productId"::text, '-'))) AS name,
-          COALESCE(SUM(oi.quantity), 0)::int AS units,
-          COALESCE(SUM(COALESCE(oi.price, 0) * COALESCE(oi.quantity, 0)), 0)::double precision AS revenue
-        FROM "OrderItem" oi
-        INNER JOIN order_financials ofn ON ofn.id = oi."orderId"
-        LEFT JOIN "Product" p ON p.id = oi."productId"
-        WHERE ofn."createdAt" >= (SELECT range_start FROM bounds) AND ofn."createdAt" < (SELECT range_end FROM bounds)
-          AND ofn.status IN ('CONFIRMED', 'DELIVERED')
-        GROUP BY oi."productId", p.name
-        ORDER BY units DESC, revenue DESC
-        LIMIT 5
+        ${FINANCIAL_CTE},
+        product_totals AS (
+          SELECT
+            'created'::text AS basis,
+            oi."productId" AS "productId",
+            COALESCE(NULLIF(TRIM(p.name), ''), CONCAT('Product #', COALESCE(oi."productId"::text, '-'))) AS name,
+            COALESCE(SUM(oi.quantity), 0)::int AS units,
+            COALESCE(SUM(COALESCE(oi.price, 0) * COALESCE(oi.quantity, 0)), 0)::double precision AS revenue
+          FROM "OrderItem" oi
+          INNER JOIN order_financials ofn ON ofn.id = oi."orderId"
+          LEFT JOIN "Product" p ON p.id = oi."productId"
+          WHERE ofn."createdAt" >= (SELECT range_start FROM bounds) AND ofn."createdAt" < (SELECT range_end FROM bounds)
+            AND ofn.status IN ('CONFIRMED', 'DELIVERED')
+          GROUP BY oi."productId", p.name
+          UNION ALL
+          SELECT
+            'delivered'::text AS basis,
+            oi."productId" AS "productId",
+            COALESCE(NULLIF(TRIM(p.name), ''), CONCAT('Product #', COALESCE(oi."productId"::text, '-'))) AS name,
+            COALESCE(SUM(oi.quantity), 0)::int AS units,
+            COALESCE(SUM(COALESCE(oi.price, 0) * COALESCE(oi.quantity, 0)), 0)::double precision AS revenue
+          FROM "OrderItem" oi
+          INNER JOIN order_financials ofn ON ofn.id = oi."orderId"
+          LEFT JOIN "Product" p ON p.id = oi."productId"
+          WHERE ofn."deliveredAt" >= (SELECT range_start FROM bounds) AND ofn."deliveredAt" < (SELECT range_end FROM bounds)
+            AND ofn.status = 'DELIVERED'
+          GROUP BY oi."productId", p.name
+        ),
+        ranked AS (
+          SELECT *, ROW_NUMBER() OVER (PARTITION BY basis ORDER BY units DESC, revenue DESC) AS rank
+          FROM product_totals
+        )
+        SELECT basis, "productId", name, units, revenue
+        FROM ranked
+        WHERE rank <= 5
+        ORDER BY basis, rank
       `),
       safeQuery<CityRow>('top-cities', `
-        ${FINANCIAL_CTE}
-        SELECT
-          COALESCE(NULLIF(TRIM("deliveryCity"), ''), 'Unknown') AS name,
-          COUNT(*)::int AS orders
-        FROM order_financials
-        WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds)
-          AND status IN ('CONFIRMED', 'DELIVERED')
-        GROUP BY COALESCE(NULLIF(TRIM("deliveryCity"), ''), 'Unknown')
-        ORDER BY orders DESC, name ASC
-        LIMIT 5
+        ${FINANCIAL_CTE},
+        city_totals AS (
+          SELECT
+            'created'::text AS basis,
+            COALESCE(NULLIF(TRIM("deliveryCity"), ''), 'Unknown') AS name,
+            COUNT(*)::int AS orders
+          FROM order_financials
+          WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds)
+            AND status IN ('CONFIRMED', 'DELIVERED')
+          GROUP BY COALESCE(NULLIF(TRIM("deliveryCity"), ''), 'Unknown')
+          UNION ALL
+          SELECT
+            'delivered'::text AS basis,
+            COALESCE(NULLIF(TRIM("deliveryCity"), ''), 'Unknown') AS name,
+            COUNT(*)::int AS orders
+          FROM order_financials
+          WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds)
+            AND status = 'DELIVERED'
+          GROUP BY COALESCE(NULLIF(TRIM("deliveryCity"), ''), 'Unknown')
+        ),
+        ranked AS (
+          SELECT *, ROW_NUMBER() OVER (PARTITION BY basis ORDER BY orders DESC, name ASC) AS rank
+          FROM city_totals
+        )
+        SELECT basis, name, orders
+        FROM ranked
+        WHERE rank <= 5
+        ORDER BY basis, rank
       `),
       safeQuery<AlertCountsRow>('alerts', `
         ${FINANCIAL_CTE}
@@ -512,8 +615,10 @@ export async function GET(req: Request) {
         WHERE date >= '${from}'::date AND date <= '${to}'::date
       `),
       safeQuery<ChannelRow>('channels', `
-        ${FINANCIAL_CTE}
-        SELECT
+        ${FINANCIAL_CTE},
+        classified AS (
+          SELECT
+            order_financials.*,
           -- Le TYPE vient de sessionId (présent = passée sur le site), jamais de
           -- sourceChannel. Avant, une commande manuelle sans canal devenait « Website »
           -- et « Sendit » (un transporteur) s'affichait comme une source de trafic.
@@ -526,14 +631,33 @@ export async function GET(req: Request) {
               OR NULLIF(TRIM(COALESCE("sourceChannel", '')), '') IS NULL
               OR LOWER(COALESCE("sourceChannel", '')) LIKE '%manual%' THEN 'Manuel (origine non renseignée)'
             ELSE "sourceChannel" || ' (manuel)'
-          END AS name,
-          COUNT(*)::int AS orders,
-          COALESCE(SUM(revenue), 0)::double precision AS revenue
-        FROM order_financials
-        WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds)
-          AND status IN ('CONFIRMED', 'DELIVERED')
-        GROUP BY 1
-        ORDER BY orders DESC, revenue DESC
+          END AS channel_name
+          FROM order_financials
+        ),
+        channel_totals AS (
+          SELECT
+            'created'::text AS basis,
+            channel_name AS name,
+            COUNT(*)::int AS orders,
+            COALESCE(SUM(revenue), 0)::double precision AS revenue
+          FROM classified
+          WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds)
+            AND status IN ('CONFIRMED', 'DELIVERED')
+          GROUP BY channel_name
+          UNION ALL
+          SELECT
+            'delivered'::text AS basis,
+            channel_name AS name,
+            COUNT(*)::int AS orders,
+            COALESCE(SUM(revenue), 0)::double precision AS revenue
+          FROM classified
+          WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds)
+            AND status = 'DELIVERED'
+          GROUP BY channel_name
+        )
+        SELECT basis, name, orders, revenue
+        FROM channel_totals
+        ORDER BY basis, orders DESC, revenue DESC
       `),
       safeQuery<ActivityHistoryRow>('activity-history', `
         SELECT
@@ -562,28 +686,28 @@ export async function GET(req: Request) {
         SELECT
           COALESCE(SUM(amount) FILTER (
             WHERE UPPER("senditStatus") = 'DELIVERED'
-              AND "senditCreatedAt" >= '${from}'::timestamp
-              AND "senditCreatedAt" < ('${to}'::date + INTERVAL '1 day')
+              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
+              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
           ), 0)::double precision AS "createdCod",
           COALESCE(SUM(fee) FILTER (
             WHERE UPPER("senditStatus") = 'DELIVERED'
-              AND "senditCreatedAt" >= '${from}'::timestamp
-              AND "senditCreatedAt" < ('${to}'::date + INTERVAL '1 day')
+              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
+              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
           ), 0)::double precision AS "createdFees",
           COUNT(*) FILTER (
             WHERE UPPER("senditStatus") = 'DELIVERED'
-              AND "senditCreatedAt" >= '${from}'::timestamp
-              AND "senditCreatedAt" < ('${to}'::date + INTERVAL '1 day')
+              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
+              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
           )::int AS "createdOrders",
           COUNT(*) FILTER (
             WHERE UPPER("senditStatus") = 'DELIVERED' AND ("matchedOrderId" IS NULL OR state = 'mismatch')
-              AND "senditCreatedAt" >= '${from}'::timestamp
-              AND "senditCreatedAt" < ('${to}'::date + INTERVAL '1 day')
+              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
+              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
           )::int AS "createdUnmatchedOrders",
           COALESCE(SUM(amount) FILTER (
             WHERE UPPER("senditStatus") = 'DELIVERED' AND ("matchedOrderId" IS NULL OR state = 'mismatch')
-              AND "senditCreatedAt" >= '${from}'::timestamp
-              AND "senditCreatedAt" < ('${to}'::date + INTERVAL '1 day')
+              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
+              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
           ), 0)::double precision AS "createdUnmatchedCod",
           COALESCE(SUM(amount) FILTER (
             WHERE UPPER("senditStatus") = 'DELIVERED'
@@ -612,6 +736,173 @@ export async function GET(req: Request) {
           ), 0)::double precision AS "deliveredUnmatchedCod",
           MAX("pulledAt") AS "lastPulledAt"
         FROM "SenditStaging"
+        -- Rows explicitly ignored belong to another activity sharing the Sendit
+        -- account. Including them inflated parcel count, courier fees and packaging.
+        WHERE state IS DISTINCT FROM 'ignored'
+      `),
+      safeQuery<ReconciliationRow>('reconciliation', `
+        WITH staging_period AS (
+          SELECT 'created'::text AS basis, s.*
+          FROM "SenditStaging" s
+          WHERE s.state IS DISTINCT FROM 'ignored'
+            AND UPPER(COALESCE(s."senditStatus", '')) = 'DELIVERED'
+            AND (s."senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
+            AND (s."senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
+          UNION ALL
+          SELECT 'delivered'::text AS basis, s.*
+          FROM "SenditStaging" s
+          WHERE s.state IS DISTINCT FROM 'ignored'
+            AND UPPER(COALESCE(s."senditStatus", '')) = 'DELIVERED'
+            AND (s."lastActionAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
+            AND (s."lastActionAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
+        ),
+        order_period AS (
+          SELECT
+            'created'::text AS basis,
+            o.*,
+            COALESCE(o.total::numeric, o."revenue", o."productsTotal", 0)::numeric AS order_total,
+            COALESCE(o."revenue", o."productsTotal", o.total::numeric, 0)::numeric AS product_revenue
+          FROM "Order" o
+          WHERE o.status::text = 'DELIVERED'
+            AND (o."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
+            AND (o."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
+          UNION ALL
+          SELECT
+            'delivered'::text AS basis,
+            o.*,
+            COALESCE(o.total::numeric, o."revenue", o."productsTotal", 0)::numeric AS order_total,
+            COALESCE(o."revenue", o."productsTotal", o.total::numeric, 0)::numeric AS product_revenue
+          FROM "Order" o
+          WHERE o.status::text = 'DELIVERED'
+            AND (o."deliveredAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
+            AND (o."deliveredAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
+        ),
+        staging_totals AS (
+          SELECT
+            basis,
+            COUNT(*)::int AS "senditParcels",
+            COALESCE(SUM(amount), 0)::double precision AS "senditCod",
+            COALESCE(SUM(fee), 0)::double precision AS "senditFees",
+            COUNT(*) FILTER (WHERE state = 'matched' AND "matchedOrderId" IS NOT NULL)::int AS "matchedParcels",
+            COALESCE(SUM(amount) FILTER (WHERE state = 'matched' AND "matchedOrderId" IS NOT NULL), 0)::double precision AS "matchedCod",
+            COALESCE(SUM(fee) FILTER (WHERE state = 'matched' AND "matchedOrderId" IS NOT NULL), 0)::double precision AS "matchedFees",
+            COUNT(*) FILTER (WHERE "matchedOrderId" IS NULL OR state = 'mismatch')::int AS "unresolvedParcels",
+            COALESCE(SUM(amount) FILTER (WHERE "matchedOrderId" IS NULL OR state = 'mismatch'), 0)::double precision AS "unresolvedCod",
+            COALESCE(SUM(fee) FILTER (WHERE "matchedOrderId" IS NULL OR state = 'mismatch'), 0)::double precision AS "unresolvedFees"
+          FROM staging_period
+          GROUP BY basis
+        ),
+        order_totals AS (
+          SELECT
+            basis,
+            COUNT(*)::int AS "bosOrders",
+            COALESCE(SUM(order_total), 0)::double precision AS "bosGross",
+            COALESCE(SUM(product_revenue), 0)::double precision AS "bosRevenue",
+            COALESCE(SUM(GREATEST(order_total - product_revenue, 0)), 0)::double precision AS "deliveryCharged",
+            COALESCE(SUM(CASE
+              WHEN UPPER(COALESCE("paymentMethod", 'COD')) IN (${PREPAID_METHODS_SQL})
+                AND "paymentStatus" IN ('PAID', 'PARTIAL') THEN COALESCE("paidAmount", 0)
+              ELSE 0 END), 0)::double precision AS "verifiedBank",
+            COUNT(*) FILTER (
+              WHERE UPPER(COALESCE("paymentMethod", 'COD')) IN (${PREPAID_METHODS_SQL})
+                AND "paymentStatus" IN ('PAID', 'PARTIAL')
+            )::int AS "verifiedBankOrders",
+            COALESCE(SUM(CASE
+              WHEN UPPER(COALESCE("paymentMethod", 'COD')) IN (${PREPAID_METHODS_SQL})
+                AND "paymentStatus" NOT IN ('PAID', 'PARTIAL') THEN order_total
+              ELSE 0 END), 0)::double precision AS "unverifiedBank",
+            COUNT(*) FILTER (
+              WHERE UPPER(COALESCE("paymentMethod", 'COD')) IN (${PREPAID_METHODS_SQL})
+                AND "paymentStatus" NOT IN ('PAID', 'PARTIAL')
+            )::int AS "unverifiedBankOrders",
+            COUNT(*) FILTER (WHERE "senditTrackingId" IS NULL)::int AS "ordersWithoutTracking"
+          FROM order_period
+          GROUP BY basis
+        ),
+        linked_checks AS (
+          SELECT
+            sp.basis,
+            sp.amount AS sendit_amount,
+            sp.fee AS sendit_fee,
+            sp.state,
+            o.id AS order_id,
+            o.status::text AS order_status,
+            COALESCE(o."actualDeliveryCost", 0)::numeric AS order_fee,
+            CASE
+              WHEN UPPER(COALESCE(o."paymentMethod", 'COD')) IN (${PREPAID_METHODS_SQL}) THEN 0
+              ELSE COALESCE(o."paidAmount", o.total::numeric, 0)
+            END::numeric AS expected_cod,
+            CASE
+              WHEN sp.basis = 'created' THEN
+                (o."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
+                AND (o."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
+              ELSE
+                (o."deliveredAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
+                AND (o."deliveredAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
+            END AS date_aligned
+          FROM staging_period sp
+          LEFT JOIN "Order" o ON o.id = sp."matchedOrderId"
+        ),
+        check_totals AS (
+          SELECT
+            basis,
+            COUNT(*) FILTER (
+              WHERE state = 'matched' AND order_id IS NOT NULL
+                AND ABS(COALESCE(sendit_amount, 0) - expected_cod) >= 0.01
+            )::int AS "amountMismatchOrders",
+            COALESCE(SUM(ABS(COALESCE(sendit_amount, 0) - expected_cod)) FILTER (
+              WHERE state = 'matched' AND order_id IS NOT NULL
+                AND ABS(COALESCE(sendit_amount, 0) - expected_cod) >= 0.01
+            ), 0)::double precision AS "amountMismatchValue",
+            COUNT(*) FILTER (
+              WHERE state = 'matched' AND order_id IS NOT NULL
+                AND ABS(COALESCE(sendit_fee, 0) - order_fee) >= 0.01
+            )::int AS "feeMismatchOrders",
+            COALESCE(SUM(ABS(COALESCE(sendit_fee, 0) - order_fee)) FILTER (
+              WHERE state = 'matched' AND order_id IS NOT NULL
+                AND ABS(COALESCE(sendit_fee, 0) - order_fee) >= 0.01
+            ), 0)::double precision AS "feeMismatchValue",
+            COUNT(*) FILTER (
+              WHERE order_id IS NOT NULL AND (state = 'mismatch' OR order_status <> 'DELIVERED')
+            )::int AS "statusMismatchOrders",
+            COUNT(*) FILTER (
+              WHERE state = 'matched' AND order_id IS NOT NULL AND NOT date_aligned
+            )::int AS "dateMismatchOrders"
+          FROM linked_checks
+          GROUP BY basis
+        ),
+        bases AS (SELECT unnest(ARRAY['created'::text, 'delivered'::text]) AS basis)
+        SELECT
+          b.basis,
+          COALESCE(st."senditParcels", 0)::int AS "senditParcels",
+          COALESCE(st."senditCod", 0)::double precision AS "senditCod",
+          COALESCE(st."senditFees", 0)::double precision AS "senditFees",
+          COALESCE(st."matchedParcels", 0)::int AS "matchedParcels",
+          COALESCE(st."matchedCod", 0)::double precision AS "matchedCod",
+          COALESCE(st."matchedFees", 0)::double precision AS "matchedFees",
+          COALESCE(st."unresolvedParcels", 0)::int AS "unresolvedParcels",
+          COALESCE(st."unresolvedCod", 0)::double precision AS "unresolvedCod",
+          COALESCE(st."unresolvedFees", 0)::double precision AS "unresolvedFees",
+          COALESCE(ot."bosOrders", 0)::int AS "bosOrders",
+          COALESCE(ot."bosGross", 0)::double precision AS "bosGross",
+          COALESCE(ot."bosRevenue", 0)::double precision AS "bosRevenue",
+          COALESCE(ot."deliveryCharged", 0)::double precision AS "deliveryCharged",
+          COALESCE(ot."verifiedBank", 0)::double precision AS "verifiedBank",
+          COALESCE(ot."verifiedBankOrders", 0)::int AS "verifiedBankOrders",
+          COALESCE(ot."unverifiedBank", 0)::double precision AS "unverifiedBank",
+          COALESCE(ot."unverifiedBankOrders", 0)::int AS "unverifiedBankOrders",
+          COALESCE(ot."ordersWithoutTracking", 0)::int AS "ordersWithoutTracking",
+          COALESCE(ct."amountMismatchOrders", 0)::int AS "amountMismatchOrders",
+          COALESCE(ct."amountMismatchValue", 0)::double precision AS "amountMismatchValue",
+          COALESCE(ct."feeMismatchOrders", 0)::int AS "feeMismatchOrders",
+          COALESCE(ct."feeMismatchValue", 0)::double precision AS "feeMismatchValue",
+          COALESCE(ct."statusMismatchOrders", 0)::int AS "statusMismatchOrders",
+          COALESCE(ct."dateMismatchOrders", 0)::int AS "dateMismatchOrders"
+        FROM bases b
+        LEFT JOIN staging_totals st ON st.basis = b.basis
+        LEFT JOIN order_totals ot ON ot.basis = b.basis
+        LEFT JOIN check_totals ct ON ct.basis = b.basis
+        ORDER BY b.basis
       `),
       // P&L inputs for the period [from, to]: supplier purchase cash-out, ad spend,
       // logged operating expenses, and the packaging per-parcel rate.
@@ -619,9 +910,11 @@ export async function GET(req: Request) {
         SELECT
           (SELECT COALESCE(SUM("totalCost"),0) FROM "InventoryMovement"
              WHERE type='Purchase' AND "totalCost" IS NOT NULL
-               AND "createdAt" >= '${from}'::date AND "createdAt" < ('${to}'::date + INTERVAL '1 day'))::double precision AS "purchaseSpend",
+               AND ("createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::date
+               AND ("createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day'))::double precision AS "purchaseSpend",
           (SELECT COALESCE(SUM("returnDeliveryFee"),0) FROM "Order"
-             WHERE "returnedAt" >= '${from}'::date AND "returnedAt" < ('${to}'::date + INTERVAL '1 day'))::double precision AS "returnFees",
+             WHERE ("returnedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::date
+               AND ("returnedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day'))::double precision AS "returnFees",
           (SELECT COALESCE(SUM(spend),0) FROM "AdSpendDaily"
              WHERE date >= '${from}'::date AND date <= '${to}'::date)::double precision AS "adSpend",
           (SELECT COALESCE(SUM(amount),0) FROM "OperatingExpense"
@@ -698,6 +991,60 @@ export async function GET(req: Request) {
     const senditCreatedCash = senditCreated.cod + bankReceivedDelivered - senditCreated.fees
     const senditDeliveredCash = senditDelivered.cod + realizedBank - senditDelivered.fees
 
+    const buildReconciliation = (basis: 'created' | 'delivered') => {
+      const row = reconciliationRows.find((item) => item.basis === basis)
+      const senditCod = toNumber(row?.senditCod)
+      const senditFees = toNumber(row?.senditFees)
+      const matchedCod = toNumber(row?.matchedCod)
+      const matchedFees = toNumber(row?.matchedFees)
+      const verifiedBank = toNumber(row?.verifiedBank)
+      const unresolvedCod = toNumber(row?.unresolvedCod)
+      const unresolvedFees = toNumber(row?.unresolvedFees)
+      const checks = {
+        unresolvedParcels: toNumber(row?.unresolvedParcels),
+        unverifiedBankOrders: toNumber(row?.unverifiedBankOrders),
+        amountMismatchOrders: toNumber(row?.amountMismatchOrders),
+        amountMismatchValue: toNumber(row?.amountMismatchValue),
+        feeMismatchOrders: toNumber(row?.feeMismatchOrders),
+        feeMismatchValue: toNumber(row?.feeMismatchValue),
+        statusMismatchOrders: toNumber(row?.statusMismatchOrders),
+        dateMismatchOrders: toNumber(row?.dateMismatchOrders),
+        ordersWithoutTracking: toNumber(row?.ordersWithoutTracking),
+      }
+      const issueCount = checks.unresolvedParcels
+        + checks.unverifiedBankOrders
+        + checks.amountMismatchOrders
+        + checks.feeMismatchOrders
+        + checks.statusMismatchOrders
+        + checks.dateMismatchOrders
+        + checks.ordersWithoutTracking
+
+      return {
+        ok: issueCount === 0,
+        senditParcels: toNumber(row?.senditParcels),
+        matchedParcels: toNumber(row?.matchedParcels),
+        senditCod,
+        senditFees,
+        matchedCod,
+        matchedFees,
+        verifiedBank,
+        verifiedBankOrders: toNumber(row?.verifiedBankOrders),
+        unverifiedBank: toNumber(row?.unverifiedBank),
+        cash: senditCod + verifiedBank - senditFees,
+        matchedCash: matchedCod + verifiedBank - matchedFees,
+        unresolvedCash: unresolvedCod - unresolvedFees,
+        bosOrders: toNumber(row?.bosOrders),
+        bosGross: toNumber(row?.bosGross),
+        bosRevenue: toNumber(row?.bosRevenue),
+        deliveryCharged: toNumber(row?.deliveryCharged),
+        checks,
+      }
+    }
+    const reconciliation = {
+      created: buildReconciliation('created'),
+      delivered: buildReconciliation('delivered'),
+    }
+
     // ---- Period P&L: Rentabilité (accrual) + Trésorerie (cash) ----
     const pnlRow = pnlRows[0]
     const purchaseSpend = toNumber(pnlRow?.purchaseSpend)
@@ -706,69 +1053,90 @@ export async function GET(req: Request) {
     const opexPackaging = toNumber(pnlRow?.opexPackaging)
     const returnFees = toNumber(pnlRow?.returnFees)
     const packagingRate = toNumber(pnlRow?.packagingRate)
-    // Physical parcels include Sendit rows that still await product reconciliation.
-    const deliveredParcels = hasSenditLedger ? senditDelivered.orders : realizedOrders
-    const treasuryCash = hasSenditLedger ? senditDeliveredCash : realizedCash
-    const packagingAccrued = deliveredParcels * packagingRate
-    // Rentabilité: profit on delivered sales (already net of COGS + Sendit delivery),
-    // then minus accrued packaging and ad spend.
-    const profitNet = realizedProfit - packagingAccrued - adSpendPnl - returnFees
-    // Trésorerie: packaging is a real cash cost too. Use actual logged packaging
-    // (OperatingExpense 'Emballage') when present, else the accrued estimate — never
-    // both (opexPackaging is already inside `opex`, so split it out to avoid double-count).
     const nonPackagingOpex = Math.max(0, opex - opexPackaging)
-    const packagingCash = opexPackaging > 0 ? opexPackaging : packagingAccrued
-    // Trésorerie: cash collected (net Sendit) minus all cash out in the period.
-    const cashNet = treasuryCash - purchaseSpend - adSpendPnl - nonPackagingOpex - packagingCash - returnFees
-    const pnl = {
-      rentabilite: {
-        caLivre: realizedRevenue,
-        profitLivre: realizedProfit, // net COGS + livraison
-        margeLivree: realizedMargin,
-        pub: adSpendPnl,
-        emballage: packagingAccrued,
-        retours: returnFees,
-        net: profitNet,
-        marginPct: realizedRevenue > 0 ? (profitNet / realizedRevenue) * 100 : 0,
-      },
-      tresorerie: {
-        encaisse: treasuryCash,
-        achats: purchaseSpend,
-        pub: adSpendPnl,
-        emballage: packagingCash,
-        emballageEstime: opexPackaging === 0,
-        frais: nonPackagingOpex,
-        retours: returnFees,
-        net: cashNet,
-      },
-      packagingRate,
-      deliveredParcels,
+    const buildPnl = (revenue: number, grossProfit: number, cash: number, parcels: number) => {
+      const packagingAccrued = parcels * packagingRate
+      // Logged packaging is a period cash expense. Otherwise estimate it from the
+      // parcel population for the selected accounting basis.
+      const packagingCash = opexPackaging > 0 ? opexPackaging : packagingAccrued
+      const profitNet = grossProfit - packagingAccrued - adSpendPnl - returnFees
+      const cashNet = cash - purchaseSpend - adSpendPnl - nonPackagingOpex - packagingCash - returnFees
+      const grossMargin = revenue > 0 ? (grossProfit / revenue) * 100 : 0
+      return {
+        rentabilite: {
+          caLivre: revenue,
+          profitLivre: grossProfit,
+          margeLivree: grossMargin,
+          pub: adSpendPnl,
+          emballage: packagingAccrued,
+          retours: returnFees,
+          net: profitNet,
+          marginPct: revenue > 0 ? (profitNet / revenue) * 100 : 0,
+        },
+        tresorerie: {
+          encaisse: cash,
+          achats: purchaseSpend,
+          pub: adSpendPnl,
+          emballage: packagingCash,
+          emballageEstime: opexPackaging === 0,
+          frais: nonPackagingOpex,
+          retours: returnFees,
+          net: cashNet,
+        },
+        packagingRate,
+        deliveredParcels: parcels,
+      }
     }
+    // Sendit owns the physical parcel count for each basis, including rows that
+    // still await product reconciliation. Order data owns revenue/profit and bank.
+    const createdParcels = hasSenditLedger ? senditCreated.orders : ordersDelivered
+    const deliveredParcels = hasSenditLedger ? senditDelivered.orders : realizedOrders
+    const createdCash = hasSenditLedger ? senditCreatedCash : cashReceivedDelivered
+    const treasuryCash = hasSenditLedger ? senditDeliveredCash : realizedCash
+    const pnlByBasis = {
+      created: buildPnl(revenueDelivered, profitDelivered, createdCash, createdParcels),
+      delivered: buildPnl(realizedRevenue, realizedProfit, treasuryCash, deliveredParcels),
+    }
+    // Preserve the existing field for older clients; it remains the actual cash basis.
+    const pnl = pnlByBasis.delivered
     const marginPercent = revenueWeek > 0 ? (estimatedProfitWeek / revenueWeek) * 100 : 0
     const revenueDelta = percentageChange(revenueWeek, previousRevenueWeek)
     const profitDelta = percentageChange(estimatedProfitWeek, previousProfitWeek)
     const ordersDelta = percentageChange(ordersWeek, previousOrdersWeek)
     const averageOrderValue = bookedOrdersWeek > 0 ? revenueWeek / bookedOrdersWeek : 0
 
-    const revenueSeries = seriesRows.map((row) => ({
-      date: row.day,
-      label: row.label,
-      revenue: toNumber(row.revenue),
-      profit: toNumber(row.profit),
-      orders: toNumber(row.orders),
-    }))
+    const mapSeries = (basis: 'created' | 'delivered') => seriesRows
+      .filter((row) => row.basis === basis)
+      .map((row) => ({
+        date: row.day,
+        label: row.label,
+        revenue: toNumber(row.revenue),
+        profit: toNumber(row.profit),
+        orders: toNumber(row.orders),
+      }))
 
-    const topProducts = topProductRows.map((row) => ({
-      productId: row.productId ?? null,
-      name: row.name || 'Unknown product',
-      units: toNumber(row.units),
-      revenue: toNumber(row.revenue),
-    }))
+    const mapProducts = (basis: 'created' | 'delivered') => topProductRows
+      .filter((row) => row.basis === basis)
+      .map((row) => ({
+        productId: row.productId ?? null,
+        name: row.name || 'Unknown product',
+        units: toNumber(row.units),
+        revenue: toNumber(row.revenue),
+      }))
 
-    const topCities = topCityRows.map((row) => ({
-      name: row.name || 'Unknown',
-      orders: toNumber(row.orders),
-    }))
+    const mapCities = (basis: 'created' | 'delivered') => topCityRows
+      .filter((row) => row.basis === basis)
+      .map((row) => ({
+        name: row.name || 'Unknown',
+        orders: toNumber(row.orders),
+      }))
+
+    const revenueSeries = mapSeries('created')
+    const deliveredRevenueSeries = mapSeries('delivered')
+    const topProducts = mapProducts('created')
+    const deliveredTopProducts = mapProducts('delivered')
+    const topCities = mapCities('created')
+    const deliveredTopCities = mapCities('delivered')
 
     const pipelineItems = [
       { label: 'En attente', value: toNumber(pipeline?.pending), tone: 'amber' as Tone },
@@ -846,28 +1214,48 @@ export async function GET(req: Request) {
         }))
 
     const spend30d = toNumber(roasRows[0]?.spend)
-    const adRevenue30d = toNumber(roasRows[0]?.revenue)
     // Pixel ROAS is ~0 for boosted posts (Meta attributes no purchase), so the true
     // pixel ROAS is useless here. Show a BLENDED ROAS / MER instead = delivered CA ÷
     // ad spend for the period — a real marketing-efficiency number. null when no spend.
     const roas = spend30d > 0 ? realizedRevenue / spend30d : null
-    const pixelRoas = spend30d > 0 ? adRevenue30d / spend30d : 0
     // Freshness: the last day for which Meta ad spend is synced. Meta finalises with a
     // 1–2 day lag, so the tail of the current period can still be empty.
     const adDataThrough = roasRows[0]?.throughDate || null
-    const channelOrderTotal = channelRows.reduce((sum, row) => sum + toNumber(row.orders), 0)
-    const channels = channelRows.map((row) => {
-      const name = row.name || 'Unknown'
-      const orders = toNumber(row.orders)
-
-      return {
-        name,
-        orders,
-        revenue: toNumber(row.revenue),
-        value: channelOrderTotal > 0 ? Math.round((orders / channelOrderTotal) * 100) : 0,
-        color: channelColor(name),
-      }
-    })
+    const mapChannels = (basis: 'created' | 'delivered') => {
+      const rows = channelRows.filter((row) => row.basis === basis)
+      const total = rows.reduce((sum, row) => sum + toNumber(row.orders), 0)
+      return rows.map((row) => {
+        const name = row.name || 'Unknown'
+        const orders = toNumber(row.orders)
+        return {
+          name,
+          orders,
+          revenue: toNumber(row.revenue),
+          value: total > 0 ? Math.round((orders / total) * 100) : 0,
+          color: channelColor(name),
+        }
+      })
+    }
+    const channels = mapChannels('created')
+    const deliveredChannels = mapChannels('delivered')
+    const analytics = {
+      created: {
+        revenueSeries,
+        topProducts,
+        topCities,
+        channels,
+        orders: bookedOrdersWeek,
+        averageOrderValue,
+      },
+      delivered: {
+        revenueSeries: deliveredRevenueSeries,
+        topProducts: deliveredTopProducts,
+        topCities: deliveredTopCities,
+        channels: deliveredChannels,
+        orders: realizedOrders,
+        averageOrderValue: realizedOrders > 0 ? realizedRevenue / realizedOrders : 0,
+      },
+    }
 
     return {
       generatedAt: new Date().toISOString(),
@@ -895,6 +1283,7 @@ export async function GET(req: Request) {
         created: { ...senditCreated, bank: bankReceivedDelivered, cash: senditCreatedCash },
         delivered: { ...senditDelivered, bank: realizedBank, cash: senditDeliveredCash },
       },
+      reconciliation,
       // Realized-by-delivery-date block (reconciles with Sendit cashflow).
       realized: {
         revenue: realizedRevenue,
@@ -908,6 +1297,7 @@ export async function GET(req: Request) {
         revenueDelta: realizedRevenueDelta,
       },
       pnl,
+      pnlByBasis,
       revenueDelta,
       estimatedProfit: estimatedProfitWeek,
       profitDelta,
@@ -921,6 +1311,7 @@ export async function GET(req: Request) {
       roas,
       adSpend: spend30d,
       adDataThrough,
+      analytics,
       revenueSeries,
       pipeline: pipelineItems,
       topProducts,

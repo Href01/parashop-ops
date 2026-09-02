@@ -18,6 +18,17 @@ const TZ = 'Africa/Casablanca'
 const DEFAULTS = { week: 42000, month: 180000 }
 const REVENUE = `COALESCE(o."revenue", o."productsTotal", o.total::numeric, 0)`
 
+function businessToday() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || ''
+  return `${value('year')}-${value('month')}-${value('day')}`
+}
+
 async function guard() {
   const session = await getServerSession(authOptions)
   return !!session?.user?.email && isFounder(session.user.email)
@@ -36,12 +47,12 @@ async function scalarGoal(key: 'weeklyGoal' | 'monthlyGoal', fallback: number): 
 type PeriodRow = { key: string; start: string; actual: number; orders: number }
 
 /** Last `n` ISO weeks (Monday-based), oldest → newest, with realised CA per week. */
-async function weekActuals(n: number): Promise<PeriodRow[]> {
+async function weekActuals(n: number, anchor: string): Promise<PeriodRow[]> {
   const r = await pool.query(`
     WITH span AS (
       SELECT generate_series(
-        date_trunc('week', (now() AT TIME ZONE '${TZ}')::date) - ($1 - 1) * INTERVAL '1 week',
-        date_trunc('week', (now() AT TIME ZONE '${TZ}')::date),
+        date_trunc('week', $2::date) - ($1 - 1) * INTERVAL '1 week',
+        date_trunc('week', $2::date),
         INTERVAL '1 week'
       )::date AS pstart
     ),
@@ -58,17 +69,17 @@ async function weekActuals(n: number): Promise<PeriodRow[]> {
      AND (o."createdAt" AT TIME ZONE '${TZ}')::date <  p.pend
     GROUP BY p.key, p.pstart
     ORDER BY p.pstart
-  `, [n])
+  `, [n, anchor])
   return r.rows.map((x) => ({ key: x.key, start: x.start, actual: x.actual, orders: x.orders }))
 }
 
 /** Last `n` months, oldest → newest, with realised CA per month. */
-async function monthActuals(n: number): Promise<PeriodRow[]> {
+async function monthActuals(n: number, anchor: string): Promise<PeriodRow[]> {
   const r = await pool.query(`
     WITH span AS (
       SELECT generate_series(
-        date_trunc('month', (now() AT TIME ZONE '${TZ}')::date) - ($1 - 1) * INTERVAL '1 month',
-        date_trunc('month', (now() AT TIME ZONE '${TZ}')::date),
+        date_trunc('month', $2::date) - ($1 - 1) * INTERVAL '1 month',
+        date_trunc('month', $2::date),
         INTERVAL '1 month'
       )::date AS pstart
     ),
@@ -85,7 +96,7 @@ async function monthActuals(n: number): Promise<PeriodRow[]> {
      AND (o."createdAt" AT TIME ZONE '${TZ}')::date <  p.pend
     GROUP BY p.key, p.pstart
     ORDER BY p.pstart
-  `, [n])
+  `, [n, anchor])
   return r.rows.map((x) => ({ key: x.key, start: x.start, actual: x.actual, orders: x.orders }))
 }
 
@@ -112,6 +123,7 @@ function buildBlock(
   rows: PeriodRow[],
   targets: Array<{ key: string; target: number }>,
   fallback: number,
+  liveKey: string,
 ) {
   const periods = rows.map((p, i) => {
     const target = resolveTarget(p.key, targets, fallback)
@@ -121,7 +133,7 @@ function buildBlock(
     const label = kind === 'week'
       ? `S${p.key.slice(-2)}`
       : `${['jan', 'fév', 'mar', 'avr', 'mai', 'juin', 'juil', 'aoû', 'sep', 'oct', 'nov', 'déc'][Number(p.key.slice(5, 7)) - 1]}`
-    return { key: p.key, label, start: p.start, target, actual: Math.round(p.actual), orders: p.orders, pct, achieved: p.actual >= target, current: isCurrent }
+    return { key: p.key, label, start: p.start, target, actual: Math.round(p.actual), orders: p.orders, pct, achieved: p.actual >= target, current: isCurrent, live: p.key === liveKey }
   })
 
   const current = periods[periods.length - 1]
@@ -141,7 +153,7 @@ function buildBlock(
 
   // Projection for the in-progress current period (linear run-rate).
   let projection: { daysElapsed: number; daysTotal: number; projected: number; onPace: boolean; perDayNeeded: number } | null = null
-  if (current) {
+  if (current?.live) {
     const start = new Date(current.start + 'T00:00:00Z')
     const nowLocal = new Date(new Date().toLocaleString('en-US', { timeZone: TZ }))
     const today = new Date(Date.UTC(nowLocal.getFullYear(), nowLocal.getMonth(), nowLocal.getDate()))
@@ -162,16 +174,25 @@ function buildBlock(
   return { periods, current, summary: { streak, hitRate, avgActual: Math.round(avg4), suggested }, projection }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   if (!(await guard())) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   try {
-    const [weekRows, monthRows, weekTargets, monthTargets, weekScalar, monthScalar] = await Promise.all([
-      weekActuals(9), monthActuals(6), targetsFor('week'), targetsFor('month'),
+    const requestedAnchor = req.nextUrl.searchParams.get('anchor')
+    const anchor = requestedAnchor && /^\d{4}-\d{2}-\d{2}$/.test(requestedAnchor)
+      ? requestedAnchor
+      : businessToday()
+    const [weekRows, monthRows, weekTargets, monthTargets, weekScalar, monthScalar, liveKeys] = await Promise.all([
+      weekActuals(9, anchor), monthActuals(6, anchor), targetsFor('week'), targetsFor('month'),
       scalarGoal('weeklyGoal', DEFAULTS.week), scalarGoal('monthlyGoal', DEFAULTS.month),
+      pool.query(`SELECT
+        to_char(now() AT TIME ZONE '${TZ}', 'IYYY"-W"IW') AS week,
+        to_char(now() AT TIME ZONE '${TZ}', 'YYYY-MM') AS month`),
     ])
+    const live = liveKeys.rows[0]
     return NextResponse.json({
-      week: buildBlock('week', weekRows, weekTargets, weekScalar),
-      month: buildBlock('month', monthRows, monthTargets, monthScalar),
+      anchor,
+      week: buildBlock('week', weekRows, weekTargets, weekScalar, live.week),
+      month: buildBlock('month', monthRows, monthTargets, monthScalar, live.month),
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'error'
@@ -193,24 +214,32 @@ export async function PUT(req: NextRequest) {
     if (!Number.isFinite(target) || target < 0) return NextResponse.json({ error: 'Objectif invalide' }, { status: 400 })
 
     // Default to the current period key in business time.
-    let periodKey: string = b.periodKey
+    let periodKey = typeof b.periodKey === 'string' ? b.periodKey : ''
     if (!periodKey) {
       const fmt = kind === 'week' ? `to_char(now() AT TIME ZONE '${TZ}', 'IYYY"-W"IW')` : `to_char(now() AT TIME ZONE '${TZ}', 'YYYY-MM')`
       const r = await pool.query(`SELECT ${fmt} AS k`)
       periodKey = r.rows[0].k
     }
+    const validKey = kind === 'week' ? /^\d{4}-W\d{2}$/.test(periodKey) : /^\d{4}-\d{2}$/.test(periodKey)
+    if (!validKey) return NextResponse.json({ error: 'Période invalide' }, { status: 400 })
 
     await pool.query(
       `INSERT INTO "GoalTarget" (kind, "periodKey", target) VALUES ($1, $2, $3)
        ON CONFLICT (kind, "periodKey") DO UPDATE SET target = EXCLUDED.target, "updatedAt" = NOW()`,
       [kind, periodKey, target]
     )
-    // Keep the scalar in sync (back-compat + carry-forward default for future periods).
-    await pool.query(
-      `INSERT INTO "AppSetting" (key, value, "updatedAt") VALUES ($1, $2, NOW())
-       ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, "updatedAt" = NOW()`,
-      [kind === 'week' ? 'weeklyGoal' : 'monthlyGoal', String(target)]
-    )
+    // A historical edit must not silently replace today's global target.
+    const currentKeySql = kind === 'week'
+      ? `to_char(now() AT TIME ZONE '${TZ}', 'IYYY"-W"IW')`
+      : `to_char(now() AT TIME ZONE '${TZ}', 'YYYY-MM')`
+    const currentKey = (await pool.query(`SELECT ${currentKeySql} AS key`)).rows[0].key
+    if (periodKey === currentKey) {
+      await pool.query(
+        `INSERT INTO "AppSetting" (key, value, "updatedAt") VALUES ($1, $2, NOW())
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, "updatedAt" = NOW()`,
+        [kind === 'week' ? 'weeklyGoal' : 'monthlyGoal', String(target)]
+      )
+    }
     return NextResponse.json({ ok: true, kind, periodKey, target })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'error'

@@ -20,6 +20,16 @@ const FOUNDER_EMAILS = ['mekouar01@gmail.com', 'marjanhajar20@gmail.com']
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
+  // Vercel Cron has no browser cookie or NextAuth session. Authenticate its
+  // Bearer token here before the gate/session layers, then let the destination
+  // route enforce the same secret. Without this bypass every configured cron
+  // returned 401 from the middleware and never reached its handler.
+  const cronSecret = process.env.CRON_SECRET
+  const cronAuthorized = Boolean(
+    cronSecret && req.headers.get('authorization') === `Bearer ${cronSecret}`
+  )
+  if (cronAuthorized) return NextResponse.next()
+
   // Public storefront endpoints (cross-origin, intentionally open) — bypass
   // both the shared gate and the founder session. e.g. /api/public/districts
   // is consumed by the shinecosmetics.ma checkout.
