@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { V } from '../_components/Viz'
 import { T } from '../_components/Decision'
-import { ReportShell, Scorecard, Squelette } from '../_components/Report'
+import { ReportShell, Scorecard, Squelette, ErreurChargement } from '../_components/Report'
 import { BarreControle } from '../_components/Controls'
 import { useReport, interroger } from '../_components/useReport'
 import { Entonnoir, type EtapeEntonnoir } from '../_components/Charts'
@@ -56,7 +56,7 @@ export default function Conversion() {
 
   useEffect(() => {
     let vivant = true
-    interroger({ periode: etat.periode, basis: etat.basis, mesures: ['livrees', 'marge'] })
+    interroger({ periode: etat.periode, basis: 'cohorte', mesures: ['livrees', 'marge'] })
       .then((r) => {
         if (!vivant) return
         const m = r.lignes[0]?.mesures
@@ -64,7 +64,7 @@ export default function Conversion() {
       })
       .catch(() => {})
     return () => { vivant = false }
-  }, [etat.periode, etat.basis])
+  }, [etat.periode])
 
   // Valorisation prudente : les visiteuses perdues à une marche auraient
   // converti au taux GLOBAL, pas au taux de l'étape suivante. On sous-estime
@@ -98,9 +98,10 @@ export default function Conversion() {
       sous="Où et pourquoi le parcours décroche — et ce que chaque marche coûte."
       controles={
         <BarreControle etat={etat} maj={maj} setJours={setJours} setPeriode={setPeriode}
-          setFiltre={setFiltre} periodePersonnalisee={periodePersonnalisee} />
+          setFiltre={setFiltre} periodePersonnalisee={periodePersonnalisee}
+          afficherComparaison={false} afficherBase={false} />
       }
-      enTete={erreur ? <p className="text-[13px] py-3" style={{ color: V.critical }}>Erreur : {erreur}</p> : null}
+      enTete={erreur ? <ErreurChargement message={erreur} /> : null}
       scorecards={!donnees ? (
         [0, 1, 2, 3].map((i) => <div key={i}><Squelette lignes={2} hauteur={12} /></div>)
       ) : (

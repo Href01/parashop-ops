@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import pool from '@/lib/db'
 import { bustCache } from '@/lib/ops-cache'
 import { getOpsSession } from '@/lib/auth'
+import { bustAnalyticsCache } from '@/lib/analytics-cache'
 
 /**
  * Order line-item editor for the BOS. Manual orders (Instagram/WhatsApp) are often
@@ -49,7 +50,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     [orderId, productId, quantity, unitPrice, unitCost, unitCost * quantity]
   )
   await recomputeProductsTotal(orderId)
-  bustCache('orders:'); bustCache('dashboard-stats:')
+  bustCache('orders:'); bustCache('dashboard-stats:'); await bustAnalyticsCache()
   return NextResponse.json({ ok: true, unitCost, costMissing: unitCost <= 0 })
 }
 
@@ -65,6 +66,6 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
   }
   await pool.query(`DELETE FROM "OrderItem" WHERE id = $1 AND "orderId" = $2`, [itemId, orderId])
   await recomputeProductsTotal(orderId)
-  bustCache('orders:'); bustCache('dashboard-stats:')
+  bustCache('orders:'); bustCache('dashboard-stats:'); await bustAnalyticsCache()
   return NextResponse.json({ ok: true })
 }

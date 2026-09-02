@@ -5,6 +5,7 @@ import { createSenditShipment } from '@/lib/sendit'
 import { CreateOrderSchema } from '@/lib/validation/order'
 import { getOpsSession } from '@/lib/auth'
 import { cached, bustCache } from '@/lib/ops-cache'
+import { bustAnalyticsCache } from '@/lib/analytics-cache'
 import type { PoolClient } from 'pg'
 
 class StockConflictError extends Error {}
@@ -507,7 +508,7 @@ export async function POST(request: NextRequest) {
       })
 
       // A new order invalidates the order queues AND the money aggregates.
-      bustCache('orders:'); bustCache('dashboard-stats:')
+      bustCache('orders:'); bustCache('dashboard-stats:'); await bustAnalyticsCache()
 
       return NextResponse.json({
         ...createdOrder,

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
-import pool from '@/lib/db'
-import { TZ } from '@/lib/analytics/metrics'
+import { analyticsError, analyticsQuery } from '@/lib/analytics/db'
+import { SESSION_BOT_FILTER_CLAUSE, TZ } from '@/lib/analytics/metrics'
 
 /**
  * LA LISTE DES SESSIONS, et qui est là maintenant.
@@ -53,7 +53,11 @@ export async function GET(request: NextRequest) {
     // La fenêtre est désormais une PÉRIODE DATÉE, pas une fenêtre glissante :
     // « hier » et « le mois dernier » ne s'expriment pas en « il y a N minutes ».
     // `minutes` reste accepté pour ne rien casser, et se traduit en dates.
-    const dateOk = (v: string | null): v is string => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v)
+    const dateOk = (v: string | null): v is string => {
+      if (!v || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false
+      const d = new Date(`${v}T00:00:00Z`)
+      return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v
+    }
     const jourTz = () => new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date())
     const decale = (d: string, n: number) => {
       const x = new Date(`${d}T00:00:00Z`)
@@ -65,6 +69,7 @@ export async function GET(request: NextRequest) {
     const debutDef = decale(finDef, -Math.max(0, Math.ceil(minutes / 1440) - 1))
     const debut = dateOk(sp.get('debut')) ? sp.get('debut')! : debutDef
     const fin = dateOk(sp.get('fin')) ? sp.get('fin')! : finDef
+    if (debut > fin) return NextResponse.json({ error: 'Période invalide' }, { status: 400 })
     const cmp = sp.get('cmp') !== '0'
     const nbJours = Math.max(1, Math.round(
       (new Date(fin).getTime() - new Date(debut).getTime()) / 86400000) + 1)
@@ -85,11 +90,14 @@ export async function GET(request: NextRequest) {
     // Le direct : 30 minutes, comme GA4. Les 5 minutes precedentes etaient trop
     // courtes pour un site a ce volume — on y voyait « 0 visiteur » en
     // permanence, ce qui donne l'impression que la mesure est cassee.
-    const direct = await pool.query(`
-      SELECT COUNT(DISTINCT "sessionId")::int AS actifs,
+    const direct = await analyticsQuery(`
+      SELECT COUNT(DISTINCT e."sessionId")::int AS actifs,
              COUNT(*)::int AS evenements
-      FROM "AnalyticsEvent"
-      WHERE "createdAt" >= NOW() - INTERVAL '30 minutes'`)
+      FROM "AnalyticsEvent" e
+      LEFT JOIN "AnalyticsSession" s ON s."sessionId" = e."sessionId"
+      WHERE e."createdAt" >= NOW() - INTERVAL '30 minutes'
+        AND e.name NOT IN ('ORDER_CONFIRMED', 'ORDER_DELIVERED', 'ORDER_CANCELLED')
+        ${SESSION_BOT_FILTER_CLAUSE}`)
 
     // Requête PARAMÉTRÉE. La version précédente interpolait la recherche dans
     // le SQL après avoir doublé les apostrophes : ça tenait, mais une règle qui
@@ -100,7 +108,7 @@ export async function GET(request: NextRequest) {
     // ne changeant que les deux valeurs.
     params.push(debut, fin)
     const FENETRE = `(s."firstSeenAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date`
-    const conditions: string[] = [FENETRE]
+    const conditions: string[] = [FENETRE, SESSION_BOT_FILTER_CLAUSE.replace(/^\s*AND\s*/, '')]
 
     // Les filtres d'attribut s'appliquent AUSSI au comptage des segments : les
     // puces doivent compter dans le même périmètre que la liste qu'elles ouvrent.
@@ -122,43 +130,52 @@ export async function GET(request: NextRequest) {
     conditions.push(...perimetre)
     if (filtre !== 'toutes') conditions.push(SEGMENTS[filtre].sql)
 
-    const r = await pool.query(`
-      WITH stats AS (
+    const r = await analyticsQuery(`
+      WITH bornes AS (
         SELECT "sessionId",
-               COUNT(*)::int AS actions,
-               COUNT(*) FILTER (WHERE name = 'PRODUCT_VIEW_DETAIL')::int AS fiches,
-               COUNT(*) FILTER (WHERE name = 'PRODUCT_ADD_TO_CART')::int AS paniers,
-               COUNT(*) FILTER (WHERE name = 'SEARCH_SUBMIT')::int AS recherches,
-               COUNT(*) FILTER (WHERE name IN (
-                 'PURCHASE_FAILED','CHECKOUT_VALIDATION_FAILED','PROMO_CODE_FAILED',
-                 'SEARCH_ZERO_RESULTS','OTP_INVALID','OTP_SEND_FAILED','OTP_DELIVERY_FAILED',
-                 'RAGE_CLICK','DEAD_CLICK','CHECKOUT_FIELD_ERROR'))::int AS frictions,
-               MAX("createdAt") AS derniere,
-               MIN("createdAt") AS premiere
+               COALESCE(MAX("createdAt") FILTER (WHERE name = 'SESSION_START'), MIN("createdAt")) AS depart
         FROM "AnalyticsEvent"
         WHERE ("createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
           AND "sessionId" IS NOT NULL
+          AND name NOT IN ('ORDER_CONFIRMED', 'ORDER_DELIVERED', 'ORDER_CANCELLED')
+        GROUP BY 1
+      ), stats AS (
+        SELECT e."sessionId",
+               COUNT(*)::int AS actions,
+               COUNT(*) FILTER (WHERE e.name = 'PRODUCT_VIEW_DETAIL')::int AS fiches,
+               COUNT(*) FILTER (WHERE e.name = 'PRODUCT_ADD_TO_CART')::int AS paniers,
+               COUNT(*) FILTER (WHERE e.name = 'SEARCH_SUBMIT')::int AS recherches,
+               COUNT(*) FILTER (WHERE e.name IN (
+                 'PURCHASE_FAILED','CHECKOUT_VALIDATION_FAILED','PROMO_CODE_FAILED',
+                 'SEARCH_ZERO_RESULTS','OTP_INVALID','OTP_SEND_FAILED','OTP_DELIVERY_FAILED',
+                 'RAGE_CLICK','DEAD_CLICK','CHECKOUT_FIELD_ERROR','JS_ERROR'))::int AS frictions,
+               MAX(e."createdAt") AS derniere,
+               MIN(e."createdAt") AS premiere
+        FROM "AnalyticsEvent" e
+        JOIN bornes b ON b."sessionId" = e."sessionId" AND e."createdAt" >= b.depart
+        WHERE (e."createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
+          AND e.name NOT IN ('ORDER_CONFIRMED', 'ORDER_DELIVERED', 'ORDER_CANCELLED')
         GROUP BY 1
       )
       SELECT s."sessionId",
              s.device, s.city, s."utmSource", s."visitorId",
-             s."firstSeenAt", stats.derniere,
+             s."firstSeenAt", COALESCE(stats.derniere, s."lastSeenAt", s."firstSeenAt") AS derniere,
              COALESCE(stats.actions, 0)::int AS actions,
              COALESCE(stats.fiches, 0)::int AS fiches,
              COALESCE(stats.paniers, 0)::int AS paniers,
              COALESCE(stats.recherches, 0)::int AS recherches,
              COALESCE(stats.frictions, 0)::int AS frictions,
-             EXTRACT(epoch FROM (stats.derniere - stats.premiere))::int AS duree,
+             COALESCE(EXTRACT(epoch FROM (stats.derniere - stats.premiere)), 0)::int AS duree,
              o.id AS "orderId", o."deliveryName", o."deliveryPhone", o.status AS "orderStatus",
              COALESCE(o.revenue, o."productsTotal", o.total) AS montant,
-             (stats.derniere >= NOW() - INTERVAL '5 minutes') AS "enLigne"
+             (COALESCE(stats.derniere, s."lastSeenAt", s."firstSeenAt") >= NOW() - INTERVAL '5 minutes') AS "enLigne"
       FROM "AnalyticsSession" s
-      JOIN stats ON stats."sessionId" = s."sessionId"
+      LEFT JOIN stats ON stats."sessionId" = s."sessionId"
       LEFT JOIN LATERAL (
         SELECT * FROM "Order" WHERE "sessionId" = s."sessionId" ORDER BY "createdAt" DESC LIMIT 1
       ) o ON true
       WHERE ${conditions.join(' AND ')}
-      ORDER BY stats.derniere DESC
+      ORDER BY COALESCE(stats.derniere, s."lastSeenAt", s."firstSeenAt") DESC
       LIMIT 60`, params)
 
     // LA RÉPARTITION — combien de sessions dans chaque segment, sur le même
@@ -170,7 +187,7 @@ export async function GET(request: NextRequest) {
     // précédente. Deux requêtes jumelles écrites à la main auraient fini par
     // diverger d'une condition, et l'écart affiché aurait été faux sans que rien
     // ne le signale.
-    const compter = (d1: string, d2: string) => pool.query(`
+    const compter = (d1: string, d2: string) => analyticsQuery(`
       WITH stats AS (
         SELECT "sessionId",
                COUNT(*)::int AS actions,
@@ -180,16 +197,17 @@ export async function GET(request: NextRequest) {
                COUNT(*) FILTER (WHERE name IN (
                  'PURCHASE_FAILED','CHECKOUT_VALIDATION_FAILED','PROMO_CODE_FAILED',
                  'SEARCH_ZERO_RESULTS','OTP_INVALID','OTP_SEND_FAILED','OTP_DELIVERY_FAILED',
-                 'RAGE_CLICK','DEAD_CLICK','CHECKOUT_FIELD_ERROR'))::int AS frictions
+                 'RAGE_CLICK','DEAD_CLICK','CHECKOUT_FIELD_ERROR','JS_ERROR'))::int AS frictions
         FROM "AnalyticsEvent"
         WHERE ("createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
           AND "sessionId" IS NOT NULL
+          AND name NOT IN ('ORDER_CONFIRMED', 'ORDER_DELIVERED', 'ORDER_CANCELLED')
         GROUP BY 1
       )
       SELECT ${(Object.keys(SEGMENTS) as Filtre[])
         .map((k) => `COUNT(*) FILTER (WHERE ${SEGMENTS[k].sql})::int AS "${k}"`).join(',\n             ')}
       FROM "AnalyticsSession" s
-      JOIN stats ON stats."sessionId" = s."sessionId"
+      LEFT JOIN stats ON stats."sessionId" = s."sessionId"
       LEFT JOIN LATERAL (
         SELECT * FROM "Order" WHERE "sessionId" = s."sessionId" ORDER BY "createdAt" DESC LIMIT 1
       ) o ON true
@@ -199,18 +217,17 @@ export async function GET(request: NextRequest) {
       // population.
       [d1, d2, ...params.slice(2)])
 
-    const [compte, comptePrec] = await Promise.all([
-      compter(debut, fin),
-      cmp ? compter(debutPrec, finPrec) : Promise.resolve(null),
-    ])
+    const compte = await compter(debut, fin)
+    const comptePrec = cmp ? await compter(debutPrec, finPrec) : null
 
     // De quoi remplir les listes déroulantes sans les inventer.
-    const dims = await pool.query(`
+    const dims = await analyticsQuery(`
       SELECT LOWER(COALESCE(NULLIF(s.device,''), 'inconnu')) AS appareil,
              LOWER(COALESCE(NULLIF(s."utmSource",''), 'direct')) AS canal,
              COUNT(*)::int AS n
       FROM "AnalyticsSession" s
       WHERE (s."firstSeenAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
+        ${SESSION_BOT_FILTER_CLAUSE}
       GROUP BY GROUPING SETS ((1), (2))`, [debut, fin])
 
     return NextResponse.json({
@@ -249,7 +266,7 @@ export async function GET(request: NextRequest) {
       tz: TZ,
     })
   } catch (e) {
-    console.error('[analytics/sessions]', e instanceof Error ? e.message : e)
+    console.error('[analytics/sessions]', analyticsError(e))
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
 }

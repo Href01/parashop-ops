@@ -4,6 +4,7 @@ import { creditOrderPoints } from '@/lib/loyalty'
 import { fireDeliveredCapi } from '@/lib/meta-capi'
 import { isPrepaidPaymentMethod } from '@/lib/order-utils'
 import { listSenditDeliveriesSnapshot } from '@/lib/sendit'
+import { bustAnalyticsCache } from '@/lib/analytics-cache'
 
 interface OrderMatch {
   id: number
@@ -337,5 +338,6 @@ export async function syncMatchedSenditStaging(): Promise<SyncMatchedStagingResu
     client.release()
   }
 
+  if (result.synced > 0) await bustAnalyticsCache()
   return result
 }

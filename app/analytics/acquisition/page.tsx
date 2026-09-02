@@ -19,9 +19,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { V } from '../_components/Viz'
 import { T } from '../_components/Decision'
-import { ReportShell, Scorecard, DimensionTable, Squelette, fmt, type ColonneMesure, type LigneTable } from '../_components/Report'
+import { ReportShell, Scorecard, DimensionTable, Squelette, ErreurChargement, fmt, type ColonneMesure, type LigneTable } from '../_components/Report'
 import { BarreControle } from '../_components/Controls'
 import { useReport, interroger } from '../_components/useReport'
+import { isPaidChannel } from '@/lib/analytics/metrics'
 
 type Reponse = Awaited<ReturnType<typeof interroger>>
 
@@ -32,28 +33,38 @@ type Reponse = Awaited<ReturnType<typeof interroger>>
    le modele les recolle sur la valeur de dimension, et les deux partagent leurs
    regles de classement (voir `reglesUtm`) sans quoi le rapport serait faux. */
 const MESURES = ['sessions', 'commandes', 'livrees', 'tauxLivraison', 'caLivre', 'marge'] as const
-const CANAUX_PAYANTS = ['Instagram Ads', 'Facebook Ads', 'TikTok Ads']
 
 export default function Acquisition() {
   const { etat, maj, setJours, setPeriode, setFiltre, periodePersonnalisee } = useReport()
   const [dimension, setDimension] = useState('canal')
   const [table, setTable] = useState<Reponse | null>(null)
+  const [canaux, setCanaux] = useState<Reponse | null>(null)
   const [pub, setPub] = useState<Reponse | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
 
   const base = useMemo(() => ({
     periode: etat.periode, comparaison: etat.comparaison ?? undefined,
-    basis: etat.basis, filtres: etat.filtres,
+    basis: 'cohorte' as const, filtres: etat.filtres,
   }), [etat])
 
   useEffect(() => {
     let vivant = true
-    setTable(null)
+    const tablePromise = interroger({ ...base, dimension, mesures: [...MESURES], limite: 100 })
+    const canauxPromise = dimension === 'canal'
+      ? tablePromise
+      : interroger({ ...base, dimension: 'canal', mesures: [...MESURES], limite: 100 })
     Promise.all([
-      interroger({ ...base, dimension, mesures: [...MESURES], limite: 100 }),
-      interroger({ ...base, mesures: ['depensePub', 'clicsPub', 'impressionsPub'] }),
+      tablePromise,
+      // La dépense des régies n'est pas ventilable par appareil, ville ou
+      // langue. Lui transmettre ces segments ferait soit mentir le total, soit
+      // rendre le croisement invalide ; elle ne reçoit que la période.
+      interroger({
+        periode: base.periode, comparaison: base.comparaison,
+        mesures: ['depensePub', 'clicsPub', 'impressionsPub'],
+      }),
+      canauxPromise,
     ])
-      .then(([t, p]) => { if (vivant) { setTable(t); setPub(p); setErreur(null) } })
+      .then(([t, p, c]) => { if (vivant) { setTable(t); setPub(p); setCanaux(c); setErreur(null) } })
       .catch((e) => vivant && setErreur(e instanceof Error ? e.message : 'Erreur'))
     return () => { vivant = false }
   }, [base, dimension])
@@ -63,8 +74,8 @@ export default function Acquisition() {
 
   // Le bloc payant : la seule comparaison honnête avec la dépense.
   const payant = useMemo(() => {
-    if (!table || dimension !== 'canal') return null
-    const l = table.lignes.filter((x) => CANAUX_PAYANTS.includes(x.cle))
+    if (!canaux) return null
+    const l = canaux.lignes.filter((x) => isPaidChannel(x.cle))
     if (l.length === 0) return null
     const s = (c: string) => l.reduce((a, x) => a + (x.mesures[c]?.valeur ?? 0), 0)
     const livrees = s('livrees'), marge = s('marge')
@@ -74,7 +85,7 @@ export default function Acquisition() {
       cac: livrees > 0 ? depense / livrees : null,
       roas: depense > 0 ? s('caLivre') / depense : null,
     }
-  }, [table, dimension, depense])
+  }, [canaux, depense])
 
   /* LA PART DE TRAFIC SE CALCULE ICI, PAS EN SQL.
      Une part depend de l'ENSEMBLE des lignes ; l'exprimer en base demanderait
@@ -133,9 +144,9 @@ export default function Acquisition() {
       sous="D'où viennent les commandes, ce qu'elles coûtent et ce qu'elles rapportent."
       controles={
         <BarreControle etat={etat} maj={maj} setJours={setJours} setPeriode={setPeriode}
-          setFiltre={setFiltre} periodePersonnalisee={periodePersonnalisee} />
+          setFiltre={setFiltre} periodePersonnalisee={periodePersonnalisee} afficherBase={false} />
       }
-      enTete={erreur ? <p className="text-[13px] py-3" style={{ color: V.critical }}>Erreur : {erreur}</p> : null}
+      enTete={erreur ? <ErreurChargement message={erreur} /> : null}
       scorecards={!table ? (
         [0, 1, 2, 3].map((i) => <div key={i}><Squelette lignes={2} hauteur={12} /></div>)
       ) : (
@@ -144,7 +155,7 @@ export default function Acquisition() {
             definition="Toutes plateformes. Non ventilable par canal : les régies facturent par plateforme, pas par utm."
             valeur={depense} precedent={depensePrec} format="mad" hausseEstBonne={false} />
           <Scorecard label="Marge des canaux payants" portee="événements"
-            definition="Marge des commandes livrées venues d'Instagram Ads, Facebook Ads ou TikTok Ads."
+            definition="Marge des commandes livrées venues de tous les canaux publicitaires identifiés."
             valeur={payant?.marge ?? null} format="mad" hausseEstBonne />
           <Scorecard label="Net après publicité" portee="événements"
             definition="Marge des canaux payants moins la dépense publicitaire totale."

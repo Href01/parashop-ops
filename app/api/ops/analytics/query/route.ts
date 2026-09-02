@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
-import pool from '@/lib/db'
 import { cachedAnalytics } from '@/lib/analytics-cache'
+import { analyticsError, analyticsQuery } from '@/lib/analytics/db'
 import {
   construireSql, assembler, mesuresBrutes, sourcesRequises,
-  DIMENSIONS, MESURES, type Requete, type Ligne,
+  problemeCompatibilite, DIMENSIONS, MESURES, type Requete, type Ligne,
 } from '@/lib/analytics/model'
 
 /**
@@ -40,14 +40,15 @@ async function executer(req: Requete, periode: { debut: string; fin: string }): 
   const brut: BrutParCle = {}
   const cles = mesuresBrutes(req.mesures)
 
-  const resultats = await Promise.all(
-    sourcesRequises(req.mesures).map(async (source) => {
-      const q = construireSql(source, req, periode)
-      if (!q) return []
-      const r = await pool.query(q.texte, q.params as string[])
-      return r.rows
-    })
-  )
+  const resultats: Array<Array<Record<string, unknown>>> = []
+  // Les pages ouvrent souvent deux rapports à la fois. Séquencer les sources
+  // évite un pic de connexions Neon sans ajouter de calcul ni de coût durable.
+  for (const source of sourcesRequises(req.mesures)) {
+    const q = construireSql(source, req, periode)
+    if (!q) continue
+    const r = await analyticsQuery(q.texte, q.params)
+    resultats.push(r.rows as Array<Record<string, unknown>>)
+  }
 
   for (const rows of resultats) {
     for (const row of rows as Array<Record<string, unknown>>) {
@@ -71,31 +72,52 @@ function valide(body: unknown): { ok: true; req: Requete } | { ok: false; erreur
   if (b.dimension && !DIMENSIONS[b.dimension]) return { ok: false, erreur: `Dimension inconnue : ${b.dimension}` }
 
   const d = b.periode?.debut, f = b.periode?.fin
-  const dateOk = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
+  const dateOk = (v: unknown) => {
+    if (typeof v !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return false
+    const parsed = new Date(`${v}T00:00:00Z`)
+    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === v
+  }
   if (!dateOk(d) || !dateOk(f)) return { ok: false, erreur: 'Période invalide (AAAA-MM-JJ attendu)' }
+  const jours = (Date.parse(`${f}T00:00:00Z`) - Date.parse(`${d}T00:00:00Z`)) / 86_400_000
+  if (jours < 0) return { ok: false, erreur: 'La date de fin précède la date de début' }
+  if (jours > 731) return { ok: false, erreur: 'La période est limitée à deux ans' }
   if (b.comparaison && (!dateOk(b.comparaison.debut) || !dateOk(b.comparaison.fin))) {
     return { ok: false, erreur: 'Comparaison invalide' }
+  }
+  if (b.comparaison) {
+    const cmpJours = (Date.parse(`${b.comparaison.fin}T00:00:00Z`) - Date.parse(`${b.comparaison.debut}T00:00:00Z`)) / 86_400_000
+    if (cmpJours < 0 || cmpJours > 731) return { ok: false, erreur: 'Comparaison invalide' }
   }
 
   /* `Array.isArray` et pas `?? []` : sur un corps malforme — `filtres: {}` —
      l'appel a `.filter` levait une exception happee plus haut, et la route
      repondait 500 « Erreur serveur ». Un corps invalide doit rendre 400 et dire
      ce qui ne va pas ; un 500 fait chercher la panne du mauvais cote. */
-  const filtres = (Array.isArray(b.filtres) ? b.filtres : []).filter(
+  if (b.filtres != null && !Array.isArray(b.filtres)) {
+    return { ok: false, erreur: 'Filtres invalides' }
+  }
+  const filtres = (b.filtres ?? []).filter(
     (x) => x && DIMENSIONS[x.dimension] && Array.isArray(x.valeurs) && x.valeurs.length > 0
   )
+  if ((b.filtres ?? []).length !== filtres.length) {
+    return { ok: false, erreur: 'Un filtre contient une dimension ou une valeur invalide' }
+  }
+
+  const req: Requete = {
+    dimension: b.dimension,
+    mesures,
+    periode: { debut: d as string, fin: f as string },
+    comparaison: b.comparaison,
+    filtres,
+    basis: b.basis === 'cash' ? 'cash' : 'cohorte',
+    limite: typeof b.limite === 'number' ? Math.min(Math.max(1, b.limite), 500) : undefined,
+  }
+  const probleme = problemeCompatibilite(req)
+  if (probleme) return { ok: false, erreur: probleme }
 
   return {
     ok: true,
-    req: {
-      dimension: b.dimension,
-      mesures,
-      periode: { debut: d as string, fin: f as string },
-      comparaison: b.comparaison,
-      filtres,
-      basis: b.basis === 'cash' ? 'cash' : 'cohorte',
-      limite: typeof b.limite === 'number' ? Math.min(Math.max(1, b.limite), 500) : undefined,
-    },
+    req,
   }
 }
 
@@ -113,15 +135,13 @@ export async function POST(request: NextRequest) {
     // La cle de cache decrit la requete entiere : deux vues differentes ne
     // peuvent pas se voler leur resultat.
     const cle = 'q:' + JSON.stringify([
-      req.dimension ?? '', req.mesures.slice().sort(), req.periode, req.comparaison ?? '',
+      req.dimension ?? '', req.mesures, req.periode, req.comparaison ?? '',
       req.filtres, req.basis, req.limite ?? 0,
     ])
 
     const { data, cachedAt } = await cachedAnalytics(cle, 5 * 60 * 1000, async () => {
-      const [courant, precedent] = await Promise.all([
-        executer(req, req.periode),
-        req.comparaison ? executer(req, req.comparaison) : Promise.resolve(undefined),
-      ])
+      const courant = await executer(req, req.periode)
+      const precedent = req.comparaison ? await executer(req, req.comparaison) : undefined
       const lignes: Ligne[] = assembler(req, courant, precedent)
 
       return {
@@ -152,7 +172,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ...data, cachedAt })
   } catch (e) {
-    console.error('[analytics/query]', e instanceof Error ? e.message : e)
+    console.error('[analytics/query]', analyticsError(e))
     return NextResponse.json({ error: 'Erreur serveur' }, { status: 500 })
   }
 }

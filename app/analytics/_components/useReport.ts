@@ -203,13 +203,17 @@ export async function interroger(body: unknown): Promise<{
     mesures: Array<{ cle: string; label: string; definition: string; format: 'entier' | 'mad' | 'pourcent' | 'decimal'; portee: string; hausseEstBonne: boolean; seuil: number | null }>
   }
 }> {
-  const res = await fetch('/api/ops/analytics/query', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+  const appeler = () => fetch('/api/ops/analytics/query', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(`API ${res.status}`)
-  const json = await res.json()
-  if (json.error) throw new Error(json.error)
+  let res = await appeler()
+  // Un seul nouvel essai, uniquement sur panne serveur. Les erreurs de requête
+  // (400) restent visibles et on ne double jamais une lecture qui a réussi.
+  if (res.status >= 500) {
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    res = await appeler()
+  }
+  const json = await res.json().catch(() => ({ error: `Réponse illisible (${res.status})` }))
+  if (!res.ok || json.error) throw new Error(json.error || `API ${res.status}`)
   return json
 }

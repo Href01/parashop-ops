@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { V } from '../_components/Viz'
 import { T } from '../_components/Decision'
-import { ReportShell, Scorecard, Squelette, Ecart, fmt } from '../_components/Report'
+import { ReportShell, Scorecard, Squelette, ErreurChargement, Ecart, fmt } from '../_components/Report'
 import { BarreControle } from '../_components/Controls'
 import { useReport } from '../_components/useReport'
 import { Chronologie, LegendeFamilles, BRUIT, type Evenement } from '../_components/Chronologie'
@@ -50,6 +50,7 @@ export default function Sessions() {
   const { etat, maj, setJours, setPeriode, setFiltre: setFiltreDim, periodePersonnalisee } = useReport()
   const [filtre, setFiltre] = useState('toutes')
   const [q, setQ] = useState('')
+  const [qDifferee, setQDifferee] = useState('')
   const [appareil, setAppareil] = useState('')
   const [canal, setCanal] = useState('')
   const [data, setData] = useState<Reponse | null>(null)
@@ -57,6 +58,7 @@ export default function Sessions() {
   const [timeline, setTimeline] = useState<Evenement[] | null>(null)
   const [tout, setTout] = useState(false)
   const [erreurTimeline, setErreurTimeline] = useState<string | null>(null)
+  const [timelineTronquee, setTimelineTronquee] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
 
   const charger = useCallback(() => {
@@ -67,14 +69,19 @@ export default function Sessions() {
       debut: etat.periode.debut, fin: etat.periode.fin,
       cmp: etat.comparaison ? '1' : '0',
       cmpDebut: etat.comparaison?.debut ?? '', cmpFin: etat.comparaison?.fin ?? '',
-      filtre, q, appareil, canal,
+      filtre, q: qDifferee, appareil, canal,
     })
     fetch(`/api/ops/analytics/sessions?${p}`).then((r) => r.json())
       .then((j) => { if (j.error) setErreur(j.error); else { setData(j); setErreur(null) } })
       .catch((e) => setErreur(String(e)))
-  }, [etat.periode.debut, etat.periode.fin, etat.comparaison, filtre, q, appareil, canal])
+  }, [etat.periode.debut, etat.periode.fin, etat.comparaison, filtre, qDifferee, appareil, canal])
 
-  useEffect(() => { setData(null); charger() }, [charger])
+  useEffect(() => {
+    const t = setTimeout(() => setQDifferee(q), 300)
+    return () => clearTimeout(t)
+  }, [q])
+
+  useEffect(() => { charger() }, [charger])
   // Le direct se rafraîchit tout seul : c'est la seule vue où l'attente a un sens.
   useEffect(() => {
     const t = setInterval(charger, 60_000)
@@ -82,7 +89,7 @@ export default function Sessions() {
   }, [charger])
 
   useEffect(() => {
-    if (!ouverte) { setTimeline(null); setErreurTimeline(null); return }
+    if (!ouverte) { setTimeline(null); setErreurTimeline(null); setTimelineTronquee(false); return }
     let vivant = true
     setTimeline(null)
     setErreurTimeline(null)
@@ -95,7 +102,7 @@ export default function Sessions() {
         const j = await r.json().catch(() => ({ error: `Réponse illisible (${r.status})` }))
         if (!vivant) return
         if (!r.ok || j.error) { setErreurTimeline(j.error || `Erreur ${r.status}`); setTimeline([]) }
-        else setTimeline(j.timeline ?? [])
+        else { setTimeline(j.timeline ?? []); setTimelineTronquee(j.truncated === true) }
       })
       .catch((e) => {
         if (!vivant) return
@@ -128,7 +135,7 @@ export default function Sessions() {
               mois clos, ni comparer quoi que ce soit. */}
           <div className="w-full">
             <BarreControle etat={etat} maj={maj} setJours={setJours} setPeriode={setPeriode}
-              setFiltre={setFiltreDim} periodePersonnalisee={periodePersonnalisee} />
+              setFiltre={setFiltreDim} periodePersonnalisee={periodePersonnalisee} afficherBase={false} />
           </div>
 
           {/* Les segments PORTENT LEUR EFFECTIF. Une puce muette oblige à
@@ -198,7 +205,7 @@ export default function Sessions() {
           `}</style>
         </div>
       }
-      enTete={erreur ? <p className="text-[13px] py-3" style={{ color: V.critical }}>Erreur : {erreur}</p> : null}
+      enTete={erreur ? <ErreurChargement message={erreur} /> : null}
       scorecards={!data ? ([0, 1, 2, 3].map((i) => <div key={i}><Squelette lignes={2} hauteur={12} /></div>)) : (
         <>
           <div className="min-w-0">
@@ -296,6 +303,9 @@ export default function Sessions() {
                             ? `${timeline.length} actions`
                             : `${timeline.filter((e) => !BRUIT.has(e.name)).length} actions marquantes sur ${timeline.length}`}
                         </span>
+                        {timelineTronquee && (
+                          <span className={T.note} style={{ color: V.warning }}>300 premières actions</span>
+                        )}
                         <span className="flex-1" />
                         <LegendeFamilles />
                       </div>

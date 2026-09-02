@@ -39,6 +39,18 @@ export const BOT_FILTER_CLAUSE = `
       )
   )
 `
+
+/** Same business rule as BOT_FILTER_CLAUSE, for queries joined to session alias `s`. */
+export const SESSION_BOT_FILTER_CLAUSE = `
+  AND NOT (
+    COALESCE(s."isBot", false)
+    AND NOT EXISTS (
+      SELECT 1 FROM "AnalyticsEvent" e4
+      WHERE e4."sessionId" = s."sessionId"
+        AND e4.name IN ('PURCHASE_SUCCESS', 'ORDER_CREATED', 'PRODUCT_ADD_TO_CART')
+    )
+  )
+`
 /* CE FILTRE LIT DESORMAIS LA COLONNE, IL NE LA RECALCULE PLUS.
  *
  * Il portait sa propre expression regexp, en DOUBLE de la colonne generee
@@ -72,8 +84,8 @@ export const BOT_FILTER_CLAUSE = `
      cohorte  : date de COMMANDE. « La publicite de cette periode a-t-elle
                 produit ? » On compare une depense a ce qu'elle a genere, quel
                 que soit le sort ulterieur des colis. C'est la vue marketing.
-     cash     : date de LIVRAISON. « Qu'est-ce qui est reellement rentre ? »
-                C'est la base du BOS — les deux ecrans doivent tomber d'accord.
+     cash     : date de LIVRAISON. « Qu'est-ce qui a ete effectivement livre ? »
+                C'est une base de ventes realisees, pas une date d'encaissement.
 
    Melanger les deux, c'est comparer le budget de juillet aux encaissements
    d'aout. Le selecteur est donc explicite en tete de page, jamais implicite.
@@ -105,7 +117,7 @@ export const BASIS_LABEL: Record<MoneyBasis, { titre: string; explication: strin
   },
   cash: {
     titre: 'Base livraison',
-    explication: 'daté au jour de la livraison — ce qui est réellement rentré (base du BOS)',
+    explication: 'daté au jour de la livraison — ventes réalisées, distinctes de la date d’encaissement',
   },
 }
 

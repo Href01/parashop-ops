@@ -22,7 +22,8 @@
 
 import {
   acquisitionChannelSql, sessionChannelSql, modeleAppareilSql, gammeAppareilSql,
-  basisDateExpr, BOT_FILTER_CLAUSE, MIN_OBS, TZ,
+  basisDateExpr, basisStatusFilter, BOT_FILTER_CLAUSE, SESSION_BOT_FILTER_CLAUSE,
+  MIN_OBS, TZ,
   type MoneyBasis,
 } from './metrics'
 
@@ -48,7 +49,14 @@ export const PORTEE_LABEL: Record<Portee, string> = {
    source avant de recoller les resultats sur la dimension.
    ───────────────────────────────────────────────────────────────────────────── */
 
-export type Source = 'evenements' | 'commandes' | 'pages' | 'pub'
+export type Source = 'evenements' | 'commandes' | 'pages' | 'sessions' | 'pub'
+
+const langueSessionSql = (s = 's') => `CASE
+  WHEN COALESCE(${s}."landingUrl", '') ~ '(^|/)ar(/|$)' THEN 'ar'
+  ELSE 'fr'
+END`
+
+const idProduitEvenement = `COALESCE(NULLIF(e.props->>'productId', ''), NULLIF(e.props->>'id', ''))`
 
 /* ─────────────────────────────────────────────────────────────────────────────
    DIMENSIONS
@@ -80,6 +88,8 @@ export const DIMENSIONS: Record<string, Dimension> = {
     sql: {
       commandes: acquisitionChannelSql('o', 's'),
       pages: sessionChannelSql('s'),
+      sessions: sessionChannelSql('s'),
+      evenements: sessionChannelSql('s'),
     },
   },
   appareil: {
@@ -87,9 +97,10 @@ export const DIMENSIONS: Record<string, Dimension> = {
     label: 'Appareil',
     definition: 'Mobile ou ordinateur, tel que déclaré par le navigateur.',
     sql: {
-      evenements: `COALESCE(e.props->>'_device', '—')`,
+      evenements: `COALESCE(NULLIF(e.props->>'_device', ''), NULLIF(s."device", ''), '—')`,
       pages: `COALESCE(s."device", '—')`,
       commandes: `COALESCE(s."device", '—')`,
+      sessions: `COALESCE(s."device", '—')`,
     },
   },
   modeleAppareil: {
@@ -102,7 +113,10 @@ export const DIMENSIONS: Record<string, Dimension> = {
       "c'est pourquoi une partie du trafic reste « non déclaré ». " +
       "Attention : l'identifiant Apple n'est PAS le nom commercial — il court en avance " +
       "d'environ deux générations (iPhone10,2 est un appareil de 2017).",
-    sql: { pages: modeleAppareilSql('s'), commandes: modeleAppareilSql('s') },
+    sql: {
+      pages: modeleAppareilSql('s'), commandes: modeleAppareilSql('s'),
+      sessions: modeleAppareilSql('s'), evenements: modeleAppareilSql('s'),
+    },
   },
   gammeAppareil: {
     cle: 'gammeAppareil',
@@ -112,14 +126,20 @@ export const DIMENSIONS: Record<string, Dimension> = {
       "jamais d'un nom commercial, qu'on ne peut pas établir de façon sûre pour les modèles " +
       "récents. C'est un indice de pouvoir d'achat : croisée avec le panier moyen, cette " +
       "dimension dit à quel prix ton audience achète réellement.",
-    sql: { pages: gammeAppareilSql('s'), commandes: gammeAppareilSql('s') },
+    sql: {
+      pages: gammeAppareilSql('s'), commandes: gammeAppareilSql('s'),
+      sessions: gammeAppareilSql('s'), evenements: gammeAppareilSql('s'),
+    },
   },
   langue: {
     cle: 'langue',
     label: 'Langue',
     definition: "La langue d'affichage choisie : français ou arabe.",
     sql: {
-      evenements: `COALESCE(e.props->>'_locale', '—')`,
+      evenements: `COALESCE(NULLIF(split_part(e.props->>'_locale', '-', 1), ''), ${langueSessionSql('s')})`,
+      pages: `CASE WHEN COALESCE("PageView".url, '') ~ '(^|/)ar(/|$)' THEN 'ar' ELSE ${langueSessionSql('s')} END`,
+      commandes: langueSessionSql('s'),
+      sessions: langueSessionSql('s'),
     },
   },
   ville: {
@@ -128,32 +148,37 @@ export const DIMENSIONS: Record<string, Dimension> = {
     definition: 'Ville de livraison pour les commandes, ville détectée pour les visites.',
     sql: {
       commandes: `COALESCE(NULLIF(TRIM(o."deliveryCity"), ''), '—')`,
-      evenements: `COALESCE(e.props->>'_city', '—')`,
+      evenements: `COALESCE(NULLIF(e.props->>'_city', ''), NULLIF(s.city, ''), '—')`,
+      pages: `COALESCE(NULLIF("PageView".city, ''), NULLIF(s.city, ''), '—')`,
+      sessions: `COALESCE(NULLIF(s.city, ''), '—')`,
     },
   },
   page: {
     cle: 'page',
     label: 'Page',
     definition: "Le chemin de la page, sans les paramètres d'URL.",
-    sql: { evenements: `COALESCE(split_part(e.path, '?', 1), '—')` },
+    sql: {
+      evenements: `COALESCE(NULLIF(split_part(e.path, '?', 1), ''), '—')`,
+      pages: `COALESCE(NULLIF(split_part("PageView".url, '?', 1), ''), '—')`,
+    },
   },
   produit: {
     cle: 'produit',
     label: 'Produit',
     definition: 'Le produit concerné par l\'événement ou la ligne de commande.',
-    sql: { evenements: `COALESCE(e.props->>'name', '—')` },
+    sql: { evenements: `COALESCE(NULLIF(TRIM(p.name), ''), NULLIF(TRIM(e.props->>'name'), ''), '—')` },
   },
   marque: {
     cle: 'marque',
     label: 'Marque',
     definition: 'La marque du produit.',
-    sql: { evenements: `COALESCE(e.props->>'brand', '—')` },
+    sql: { evenements: `COALESCE(NULLIF(TRIM(p.brand), ''), NULLIF(TRIM(e.props->>'brand'), ''), '—')` },
   },
   categorie: {
     cle: 'categorie',
     label: 'Catégorie',
     definition: 'La catégorie du produit.',
-    sql: { evenements: `COALESCE(e.props->>'category', '—')` },
+    sql: { evenements: `COALESCE(NULLIF(TRIM(p.category), ''), NULLIF(TRIM(e.props->>'category'), ''), '—')` },
   },
   plateforme: {
     cle: 'plateforme',
@@ -175,6 +200,7 @@ export const DIMENSIONS: Record<string, Dimension> = {
       commandes: `to_char((o."createdAt" AT TIME ZONE '${TZ}')::date, 'YYYY-MM-DD')`,
       evenements: `to_char((e."createdAt" AT TIME ZONE '${TZ}')::date, 'YYYY-MM-DD')`,
       pages: `to_char(("PageView"."createdAt" AT TIME ZONE '${TZ}')::date, 'YYYY-MM-DD')`,
+      sessions: `to_char((s."firstSeenAt" AT TIME ZONE '${TZ}')::date, 'YYYY-MM-DD')`,
     },
     ordreSql: '1 ASC',
   },
@@ -185,6 +211,8 @@ export const DIMENSIONS: Record<string, Dimension> = {
     sql: {
       commandes: `lpad(EXTRACT(hour FROM (o."createdAt" AT TIME ZONE '${TZ}'))::text, 2, '0') || ' h'`,
       evenements: `lpad(EXTRACT(hour FROM (e."createdAt" AT TIME ZONE '${TZ}'))::text, 2, '0') || ' h'`,
+      pages: `lpad(EXTRACT(hour FROM ("PageView"."createdAt" AT TIME ZONE '${TZ}'))::text, 2, '0') || ' h'`,
+      sessions: `lpad(EXTRACT(hour FROM (s."firstSeenAt" AT TIME ZONE '${TZ}'))::text, 2, '0') || ' h'`,
     },
     ordreSql: '1 ASC',
   },
@@ -214,10 +242,10 @@ export type Mesure = {
 export const MESURES: Record<string, Mesure> = {
   /* ── Trafic ─────────────────────────────────────────────────────────────── */
   sessions: {
-    cle: 'sessions', label: 'Sessions', source: 'pages', portee: 'session',
+    cle: 'sessions', label: 'Sessions', source: 'sessions', portee: 'session',
     definition: 'Nombre de visites distinctes, robots écartés.',
     format: 'entier', hausseEstBonne: true,
-    sql: `COUNT(DISTINCT "PageView"."sessionId")`,
+    sql: `COUNT(DISTINCT s."sessionId")`,
   },
   pagesVues: {
     cle: 'pagesVues', label: 'Pages vues', source: 'pages', portee: 'evenement',
@@ -299,7 +327,7 @@ export const MESURES: Record<string, Mesure> = {
     cle: 'clientes', label: 'Clientes', source: 'commandes', portee: 'personne',
     definition: 'Personnes distinctes ayant été livrées, identifiées par leur numéro.',
     format: 'entier', hausseEstBonne: true,
-    sql: `COUNT(DISTINCT NULLIF(TRIM(o."deliveryPhone"), '')) FILTER (WHERE o.status = 'DELIVERED')`,
+    sql: `COUNT(DISTINCT NULLIF(RIGHT(REGEXP_REPLACE(TRIM(o."deliveryPhone"), '[^0-9]', '', 'g'), 9), '')) FILTER (WHERE o.status = 'DELIVERED')`,
   },
 
   /* ── Engagement ─────────────────────────────────────────────────────────── */
@@ -329,7 +357,7 @@ export const MESURES: Record<string, Mesure> = {
       "Tout ce qui empêche d'avancer : échec de commande, validation refusée, code promo rejeté, " +
       "recherche sans résultat, échec d'envoi du code SMS.",
     format: 'entier', hausseEstBonne: false,
-    sql: `COUNT(*) FILTER (WHERE e.name IN ('PURCHASE_FAILED','CHECKOUT_VALIDATION_FAILED','PROMO_CODE_FAILED','SEARCH_ZERO_RESULTS','CHECKOUT_CART_EMPTY','OTP_SEND_FAILED','OTP_DELIVERY_FAILED','OTP_INVALID','RAGE_CLICK','DEAD_CLICK','CHECKOUT_FIELD_ERROR'))`,
+    sql: `COUNT(*) FILTER (WHERE e.name IN ('PURCHASE_FAILED','CHECKOUT_VALIDATION_FAILED','PROMO_CODE_FAILED','SEARCH_ZERO_RESULTS','CHECKOUT_CART_EMPTY','OTP_SEND_FAILED','OTP_DELIVERY_FAILED','OTP_INVALID','RAGE_CLICK','DEAD_CLICK','CHECKOUT_FIELD_ERROR','JS_ERROR'))`,
   },
   clicsRage: {
     cle: 'clicsRage', label: 'Clics de rage', source: 'evenements', portee: 'evenement',
@@ -409,8 +437,8 @@ export const MESURES: Record<string, Mesure> = {
     format: 'pourcent', hausseEstBonne: true, sql: null, seuil: 100,
   },
   tauxAjout: {
-    cle: 'tauxAjout', label: 'Fiche → panier', source: 'evenements', portee: 'evenement',
-    definition: "Part des fiches vues qui finissent au panier. Mesure la force de la page produit.",
+    cle: 'tauxAjout', label: 'Fiche → panier', source: 'evenements', portee: 'session',
+    definition: "Part des sessions ayant vu une fiche qui ont ajouté un produit au panier.",
     format: 'pourcent', hausseEstBonne: true, sql: null, seuil: MIN_OBS,
   },
 }
@@ -442,8 +470,8 @@ export const DERIVEES: Record<string, { depend: string[]; calc: (r: Record<strin
     calc: (r) => (r.impressions > 0 ? (r.clicsRayon / r.impressions) * 100 : null),
   },
   tauxAjout: {
-    depend: ['ajoutsPanier', 'vuesProduit'],
-    calc: (r) => (r.vuesProduit > 0 ? (r.ajoutsPanier / r.vuesProduit) * 100 : null),
+    depend: ['sessionsAvecPanier', 'sessionsAvecVue'],
+    calc: (r) => (r.sessionsAvecVue > 0 ? (r.sessionsAvecPanier / r.sessionsAvecVue) * 100 : null),
   },
 }
 
@@ -452,7 +480,7 @@ export const DENOMINATEUR: Record<string, string> = {
   tauxLivraison: 'commandes',
   tauxLecture: 'lectureDebut',
   ctrRayon: 'impressions',
-  tauxAjout: 'vuesProduit',
+  tauxAjout: 'sessionsAvecVue',
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -514,6 +542,26 @@ export function sourcesRequises(cles: string[]): Source[] {
   return [...s]
 }
 
+/** Refuse explicitement les croisements qui n'ont pas de sens. */
+export function problemeCompatibilite(req: Pick<Requete, 'dimension' | 'mesures' | 'filtres'>): string | null {
+  const sources = sourcesRequises(req.mesures)
+  if (req.dimension) {
+    const d = DIMENSIONS[req.dimension]
+    const absentes = sources.filter((source) => !d?.sql[source])
+    if (absentes.length) {
+      return `${d?.label ?? req.dimension} ne peut pas ventiler : ${absentes.join(', ')}`
+    }
+  }
+  for (const filtre of req.filtres ?? []) {
+    const d = DIMENSIONS[filtre.dimension]
+    const absentes = sources.filter((source) => !d?.sql[source])
+    if (absentes.length) {
+      return `Le filtre ${d?.label ?? filtre.dimension} ne s'applique pas à : ${absentes.join(', ')}`
+    }
+  }
+  return null
+}
+
 /**
  * Construit la requete SQL d'UNE source. Le moteur en execute une par source
  * puis recolle les lignes sur la valeur de dimension — c'est ce qui permet de
@@ -530,9 +578,17 @@ export function construireSql(
 
   const basis: MoneyBasis = req.basis ?? 'cohorte'
   const dim = req.dimension ? DIMENSIONS[req.dimension] : undefined
-  const dimSql = dim?.sql[source]
-  // Une dimension que la source ne connait pas : on renvoie le total, plutot
-  // qu'une jointure inventee qui produirait des chiffres faux.
+  let dimSql = dim?.sql[source]
+  if (source === 'commandes' && req.dimension === 'jour') {
+    dimSql = `to_char(${basisDateExpr(basis, 'o')}, 'YYYY-MM-DD')`
+  }
+  if (source === 'commandes' && req.dimension === 'heure') {
+    const col = basis === 'cash' ? 'deliveredAt' : 'createdAt'
+    dimSql = `lpad(EXTRACT(hour FROM (o."${col}" AT TIME ZONE '${TZ}'))::text, 2, '0') || ' h'`
+  }
+  if (req.dimension && !dimSql) {
+    throw new Error(`Dimension ${req.dimension} incompatible avec la source ${source}`)
+  }
   const groupe = dimSql ?? `'(tous)'`
 
   const select = cles.map((c) => `${MESURES[c].sql} AS "${c}"`).join(',\n           ')
@@ -553,14 +609,21 @@ export function construireSql(
              ${select}
       FROM "Order" o
       LEFT JOIN "AnalyticsSession" s ON s."sessionId" = o."sessionId"
-      WHERE ${basisDateExpr(basis, 'o')} BETWEEN $1::date AND $2::date${clauseFiltres}
+      WHERE ${basisDateExpr(basis, 'o')} BETWEEN $1::date AND $2::date
+        ${basisStatusFilter(basis, 'o')}${clauseFiltres}
       GROUP BY 1`
   } else if (source === 'evenements') {
     texte = `
       SELECT ${groupe} AS cle,
              ${select}
       FROM "AnalyticsEvent" e
-      WHERE (e."createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date${clauseFiltres}
+      LEFT JOIN "AnalyticsSession" s ON s."sessionId" = e."sessionId"
+      LEFT JOIN "Product" p ON p.id = CASE
+        WHEN ${idProduitEvenement} ~ '^[0-9]+$' THEN ${idProduitEvenement}::int
+        ELSE NULL
+      END
+      WHERE (e."createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
+        ${SESSION_BOT_FILTER_CLAUSE}${clauseFiltres}
       GROUP BY 1`
   } else if (source === 'pub') {
     texte = `
@@ -569,7 +632,7 @@ export function construireSql(
       FROM "AdSpendDaily" a
       WHERE a.date BETWEEN $1::date AND $2::date
       GROUP BY 1`
-  } else {
+  } else if (source === 'pages') {
     texte = `
       SELECT ${groupe} AS cle,
              ${select}
@@ -578,11 +641,23 @@ export function construireSql(
       WHERE ("PageView"."createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
         ${BOT_FILTER_CLAUSE}${clauseFiltres}
       GROUP BY 1`
+  } else {
+    texte = `
+      SELECT ${groupe} AS cle,
+             ${select}
+      FROM "AnalyticsSession" s
+      WHERE (s."firstSeenAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
+        ${SESSION_BOT_FILTER_CLAUSE}${clauseFiltres}
+      GROUP BY 1`
   }
 
   const ordre = dim?.ordreSql ?? `2 DESC NULLS LAST`
   texte += `\n      ORDER BY ${dim?.ordreSql ? ordre : `"${cles[0]}"` + ' DESC NULLS LAST'}`
-  if (req.limite) texte += `\n      LIMIT ${Math.min(Math.max(1, req.limite), 500)}`
+  // Une limite par source peut supprimer une cle qui serait forte dans une
+  // autre source avant leur fusion. On ne limite en SQL que les rapports mono-source.
+  if (req.limite && sourcesRequises(req.mesures).length === 1) {
+    texte += `\n      LIMIT ${Math.min(Math.max(1, req.limite), 500)}`
+  }
 
   return { texte, params: [periode.debut, periode.fin] }
 }
@@ -597,7 +672,10 @@ export function assembler(
   brutCourant: Record<string, Record<string, number>>,
   brutPrecedent?: Record<string, Record<string, number>>,
 ): Ligne[] {
-  const cles = Object.keys(brutCourant)
+  const cles = [...new Set([
+    ...Object.keys(brutCourant),
+    ...Object.keys(brutPrecedent ?? {}),
+  ])]
   const lignes: Ligne[] = []
 
   for (const cle of cles) {
@@ -621,11 +699,13 @@ export function assembler(
       // l'effectif et l'interface montre le rapport brut a la place.
       const fiable = m.seuil == null || n == null ? true : n >= m.seuil
       const brute = valeurDe(src)
+      const nPrecedent = den && prev ? Number(prev[den] ?? 0) : undefined
+      const precedentFiable = m.seuil == null || nPrecedent == null ? true : nPrecedent >= m.seuil
 
       mesures[c] = {
         valeur: fiable ? brute : null,
         ...(n != null ? { n, fiable } : {}),
-        ...(brutPrecedent ? { precedent: valeurDe(prev) } : {}),
+        ...(brutPrecedent ? { precedent: precedentFiable ? valeurDe(prev) : null } : {}),
       }
     }
     lignes.push({ cle, mesures })

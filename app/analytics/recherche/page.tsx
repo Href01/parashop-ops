@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { V } from '../_components/Viz'
 import { T } from '../_components/Decision'
-import { ReportShell, Scorecard, Squelette, fmt } from '../_components/Report'
+import { ReportShell, Scorecard, Squelette, ErreurChargement, fmt } from '../_components/Report'
 import { BarreControle } from '../_components/Controls'
 import { useReport } from '../_components/useReport'
 
@@ -72,8 +72,9 @@ export default function Recherche() {
       titre="Recherche"
       sous="Ce que les visiteuses tapent dans la barre de recherche — et ce que le site ne sait pas leur montrer."
       controles={<BarreControle etat={etat} maj={maj} setJours={setJours} setPeriode={setPeriode}
-        setFiltre={setFiltre} periodePersonnalisee={periodePersonnalisee} />}
-      enTete={erreur ? <p className="text-[13px] py-3" style={{ color: V.critical }}>Erreur : {erreur}</p> : null}
+        setFiltre={setFiltre} periodePersonnalisee={periodePersonnalisee}
+        afficherComparaison={false} afficherBase={false} />}
+      enTete={erreur ? <ErreurChargement message={erreur} /> : null}
       scorecards={!d ? ([0, 1, 2, 3].map((i) => <div key={i}><Squelette lignes={2} hauteur={12} /></div>)) : (
         <>
           <Scorecard label="Recherches" portee="événements"

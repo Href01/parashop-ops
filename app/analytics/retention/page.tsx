@@ -15,7 +15,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { V } from '../_components/Viz'
 import { T } from '../_components/Decision'
-import { ReportShell, Scorecard, Squelette } from '../_components/Report'
+import { ReportShell, Scorecard, Squelette, ErreurChargement } from '../_components/Report'
 import { TableCohortes, type CelluleCohorte } from '../_components/Charts'
 import { Clientes, type Segment, type Cliente } from '../_components/Clientes'
 
@@ -58,21 +58,24 @@ export default function Retention() {
     }
     const cohortes = [...par.keys()].sort()
     let total = 0, ca = 0, caRepeat = 0
-    // On exclut la cohorte du mois en cours : elle n'a pas encore eu l'occasion
-    // de revenir, l'inclure ferait mécaniquement baisser le taux.
-    const mures = cohortes.slice(0, -1)
+    // On exclut la cohorte du mois en cours, si elle existe. Retirer
+    // systématiquement la dernière cohorte supprimait aussi un mois déjà mûr
+    // lorsqu'aucune livraison n'avait encore eu lieu ce mois-ci.
+    const moisCourant = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Africa/Casablanca', year: 'numeric', month: '2-digit',
+    }).format(new Date())
+    const mures = cohortes.filter((co) => co < moisCourant)
+    let baseM1 = 0, retoursM1 = 0
     for (const co of mures) {
-      total += par.get(co)?.get(0)?.clientes ?? 0
+      const base = par.get(co)?.get(0)?.clientes ?? 0
+      total += base
+      baseM1 += base
+      retoursM1 += par.get(co)?.get(1)?.clientes ?? 0
       for (const [r, c] of par.get(co)?.entries() ?? []) { ca += c.ca; if (r > 0) caRepeat += c.ca }
     }
-    const m1 = mures.map((co) => {
-      const n = par.get(co)?.get(0)?.clientes ?? 0
-      const r1 = par.get(co)?.get(1)?.clientes ?? 0
-      return n > 0 ? (r1 / n) * 100 : null
-    }).filter((x): x is number => x != null)
     return {
       clientes: total,
-      tauxM1: m1.length ? m1.reduce((a, b) => a + b, 0) / m1.length : null,
+      tauxM1: baseM1 > 0 ? (retoursM1 / baseM1) * 100 : null,
       partCaRepeat: ca > 0 ? (caRepeat / ca) * 100 : null,
       cohortes: cohortes.length,
     }
@@ -82,7 +85,7 @@ export default function Retention() {
     <ReportShell
       titre="Rétention"
       sous="Une cliente acquise revient-elle ? Groupées par mois de première commande livrée."
-      enTete={erreur ? <p className="text-[13px] py-3" style={{ color: V.critical }}>Erreur : {erreur}</p> : null}
+      enTete={erreur ? <ErreurChargement message={erreur} /> : null}
       scorecards={!resume ? (
         [0, 1, 2, 3].map((i) => <div key={i}><Squelette lignes={2} hauteur={12} /></div>)
       ) : (

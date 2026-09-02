@@ -17,7 +17,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { V } from '../_components/Viz'
 import { T } from '../_components/Decision'
-import { ReportShell, Scorecard, DimensionTable, Squelette, type ColonneMesure, type LigneTable } from '../_components/Report'
+import { ReportShell, Scorecard, DimensionTable, Squelette, ErreurChargement, type ColonneMesure, type LigneTable } from '../_components/Report'
 import { BarreControle } from '../_components/Controls'
 import { useReport, interroger } from '../_components/useReport'
 import { Chemins, type PasChemin } from '../_components/Charts'
@@ -36,12 +36,11 @@ export default function Engagement() {
 
   const base = useMemo(() => ({
     periode: etat.periode, comparaison: etat.comparaison ?? undefined,
-    basis: etat.basis, filtres: etat.filtres,
+    filtres: etat.filtres,
   }), [etat])
 
   useEffect(() => {
     let vivant = true
-    setTable(null)
     Promise.all([
       interroger({ ...base, dimension, mesures: [...MESURES], limite: 100 }),
       interroger({ ...base, mesures: [...MESURES] }),
@@ -83,8 +82,8 @@ export default function Engagement() {
       titre="Engagement"
       sous="Ce que les visiteuses font sur le site — page par page, et ce qui vient après."
       controles={<BarreControle etat={etat} maj={maj} setJours={setJours} setPeriode={setPeriode}
-        setFiltre={setFiltre} periodePersonnalisee={periodePersonnalisee} />}
-      enTete={erreur ? <p className="text-[13px] py-3" style={{ color: V.critical }}>Erreur : {erreur}</p> : null}
+        setFiltre={setFiltre} periodePersonnalisee={periodePersonnalisee} afficherBase={false} />}
+      enTete={erreur ? <ErreurChargement message={erreur} /> : null}
       scorecards={!total ? ([0, 1, 2, 3].map((i) => <div key={i}><Squelette lignes={2} hauteur={12} /></div>)) : (
         <>
           <Scorecard label="Pages vues" portee="événements"

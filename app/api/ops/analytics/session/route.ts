@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
-import pool from '@/lib/db'
+import { analyticsError, analyticsQuery } from '@/lib/analytics/db'
 
 /**
  * Per-visitor action timeline — the exact sequence of actions for one session,
@@ -17,31 +17,29 @@ export async function GET(req: NextRequest) {
     const id = req.nextUrl.searchParams.get('id')
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 })
 
-    const [events, session, order] = await Promise.all([
-      pool.query(
+    const events = await analyticsQuery(
         /* `id` départage les ex æquo : deux évènements peuvent porter le même
            instant à la milliseconde près (un CLICK_UI et le DEAD_CLICK qu'il
            déclenche, par exemple). Sans départage, leur ordre est arbitraire —
            et avec un LIMIT, la sélection elle-même devient non déterministe. */
         `SELECT name, path, props, "userId", "createdAt"
          FROM "AnalyticsEvent" WHERE "sessionId" = $1
-         ORDER BY "createdAt" ASC, id ASC LIMIT 300`,
+         ORDER BY "createdAt" ASC, id ASC LIMIT 301`,
         [id]
-      ),
-      pool.query(
+      )
+    const session = await analyticsQuery(
         `SELECT "device", "city", "country", "utmSource", "utmMedium", "utmCampaign",
                 "utmContent", "landingUrl", "landingReferrer", "userAgent",
                 "fbclid", "gclid", "userId", "firstSeenAt", "lastSeenAt"
          FROM "AnalyticsSession" WHERE "sessionId" = $1`,
         [id]
-      ),
-      pool.query(
+      )
+    const order = await analyticsQuery(
         `SELECT id, status, total, "deliveryName", "deliveryPhone", "deliveryCity",
                 "sourceChannel", "userId", "createdAt"
          FROM "Order" WHERE "sessionId" = $1 ORDER BY "createdAt" DESC`,
         [id]
-      ),
-    ])
+      )
 
     const sess = session.rows[0] || null
     const orders = order.rows
@@ -62,13 +60,11 @@ export async function GET(req: NextRequest) {
     } = { kind: 'anonymous', name: null, phone: null, email: null, city: null, memberSince: null, priorSessions: 0 }
 
     if (userId != null) {
-      const [user, prior] = await Promise.all([
-        pool.query(`SELECT name, phone, email, "createdAt" FROM "User" WHERE id = $1`, [userId]),
-        pool.query(
+      const user = await analyticsQuery(`SELECT name, phone, email, "createdAt" FROM "User" WHERE id = $1`, [userId])
+      const prior = await analyticsQuery(
           `SELECT COUNT(DISTINCT "sessionId")::int AS n FROM "AnalyticsSession" WHERE "userId" = $1 AND "sessionId" <> $2`,
           [userId, id]
-        ),
-      ])
+        )
       const u = user.rows[0]
       identity = {
         kind: 'account',
@@ -118,7 +114,8 @@ export async function GET(req: NextRequest) {
         channel: o.sourceChannel ?? null,
         at: o.createdAt,
       })),
-      timeline: events.rows.map((e: any) => ({
+      truncated: events.rows.length > 300,
+      timeline: events.rows.slice(0, 300).map((e: any) => ({
         name: e.name,
         path: e.path,
         props: e.props,
@@ -126,7 +123,7 @@ export async function GET(req: NextRequest) {
       })),
     })
   } catch (error) {
-    console.error('[Analytics Session] Error:', error)
+    console.error('[analytics/session]', analyticsError(error))
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

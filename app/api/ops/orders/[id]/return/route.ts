@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import pool from '@/lib/db'
 import { getOpsSession } from '@/lib/auth'
 import { revalidateWebsite } from '@/lib/revalidate-website'
+import { bustAnalyticsCache } from '@/lib/analytics-cache'
 
 /**
  * Return / exchange tagging for an order.
@@ -88,6 +89,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       [orderId, fee, returned.length > 0, JSON.stringify(moves)]
     )
     if (moves.length || prev.length) await revalidateWebsite(['products'])
+    await bustAnalyticsCache()
     return NextResponse.json({ ok: true, deliveryFee: fee, moves })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'error'
@@ -112,6 +114,7 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
       `UPDATE "Order" SET "returnedAt" = NULL, "returnDeliveryFee" = NULL, "returnRestocked" = false, "returnMoves" = NULL WHERE id = $1`,
       [orderId]
     )
+    await bustAnalyticsCache()
     return NextResponse.json({ ok: true })
   } catch (error) {
     const message = error instanceof Error ? error.message : 'error'

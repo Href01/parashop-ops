@@ -47,6 +47,7 @@ function Bouton({ actif, onClick, children, titre }: {
 
 export function BarreControle({
   etat, maj, setJours, setPeriode, setFiltre, periodePersonnalisee, segments,
+  afficherComparaison = true, afficherBase = true,
 }: {
   etat: EtatRapport
   maj: (p: Record<string, string | null>) => void
@@ -55,6 +56,8 @@ export function BarreControle({
   setFiltre: (d: string, v: string[]) => void
   periodePersonnalisee?: boolean
   segments?: { appareil?: string[]; langue?: string[] }
+  afficherComparaison?: boolean
+  afficherBase?: boolean
 }) {
   const [ouvert, setOuvert] = useState(false)
   const [d1, setD1] = useState(etat.periode.debut)
@@ -70,7 +73,7 @@ export function BarreControle({
       {/* Styles locaux : les transitions vivent ici plutot que dupliquees sur
           chaque bouton, et le focus reste visible au clavier. */}
       <style>{`
-        .ctrl { background: transparent; color: ${V.ink2};
+        .ctrl { min-height: 36px; background: transparent; color: ${V.ink2};
                 transition: background-color .14s ease, color .14s ease; }
         .ctrl:hover { background: ${V.grid}66; color: ${V.ink}; }
         .ctrl[data-on] { background: ${V.ink}; color: #fff; }
@@ -83,8 +86,9 @@ export function BarreControle({
         }
       `}</style>
 
-      <div className="relative">
-        <Groupe>
+      <div className="relative min-w-0 max-w-full">
+        <div className="max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <Groupe>
           {PERIODES.map((p) => (
             <Bouton
               key={p.jours}
@@ -107,25 +111,36 @@ export function BarreControle({
               {p.label}
             </Bouton>
           ))}
-          <Bouton actif={!!periodePersonnalisee && !decalee} onClick={() => setOuvert((o) => !o)}
+          <Bouton actif={!!periodePersonnalisee && !decalee} onClick={() => {
+            setD1(etat.periode.debut)
+            setD2(etat.periode.fin)
+            setOuvert((o) => !o)
+          }}
             titre="Choisir des dates précises.">
             Dates…
           </Bouton>
-        </Groupe>
+          </Groupe>
+        </div>
 
         {ouvert && (
-          <div className="pop absolute z-30 mt-1 rounded-lg bg-white p-3 shadow-lg"
+          <div className="pop fixed inset-x-4 top-24 z-50 rounded-lg bg-white p-3 shadow-lg sm:absolute sm:inset-x-auto sm:left-0 sm:top-full sm:mt-1 sm:w-max"
             style={{ border: `1px solid ${V.grid}` }}>
-            <div className="flex items-center gap-2">
-              <input type="date" value={d1} max={d2 || jour} onChange={(e) => setD1(e.target.value)}
-                className="text-[12px] rounded px-2 py-1 outline-none" style={{ border: `1px solid ${V.grid}` }} />
-              <span className="text-[12px]" style={{ color: V.muted }}>→</span>
-              <input type="date" value={d2} min={d1} max={jour} onChange={(e) => setD2(e.target.value)}
-                className="text-[12px] rounded px-2 py-1 outline-none" style={{ border: `1px solid ${V.grid}` }} />
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_auto_1fr_auto] sm:items-end">
+              <label className="text-[11px] font-semibold sm:contents">
+                <span className="sm:sr-only">Date de début</span>
+                <input aria-label="Date de début" type="date" value={d1} max={d2 || jour} onChange={(e) => setD1(e.target.value)}
+                  className="min-h-10 w-full rounded px-2 text-[12px] outline-none" style={{ border: `1px solid ${V.grid}` }} />
+              </label>
+              <span className="hidden text-[12px] sm:block" style={{ color: V.muted }}>→</span>
+              <label className="text-[11px] font-semibold sm:contents">
+                <span className="sm:sr-only">Date de fin</span>
+                <input aria-label="Date de fin" type="date" value={d2} min={d1} max={jour} onChange={(e) => setD2(e.target.value)}
+                  className="min-h-10 w-full rounded px-2 text-[12px] outline-none" style={{ border: `1px solid ${V.grid}` }} />
+              </label>
               <button
                 onClick={() => { setPeriode?.(d1, d2); setOuvert(false) }}
-                disabled={!d1 || !d2}
-                className="text-[12px] font-semibold rounded px-2.5 py-1 disabled:opacity-40"
+                disabled={!d1 || !d2 || d1 > d2 || d2 > jour}
+                className="min-h-10 rounded px-3 text-[12px] font-semibold disabled:opacity-40"
                 style={{ background: V.ink, color: '#fff' }}
               >
                 Appliquer
@@ -135,26 +150,30 @@ export function BarreControle({
         )}
       </div>
 
-      <Groupe>
-        <Bouton actif={etat.modeComparaison === 'precedente'} onClick={() => maj({ cmp: null })}
-          titre="Compare à la période immédiatement précédente, de même durée.">
-          vs précédente
-        </Bouton>
-        <Bouton actif={etat.modeComparaison === 'aucune'} onClick={() => maj({ cmp: '0' })} titre="Aucune comparaison.">
-          sans
-        </Bouton>
-      </Groupe>
+      {afficherComparaison && (
+        <Groupe>
+          <Bouton actif={etat.modeComparaison === 'precedente'} onClick={() => maj({ cmp: null })}
+            titre="Compare à la période immédiatement précédente, de même durée.">
+            vs précédente
+          </Bouton>
+          <Bouton actif={etat.modeComparaison === 'aucune'} onClick={() => maj({ cmp: '0' })} titre="Aucune comparaison.">
+            sans
+          </Bouton>
+        </Groupe>
+      )}
 
-      <Groupe>
-        <Bouton actif={etat.basis === 'cohorte'} onClick={() => maj({ basis: null })}
-          titre="Daté au jour de la COMMANDE — pour juger ce que la publicité a produit.">
-          à la commande
-        </Bouton>
-        <Bouton actif={etat.basis === 'cash'} onClick={() => maj({ basis: 'cash' })}
-          titre="Daté au jour de la LIVRAISON — ce qui est réellement rentré. Même base que le back-office.">
-          à la livraison
-        </Bouton>
-      </Groupe>
+      {afficherBase && (
+        <Groupe>
+          <Bouton actif={etat.basis === 'cohorte'} onClick={() => maj({ basis: null })}
+            titre="Daté au jour de la COMMANDE — pour juger ce que la publicité a produit.">
+            à la commande
+          </Bouton>
+          <Bouton actif={etat.basis === 'cash'} onClick={() => maj({ basis: 'cash' })}
+            titre="Daté au jour de la LIVRAISON — ventes réalisées, distinctes de l'encaissement.">
+            à la livraison
+          </Bouton>
+        </Groupe>
+      )}
 
       {segments?.appareil && segments.appareil.length > 1 && (
         <div className="flex items-center gap-1.5">
@@ -186,8 +205,8 @@ export function BarreControle({
 
       {actifs > 0 && (
         <button
-          onClick={() => { setFiltre('appareil', []); setFiltre('langue', []); setFiltre('canal', []); setFiltre('ville', []) }}
-          className="text-[11px] font-semibold underline" style={{ color: V.muted }}
+          onClick={() => maj(Object.fromEntries(etat.filtres.map((f) => [f.dimension, null])))}
+          className="min-h-9 text-[11px] font-semibold underline" style={{ color: V.muted }}
         >
           tout réafficher
         </button>
@@ -197,10 +216,10 @@ export function BarreControle({
           juste au-dessus et la recouvrait. */}
       <span className={`${T.note} w-full`} style={{ color: V.muted }}>
         {etat.periode.debut === etat.periode.fin ? etat.periode.debut : `${etat.periode.debut} → ${etat.periode.fin}`}
-        {etat.comparaison && ` · comparé à ${etat.comparaison.debut === etat.comparaison.fin ? etat.comparaison.fin : `${etat.comparaison.debut} → ${etat.comparaison.fin}`}`}
+        {afficherComparaison && etat.comparaison && ` · comparé à ${etat.comparaison.debut === etat.comparaison.fin ? etat.comparaison.fin : `${etat.comparaison.debut} → ${etat.comparaison.fin}`}`}
         {/* Une journee en cours face a une journee complete : sans cette mention,
             chaque matin ressemble a un effondrement. */}
-        {enCours && etat.comparaison && (
+        {afficherComparaison && enCours && etat.comparaison && (
           <span style={{ color: V.warning }}> · journée en cours, comparée à une journée complète</span>
         )}
       </span>

@@ -13,8 +13,7 @@
  * ça ne coûte rien, puisque la définition vient du modèle.
  *
  * Deux garde-fous que la liberté rend nécessaires :
- *  · une mesure absente de la source d'une dimension renvoie le total, pas une
- *    jointure inventée qui produirait des nombres faux ;
+ *  · une mesure absente de la source d'une dimension est désactivée ;
  *  · les taux sous le seuil d'effectif affichent leur effectif, ici comme
  *    ailleurs — explorer ne dispense pas d'être honnête.
  */
@@ -22,14 +21,14 @@
 import { useEffect, useMemo, useState } from 'react'
 import { V } from '../_components/Viz'
 import { T } from '../_components/Decision'
-import { ReportShell, DimensionTable, Squelette, type ColonneMesure, type LigneTable } from '../_components/Report'
+import { ReportShell, DimensionTable, Squelette, ErreurChargement, type ColonneMesure, type LigneTable } from '../_components/Report'
 import { BarreControle } from '../_components/Controls'
 import { useReport, interroger } from '../_components/useReport'
 
 type Champ = {
   cle: string; label: string; definition: string
   format?: 'entier' | 'mad' | 'pourcent' | 'decimal'
-  portee?: string; source?: string; derivee?: boolean
+  portee?: string; source?: string; sources?: string[]; derivee?: boolean
 }
 type Reponse = Awaited<ReturnType<typeof interroger>>
 
@@ -48,6 +47,14 @@ export default function Explorer() {
   )
   const [table, setTable] = useState<Reponse | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
+  const mesuresActives = useMemo(() => {
+    if (!catalogue) return mesures
+    const sources = catalogue.dimensions.find((d) => d.cle === dimension)?.sources ?? []
+    return mesures.filter((cle) => {
+      const m = catalogue.mesures.find((x) => x.cle === cle)
+      return !m?.source || sources.includes(m.source)
+    })
+  }, [catalogue, dimension, mesures])
 
   useEffect(() => {
     // Même règle : un catalogue vide sans explication laisse croire que le
@@ -61,17 +68,16 @@ export default function Explorer() {
   useEffect(() => { maj({ d: dimension, m: mesures.join(',') }) }, [dimension, mesures]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (mesures.length === 0) { setTable(null); return }
+    if (mesuresActives.length === 0) return
     let vivant = true
-    setTable(null)
     interroger({
       periode: etat.periode, comparaison: etat.comparaison ?? undefined,
-      basis: etat.basis, filtres: etat.filtres, dimension, mesures, limite: 300,
+      basis: etat.basis, filtres: etat.filtres, dimension, mesures: mesuresActives, limite: 300,
     })
       .then((r) => { if (vivant) { setTable(r); setErreur(null) } })
       .catch((e) => vivant && setErreur(e instanceof Error ? e.message : 'Erreur'))
     return () => { vivant = false }
-  }, [etat, dimension, mesures])
+  }, [etat, dimension, mesuresActives])
 
   const colonnes: ColonneMesure[] = useMemo(
     () => (table?.modele.mesures ?? []).map((x) => ({
@@ -80,8 +86,24 @@ export default function Explorer() {
       derivee: (x as { derivee?: boolean }).derivee,
     })), [table])
 
-  const basculer = (cle: string) =>
-    setMesures((m) => (m.includes(cle) ? m.filter((x) => x !== cle) : [...m, cle]))
+  const basculer = (cle: string) => {
+    const prochaines = mesures.includes(cle) ? mesures.filter((x) => x !== cle) : [...mesures, cle]
+    if (prochaines.length === 0) setTable(null)
+    setMesures(prochaines)
+  }
+
+  const sourcesDimension = catalogue?.dimensions.find((d) => d.cle === dimension)?.sources ?? []
+  const compatible = (m: Champ) => !m.source || sourcesDimension.includes(m.source)
+  const choisirDimension = (cle: string) => {
+    const sources = catalogue?.dimensions.find((d) => d.cle === cle)?.sources ?? []
+    setDimension(cle)
+    const prochaines = mesures.filter((m) => {
+      const champ = catalogue?.mesures.find((x) => x.cle === m)
+      return !champ?.source || sources.includes(champ.source)
+    })
+    if (prochaines.length === 0) setTable(null)
+    setMesures(prochaines)
+  }
 
   /** Export CSV — point-virgule et virgule décimale, pour qu'Excel FR l'ouvre bien. */
   const exporter = () => {
@@ -118,14 +140,14 @@ export default function Explorer() {
       sous="Croisez n'importe quelle dimension avec n'importe quelles mesures. Les autres modules sont des vues préréglées de ce même moteur."
       controles={<BarreControle etat={etat} maj={maj} setJours={setJours} setPeriode={setPeriode}
         setFiltre={setFiltre} periodePersonnalisee={periodePersonnalisee} />}
-      enTete={erreur ? <p className="text-[13px] py-3" style={{ color: V.critical }}>Erreur : {erreur}</p> : null}
+      enTete={erreur ? <ErreurChargement message={erreur} /> : null}
       figure={
         <div className="grid lg:grid-cols-[220px_1fr] gap-6">
           {/* Le sélecteur de champs, façon Looker : groupé, avec la définition
               au survol de chaque libellé. */}
           <div>
             <p className={T.label} style={{ color: V.muted }}>Dimension</p>
-            <select value={dimension} onChange={(e) => setDimension(e.target.value)}
+            <select aria-label="Dimension à explorer" value={dimension} onChange={(e) => choisirDimension(e.target.value)}
               className="w-full mt-1.5 text-[12px] font-semibold rounded-lg px-2 py-1.5 outline-none"
               style={{ border: `1px solid ${V.grid}`, color: V.ink, background: '#fff' }}>
               {(catalogue?.dimensions ?? []).map((d) => (
@@ -137,17 +159,18 @@ export default function Explorer() {
             </p>
 
             <p className={`${T.label} mt-4`} style={{ color: V.muted }}>Mesures</p>
-            <div className="mt-1.5 space-y-3">
+            <div className="mt-1.5 max-h-[430px] space-y-3 overflow-y-auto pr-1">
               {Object.entries(parPortee).map(([portee, champs]) => (
                 <div key={portee}>
                   <p className={T.note} style={{ color: V.muted }}>{PORTEE_TITRE[portee] ?? portee}</p>
                   <div className="mt-1 space-y-0.5">
                     {champs.map((m) => {
-                      const on = mesures.includes(m.cle)
+                      const on = mesuresActives.includes(m.cle)
+                      const disponible = compatible(m)
                       return (
-                        <button key={m.cle} onClick={() => basculer(m.cle)}
-                          title={m.definition}
-                          className="w-full text-left text-[12px] rounded px-1.5 py-0.5 flex items-center gap-1.5"
+                        <button key={m.cle} onClick={() => basculer(m.cle)} disabled={!disponible}
+                          title={disponible ? m.definition : `${m.label} ne peut pas être ventilé par cette dimension.`}
+                          className="min-h-8 w-full text-left text-[12px] rounded px-1.5 py-0.5 flex items-center gap-1.5 disabled:opacity-35"
                           style={{ background: on ? V.ink : 'transparent', color: on ? '#fff' : V.ink2 }}>
                           <span aria-hidden="true" style={{ opacity: on ? 1 : 0.3 }}>{on ? '✓' : '+'}</span>
                           <span className="truncate">{m.label}</span>

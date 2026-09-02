@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
+import { bustAnalyticsCache } from '@/lib/analytics-cache'
 
 // POST /api/ops/orders/[id]/recalculate - Recalculate order total
 export async function POST(
@@ -85,6 +86,7 @@ export async function POST(
       ) VALUES ($1, (SELECT status FROM "Order" WHERE id = $1), (SELECT status FROM "Order" WHERE id = $1), 'system', $2, NOW())`,
       [orderId, `Total recalculated: ${order.total} → ${correctTotal} MAD (fixed string concatenation bug)`]
     )
+    await bustAnalyticsCache()
 
     return NextResponse.json({
       message: 'Total recalculated successfully',

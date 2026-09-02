@@ -16,7 +16,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { V } from '../_components/Viz'
 import { T } from '../_components/Decision'
-import { ReportShell, Scorecard, DimensionTable, Squelette, type ColonneMesure, type LigneTable } from '../_components/Report'
+import { ReportShell, Scorecard, DimensionTable, Squelette, ErreurChargement, type ColonneMesure, type LigneTable } from '../_components/Report'
 import { BarreControle } from '../_components/Controls'
 import { useReport, interroger } from '../_components/useReport'
 
@@ -32,12 +32,11 @@ export default function Produits() {
 
   const base = useMemo(() => ({
     periode: etat.periode, comparaison: etat.comparaison ?? undefined,
-    basis: etat.basis, filtres: etat.filtres,
+    filtres: etat.filtres,
   }), [etat])
 
   useEffect(() => {
     let vivant = true
-    setTable(null)
     Promise.all([
       interroger({ ...base, dimension, mesures: [...MESURES], limite: 200 }),
       interroger({ ...base, mesures: [...MESURES] }),
@@ -63,9 +62,10 @@ export default function Produits() {
       return v > 0 ? ((l.mesures.ajoutsPanier?.valeur ?? 0) / v) * 100 : 0
     }
     return {
-      vusPasClique: [...assez].sort((a, b) => ctr(a) - ctr(b)).slice(0, 3),
+      vusPasClique: assez.filter((l) => (l.mesures.clicsRayon?.valeur ?? 0) === 0)
+        .sort((a, b) => (b.mesures.impressions?.valeur ?? 0) - (a.mesures.impressions?.valeur ?? 0)).slice(0, 3),
       cliquePasAjoute: [...assez]
-        .filter((l) => (l.mesures.vuesProduit?.valeur ?? 0) >= 20)
+        .filter((l) => (l.mesures.vuesProduit?.valeur ?? 0) >= 20 && (l.mesures.ajoutsPanier?.valeur ?? 0) === 0)
         .sort((a, b) => ajout(a) - ajout(b)).slice(0, 3),
       ctr, ajout,
     }
@@ -83,8 +83,8 @@ export default function Produits() {
       titre="Produits"
       sous="De l'affichage en rayon jusqu'au panier — pour savoir quoi refaire, et de quel côté."
       controles={<BarreControle etat={etat} maj={maj} setJours={setJours} setPeriode={setPeriode}
-        setFiltre={setFiltre} periodePersonnalisee={periodePersonnalisee} />}
-      enTete={erreur ? <p className="text-[13px] py-3" style={{ color: V.critical }}>Erreur : {erreur}</p> : null}
+        setFiltre={setFiltre} periodePersonnalisee={periodePersonnalisee} afficherBase={false} />}
+      enTete={erreur ? <ErreurChargement message={erreur} /> : null}
       scorecards={!total ? ([0, 1, 2, 3].map((i) => <div key={i}><Squelette lignes={2} hauteur={12} /></div>)) : (
         <>
           <Scorecard label="Impressions en rayon" portee="événements"
@@ -96,8 +96,8 @@ export default function Produits() {
           <Scorecard label="Fiches produit vues" portee="événements"
             definition="Ouvertures d'une fiche produit, toutes provenances."
             valeur={m?.vuesProduit?.valeur ?? null} precedent={m?.vuesProduit?.precedent} format="entier" hausseEstBonne />
-          <Scorecard label="Fiche → panier" portee="événements"
-            definition="Part des fiches vues qui finissent au panier. Mesure la force de la page produit."
+          <Scorecard label="Fiche → panier" portee="sessions"
+            definition="Part des sessions ayant vu une fiche qui ont ensuite ajouté un produit."
             valeur={m?.tauxAjout?.valeur ?? null} format="pourcent" hausseEstBonne />
         </>
       )}
@@ -108,6 +108,9 @@ export default function Produits() {
             <p className={`${T.note} mb-2`} style={{ color: V.muted }}>
               Le visuel ou le prix n&apos;accroche pas. Au moins 200 affichages.
             </p>
+            {diagnostics.vusPasClique.length === 0 && (
+              <p className={T.note} style={{ color: V.good }}>Aucun produit assez exposé n&apos;est resté sans clic.</p>
+            )}
             {diagnostics.vusPasClique.map((l) => (
               <div key={l.cle} className="flex items-baseline justify-between gap-3 py-1 border-t" style={{ borderColor: V.grid }}>
                 <span className="text-[12px] truncate" style={{ color: V.ink }} title={l.cle}>{l.cle}</span>
@@ -122,6 +125,9 @@ export default function Produits() {
             <p className={`${T.note} mb-2`} style={{ color: V.muted }}>
               La fiche produit ne convainc pas. Au moins 20 fiches vues.
             </p>
+            {diagnostics.cliquePasAjoute.length === 0 && (
+              <p className={T.note} style={{ color: V.good }}>Aucune fiche assez vue n&apos;est restée sans ajout.</p>
+            )}
             {diagnostics.cliquePasAjoute.map((l) => (
               <div key={l.cle} className="flex items-baseline justify-between gap-3 py-1 border-t" style={{ borderColor: V.grid }}>
                 <span className="text-[12px] truncate" style={{ color: V.ink }} title={l.cle}>{l.cle}</span>

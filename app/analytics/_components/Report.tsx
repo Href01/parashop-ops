@@ -23,6 +23,7 @@
  */
 
 import { useMemo, useState, type ReactNode } from 'react'
+import { CircleAlert, RotateCw } from 'lucide-react'
 import { V } from './Viz'
 import { T } from './Decision'
 
@@ -82,6 +83,35 @@ export function Squelette({ lignes = 3, hauteur = 14 }: { lignes?: number; haute
   )
 }
 
+/** Erreur de lecture commune a tous les rapports, avec une sortie immediate. */
+export function ErreurChargement({ message, onRetry }: { message: string; onRetry?: () => void }) {
+  const retry = onRetry ?? (() => window.location.reload())
+  return (
+    <div
+      role="alert"
+      className="flex flex-col gap-3 border-y py-3 sm:flex-row sm:items-center sm:justify-between"
+      style={{ borderColor: `${V.critical}40`, color: V.critical }}
+    >
+      <div className="flex min-w-0 items-start gap-2">
+        <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+        <div className="min-w-0">
+          <p className="text-[13px] font-bold">Données temporairement indisponibles</p>
+          <p className="break-words text-[12px]" style={{ color: V.muted }}>{message}</p>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={retry}
+        className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 self-start border px-3 text-[12px] font-bold transition-colors hover:bg-black/[0.03] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 sm:self-auto"
+        style={{ borderColor: V.axis, borderRadius: 6, color: V.ink }}
+      >
+        <RotateCw aria-hidden="true" className="size-3.5" />
+        Réessayer
+      </button>
+    </div>
+  )
+}
+
 const nf = (n: number) => Math.round(n).toLocaleString('fr-FR')
 
 export type FormatMesure = 'entier' | 'mad' | 'pourcent' | 'decimal'
@@ -100,9 +130,12 @@ export function fmt(v: number | null | undefined, f: FormatMesure): string {
 export function ChampInfo({ label, definition, portee }: { label: string; definition: string; portee?: string }) {
   return (
     <span
-      className="inline-flex items-center gap-1 cursor-help border-b border-dotted"
+      className="inline-flex items-center gap-1 cursor-help border-b border-dotted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
       style={{ borderColor: V.axis }}
       title={portee ? `${definition}\n\nCompté en : ${portee}.` : definition}
+      tabIndex={0}
+      role="note"
+      aria-label={`${label}. ${definition}${portee ? ` Compté en ${portee}.` : ''}`}
     >
       {label}
     </span>
@@ -174,7 +207,7 @@ export function ReportShell({
   colonnes?: 4 | 5
 }) {
   return (
-    <div className="max-w-[1140px] mx-auto px-5 py-5">
+    <div className="max-w-[1140px] mx-auto px-4 py-5 sm:px-5">
       <style>{STYLES_RAPPORT}</style>
       <header className="pb-4">
         <h1 className="text-[19px] font-black leading-tight" style={{ color: V.ink }}>{titre}</h1>
@@ -265,6 +298,7 @@ export function DimensionTable({
       <div className="flex flex-wrap items-center gap-2 pb-2">
         {dimensions && dimensions.length > 1 && (
           <select
+            aria-label="Dimension du tableau"
             value={dimensions.find((d) => d.label === labelDimension)?.cle ?? ''}
             onChange={(e) => { onDimension?.(e.target.value); setPage(0) }}
             className="text-[12px] font-semibold rounded-lg px-2 py-1 outline-none"
@@ -274,6 +308,7 @@ export function DimensionTable({
           </select>
         )}
         <input
+          aria-label="Rechercher dans le tableau"
           value={q}
           onChange={(e) => { setQ(e.target.value); setPage(0) }}
           placeholder="Rechercher…"
@@ -297,11 +332,15 @@ export function DimensionTable({
                   </th>
                   {colonnes.map((c) => (
                     <th key={c.cle}
-                      onClick={() => setTri((t) => ({ cle: c.cle, desc: t.cle === c.cle ? !t.desc : true }))}
-                      className={`${T.note} rp-th font-semibold text-right pb-2 cursor-pointer select-none whitespace-nowrap`}
+                      aria-sort={tri.cle === c.cle ? (tri.desc ? 'descending' : 'ascending') : 'none'}
+                      className={`${T.note} rp-th font-semibold text-right pb-1 select-none whitespace-nowrap`}
                       style={{ color: tri.cle === c.cle ? V.ink : V.muted, borderBottom: `1px solid ${V.axis}` }}>
-                      <ChampInfo label={c.label} definition={c.definition} portee={c.portee} />
-                      <span className="ml-1" aria-hidden="true">{tri.cle === c.cle ? (tri.desc ? '↓' : '↑') : ''}</span>
+                      <button type="button"
+                        onClick={() => setTri((t) => ({ cle: c.cle, desc: t.cle === c.cle ? !t.desc : true }))}
+                        className="min-h-9 cursor-pointer whitespace-nowrap px-1 text-right focus-visible:outline focus-visible:outline-2">
+                        <ChampInfo label={c.label} definition={c.definition} portee={c.portee} />
+                        <span className="ml-1" aria-hidden="true">{tri.cle === c.cle ? (tri.desc ? '↓' : '↑') : ''}</span>
+                      </button>
                     </th>
                   ))}
                 </tr>
@@ -359,10 +398,12 @@ export function DimensionTable({
           {pages > 1 && (
             <div className="flex items-center gap-2 mt-2">
               <button onClick={() => setPage(Math.max(0, p - 1))} disabled={p === 0}
-                className="text-[12px] px-2 py-0.5 rounded disabled:opacity-30" style={{ border: `1px solid ${V.grid}`, color: V.ink2 }}>‹</button>
+                aria-label="Page précédente"
+                className="min-h-9 min-w-9 text-[12px] px-2 rounded disabled:opacity-30" style={{ border: `1px solid ${V.grid}`, color: V.ink2 }}>‹</button>
               <span className={T.note} style={{ color: V.muted }}>{p + 1} / {pages}</span>
               <button onClick={() => setPage(Math.min(pages - 1, p + 1))} disabled={p >= pages - 1}
-                className="text-[12px] px-2 py-0.5 rounded disabled:opacity-30" style={{ border: `1px solid ${V.grid}`, color: V.ink2 }}>›</button>
+                aria-label="Page suivante"
+                className="min-h-9 min-w-9 text-[12px] px-2 rounded disabled:opacity-30" style={{ border: `1px solid ${V.grid}`, color: V.ink2 }}>›</button>
             </div>
           )}
         </>

@@ -4,6 +4,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { isFounder } from '@/lib/auth'
 import pool from '@/lib/db'
 import { getMetaToken } from '@/lib/meta-token'
+import { bustAnalyticsCache } from '@/lib/analytics-cache'
 
 /**
  * POST /api/ops/ads/sync-meta
@@ -203,6 +204,7 @@ async function runSync(preset: string) {
     // Per-day spend for period-accurate ROAS — never let it break the main sync.
     let dailyUpserts = 0
     try { dailyUpserts = await syncDaily(account, token, fx, preset) } catch (e) { console.error('[Ads] sync-meta daily', e) }
+    if (created > 0 || updated > 0 || dailyUpserts > 0) await bustAnalyticsCache()
 
     return NextResponse.json({ configured: true, preset, fx, scanned: rows.length, created, updated, dailyUpserts })
 }

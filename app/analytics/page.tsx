@@ -16,7 +16,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { V } from './_components/Viz'
 import { T } from './_components/Decision'
-import { ReportShell, Scorecard, DimensionTable, Squelette, type ColonneMesure, type LigneTable } from './_components/Report'
+import { ReportShell, Scorecard, DimensionTable, Squelette, ErreurChargement, type ColonneMesure, type LigneTable } from './_components/Report'
 import { BarreControle } from './_components/Controls'
 import { useReport, interroger } from './_components/useReport'
 import { Cascade, type FacteurVue } from './_components/Decision'
@@ -25,8 +25,10 @@ type Reponse = Awaited<ReturnType<typeof interroger>>
 
 /** Les mesures de tête : ce que la période a produit, et ce qu'elle a laissé. */
 const MESURES_TETE = ['commandes', 'livrees', 'caLivre', 'marge'] as const
+const MESURES_TETE_LIVRAISON = ['livrees', 'caLivre', 'marge', 'margeParCommande'] as const
 /** Les colonnes du tableau par canal. */
 const MESURES_TABLE = ['commandes', 'livrees', 'tauxLivraison', 'caLivre', 'marge', 'margeParCommande'] as const
+const MESURES_TABLE_LIVRAISON = ['livrees', 'caLivre', 'marge', 'margeParCommande'] as const
 
 const DIMENSIONS_PROPOSEES = [
   { cle: 'canal', label: "Canal d'acquisition" },
@@ -42,6 +44,8 @@ export default function VueEnsemble() {
   const [tete, setTete] = useState<Reponse | null>(null)
   const [table, setTable] = useState<Reponse | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
+  const mesuresTete = etat.basis === 'cash' ? MESURES_TETE_LIVRAISON : MESURES_TETE
+  const mesuresTable = etat.basis === 'cash' ? MESURES_TABLE_LIVRAISON : MESURES_TABLE
 
   const base = useMemo(() => ({
     periode: etat.periode,
@@ -53,13 +57,13 @@ export default function VueEnsemble() {
   useEffect(() => {
     let vivant = true
     Promise.all([
-      interroger({ ...base, mesures: [...MESURES_TETE] }),
-      interroger({ ...base, dimension, mesures: [...MESURES_TABLE], limite: 100 }),
+      interroger({ ...base, mesures: [...mesuresTete] }),
+      interroger({ ...base, dimension, mesures: [...mesuresTable], limite: 100 }),
     ])
       .then(([t, d]) => { if (vivant) { setTete(t); setTable(d); setErreur(null) } })
       .catch((e) => { if (vivant) setErreur(e instanceof Error ? e.message : 'Erreur') })
     return () => { vivant = false }
-  }, [base, dimension])
+  }, [base, dimension, mesuresTete, mesuresTable])
 
   const total = tete?.lignes[0]?.mesures
   const val = (c: string) => total?.[c]?.valeur ?? null
@@ -69,13 +73,15 @@ export default function VueEnsemble() {
   // « La marge a bougé de X » ne dit rien. Nommer le facteur, en dirhams, désigne
   // l'endroit où agir. La somme des effets reconstitue exactement l'écart.
   const cascade = useMemo((): { depart: number; arrivee: number; facteurs: FacteurVue[] } | null => {
-    if (!etat.comparaison || !total) return null
-    const C1 = val('commandes') ?? 0, C0 = prec('commandes') ?? 0
-    const L1 = C1 > 0 ? (val('livrees') ?? 0) / C1 : 0
-    const L0 = C0 > 0 ? (prec('livrees') ?? 0) / C0 : 0
-    const liv1 = val('livrees') ?? 0, liv0 = prec('livrees') ?? 0
-    const M1 = liv1 > 0 ? (val('marge') ?? 0) / liv1 : 0
-    const M0 = liv0 > 0 ? (prec('marge') ?? 0) / liv0 : 0
+    if (!etat.comparaison || !total || etat.basis === 'cash') return null
+    const courant = (c: string) => total[c]?.valeur ?? 0
+    const precedent = (c: string) => total[c]?.precedent ?? 0
+    const C1 = courant('commandes'), C0 = precedent('commandes')
+    const L1 = C1 > 0 ? courant('livrees') / C1 : 0
+    const L0 = C0 > 0 ? precedent('livrees') / C0 : 0
+    const liv1 = courant('livrees'), liv0 = precedent('livrees')
+    const M1 = liv1 > 0 ? courant('marge') / liv1 : 0
+    const M0 = liv0 > 0 ? precedent('marge') / liv0 : 0
     if (C0 === 0 || liv0 === 0) return null
     const nf = (n: number) => Math.round(n).toLocaleString('fr-FR')
     const pc = (n: number) => `${(n * 100).toFixed(1).replace('.', ',')} %`
@@ -88,7 +94,7 @@ export default function VueEnsemble() {
         { label: 'Marge par commande', effet: C1 * L1 * (M1 - M0), de: `${nf(M0)} MAD`, a: `${nf(M1)} MAD` },
       ],
     }
-  }, [total, etat.comparaison])
+  }, [total, etat.comparaison, etat.basis])
 
   const colonnes: ColonneMesure[] = useMemo(
     () => (table?.modele.mesures ?? []).map((m) => ({
@@ -108,13 +114,11 @@ export default function VueEnsemble() {
             setFiltre={setFiltre} periodePersonnalisee={periodePersonnalisee}
             segments={{ appareil: ['mobile', 'desktop'], langue: ['fr', 'ar'] }} />
         }
-        enTete={erreur ? (
-          <p className="text-[13px] py-3" style={{ color: V.critical }}>Erreur : {erreur}</p>
-        ) : null}
+        enTete={erreur ? <ErreurChargement message={erreur} /> : null}
         scorecards={!tete ? (
           // Un squelette garde la place : la page ne saute pas quand les
           // chiffres arrivent, et l'œil sait déjà où ils vont apparaître.
-          MESURES_TETE.map((c) => <div key={c}><Squelette lignes={2} hauteur={12} /></div>)
+          mesuresTete.map((c) => <div key={c}><Squelette lignes={2} hauteur={12} /></div>)
         ) : (tete.modele.mesures.map((m) => (
           <Scorecard
             key={m.cle}
@@ -156,4 +160,3 @@ export default function VueEnsemble() {
       />
   )
 }
-

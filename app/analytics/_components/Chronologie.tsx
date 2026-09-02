@@ -605,13 +605,23 @@ function diagnosticBlockage(evenements: Evenement[]): Blocage | null {
 }
 
 /** Une session, ligne par ligne. */
+function changementsDePage(evenements: Evenement[]): boolean[] {
+  let precedente = ''
+  return evenements.map((e) => {
+    const page = (e.path || '').split('?')[0]
+    const change = Boolean(page && page !== precedente)
+    if (page) precedente = page
+    return change
+  })
+}
+
 export function Chronologie({ evenements }: { evenements: Evenement[] }) {
-  let pagePrec = ''
   const heure = (iso: string) =>
     new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Africa/Casablanca' })
       .format(new Date(iso))
 
   const blocage = diagnosticBlockage(evenements)
+  const nouvellesPages = changementsDePage(evenements)
 
   return (
     <div>
@@ -638,8 +648,7 @@ export function Chronologie({ evenements }: { evenements: Evenement[] }) {
           const f = FAMILLES[s.famille]
           const d = detail(e)
           const page = (e.path || '').split('?')[0]
-          const nouvellePage = page && page !== pagePrec
-          if (page) pagePrec = page
+          const nouvellePage = nouvellesPages[i]
 
           return (
             <li key={i} className="text-[10px] rounded-[4px] px-1.5 py-1"

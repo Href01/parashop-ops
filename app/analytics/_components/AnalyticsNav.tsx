@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
+import { useEffect, useRef } from 'react'
 import { MODULES } from './Report'
 import { V } from './Viz'
 
@@ -20,16 +21,26 @@ export default function AnalyticsNav() {
   const pathname = usePathname()
   const sp = useSearchParams()
   const suffixe = sp.toString() ? `?${sp.toString()}` : ''
+  const navRef = useRef<HTMLElement>(null)
+
+  useEffect(() => {
+    navRef.current?.querySelector('[aria-current="page"]')?.scrollIntoView({
+      behavior: 'smooth', block: 'nearest', inline: 'center',
+    })
+  }, [pathname])
 
   return (
-    <nav className="flex gap-1 overflow-x-auto" aria-label="Modules d'analyse">
+    <nav ref={navRef}
+      className="flex min-h-10 gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      aria-label="Modules d'analyse">
       {MODULES.map((m) => {
         const actif = m.href === '/analytics' ? pathname === m.href : pathname.startsWith(m.href)
         return (
           <Link
             key={m.href}
             href={`${m.href}${suffixe}`}
-            className="px-3 py-2 text-[13px] font-medium whitespace-nowrap border-b-2 -mb-px transition-colors"
+            aria-current={actif ? 'page' : undefined}
+            className="min-h-10 px-3 py-2 text-[13px] font-medium whitespace-nowrap border-b-2 -mb-px transition-colors"
             style={{ borderColor: actif ? V.ink : 'transparent', color: actif ? V.ink : V.muted }}
           >
             {m.label}
