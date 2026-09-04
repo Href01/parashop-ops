@@ -225,6 +225,41 @@ export default function OrderDetailPage() {
     }
   }
 
+  /* Recréer le bordereau d'une commande dont le colis a été supprimé sur Sendit.
+     La confirmation nomme l'ancien code : c'est une action qui remplace, et on
+     doit voir ce qu'on remplace avant de valider. Le serveur vérifie de son côté
+     que le colis a bien disparu — il refuse si Sendit le connaît encore. */
+  async function handleRecreateShipment() {
+    if (!order) return
+    const ok = window.confirm(
+      `Recréer le colis Sendit de cette commande ?\n\n` +
+      `Le code actuel (${order.senditTrackingId}) sera remplacé par un nouveau.\n\n` +
+      `À n'utiliser que si le colis a été supprimé sur Sendit. La vérification est faite auprès de Sendit : ` +
+      `si le colis existe encore, l'opération sera refusée.`
+    )
+    if (!ok) return
+
+    setActionLoading(true)
+    setActionError('')
+    setActionSuccess('')
+
+    try {
+      const res = await fetch(`/api/ops/orders/${orderId}/sendit`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.details || data.error || 'Échec de la recréation')
+      setActionSuccess(`Colis recréé ! ${data.previousTrackingId} → ${data.trackingId}`)
+      await fetchOrder()
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
   async function handleSyncTracking() {
     if (!order) return
 
@@ -883,6 +918,28 @@ export default function OrderDetailPage() {
               >
                 <Truck />
                 {actionLoading ? 'Updating...' : 'Mark as Shipped'}
+              </button>
+            )}
+
+            {/* Réparation, pas action courante : ambre, et seulement tant que la
+                commande n'est pas arrivée à son terme — recréer un bordereau pour
+                une commande déjà livrée n'aurait aucun sens.
+                Deux états seulement, parce que l'enum `OrderStatus` n'en compte
+                que quatre en base (PENDING, CONFIRMED, DELIVERED, CANCELLED) —
+                vérifié : `RETURNED`, `SHIPPED` et `FAILED` existent dans le type
+                TypeScript mais pas dans la base. */}
+            {order.senditTrackingId
+              && !['DELIVERED', 'CANCELLED'].includes(order.status) && (
+              <button
+                type="button"
+                className="btn"
+                onClick={handleRecreateShipment}
+                disabled={actionLoading}
+                title="Le colis a été supprimé par erreur sur Sendit ? Recrée un bordereau. Refusé si le colis existe encore."
+                style={{ background: 'var(--amber-bg)', color: 'var(--amber)', border: '1px solid var(--amber)' }}
+              >
+                <Package />
+                {actionLoading ? '...' : 'Recréer le colis Sendit'}
               </button>
             )}
 

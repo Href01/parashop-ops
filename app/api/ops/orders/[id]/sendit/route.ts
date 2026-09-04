@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import pool from '@/lib/db'
 import { bustCache } from '@/lib/ops-cache'
-import { createSenditShipment, getShipmentTracking } from '@/lib/sendit'
+import { createSenditShipment, getShipmentTracking, senditParcelState } from '@/lib/sendit'
 import { getOpsSession } from '@/lib/auth'
 import { buildSenditProductsDescription, calculateCodAmount, isPrepaidPaymentMethod } from '@/lib/order-utils'
 import { creditOrderPoints } from '@/lib/loyalty'
@@ -162,6 +162,161 @@ export async function POST(
       },
       { status: 500 }
     )
+  }
+}
+
+/**
+ * RECRÉER LE TICKET D'UNE COMMANDE DONT LE COLIS A DISPARU DE SENDIT.
+ *
+ * Le cas : un colis supprimé par erreur sur le site Sendit. La commande garde son
+ * `senditTrackingId`, qui ne désigne plus rien — et le POST ci-dessus refuse
+ * justement de créer un colis quand ce champ est rempli. La commande se retrouve
+ * coincée : plus de bordereau, et aucun bouton pour en refaire un.
+ *
+ * CE QUI REND CETTE ROUTE SÛRE : elle demande d'abord à Sendit si le colis existe
+ * encore, et ne recrée que sur un 404 franc. Sans ce contrôle, un simple clic de
+ * trop enverrait deux colis à la même cliente. Si Sendit est injoignable, on
+ * refuse — on ne devine pas.
+ *
+ * Le stock n'est PAS re-décrémenté : le déclencheur de la migration 024 pose au
+ * plus un mouvement 'Sale' par commande et vérifie son existence avant d'agir.
+ */
+export async function PUT(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getOpsSession()
+    if (!session) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+    const { id: orderId } = await params
+    const body = await request.json().catch(() => ({}))
+    const { notes, packageWeight, districtId: overrideDistrictId } = body
+
+    const orderResult = await pool.query(
+      `SELECT o.*,
+        json_agg(json_build_object(
+          'productId', oi."productId", 'productName', p.name,
+          'quantity', oi.quantity, 'price', oi.price
+        )) AS items
+       FROM "Order" o
+       LEFT JOIN "OrderItem" oi ON oi."orderId" = o.id
+       LEFT JOIN "Product" p ON p.id = oi."productId"
+       WHERE o.id = $1
+       GROUP BY o.id`,
+      [orderId]
+    )
+    if (orderResult.rows.length === 0) {
+      return NextResponse.json({ error: 'Commande introuvable' }, { status: 404 })
+    }
+
+    const order = orderResult.rows[0]
+    const ancien = order.senditTrackingId as string | null
+
+    if (!ancien) {
+      return NextResponse.json({
+        error: "Cette commande n'a aucun colis à recréer",
+        details: 'Utilise « Créer le colis Sendit » — il n\'y a rien à remplacer.',
+      }, { status: 400 })
+    }
+
+    if (!order.deliveryName || !order.deliveryPhone || !order.deliveryCity) {
+      return NextResponse.json({
+        error: 'Informations de livraison incomplètes',
+        missing: { name: !order.deliveryName, phone: !order.deliveryPhone, city: !order.deliveryCity },
+      }, { status: 400 })
+    }
+
+    const districtId = Number(overrideDistrictId || order.senditDistrictId)
+    if (!Number.isInteger(districtId) || districtId <= 0) {
+      return NextResponse.json({
+        error: 'District Sendit requis',
+        details: 'Choisis la ville/le district Sendit exact avant de recréer le colis.',
+      }, { status: 400 })
+    }
+
+    // LE GARDE-FOU. Un colis encore vivant chez Sendit ne se double pas.
+    const etat = await senditParcelState(ancien)
+
+    if (etat.state === 'exists') {
+      return NextResponse.json({
+        error: 'Le colis existe toujours sur Sendit',
+        details: `Le colis ${ancien} est bien présent (statut ${etat.status || 'inconnu'}). Le recréer enverrait deux colis à la même cliente. Supprime-le d'abord sur Sendit si c'est bien ce que tu veux.`,
+        trackingId: ancien,
+        senditStatus: etat.status,
+      }, { status: 409 })
+    }
+
+    if (etat.state === 'unknown') {
+      return NextResponse.json({
+        error: 'Sendit ne répond pas — impossible de vérifier',
+        details: `On ne peut pas savoir si le colis ${ancien} existe encore. Recréer à l'aveugle risquerait un doublon. Réessaie dans un moment. (${etat.detail})`,
+        trackingId: ancien,
+      }, { status: 503 })
+    }
+
+    // Ici et seulement ici : Sendit confirme que le colis n'existe plus.
+    const codAmount = calculateCodAmount(order.paymentMethod, order.total)
+    const productsDescription = buildSenditProductsDescription(order.items, `Order ${order.orderNumber || order.id}`)
+
+    const shipment = await createSenditShipment({
+      reference: order.orderNumber || `ORD-${order.id}`,
+      recipient_name: order.deliveryName,
+      recipient_phone: order.deliveryPhone,
+      recipient_city: order.deliveryCity,
+      recipient_address: order.deliveryAddress || '',
+      district_id: districtId,
+      cod_amount: codAmount,
+      package_weight: packageWeight || 0.5,
+      package_description: productsDescription,
+      notes: notes || order.notes || '',
+    })
+
+    /* L'ancienne ligne de rapprochement est détachée AVANT d'écrire le nouveau
+       code : `uq_senditstaging_promoted_order` n'autorise qu'une ligne promue par
+       commande, et le prochain « Pull Sendit » ferait autrement réapparaître le
+       colis supprimé comme s'il était à traiter. */
+    await pool.query(
+      `UPDATE "SenditStaging"
+       SET promoted = false, "promotedOrderId" = NULL, "matchedOrderId" = NULL,
+           state = 'sendit_only', "updatedAt" = NOW()
+       WHERE code = $1`,
+      [ancien]
+    )
+
+    await pool.query(
+      `UPDATE "Order"
+       SET "senditTrackingId" = $1,
+           "senditBarcode" = $2,
+           "senditStatus" = $3,
+           "actualDeliveryCost" = $4,
+           "deliveryStatus" = 'SENDIT_CREATED'
+       WHERE id = $5`,
+      [shipment.tracking_id, shipment.barcode, shipment.status, shipment.shipping_cost, orderId]
+    )
+
+    // La trace nomme les deux codes : sans elle, l'ancien numéro disparaîtrait
+    // de l'historique et plus personne ne saurait pourquoi il a changé.
+    await pool.query(
+      `INSERT INTO "OrderStatusHistory" ("orderId","oldStatus","newStatus",note,"createdAt")
+       VALUES ($1,$2,$2,$3,NOW())`,
+      [orderId, order.status, `Colis Sendit recréé : ${ancien} (supprimé sur Sendit) → ${shipment.tracking_id}`]
+    )
+
+    bustCache('orders:'); bustCache('dashboard-stats:')
+
+    return NextResponse.json({
+      success: true,
+      previousTrackingId: ancien,
+      trackingId: shipment.tracking_id,
+      barcode: shipment.barcode,
+      status: shipment.status,
+      shippingCost: shipment.shipping_cost,
+    })
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.error('Recreate Sendit shipment error:', error)
+    return NextResponse.json({ error: 'Échec de la recréation', details: message }, { status: 500 })
   }
 }
 

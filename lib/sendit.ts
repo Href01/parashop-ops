@@ -419,6 +419,53 @@ export async function getShipmentTracking(trackingId: string): Promise<SenditTra
   }
 }
 
+export type SenditParcelState =
+  | { state: 'exists'; status: string }
+  | { state: 'gone' }
+  | { state: 'unknown'; detail: string }
+
+/**
+ * LE COLIS EXISTE-T-IL ENCORE CHEZ SENDIT ?
+ *
+ * Trois réponses, pas deux — et c'est tout l'intérêt de cette fonction.
+ * `getShipmentTracking` lève la même exception qu'on lui rende un 404 (le colis a
+ * été supprimé) ou un 500 (Sendit est en panne). Confondre les deux serait grave
+ * dans un seul sens : conclure « supprimé » alors que Sendit est simplement
+ * injoignable ferait recréer un colis qui existe encore, et la cliente en
+ * recevrait deux.
+ *
+ * Donc : seul un 404 franc vaut `gone`. Toute autre panne rend `unknown`, et
+ * l'appelant doit refuser d'agir plutôt que de deviner.
+ */
+export async function senditParcelState(trackingId: string): Promise<SenditParcelState> {
+  try {
+    const response = await senditRequest(`/deliveries/${encodeURIComponent(trackingId)}`)
+
+    if (response.status === 404) {
+      await response.body?.cancel().catch(() => {})
+      return { state: 'gone' }
+    }
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => '')
+      return { state: 'unknown', detail: `HTTP ${response.status} ${detail}`.trim() }
+    }
+
+    const data: SenditDeliveryResponse = await response.json()
+
+    /* Sendit répond parfois 200 avec `success: false` pour un colis absent. Ce
+       n'est pas une panne : l'API a répondu, et elle dit qu'elle ne l'a pas. */
+    if (!data.success || !data.data?.code) {
+      return { state: 'gone' }
+    }
+
+    return { state: 'exists', status: String(data.data.status || '') }
+  } catch (error: unknown) {
+    // Réseau coupé, DNS, délai dépassé : on ne sait pas, et on l'assume.
+    return { state: 'unknown', detail: errorMessage(error) }
+  }
+}
+
 /**
  * Cancel a shipment
  */
