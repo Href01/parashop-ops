@@ -215,9 +215,18 @@ function financialCte(from: string, to: string, cFrom: string, cTo: string) {
       o."senditStatus",
       COALESCE(o."revenue", o."productsTotal", o.total::numeric, 0)::numeric AS revenue,
       COALESCE(o.total::numeric, o."revenue", o."productsTotal", 0)::numeric AS order_total,
+      -- UNE COMMANDE LIVREE A ETE ENCAISSEE, MEME SI PERSONNE N'A COCHE « PAYE ».
+      -- Un virement resté 'UNVERIFIED' rendait la commande invisible dans le cash
+      -- alors que la marchandise était partie : on ne livre pas un virement qu'on
+      -- n'a pas reçu. Deux commandes livrées (739 MAD) étaient ainsi comptées à
+      -- zéro. "paidAmount" reste prioritaire ; le total ne sert que de repli.
       CASE
         WHEN UPPER(COALESCE(o."paymentMethod", 'COD')) IN (${PREPAID_METHODS_SQL}) THEN
-          CASE WHEN o."paymentStatus" IN ('PAID', 'PARTIAL') THEN COALESCE(o."paidAmount", 0) ELSE 0 END
+          CASE
+            WHEN o."paymentStatus" IN ('PAID', 'PARTIAL') OR o.status::text = 'DELIVERED'
+              THEN COALESCE(o."paidAmount", o.total::numeric, 0)
+            ELSE 0
+          END
         ELSE COALESCE(o."paidAmount", o.total::numeric, 0)
       END::numeric AS cash_collected,
       CASE
@@ -225,10 +234,12 @@ function financialCte(from: string, to: string, cFrom: string, cTo: string) {
           THEN COALESCE(o."paidAmount", o.total::numeric, 0)
         ELSE 0
       END::numeric AS cod_collected,
+      -- Meme regle que cash_collected, sinon les deux se contrediraient : la
+      -- ligne « banque » ignorerait un virement que la ligne « encaissé » compte.
       CASE
         WHEN UPPER(COALESCE(o."paymentMethod", 'COD')) IN (${PREPAID_METHODS_SQL})
-             AND o."paymentStatus" IN ('PAID', 'PARTIAL')
-          THEN COALESCE(o."paidAmount", 0)
+             AND (o."paymentStatus" IN ('PAID', 'PARTIAL') OR o.status::text = 'DELIVERED')
+          THEN COALESCE(o."paidAmount", o.total::numeric, 0)
         ELSE 0
       END::numeric AS bank_collected,
       -- What Sendit actually bills you for delivery (deducted from the COD before payout).
@@ -236,8 +247,15 @@ function financialCte(from: string, to: string, cFrom: string, cTo: string) {
       COALESCE(
         o."finalProfit",
         o."estimatedProfit",
+        -- UN COUT MANQUANT VAUT ZERO, PAS « MARGE INCONNUE ».
+        -- Auparavant, un seul article sans prix d'achat mettait le profit de TOUTE
+        -- la commande à 0 — le tableau de bord sous-estimait donc la marge au lieu
+        -- de l'approcher. ic.cogs fait deja COALESCE(..., 0) : l'article sans
+        -- coût passe en marge pure, ce qui est plus proche du vrai que zéro.
+        -- L'alerte « coûts incomplets » (voir plus bas, missing_cost_items) reste
+        -- en place : on veut toujours savoir qu'un prix d'achat manque.
         CASE
-          WHEN COALESCE(ic.item_count, 0) > 0 AND COALESCE(ic.missing_cost_items, 0) = 0 THEN
+          WHEN COALESCE(ic.item_count, 0) > 0 THEN
             COALESCE(o."revenue", o."productsTotal", o.total::numeric, 0)
             - COALESCE(ic.cogs, 0)
             - CASE
