@@ -44,19 +44,21 @@ export async function GET() {
         FROM "AbandonedCheckout" a
         LEFT JOIN LATERAL (
           SELECT COUNT(*)::int                                                        AS total,
-                 COUNT(*) FILTER (WHERE o."createdAt" <  a."updatedAt")::int          AS avant,
-                 COUNT(*) FILTER (WHERE o."createdAt" >= a."updatedAt")::int          AS apres,
+                 COUNT(*) FILTER (WHERE o."createdAt" <  a."createdAt")::int          AS avant,
+                 COUNT(*) FILTER (WHERE o."createdAt" >= a."createdAt")::int          AS apres,
                  COUNT(*) FILTER (WHERE o.status = 'DELIVERED')::int                  AS livrees,
                  MAX(o."createdAt")                                                   AS "lastOrderAt",
                  SUM(COALESCE(o.revenue, o."productsTotal", o.total::numeric, 0))
                    FILTER (WHERE o.status <> 'CANCELLED')                             AS depense
           FROM "Order" o
           WHERE NULLIF(TRIM(a.phone), '') IS NOT NULL
+            AND o.status <> 'CANCELLED'
             AND RIGHT(regexp_replace(o."deliveryPhone", '\\D', '', 'g'), 9)
               = RIGHT(regexp_replace(a.phone, '\\D', '', 'g'), 9)
         ) h ON TRUE
         WHERE a.contacted = false AND a."orderId" IS NULL
           AND a."updatedAt" > NOW() - INTERVAL '30 days'
+          AND a."updatedAt" <= NOW() - INTERVAL '30 minutes'
         -- Celles qui ont deja rachete passent en fin de liste : sans ce tri,
         -- une cliente convertie trone en haut de la liste d'appels juste parce
         -- qu'elle est recente. Le reste garde l'ordre chronologique, un abandon
@@ -83,16 +85,18 @@ export async function GET() {
         LIMIT 60`),
       pool.query(`
         SELECT
-          (SELECT COUNT(*) FROM "AbandonedCheckout" WHERE contacted = false AND "orderId" IS NULL AND "updatedAt" > NOW() - INTERVAL '30 days')::int AS leads,
+          (SELECT COUNT(*) FROM "AbandonedCheckout" WHERE contacted = false AND "orderId" IS NULL AND "updatedAt" > NOW() - INTERVAL '30 days' AND "updatedAt" <= NOW() - INTERVAL '30 minutes')::int AS leads,
           -- Combien de ces "leads" ont en fait deja commande depuis ? Ce sont
           -- autant d'appels a ne pas passer.
           (SELECT COUNT(*) FROM "AbandonedCheckout" a
             WHERE a.contacted = false AND a."orderId" IS NULL
               AND a."updatedAt" > NOW() - INTERVAL '30 days'
+              AND a."updatedAt" <= NOW() - INTERVAL '30 minutes'
               AND NULLIF(TRIM(a.phone), '') IS NOT NULL
               AND EXISTS (
                 SELECT 1 FROM "Order" o
-                WHERE o."createdAt" >= a."updatedAt"
+                WHERE o."createdAt" >= a."createdAt"
+                  AND o.status <> 'CANCELLED'
                   AND RIGHT(regexp_replace(o."deliveryPhone", '\\D', '', 'g'), 9)
                     = RIGHT(regexp_replace(a.phone, '\\D', '', 'g'), 9)
               ))::int AS leads_deja_convertis,

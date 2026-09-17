@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { PRODUCT_VIEW_CONVERTED_SQL, productFunnelCtes } from '../../lib/analytics/product-funnel'
 import {
   assembler,
   construireSql,
@@ -68,4 +69,23 @@ test('une limite multi-source est appliquee apres fusion', () => {
 
   assert.doesNotMatch(construireSql('commandes', req, periode)?.texte ?? '', /LIMIT 5/)
   assert.doesNotMatch(construireSql('sessions', req, periode)?.texte ?? '', /LIMIT 5/)
+})
+
+test('fiche vers panier utilise les sessions converties, pas tous les ajouts directs', () => {
+  const req: Requete = { mesures: ['tauxAjout'], periode, filtres: [] }
+  const sql = construireSql('evenements', req, periode)?.texte ?? ''
+  assert.match(sql, /sessionsFicheConverties/)
+  assert.match(sql, /added\."sessionId" = e\."sessionId"/)
+  assert.match(sql, /added\."createdAt" >= e\."createdAt"/)
+  assert.match(sql, /added\.props->>'productId'/)
+  const result = assembler(req, { '(tous)': { sessionsAvecVue: 100, sessionsAvecPanier: 150, sessionsFicheConverties: 20 } })
+  assert.equal(result[0].mesures.tauxAjout.valeur, 20)
+})
+
+test('les trois rapports produits partagent une cohorte unique et la borne de dates', () => {
+  const sql = productFunnelCtes('view_count', 'cart_count')
+  assert.match(sql, /COUNT\(DISTINCT e\."sessionId"\)/)
+  assert.ok(sql.includes(PRODUCT_VIEW_CONVERTED_SQL))
+  assert.match(sql, /BETWEEN \$1::date AND \$2::date/)
+  assert.match(sql, /converted_sessions AS cart_count FROM views/)
 })

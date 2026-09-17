@@ -44,11 +44,16 @@ export default function LeadsPage() {
   const [data, setData] = useState<Data | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   const load = async () => {
+    setError(null)
     try {
       const res = await fetch('/api/ops/leads', { cache: 'no-store' })
-      if (res.ok) setData(await res.json())
+      if (!res.ok) throw new Error('Les leads sont temporairement indisponibles. Réessayez.')
+      setData(await res.json())
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Chargement impossible.')
     } finally { setLoading(false) }
   }
   useEffect(() => { load() }, [])
@@ -56,10 +61,13 @@ export default function LeadsPage() {
   const act = async (id: number, method: 'PATCH' | 'DELETE') => {
     setBusy(id)
     try {
-      await fetch(`/api/ops/leads/${id}`, method === 'PATCH'
+      const res = await fetch(`/api/ops/leads/${id}`, method === 'PATCH'
         ? { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contacted: true }) }
         : { method })
+      if (!res.ok) throw new Error('La modification n’a pas été enregistrée.')
       await load()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Modification impossible.')
     } finally { setBusy(null) }
   }
 
@@ -68,9 +76,11 @@ export default function LeadsPage() {
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '22px 24px 60px' }}>
         <PageHead
           title="Leads & Alertes"
-          note={<>Les clientes qui ont saisi leurs infos <b>sans finaliser</b> — à rappeler à la main. Et les <b>erreurs</b> récentes (OTP, commande) pour réagir vite.</>}
+          note={<>Demandes de rappel enregistrées, sans activité depuis <b>30 minutes</b>, sur les 30 derniers jours. Un changement d’onglet seul n’est pas un abandon confirmé. Les anciennes fiches précèdent le nouveau consentement explicite.</>}
         />
 
+        {error && <div role="alert" className="card-modern" style={{ padding: 14, marginTop: 12, color: 'var(--red, #b42318)' }}>{error} {data && 'Les chiffres affichés sont ceux du dernier chargement réussi.'} <button className="btn-modern btn-sm" onClick={() => void load()}>Réessayer</button></div>}
+        <button className="btn-modern btn-sm" style={{ marginTop: 12 }} disabled={loading} onClick={() => { setLoading(true); void load() }}>Actualiser</button>
         {/* Summary */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, margin: '16px 0 20px' }}>
           <div className="card-modern" style={{ padding: 14 }}>
@@ -104,7 +114,7 @@ export default function LeadsPage() {
               <PhoneCall style={{ width: 16, height: 16 }} /> Leads à rappeler
             </h3>
             {loading ? <div className="fs13 tx-lo">Chargement…</div>
-              : !data?.leads.length ? <div className="card-modern" style={{ padding: 20, textAlign: 'center', color: 'var(--tx-faint)', fontSize: 13 }}>Aucun lead en attente 🎉</div>
+              : !data ? null : !data.leads.length ? <div className="card-modern" style={{ padding: 20, textAlign: 'center', color: 'var(--tx-faint)', fontSize: 13 }}>Aucun lead en attente</div>
               : data.leads.map((l) => (
                 <div key={l.id} className="card-modern" style={{ padding: 14, marginBottom: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start' }}>
@@ -118,7 +128,7 @@ export default function LeadsPage() {
                         </div>
                       ) : null}
                       <div className="fs11 tx-faint" style={{ marginTop: 4 }}>
-                        {l.lastStep === 'summary' ? 'Bloqué au paiement' : `Étape: ${l.lastStep || '—'}`} · {timeAgo(l.updatedAt)}
+                        {l.lastStep === 'summary' ? 'Récapitulatif consulté' : `Dernière étape : ${l.lastStep || '—'}`} · {timeAgo(l.updatedAt)}
                         {l.reason ? ` · ${l.reason}` : ''}
                       </div>
                       {/* Historique client. « orderId IS NULL » ne voit que la
@@ -172,7 +182,7 @@ export default function LeadsPage() {
             </h3>
             <div className="card-modern" style={{ padding: 12 }}>
               {loading ? <div className="fs13 tx-lo">Chargement…</div>
-                : !data?.errors.length ? <div style={{ padding: 12, textAlign: 'center', color: 'var(--tx-faint)', fontSize: 13 }}>Aucune erreur ✓</div>
+                : !data ? null : !data.errors.length ? <div style={{ padding: 12, textAlign: 'center', color: 'var(--tx-faint)', fontSize: 13 }}>Aucune erreur signalée</div>
                 : data.errors.map((e, i) => {
                   const meta = errLabel[e.kind] || { txt: e.kind, hint: '' }
                   return (

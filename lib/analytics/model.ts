@@ -20,6 +20,7 @@
  * Chaque mesure declare donc sa portee, et l'interface l'affiche.
  */
 
+import { PRODUCT_VIEW_CONVERTED_SQL } from './product-funnel'
 import {
   acquisitionChannelSql, sessionChannelSql, modeleAppareilSql, gammeAppareilSql,
   basisDateExpr, basisStatusFilter, BOT_FILTER_CLAUSE, SESSION_BOT_FILTER_CLAUSE,
@@ -279,6 +280,12 @@ export const MESURES: Record<string, Mesure> = {
     format: 'entier', hausseEstBonne: true,
     sql: `COUNT(DISTINCT e."sessionId") FILTER (WHERE e.name = 'PRODUCT_ADD_TO_CART')`,
   },
+  sessionsFicheConverties: {
+    cle: 'sessionsFicheConverties', label: 'Sessions fiche puis panier', source: 'evenements', portee: 'session',
+    definition: 'Sessions ayant ajouté le même produit après avoir vu sa fiche, dans la période sélectionnée.',
+    format: 'entier', hausseEstBonne: true,
+    sql: `COUNT(DISTINCT e."sessionId") FILTER (WHERE ${PRODUCT_VIEW_CONVERTED_SQL})`,
+  },
   impressions: {
     cle: 'impressions', label: 'Impressions en rayon', source: 'evenements', portee: 'evenement',
     definition: 'Nombre de fois qu\'un produit est apparu dans une étagère.',
@@ -438,7 +445,7 @@ export const MESURES: Record<string, Mesure> = {
   },
   tauxAjout: {
     cle: 'tauxAjout', label: 'Fiche → panier', source: 'evenements', portee: 'session',
-    definition: "Part des sessions ayant vu une fiche qui ont ajouté un produit au panier.",
+    definition: "Part des sessions ayant vu une fiche qui ont ensuite ajouté ce même produit au panier dans la période sélectionnée.",
     format: 'pourcent', hausseEstBonne: true, sql: null, seuil: MIN_OBS,
   },
 }
@@ -470,8 +477,8 @@ export const DERIVEES: Record<string, { depend: string[]; calc: (r: Record<strin
     calc: (r) => (r.impressions > 0 ? (r.clicsRayon / r.impressions) * 100 : null),
   },
   tauxAjout: {
-    depend: ['sessionsAvecPanier', 'sessionsAvecVue'],
-    calc: (r) => (r.sessionsAvecVue > 0 ? (r.sessionsAvecPanier / r.sessionsAvecVue) * 100 : null),
+    depend: ['sessionsFicheConverties', 'sessionsAvecVue'],
+    calc: (r) => (r.sessionsAvecVue > 0 ? (r.sessionsFicheConverties / r.sessionsAvecVue) * 100 : null),
   },
 }
 

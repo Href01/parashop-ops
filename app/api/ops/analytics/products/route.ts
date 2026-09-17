@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 import pool from '@/lib/db'
+import { productFunnelCtes } from '@/lib/analytics/product-funnel'
 
 const TZ = 'Africa/Casablanca'
 const REVENUE_STATUSES = ['DELIVERED', 'CONFIRMED']
@@ -79,18 +80,7 @@ export async function GET(req: NextRequest) {
       // View-to-cart rate. ROUND needs numeric (ROUND(double precision, int) does not exist in PG),
       // hence the ::numeric cast before rounding.
       safeRows('viewToCart', pool.query(
-        `WITH views AS (
-           SELECT (props->>'productId')::int AS pid, COUNT(*)::int AS view_count
-           FROM "AnalyticsEvent"
-           WHERE name = 'PRODUCT_VIEW_DETAIL' AND ${dateFilter} AND props->>'productId' ~ '^[0-9]+$'
-           GROUP BY 1
-         ),
-         carts AS (
-           SELECT (props->>'productId')::int AS pid, COUNT(*)::int AS cart_count
-           FROM "AnalyticsEvent"
-           WHERE name = 'PRODUCT_ADD_TO_CART' AND ${dateFilter} AND props->>'productId' ~ '^[0-9]+$'
-           GROUP BY 1
-         )
+        `WITH ${productFunnelCtes('view_count', 'cart_count')}
          SELECT v.pid AS id,
                 (SELECT name FROM "Product" WHERE id = v.pid) AS name,
                 (SELECT brand FROM "Product" WHERE id = v.pid) AS brand,
@@ -126,18 +116,7 @@ export async function GET(req: NextRequest) {
              AND props->>'productId' ~ '^[0-9]+$'
            GROUP BY 1
          ),
-         views AS (
-           SELECT (props->>'productId')::int AS pid, COUNT(*)::int AS views
-           FROM "AnalyticsEvent"
-           WHERE name = 'PRODUCT_VIEW_DETAIL' AND ${dateFilter} AND props->>'productId' ~ '^[0-9]+$'
-           GROUP BY 1
-         ),
-         carts AS (
-           SELECT (props->>'productId')::int AS pid, COUNT(*)::int AS carts
-           FROM "AnalyticsEvent"
-           WHERE name = 'PRODUCT_ADD_TO_CART' AND ${dateFilter} AND props->>'productId' ~ '^[0-9]+$'
-           GROUP BY 1
-         ),
+         ${productFunnelCtes()},
          orders AS (
            SELECT oi."productId" AS pid, COUNT(DISTINCT o.id)::int AS orders
            FROM "OrderItem" oi
@@ -174,18 +153,7 @@ export async function GET(req: NextRequest) {
       // CVR opportunities: viewed products with low cart rate, content curiosity,
       // or missing reassurance blocks (ingredients/FAQ/description).
       safeRows('contentOpportunities', pool.query(
-        `WITH views AS (
-           SELECT (props->>'productId')::int AS pid, COUNT(*)::int AS views
-           FROM "AnalyticsEvent"
-           WHERE name = 'PRODUCT_VIEW_DETAIL' AND ${dateFilter} AND props->>'productId' ~ '^[0-9]+$'
-           GROUP BY 1
-         ),
-         carts AS (
-           SELECT (props->>'productId')::int AS pid, COUNT(*)::int AS carts
-           FROM "AnalyticsEvent"
-           WHERE name = 'PRODUCT_ADD_TO_CART' AND ${dateFilter} AND props->>'productId' ~ '^[0-9]+$'
-           GROUP BY 1
-         ),
+        `WITH ${productFunnelCtes()},
          content AS (
            SELECT (props->>'productId')::int AS pid,
                   COUNT(*) FILTER (WHERE COALESCE(props->>'action','open') = 'open')::int AS opens,
