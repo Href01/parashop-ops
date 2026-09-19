@@ -250,8 +250,8 @@ export default function Sessions() {
             definition="Elles ont mis un produit au panier et n'ont pas commandé. C'est la population la plus chère du site : l'intention est prouvée, seule la fin manque."
             valeur={data.repartition?.panier_sans_achat ?? 0}
             precedent={data.repartitionPrecedente?.panier_sans_achat} format="entier" hausseEstBonne={false} />
-          <Scorecard label="Ont buté" portee="sessions"
-            definition="Sessions ayant rencontré au moins une friction : commande refusée, champ rejeté, clic mort, code SMS invalide."
+          <Scorecard label="Signaux de friction" portee="sessions"
+            definition="Sessions avec une erreur observée ou un signal à vérifier, comme des clics répétés ou une réponse non détectée. Ne prouve pas la cause du départ."
             valeur={data.repartition?.friction ?? 0}
             precedent={data.repartitionPrecedente?.friction} format="entier" hausseEstBonne={false} />
         </>
@@ -279,7 +279,7 @@ export default function Sessions() {
                     {s.actions} actions · {s.fiches} fiches · {s.paniers} panier{s.paniers > 1 ? 's' : ''}
                   </span>
                   {s.frictions > 0 && (
-                    <span className="text-[11px] font-bold" style={{ color: V.critical }}>▲ {s.frictions}</span>
+                    <span className="text-[11px] font-bold" style={{ color: '#854D0E' }} title="Erreurs ou signaux à vérifier, pas un nombre de pannes confirmées">▲ {s.frictions}</span>
                   )}
                   {s.commande && (
                     <span className="text-[11px] font-bold" style={{ color: s.commande.statut === 'CANCELLED' ? V.critical : V.good }}>

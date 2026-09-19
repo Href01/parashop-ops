@@ -39,7 +39,7 @@ export const SEGMENTS = {
   panier_sans_achat: { label: 'Panier sans commande', sql: `stats.paniers > 0 AND o.id IS NULL` },
   fiche:             { label: 'Ont vu une fiche',    sql: `stats.fiches > 0` },
   recherche:         { label: 'Ont cherché',         sql: `stats.recherches > 0` },
-  friction:          { label: 'Ont buté',            sql: `stats.frictions > 0` },
+  friction:          { label: 'Signaux de friction', sql: `stats.frictions > 0` },
   sans_action:       { label: 'Sans action',         sql: `COALESCE(stats.actions, 0) = 0` },
 } as const
 type Filtre = keyof typeof SEGMENTS

@@ -361,22 +361,21 @@ export const MESURES: Record<string, Mesure> = {
   erreurs: {
     cle: 'erreurs', label: 'Frictions', source: 'evenements', portee: 'evenement',
     definition:
-      "Tout ce qui empêche d'avancer : échec de commande, validation refusée, code promo rejeté, " +
-      "recherche sans résultat, échec d'envoi du code SMS.",
+      "Erreurs observées et signaux à vérifier : échec de commande, validation refusée, code promo rejeté, " +
+      "recherche sans résultat, échec du code SMS, clics répétés ou réponse non détectée. Ne prouve pas la cause du départ.",
     format: 'entier', hausseEstBonne: false,
     sql: `COUNT(*) FILTER (WHERE e.name IN ('PURCHASE_FAILED','CHECKOUT_VALIDATION_FAILED','PROMO_CODE_FAILED','SEARCH_ZERO_RESULTS','CHECKOUT_CART_EMPTY','OTP_SEND_FAILED','OTP_DELIVERY_FAILED','OTP_INVALID','RAGE_CLICK','DEAD_CLICK','CHECKOUT_FIELD_ERROR','JS_ERROR'))`,
   },
   clicsRage: {
-    cle: 'clicsRage', label: 'Clics de rage', source: 'evenements', portee: 'evenement',
+    cle: 'clicsRage', label: 'Clics répétés', source: 'evenements', portee: 'evenement',
     definition:
-      'Trois clics ou plus sur le même élément en moins d\'une seconde — la signature ' +
-      'd\'un bouton qui ne répond pas.',
+      'Clics rapprochés sur le même élément : friction possible à vérifier, pas une panne confirmée.',
     format: 'entier', hausseEstBonne: false,
     sql: `COUNT(*) FILTER (WHERE e.name = 'RAGE_CLICK')`,
   },
   clicsMorts: {
-    cle: 'clicsMorts', label: 'Clics morts', source: 'evenements', portee: 'evenement',
-    definition: "Un clic sur un bouton qui n'a rien changé dans la seconde qui a suivi.",
+    cle: 'clicsMorts', label: 'Réponses non détectées', source: 'evenements', portee: 'evenement',
+    definition: "Clics sans réponse observée par le détecteur : signal à vérifier, pas une panne confirmée. Les anciens événements peuvent inclure des fenêtres ouvertes hors de la carte.",
     format: 'entier', hausseEstBonne: false,
     sql: `COUNT(*) FILTER (WHERE e.name = 'DEAD_CLICK')`,
   },

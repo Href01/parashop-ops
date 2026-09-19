@@ -61,24 +61,24 @@ export default function Qualite() {
   return (
     <ReportShell
       titre="Qualité"
-      sous="Ce qui empêche d'avancer — et où exactement."
+      sous="Erreurs observées et signaux de friction à vérifier."
       controles={<BarreControle etat={etat} maj={maj} setJours={setJours} setPeriode={setPeriode}
         setFiltre={setFiltre} periodePersonnalisee={periodePersonnalisee} afficherBase={false} />}
       enTete={erreur ? <ErreurChargement message={erreur} /> : null}
       scorecards={!total ? ([0, 1, 2, 3].map((i) => <div key={i}><Squelette lignes={2} hauteur={12} /></div>)) : (
         <>
           <Scorecard label="Frictions" portee="événements"
-            definition="Tout ce qui empêche d'avancer : commande rejetée, validation refusée, code promo rejeté, recherche sans résultat, échec du code SMS, clic de rage, clic mort."
+            definition="Erreurs observées et signaux à vérifier : commande rejetée, validation refusée, code promo rejeté, recherche sans résultat, échec du code SMS, clics répétés ou réponse non détectée."
             valeur={m?.erreurs?.valeur ?? null} precedent={m?.erreurs?.precedent} format="entier" hausseEstBonne={false} />
           <Scorecard label="Commandes rejetées" portee="événements"
             definition="Refusées par le site au dernier pas — la cliente avait tout rempli."
             valeur={refus} precedent={m?.commandesRefusees?.precedent} format="entier" hausseEstBonne={false}
             note={refus > 0 ? 'la perte la plus chère du parcours' : undefined} />
-          <Scorecard label="Clics de rage" portee="événements"
-            definition="Trois clics ou plus sur le même élément en moins d'une seconde : un bouton qui ne répond pas."
+          <Scorecard label="Clics répétés" portee="événements"
+            definition="Clics rapprochés sur le même élément : friction possible à vérifier, pas une panne confirmée."
             valeur={rage} precedent={m?.clicsRage?.precedent} format="entier" hausseEstBonne={false} />
-          <Scorecard label="Clics morts" portee="événements"
-            definition="Un clic sur un bouton qui n'a rien changé dans la seconde qui a suivi."
+          <Scorecard label="Réponses non détectées" portee="événements"
+            definition="Clics sans réponse observée par le détecteur. Signal à vérifier : les anciens événements peuvent inclure des fenêtres ouvertes hors de la carte."
             valeur={morts} precedent={m?.clicsMorts?.precedent} format="entier" hausseEstBonne={false} />
         </>
       )}
@@ -88,21 +88,20 @@ export default function Qualite() {
           <p className={`${T.body} mt-2 max-w-[72ch]`} style={{ color: V.ink2 }}>
             {rage + morts === 0 ? (
               <>
-                Aucun clic de rage ni clic mort sur la période. Ces deux signaux viennent d&apos;être
-                posés : ils remonteront dès qu&apos;un élément cessera de répondre, sans qu&apos;une
-                cliente ait à le signaler.
+                Aucun clic répété ni réponse non détectée enregistré sur la période.
+                Cela ne garantit pas l&apos;absence de problème : le détecteur ne voit pas toutes les réponses.
               </>
             ) : (
               <>
-                <b>{rage} clic{rage > 1 ? 's' : ''} de rage</b> et <b>{morts} clic{morts > 1 ? 's' : ''} mort{morts > 1 ? 's' : ''}</b> sur
-                la période. Le tableau ci-dessous dit sur quelles pages. Un clic mort est pire
-                qu&apos;un bouton désactivé : la cliente croit le site cassé et s&apos;en va.
+                <b>{rage} signal{rage > 1 ? 's' : ''} de clics répétés</b> et <b>{morts} réponse{morts > 1 ? 's' : ''} non détectée{morts > 1 ? 's' : ''}</b> sur
+                la période. Le tableau ci-dessous indique les pages concernées.
+                Ces signaux ne prouvent ni une panne ni la cause d&apos;un départ.
               </>
             )}
           </p>
           <p className={`${T.note} mt-2`} style={{ color: V.muted }}>
-            Les frictions ne se valent pas. Une recherche sans résultat coûte une idée ;
-            une commande rejetée coûte une vente déjà gagnée.
+            Vérifiez le parcours avant de conclure. Les anciens clics peuvent être des faux positifs
+            liés aux fenêtres ouvertes hors de la carte ; les erreurs de commande sont des échecs observés.
           </p>
         </div>
       )}
