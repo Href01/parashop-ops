@@ -24,7 +24,7 @@ import { V } from './Viz'
 
 export type Evenement = { name: string; path: string | null; props: Record<string, unknown>; at: string }
 
-type Famille = 'arrivee' | 'decouverte' | 'interet' | 'panier' | 'paiement' | 'commande' | 'friction' | 'bruit'
+type Famille = 'arrivee' | 'decouverte' | 'interet' | 'panier' | 'paiement' | 'commande' | 'friction' | 'suspicion' | 'bruit'
 
 /** Une couleur par famille. Elles ne se ressemblent pas deux à deux. */
 export const FAMILLES: Record<Famille, { couleur: string; fond: string; label: string }> = {
@@ -35,6 +35,7 @@ export const FAMILLES: Record<Famille, { couleur: string; fond: string; label: s
   paiement:   { couleur: '#B45309', fond: '#FFFBEB', label: 'Paiement' },
   commande:   { couleur: '#15803D', fond: '#F0FDF4', label: 'Commande' },
   friction:   { couleur: '#B91C1C', fond: '#FEF2F2', label: 'Friction' },
+  suspicion:  { couleur: '#854D0E', fond: '#FEFCE8', label: 'À vérifier' },
   bruit:      { couleur: '#94A3B8', fond: '#F8FAFC', label: 'Bruit ambiant' },
 }
 
@@ -100,21 +101,22 @@ export const SENS: Record<string, { label: string; famille: Famille }> = {
   ORDER_CREATED:        { label: 'Commande enregistrée', famille: 'commande' },
   ORDER_CONFIRMED:      { label: 'Commande confirmée', famille: 'commande' },
   ORDER_DELIVERED:      { label: 'Commande livrée', famille: 'commande' },
-  RESTOCK_NOTIFY_SUBMITTED:{ label: 'Demande à être prévenue du retour', famille: 'commande' },
+  RESTOCK_NOTIFY_OPENED:{ label: 'Ouvre l’alerte retour en stock', famille: 'interet' },
+  RESTOCK_NOTIFY_SUBMITTED:{ label: 'Demande à être prévenue du retour', famille: 'interet' },
 
   /* Buter */
   PURCHASE_FAILED:      { label: 'COMMANDE REFUSÉE par le site', famille: 'friction' },
   ORDER_CANCELLED:      { label: 'Commande annulée', famille: 'friction' },
   CHECKOUT_ABANDONED:   { label: 'Quitte le paiement', famille: 'friction' },
-  CHECKOUT_FIELD_ABANDON:{ label: 'Bloque sur un champ', famille: 'friction' },
+  CHECKOUT_FIELD_ABANDON:{ label: 'Quitte un champ sans poursuivre', famille: 'friction' },
   CHECKOUT_VALIDATION_FAILED:{ label: 'Formulaire refusé', famille: 'friction' },
   CHECKOUT_CART_EMPTY:  { label: 'Paiement ouvert, panier vide', famille: 'friction' },
   PROMO_CODE_FAILED:    { label: 'Code promo refusé', famille: 'friction' },
-  OTP_DELIVERY_FAILED:  { label: 'Code JAMAIS reçu', famille: 'friction' },
+  OTP_DELIVERY_FAILED:  { label: 'Échec de livraison du code', famille: 'friction' },
   SEARCH_ZERO_RESULTS:  { label: 'Ne trouve rien', famille: 'friction' },
   SEARCH_ABANDONED:     { label: 'Abandonne sa recherche', famille: 'friction' },
-  RAGE_CLICK:           { label: 'Clique en rafale (agacement)', famille: 'friction' },
-  DEAD_CLICK:           { label: 'Clique dans le vide', famille: 'friction' },
+  RAGE_CLICK:           { label: 'Clics répétés · friction possible', famille: 'suspicion' },
+  DEAD_CLICK:           { label: 'Réponse non détectée · à vérifier', famille: 'suspicion' },
   JS_ERROR:             { label: 'Erreur technique', famille: 'friction' },
 
   /* Bruit ambiant */
@@ -425,6 +427,10 @@ export function detail(e: Evenement): string | null {
       if (txt(p.source) === 'order_success') morceaux.push('après la commande — normal')
       break
     }
+    case 'RESTOCK_NOTIFY_OPENED':
+    case 'RESTOCK_NOTIFY_SUBMITTED':
+      morceaux.push(p.productId != null ? `produit #${p.productId}` : null, txt(p.source), e.name === 'RESTOCK_NOTIFY_OPENED' ? 'formulaire affiché · pas encore de demande' : 'demande enregistrée · pas une commande')
+      break
     case 'CMS_BLOCK_IMPRESSION':
     case 'CMS_BLOCK_CLICK':
     case 'CMS_VOUCHER_COLLECT': {
@@ -444,6 +450,7 @@ export function detail(e: Evenement): string | null {
       if (label && id && label !== id) morceaux.push(`${label} [${id}]`)
       else morceaux.push(label || id)
       morceaux.push(t ? (balise[t] ?? t) : null)
+      if (e.name === 'DEAD_CLICK') morceaux.push(p.detectorVersion === 2 ? 'détection heuristique · pas une panne confirmée' : 'ancien détecteur · faux positifs possibles sur les fenêtres')
       break
     }
     case 'SESSION_START': {
@@ -489,14 +496,13 @@ export function detail(e: Evenement): string | null {
  *
  * Trois passes, dans cet ordre :
  *   1. Elle a commandé → il n'y a rien à diagnostiquer, on se tait.
- *   2. La DERNIÈRE friction de la session, où qu'elle soit. Chercher seulement
- *      dans les huit dernières lignes ratait le cas courant : la friction a lieu
- *      au paiement, puis vingt lignes de navigation la repoussent hors fenêtre.
- *   3. À défaut, le stade du tunnel atteint — un blocage muet reste un blocage.
+ *   2. Une erreur explicite est prioritaire sur les signaux heuristiques.
+ *   3. À défaut, le stade du tunnel observé. Une absence de conversion ne
+ *      permet pas de déduire une panne ni la raison d'un départ.
  *
  * `montant` est séparé du `quoi` : la valeur en jeu décide si ça vaut un rappel.
  */
-type Blocage = { quoi: string; montant: string | null }
+type Blocage = { quoi: string; montant: string | null; level?: 'error' | 'suspected' }
 
 /** Les frictions, du signal le plus explicite au plus vague. */
 const FRICTIONS = new Set([
@@ -506,13 +512,16 @@ const FRICTIONS = new Set([
   'JS_ERROR', 'CART_CLEAR',
 ])
 
-function diagnosticBlockage(evenements: Evenement[]): Blocage | null {
+export function diagnosticBlockage(evenements: Evenement[]): Blocage | null {
   // 1. Commande passée : aucune friction ne l'a empêchée d'aboutir.
   if (evenements.some((e) => e.name === 'PURCHASE_SUCCESS' || e.name === 'ORDER_CREATED')) return null
 
-  // 2. La dernière friction de toute la session.
-  for (let i = evenements.length - 1; i >= 0; i--) {
-    const e = evenements[i]
+  // Prioritize explicit failures over later heuristic clicks. Neither proves
+  // why the person left; raw chronological rows remain unchanged below.
+  const explicit = new Set(['PURCHASE_FAILED', 'OTP_DELIVERY_FAILED', 'CHECKOUT_VALIDATION_FAILED', 'PROMO_CODE_FAILED', 'JS_ERROR'])
+  const candidates = [...evenements.filter(e => !explicit.has(e.name)), ...evenements.filter(e => explicit.has(e.name))]
+  for (let i = candidates.length - 1; i >= 0; i--) {
+    const e = candidates[i]
     if (!FRICTIONS.has(e.name)) continue
     const p = e.props || {}
     const valeur = mad(p.cartValue ?? p.finalTotal ?? p.cartTotal ?? p.cartTotalBefore)
@@ -521,12 +530,12 @@ function diagnosticBlockage(evenements: Evenement[]): Blocage | null {
 
     switch (e.name) {
       case 'PURCHASE_FAILED':
-        return { quoi: `Commande REFUSÉE par le site — ${txt(p.error) ?? 'motif inconnu'}`, montant: valeur }
+        return { quoi: `Échec de commande signalé — ${txt(p.error) ?? 'motif inconnu'}`, montant: valeur, level: 'error' }
       case 'OTP_DELIVERY_FAILED':
-        return { quoi: `Code de vérification jamais reçu${txt(p.channel) ? ` (${txt(p.channel)})` : ''}`, montant: valeur }
+        return { quoi: `Échec de livraison du code${txt(p.channel) ? ` (${txt(p.channel)})` : ''}`, montant: valeur, level: 'error' }
       case 'CHECKOUT_FIELD_ABANDON': {
         const c = txt(p.champ)
-        return { quoi: `Bloquée sur le champ « ${c ? CHAMPS[c] ?? c : '?'} »${suffixe}`, montant: valeur }
+        return { quoi: `Sortie détectée sur le champ « ${c ? CHAMPS[c] ?? c : '?'} »${suffixe} — motif inconnu`, montant: valeur, level: 'suspected' }
       }
       case 'CHECKOUT_VALIDATION_FAILED': {
         const m = Array.isArray(p.missingFields) ? (p.missingFields as string[]) : []
@@ -535,27 +544,28 @@ function diagnosticBlockage(evenements: Evenement[]): Blocage | null {
             ? `Formulaire refusé — manque : ${m.map((c) => CHAMPS[c] ?? c).join(', ')}${suffixe}`
             : `Formulaire refusé${suffixe}`,
           montant: valeur,
+          level: 'error',
         }
       }
       case 'PROMO_CODE_FAILED':
-        return { quoi: `Code promo « ${txt(p.code) ?? '?'} » refusé — ${txt(p.error) ?? 'invalide'}`, montant: valeur }
+        return { quoi: `Code promo « ${txt(p.code) ?? '?'} » refusé — ${txt(p.error) ?? 'invalide'}`, montant: valeur, level: 'error' }
       case 'CHECKOUT_ABANDONED': {
         const motif = txt(p.reason) ? MOTIF_DEPART[txt(p.reason)!] ?? txt(p.reason) : null
         return { quoi: `Quitte le paiement${suffixe}${motif ? ` — ${motif}` : ''}`, montant: valeur }
       }
       case 'CHECKOUT_CART_EMPTY':
-        return { quoi: 'Arrive au paiement avec un panier VIDE — le panier s’est perdu en route', montant: null }
+        return { quoi: 'Paiement ouvert avec un panier vide — cause non déterminée', montant: null }
       case 'CART_CLEAR':
         // Un panier vidé après commande est normal ; ici il n'y a pas eu de commande.
         return { quoi: 'A vidé son panier', montant: mad(p.cartTotalBefore) }
       case 'RAGE_CLICK':
-        return { quoi: `Clique en rafale sur « ${propre(p.label, 60) ?? txt(p.id) ?? '?'} » — quelque chose ne répond pas`, montant: valeur }
+        return { quoi: `Clics répétés sur « ${propre(p.label, 60) ?? txt(p.id) ?? '?'} » — ne prouve pas une panne`, montant: valeur, level: 'suspected' }
       case 'DEAD_CLICK':
-        return { quoi: `Clique dans le vide sur « ${propre(p.label, 60) ?? txt(p.id) ?? '?'} »`, montant: valeur }
+        return { quoi: `Réponse non détectée sur « ${propre(p.label, 60) ?? txt(p.id) ?? '?'} » — ${p.detectorVersion === 2 ? 'signal heuristique à vérifier' : 'ancien détecteur : fenêtres hors carte non prises en compte'}`, montant: valeur, level: 'suspected' }
       case 'SEARCH_ZERO_RESULTS':
-        return { quoi: `Cherche « ${txt(p.query) ?? '?'} » — le catalogue ne répond pas`, montant: null }
+        return { quoi: `Recherche « ${txt(p.query) ?? '?'} » sans résultat`, montant: null }
       case 'JS_ERROR':
-        return { quoi: `Erreur technique — ${propre(p.message, 80) ?? 'script en échec'}`, montant: valeur }
+        return { quoi: `Erreur technique — ${propre(p.message, 80) ?? 'script en échec'}`, montant: valeur, level: 'error' }
     }
   }
 
@@ -563,6 +573,8 @@ function diagnosticBlockage(evenements: Evenement[]): Blocage | null {
   const a = (n: string) => evenements.some((e) => e.name === n)
   const dernierPanier = [...evenements].reverse().find((e) => nb(e.props?.cartTotal) != null)
   const valeurPanier = dernierPanier ? mad(dernierPanier.props.cartTotal) : null
+  if (a('RESTOCK_NOTIFY_SUBMITTED')) return { quoi: 'Demande de retour en stock enregistrée — ce n’est pas une commande', montant: null }
+  if (a('RESTOCK_NOTIFY_OPENED')) return { quoi: 'A ouvert le formulaire de retour en stock, sans demande enregistrée dans cette session', montant: null }
 
   /* LA RUPTURE DE STOCK N'ÉMET AUCUN ÉVÈNEMENT DE FRICTION — elle se lit dans
      `inStock: false` d'une fiche produit. C'est pourtant le blocage le plus net
@@ -582,9 +594,9 @@ function diagnosticBlockage(evenements: Evenement[]): Blocage | null {
   if (a('PLACE_ORDER'))
     return { quoi: 'A envoyé la commande, mais aucune confirmation n’est revenue — à vérifier côté serveur', montant: valeurPanier }
   if (a('ADD_PAYMENT_INFO') || a('BEGIN_CHECKOUT') || a('CLICK_CHECKOUT_FROM_CART'))
-    return { quoi: 'A démarré le paiement sans le finir — part sans rien dire', montant: valeurPanier }
+    return { quoi: 'Paiement démarré, sans commande enregistrée dans cette session', montant: valeurPanier }
   if (a('PRODUCT_ADD_TO_CART'))
-    return { quoi: 'A mis au panier sans jamais ouvrir le paiement', montant: valeurPanier }
+    return { quoi: 'Ajout au panier observé, sans ouverture du paiement dans cette session', montant: valeurPanier }
   /* PAS DE DIAGNOSTIC SANS MATIÈRE.
      Une visite de cinq secondes ne « bloque » rien : personne n'a eu le temps
      d'y renoncer. Le module annonçait pourtant « a ouvert 1 fiche produit sans
@@ -604,7 +616,7 @@ function diagnosticBlockage(evenements: Evenement[]): Blocage | null {
   const pages = new Set(evenements.map((e) => e.path).filter(Boolean)).size
   if (!a('SCROLL_DEPTH') && pages <= 1 && secondes < 10) {
     return {
-      quoi: `Repartie au bout de ${Math.round(secondes)} s, sans faire défiler — trop court pour conclure`,
+      quoi: `${Math.round(secondes)} s de parcours observé, sans défilement enregistré — trop court pour conclure`,
       montant: null,
     }
   }
@@ -613,7 +625,7 @@ function diagnosticBlockage(evenements: Evenement[]): Blocage | null {
     const n = evenements.filter((e) => e.name === 'PRODUCT_VIEW_DETAIL').length
     return { quoi: `A ouvert ${n} fiche${n > 1 ? 's' : ''} produit sans rien mettre au panier`, montant: null }
   }
-  return { quoi: 'Repart sans ouvrir la moindre fiche produit', montant: null }
+  return { quoi: 'Aucune fiche produit ouverte dans les événements disponibles', montant: null }
 }
 
 /** Une session, ligne par ligne. */
@@ -633,18 +645,19 @@ export function Chronologie({ evenements }: { evenements: Evenement[] }) {
       .format(new Date(iso))
 
   const blocage = diagnosticBlockage(evenements)
+  const signalStyle = blocage?.level === 'error' ? FAMILLES.friction : blocage?.level === 'suspected' ? FAMILLES.suspicion : FAMILLES.arrivee
   const nouvellesPages = changementsDePage(evenements)
 
   return (
     <div>
       {blocage && (
         <div className="mb-2 px-2.5 py-1.5 rounded-[5px] flex items-baseline gap-2 flex-wrap"
-          style={{ background: FAMILLES.friction.fond, borderInlineStart: `3px solid ${FAMILLES.friction.couleur}` }}>
+          style={{ background: signalStyle.fond, borderInlineStart: `3px solid ${signalStyle.couleur}` }}>
           <span className="text-[9px] font-bold uppercase tracking-wide flex-shrink-0"
-            style={{ color: FAMILLES.friction.couleur }}>
-            Ce qui a bloqué
+            style={{ color: signalStyle.couleur }}>
+            {blocage.level === 'error' ? 'Erreur observée' : blocage.level === 'suspected' ? 'Friction suspectée' : 'Parcours observé'}
           </span>
-          <span className="text-[11px] font-semibold break-words" style={{ color: FAMILLES.friction.couleur }}>
+          <span className="text-[11px] font-semibold break-words" style={{ color: signalStyle.couleur }}>
             {blocage.quoi}
           </span>
           {blocage.montant && (
@@ -652,6 +665,7 @@ export function Chronologie({ evenements }: { evenements: Evenement[] }) {
               · {blocage.montant} en jeu
             </span>
           )}
+          <span className="w-full text-[10px]" style={{ color: V.muted }}>Ces événements ne prouvent pas la cause d’un départ.</span>
         </div>
       )}
       <ol className="space-y-[1px]">
