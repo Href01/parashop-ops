@@ -49,6 +49,9 @@ export const SENS: Record<string, { label: string; famille: Famille }> = {
 
   /* Découvrir */
   PRODUCT_IMPRESSION:   { label: 'Voit un produit en rayon', famille: 'decouverte' },
+  CMS_BLOCK_IMPRESSION: { label: 'Voit un bloc éditorial', famille: 'decouverte' },
+  CMS_BLOCK_CLICK:      { label: 'Clique un bouton du Studio', famille: 'decouverte' },
+  CMS_VOUCHER_COLLECT:  { label: 'Collecte un bon', famille: 'interet' },
   PRODUCT_CLICK:        { label: 'Clique un produit', famille: 'decouverte' },
   BRAND_VIEW:           { label: 'Parcourt une marque', famille: 'decouverte' },
   CLICK_BRAND:          { label: 'Clique une marque', famille: 'decouverte' },
@@ -133,6 +136,7 @@ export const SENS: Record<string, { label: string; famille: Famille }> = {
  * Famille = couleur. Bruit = volume. Deux questions différentes.
  */
 export const BRUIT = new Set([
+  'CMS_BLOCK_IMPRESSION',
   'PRODUCT_IMPRESSION',
   'SCROLL_DEPTH',
   'PAGE_VIEW_DURATION',
@@ -419,6 +423,14 @@ export function detail(e: Evenement): string | null {
       const c = nb(p.cartCountBefore)
       morceaux.push(c != null ? `${c} article${c > 1 ? 's' : ''} retirés` : null, mad(p.cartTotalBefore))
       if (txt(p.source) === 'order_success') morceaux.push('après la commande — normal')
+      break
+    }
+    case 'CMS_BLOCK_IMPRESSION':
+    case 'CMS_BLOCK_CLICK':
+    case 'CMS_VOUCHER_COLLECT': {
+      morceaux.push(txt(p.surface), txt(p.sectionId), txt(p.itemId) ? `élément ${txt(p.itemId)}` : null, txt(p.viewport))
+      if (e.name === 'CMS_BLOCK_IMPRESSION') morceaux.push('visible ≥ 50 % pendant 1 s')
+      if (e.name === 'CMS_VOUCHER_COLLECT') morceaux.push('bon retenu — pas une remise appliquée ni une vente')
       break
     }
     case 'CLICK_UI':
