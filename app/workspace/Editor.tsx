@@ -83,6 +83,8 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
   const [docSynchronise, setDocSynchronise] = useState<string | null>(null)
   /** Le document dont l'etat a ete repris depuis Postgres, faute de serveur. */
   const [secoursApplique, setSecoursApplique] = useState<string | null>(null)
+  /** Heure de la derniere sauvegarde faite par le BOS lui-meme. */
+  const [enregistreA, setEnregistreA] = useState<Date | null>(null)
   const [peers, setPeers] = useState<Presence[]>([])
   const color = useMemo(() => colorFor(user.email || user.name), [user])
 
@@ -165,6 +167,48 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
     }, 4000)
     return () => { annule = true; window.clearTimeout(minuteur) }
   }, [doc, docName, docSynchronise])
+
+  /* SAUVEGARDER SANS LE SERVEUR TEMPS-REEL.
+     La persistance ne passait que par lui. Quand il a cesse d'atteindre la
+     base, le 2026-07-20, plus rien n'a ete enregistre -- en silence, pendant
+     deux mois. Le BOS parle pourtant a la meme base.
+     Tant que le serveur ne confirme pas la synchronisation, on envoie nous-meme
+     les modifications. La route fusionne au lieu d'ecraser, donc cette voie ne
+     peut pas effacer ce que le serveur aurait ecrit de son cote. */
+  useEffect(() => {
+    if (docSynchronise === docName) return          // le serveur s'en charge
+    if (secoursApplique !== docName) return          // rien a sauvegarder tant qu'on n'a pas le vrai contenu
+    let minuteur: ReturnType<typeof setTimeout> | undefined
+    let enCours = false
+    const envoyer = async () => {
+      if (enCours) return
+      enCours = true
+      try {
+        const etat = Y.encodeStateAsUpdate(doc)
+        let binaire = ''
+        for (const o of etat) binaire += String.fromCharCode(o)
+        await fetch('/api/ops/workspace/state', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: docName, update: btoa(binaire) }),
+        })
+        setEnregistreA(new Date())
+      } catch { /* une sauvegarde ratee sera retentee a la frappe suivante */ }
+      finally { enCours = false }
+    }
+    /* Deux secondes apres la derniere frappe : assez pour ne pas envoyer a
+       chaque caractere, assez court pour qu'une fermeture d'onglet ne coute
+       presque rien. */
+    const auChangement = () => {
+      if (minuteur) clearTimeout(minuteur)
+      minuteur = setTimeout(envoyer, 2000)
+    }
+    doc.on('update', auChangement)
+    return () => {
+      doc.off('update', auChangement)
+      if (minuteur) clearTimeout(minuteur)
+    }
+  }, [doc, docName, docSynchronise, secoursApplique])
 
   useEffect(() => {
     const onStatus = (e: { status: string }) => setStatus(e.status === 'connected' ? 'connected' : e.status === 'disconnected' ? 'disconnected' : 'connecting')
@@ -412,8 +456,9 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
   <div className="doc-alerte doc-alerte-attente" role="status">
     <strong>Contenu repris depuis la sauvegarde.</strong>{' '}
     Le serveur temps-réel ne répond pas, donc ta page est affichée telle qu&apos;enregistrée en base.
-    Tu peux la lire et la modifier ; <b>tes changements seront renvoyés dès le retour du serveur</b>,
-    mais ils ne sont pas partagés en direct pour l&apos;instant.{' '}
+    Tu peux la lire et la modifier : <b>tes changements sont enregistrés directement en base</b>
+    {enregistreA ? ` (dernière sauvegarde à ${enregistreA.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })})` : ''}.
+    Seul le partage en direct avec un autre éditeur est suspendu.{' '}
     <a href="/api/ops/workspace/diagnostic" target="_blank" rel="noopener noreferrer">Diagnostic</a>
   </div>
 ) : refusReel ? (
