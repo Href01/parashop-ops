@@ -81,6 +81,8 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
      vierge locale. Un booleen ne suffirait pas : en changeant de page, il
      resterait vrai pour la suivante, pas encore chargee. */
   const [docSynchronise, setDocSynchronise] = useState<string | null>(null)
+  /** Le document dont l'etat a ete repris depuis Postgres, faute de serveur. */
+  const [secoursApplique, setSecoursApplique] = useState<string | null>(null)
   const [peers, setPeers] = useState<Presence[]>([])
   const color = useMemo(() => colorFor(user.email || user.name), [user])
 
@@ -138,6 +140,31 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
     })
     return { doc, provider }
   }, [url, token, docName])
+
+  /* LE FILET : AFFICHER LE CONTENU MEME SANS SERVEUR TEMPS-REEL.
+     L'editeur n'attendait son contenu que du serveur de collaboration. Quand
+     celui-ci ne repond pas, il affiche une page VIERGE -- le fondateur a cru
+     ses donnees perdues alors que ses 80 Ko etaient a deux requetes de la,
+     dans "WorkspaceDoc", que le BOS lit directement.
+     On laisse quelques secondes au serveur (sa version est la plus fraiche),
+     puis on reprend l'etat depuis Postgres. Yjs fusionne sans jamais
+     supprimer : appliquer l'etat local puis recevoir celui du serveur converge
+     vers le meme document, aucun doublon ne peut en naitre. */
+  useEffect(() => {
+    if (docSynchronise === docName) return
+    let annule = false
+    const minuteur = window.setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/ops/workspace/state?name=${encodeURIComponent(docName)}`, { cache: 'no-store' })
+        if (!r.ok || annule) return
+        const { state } = await r.json()
+        if (!state || annule) return
+        Y.applyUpdate(doc, Uint8Array.from(atob(state), (c) => c.charCodeAt(0)))
+        setSecoursApplique(docName)
+      } catch { /* le filet ne doit jamais casser l'editeur */ }
+    }, 4000)
+    return () => { annule = true; window.clearTimeout(minuteur) }
+  }, [doc, docName, docSynchronise])
 
   useEffect(() => {
     const onStatus = (e: { status: string }) => setStatus(e.status === 'connected' ? 'connected' : e.status === 'disconnected' ? 'disconnected' : 'connecting')
@@ -335,7 +362,7 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
      liaison parfaitement saine. L'etat de connexion, lui, ne ment pas : un
      refus d'authentification empeche TOUJOURS d'etre connecte. */
   const refusReel = authFailed && status !== 'connected'
-  const contenuRecu = docSynchronise === docName
+  const contenuRecu = docSynchronise === docName || secoursApplique === docName
   const st = refusReel
     ? { fg: 'var(--red, #dc2626)', bg: 'var(--red-bg, #fee2e2)', dot: '#DC2626', label: 'Token invalide' }
     : status === 'connected'
@@ -378,22 +405,27 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
         </div>
       </div>
 
-{/* « Token invalide » tient en deux mots et n'indique aucune issue. Ce
-    bandeau dit d'abord la seule chose qui compte quand la page parait vide :
-    ce n'est PAS une perte. Le fondateur a cru ses donnees disparues alors que
-    ses 80 Ko etaient intacts en base — c'est l'ecran qui se taisait. */}
-{refusReel ? (
+{/* Trois etats, trois messages. Le premier mot compte : quand la page
+    parait vide, le fondateur a cru ses donnees perdues — l'ecran doit dire
+    le contraire avant toute explication. */}
+{secoursApplique === docName && docSynchronise !== docName ? (
+  <div className="doc-alerte doc-alerte-attente" role="status">
+    <strong>Contenu repris depuis la sauvegarde.</strong>{' '}
+    Le serveur temps-réel ne répond pas, donc ta page est affichée telle qu&apos;enregistrée en base.
+    Tu peux la lire et la modifier ; <b>tes changements seront renvoyés dès le retour du serveur</b>,
+    mais ils ne sont pas partagés en direct pour l&apos;instant.{' '}
+    <a href="/api/ops/workspace/diagnostic" target="_blank" rel="noopener noreferrer">Diagnostic</a>
+  </div>
+) : refusReel ? (
   <div className="doc-alerte" role="alert">
     <strong>Ce n&apos;est pas ta page — rien n&apos;est perdu.</strong>{' '}
-    La connexion au serveur temps-réel est refusée, donc ton contenu n&apos;a pas pu être chargé
-    et l&apos;éditeur affiche une page vierge. <b>Ta vraie page est intacte</b> ; elle réapparaîtra
-    dès la connexion rétablie. L&apos;édition est verrouillée en attendant, pour qu&apos;aucune saisie
-    ne se perde.{' '}
+    La connexion au serveur temps-réel est refusée et la sauvegarde n&apos;a pas pu être lue non plus.
+    <b> Ta vraie page est intacte</b> en base.{' '}
     <a href="/api/ops/workspace/diagnostic" target="_blank" rel="noopener noreferrer">Voir le diagnostic complet</a>
   </div>
 ) : !contenuRecu ? (
   <div className="doc-alerte doc-alerte-attente" role="status">
-    Chargement de ton contenu depuis le serveur… l&apos;édition s&apos;ouvrira dès qu&apos;il sera arrivé.
+    Chargement de ton contenu… l&apos;édition s&apos;ouvrira dès qu&apos;il sera arrivé.
   </div>
 ) : null}
 
