@@ -76,6 +76,11 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
   const docName = `page:${page.id}`
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
   const [authFailed, setAuthFailed] = useState(false)
+  /* Le nom du document dont l'etat serveur est REELLEMENT arrive. Compare a
+     `docName`, il dit si ce qu'on affiche est le vrai contenu ou une page
+     vierge locale. Un booleen ne suffirait pas : en changeant de page, il
+     resterait vrai pour la suivante, pas encore chargee. */
+  const [docSynchronise, setDocSynchronise] = useState<string | null>(null)
   const [peers, setPeers] = useState<Presence[]>([])
   const color = useMemo(() => colorFor(user.email || user.name), [user])
 
@@ -129,6 +134,7 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
       document: doc,
       onAuthenticationFailed: () => setAuthFailed(true),
       onAuthenticated: () => setAuthFailed(false),
+      onSynced: () => setDocSynchronise(docName),
     })
     return { doc, provider }
   }, [url, token, docName])
@@ -329,6 +335,7 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
      liaison parfaitement saine. L'etat de connexion, lui, ne ment pas : un
      refus d'authentification empeche TOUJOURS d'etre connecte. */
   const refusReel = authFailed && status !== 'connected'
+  const contenuRecu = docSynchronise === docName
   const st = refusReel
     ? { fg: 'var(--red, #dc2626)', bg: 'var(--red-bg, #fee2e2)', dot: '#DC2626', label: 'Token invalide' }
     : status === 'connected'
@@ -371,17 +378,24 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
         </div>
       </div>
 
-{/* « Token invalide » tient en deux mots et n'indique aucune issue. Ce bandeau
-    dit ce qui se passe, ce que ca ne casse pas, et ou trouver le detail. */}
-{refusReel && (
+{/* « Token invalide » tient en deux mots et n'indique aucune issue. Ce
+    bandeau dit d'abord la seule chose qui compte quand la page parait vide :
+    ce n'est PAS une perte. Le fondateur a cru ses donnees disparues alors que
+    ses 80 Ko etaient intacts en base — c'est l'ecran qui se taisait. */}
+{refusReel ? (
   <div className="doc-alerte" role="alert">
-    <strong>Connexion au serveur temps-réel refusée.</strong>{' '}
-    Le jeton du BOS ne correspond plus à celui du serveur de collaboration.
-    Les modifications faites maintenant ne seront pas partagées — <b>rien n&apos;est perdu</b>,
-    la page enregistrée reste intacte.{' '}
+    <strong>Ce n&apos;est pas ta page — rien n&apos;est perdu.</strong>{' '}
+    La connexion au serveur temps-réel est refusée, donc ton contenu n&apos;a pas pu être chargé
+    et l&apos;éditeur affiche une page vierge. <b>Ta vraie page est intacte</b> ; elle réapparaîtra
+    dès la connexion rétablie. L&apos;édition est verrouillée en attendant, pour qu&apos;aucune saisie
+    ne se perde.{' '}
     <a href="/api/ops/workspace/diagnostic" target="_blank" rel="noopener noreferrer">Voir le diagnostic complet</a>
   </div>
-)}
+) : !contenuRecu ? (
+  <div className="doc-alerte doc-alerte-attente" role="status">
+    Chargement de ton contenu depuis le serveur… l&apos;édition s&apos;ouvrira dès qu&apos;il sera arrivé.
+  </div>
+) : null}
 
       <div className="doc-body">
         <div className={`doc-surface${wide ? ' wide' : ''}`} style={{ '--doc-zoom': zoom } as React.CSSProperties}>
@@ -431,7 +445,14 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
               </div>
             )}
 
-            <BlockNoteView editor={editor} theme="light" />
+            {/* LECTURE SEULE TANT QUE LE CONTENU DU SERVEUR N'EST PAS ARRIVE.
+                Quand la connexion echoue, BlockNote n'a rien recu et affiche un
+                document VIDE -- le fondateur a cru ses donnees perdues alors que
+                ses 80 Ko etaient intacts en base. Pire, l'editeur restait
+                modifiable : ce qu'on y tape part dans ce document vide et
+                fusionnerait en doublons a la reconnexion. Tant que l'etat
+                serveur n'est pas la, on ne laisse rien ecrire. */}
+            <BlockNoteView editor={editor} theme="light" editable={contenuRecu} />
           </div>
 
           {/* Safe previews (derived from the doc's file blocks, not stored in it) */}
@@ -527,7 +548,11 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
         .doc-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 16px; border-bottom: 1px solid var(--line-soft); background: var(--bg-1, #fff); position: sticky; top: 0; z-index: 3; flex-wrap: wrap; }
         .doc-title { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; font-weight: 700; color: var(--tx-hi); min-width: 0; flex: 1; }
         .doc-title-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 340px; }
-        .doc-tools { display: inline-flex; align-items: center; gap: 10px; }
+        /* Sans repli, les sept commandes tiennent sur une ligne de 410px et forcent
+           toute la carte a 444px dans un ecran de 390 : la barre debordait, et
+           avec elle le document entier, rogne par l'overflow hidden de la carte.
+           La barre savait deja se replier ; ses outils, non. */
+        .doc-tools { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
         .doc-status { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 700; padding: 4px 11px; border-radius: 999px; white-space: nowrap; }
         .doc-dot { width: 7px; height: 7px; border-radius: 50%; }
         .doc-peers { display: inline-flex; }
@@ -563,6 +588,7 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
         .doc-page:hover .doc-cover-add { opacity: 1; }
         .doc-cover-add:hover { background: var(--bg-2); color: var(--tx-hi); }
         .doc-alerte { padding: 10px 16px; background: var(--red-bg, #fee2e2); color: var(--tx-hi); border-bottom: 1px solid var(--line-soft); font-size: 13px; line-height: 1.55; }
+        .doc-alerte-attente { background: var(--amber-bg, #fffbeb); }
         .doc-alerte a { color: inherit; text-decoration: underline; font-weight: 600; }
         .doc-h1 { display: block; width: 100%; border: none; background: transparent; font-family: var(--font-serif, Georgia, serif); font-size: 38px; font-weight: 800; line-height: 1.12; color: var(--tx-hi); outline: none; padding: 8px 0 2px; margin-bottom: 4px; letter-spacing: -.01em; }
         .doc-h1::placeholder { color: var(--tx-faint); }
