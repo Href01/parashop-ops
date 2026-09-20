@@ -113,7 +113,23 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
   const { doc, provider } = useMemo(() => {
     const doc = new Y.Doc()
     const wsUrl = (url || '').replace(/^http(s?):\/\//i, (_m, s) => (s ? 'wss://' : 'ws://')).replace(/\/+$/, '')
-    const provider = new HocuspocusProvider({ url: wsUrl, name: docName, token, document: doc })
+    /* LES DEUX VERDICTS D'AUTHENTIFICATION SE DECLARENT ICI, PAS DANS UN EFFET.
+       Le provider se connecte des sa construction, pendant le rendu ; les
+       ecouteurs poses par `useEffect` n'arrivent qu'apres. Quand le serveur
+       refuse vite -- et Render refuse en quelques dizaines de millisecondes --
+       « authenticationFailed » etait emis avant que quiconque n'ecoute. Le
+       badge « Token invalide » existait donc sans jamais pouvoir s'afficher, et
+       l'ecran restait sur « Connexion… » indefiniment : la panne la plus
+       probable etait aussi la seule muette.
+       Passes en options du constructeur, ils ne peuvent plus etre manques. */
+    const provider = new HocuspocusProvider({
+      url: wsUrl,
+      name: docName,
+      token,
+      document: doc,
+      onAuthenticationFailed: () => setAuthFailed(true),
+      onAuthenticated: () => setAuthFailed(false),
+    })
     return { doc, provider }
   }, [url, token, docName])
 
@@ -306,7 +322,14 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
   const openHistory = () => { setCommentsOpen(false); setHistoryOpen((v) => !v) }
   const vAgo = (iso: string) => new Date(iso).toLocaleString('fr-FR', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
 
-  const st = authFailed
+  /* UN REFUS NE COMPTE QUE SI LA CONNEXION N'EST PAS ETABLIE.
+     Le provider peut emettre « authenticated » puis « authenticationFailed »
+     dans la meme session -- constate sur un serveur qui n'exige aucun jeton :
+     se fier au seul dernier evenement affichait « Token invalide » sur une
+     liaison parfaitement saine. L'etat de connexion, lui, ne ment pas : un
+     refus d'authentification empeche TOUJOURS d'etre connecte. */
+  const refusReel = authFailed && status !== 'connected'
+  const st = refusReel
     ? { fg: 'var(--red, #dc2626)', bg: 'var(--red-bg, #fee2e2)', dot: '#DC2626', label: 'Token invalide' }
     : status === 'connected'
       ? { fg: 'var(--green)', bg: 'var(--green-bg)', dot: '#16A34A', label: 'En ligne' }
@@ -347,6 +370,18 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
           <span className="doc-help" title="Tape « / » pour insérer. Glisse une image → aperçu inline. Glisse un PDF → clique dessus pour l'ouvrir en aperçu.">?</span>
         </div>
       </div>
+
+{/* « Token invalide » tient en deux mots et n'indique aucune issue. Ce bandeau
+    dit ce qui se passe, ce que ca ne casse pas, et ou trouver le detail. */}
+{refusReel && (
+  <div className="doc-alerte" role="alert">
+    <strong>Connexion au serveur temps-réel refusée.</strong>{' '}
+    Le jeton du BOS ne correspond plus à celui du serveur de collaboration.
+    Les modifications faites maintenant ne seront pas partagées — <b>rien n&apos;est perdu</b>,
+    la page enregistrée reste intacte.{' '}
+    <a href="/api/ops/workspace/diagnostic" target="_blank" rel="noopener noreferrer">Voir le diagnostic complet</a>
+  </div>
+)}
 
       <div className="doc-body">
         <div className={`doc-surface${wide ? ' wide' : ''}`} style={{ '--doc-zoom': zoom } as React.CSSProperties}>
@@ -527,6 +562,8 @@ export default function Editor({ url, token, user, page, onRename, onSetCover }:
         .doc-cover-add { opacity: 0; transition: opacity .15s; font-size: 12px; font-weight: 600; color: var(--tx-lo); background: transparent; border: 0; cursor: pointer; padding: 5px 8px; border-radius: 7px; }
         .doc-page:hover .doc-cover-add { opacity: 1; }
         .doc-cover-add:hover { background: var(--bg-2); color: var(--tx-hi); }
+        .doc-alerte { padding: 10px 16px; background: var(--red-bg, #fee2e2); color: var(--tx-hi); border-bottom: 1px solid var(--line-soft); font-size: 13px; line-height: 1.55; }
+        .doc-alerte a { color: inherit; text-decoration: underline; font-weight: 600; }
         .doc-h1 { display: block; width: 100%; border: none; background: transparent; font-family: var(--font-serif, Georgia, serif); font-size: 38px; font-weight: 800; line-height: 1.12; color: var(--tx-hi); outline: none; padding: 8px 0 2px; margin-bottom: 4px; letter-spacing: -.01em; }
         .doc-h1::placeholder { color: var(--tx-faint); }
 

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import BosShell from '@/components/BosShell'
+import Diagnostic from './Diagnostic'
 import { Plus, Trash2, FileText, Search, PanelLeftClose, PanelLeft } from 'lucide-react'
 
 const Editor = dynamic(() => import('./Editor'), {
@@ -171,8 +172,16 @@ export default function WorkspacePage() {
   const searchResults = q ? pages.filter((p) => (p.title || '').toLowerCase().includes(q)) : null
 
   if (loading) return <BosShell active="workspace" title="Espace collaboratif" crumb="Équipe"><div style={{ padding: 24 }}><div className="card-modern" style={{ padding: 24, minHeight: 200 }}><div className="skeleton-line" style={{ width: '30%', height: 14 }} /></div></div></BosShell>
-  if (err === 'config') return <BosShell active="workspace" title="Espace collaboratif" crumb="Équipe"><div style={{ maxWidth: 620, margin: '30px auto', padding: '0 18px' }}><div className="card-modern" style={{ padding: 26, borderLeft: '3px solid var(--amber)' }}><div style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 6 }}>Serveur temps-réel non configuré</div><p className="fs13 tx-mid" style={{ margin: 0, lineHeight: 1.6 }}>Ajoute <b>NEXT_PUBLIC_REALTIME_URL</b> et <b>REALTIME_TOKEN</b> dans Vercel (ops), puis redéploie.</p></div></div></BosShell>
-  if (err) return <BosShell active="workspace" title="Espace collaboratif" crumb="Équipe"><div style={{ padding: 24 }}><div className="card-modern" style={{ padding: 24, borderLeft: '3px solid var(--red, #dc2626)' }}><p className="fs13 tx-mid" style={{ margin: 0 }}>Accès non autorisé. Reconnecte-toi au BOS.</p></div></div></BosShell>
+  /* UN SEUL ECRAN, QUI DIT CE QUI BLOQUE. Les deux precedents donnaient un
+     conseil fixe — « ajoute ces deux variables » — qui etait faux des que la
+     cause etait une session expiree ou un jeton devenu different. */
+  if (err) return (
+    <BosShell active="workspace" title="Espace collaboratif" crumb="Équipe">
+      <div style={{ maxWidth: 680, margin: '30px auto', padding: '0 18px' }}>
+        <Diagnostic cas={err} />
+      </div>
+    </BosShell>
+  )
 
   return (
     <BosShell active="workspace" title="Espace collaboratif" crumb="Équipe">
