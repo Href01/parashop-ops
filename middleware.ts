@@ -30,6 +30,22 @@ export async function middleware(req: NextRequest) {
   )
   if (cronAuthorized) return NextResponse.next()
 
+  /* Le serveur de collaboration n'a ni cookie ni session : il s'authentifie
+     avec le meme REALTIME_TOKEN que les clients WebSocket lui presentent.
+     Strictement limite a la route des documents — ce jeton donne deja acces a
+     tous les documents par le WebSocket, il n'ouvre donc rien de plus.
+     Raison d'etre : ce serveur n'atteint plus sa propre base depuis le
+     2026-07-20 ; en passant par le BOS il redevient utilisable sans dependre
+     de sa DATABASE_URL. */
+  const jetonRealtime = process.env.REALTIME_TOKEN
+  if (
+    jetonRealtime
+    && pathname.startsWith('/api/ops/workspace/state')
+    && req.headers.get('authorization') === `Bearer ${jetonRealtime}`
+  ) {
+    return NextResponse.next()
+  }
+
   // Public storefront endpoints (cross-origin, intentionally open) — bypass
   // both the shared gate and the founder session. e.g. /api/public/districts
   // is consumed by the shinecosmetics.ma checkout.

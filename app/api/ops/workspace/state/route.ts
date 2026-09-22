@@ -21,9 +21,16 @@ import pool from '@/lib/db'
  */
 export const dynamic = 'force-dynamic'
 
-export async function GET(req: NextRequest) {
+/** Session du fondateur, OU le serveur de collaboration avec son jeton partage. */
+async function autorise(req: NextRequest): Promise<boolean> {
+  const jeton = process.env.REALTIME_TOKEN
+  if (jeton && req.headers.get('authorization') === `Bearer ${jeton}`) return true
   const s = await getServerSession(authOptions)
-  if (!s?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  return Boolean(s?.user?.email)
+}
+
+export async function GET(req: NextRequest) {
+  if (!(await autorise(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const name = req.nextUrl.searchParams.get('name') || ''
   if (!/^page:\d+$/.test(name)) return NextResponse.json({ error: 'bad_name' }, { status: 400 })
@@ -53,10 +60,24 @@ export async function GET(req: NextRequest) {
  * du client tel quel ferait perdre ce qu'un autre aurait ajoute entre-temps.
  */
 export async function POST(req: NextRequest) {
-  const s = await getServerSession(authOptions)
-  if (!s?.user?.email) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await autorise(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { name, update } = await req.json().catch(() => ({}))
+  const corps = await req.json().catch(() => ({}))
+
+  /* Le battement du serveur de collaboration : il dit « je tourne, et voici
+     depuis quand ». Il passe par ici parce que sa propre base ne lui repond
+     plus — c'est justement ce qu'on cherche a constater. */
+  if (corps?.heartbeat === true) {
+    await pool.query(
+      `INSERT INTO "RealtimeHeartbeat" (id, "beatAt", "startedAt", version)
+       VALUES (1, NOW(), $1, $2)
+       ON CONFLICT (id) DO UPDATE SET "beatAt" = NOW(), "startedAt" = EXCLUDED."startedAt", version = EXCLUDED.version`,
+      [corps.startedAt ? new Date(corps.startedAt) : null, String(corps.version || '').slice(0, 40)]
+    )
+    return NextResponse.json({ ok: true }, { headers: { 'Cache-Control': 'no-store' } })
+  }
+
+  const { name, update } = corps
   if (!/^page:\d+$/.test(String(name || ''))) return NextResponse.json({ error: 'bad_name' }, { status: 400 })
   if (typeof update !== 'string' || !update) return NextResponse.json({ error: 'bad_update' }, { status: 400 })
 

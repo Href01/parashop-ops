@@ -23,6 +23,33 @@ const pool = new Pool({
 
 const TOKEN = process.env.REALTIME_TOKEN || ''
 
+/**
+ * PASSER PAR LE BOS PLUTOT QUE PAR SA PROPRE BASE.
+ *
+ * Ce serveur lisait et ecrivait "WorkspaceDoc" en direct. Le 2026-07-20 il a
+ * cesse d'y arriver -- sa DATABASE_URL n'est plus valable, Neon faisant
+ * tourner ses points d'acces -- et plus rien n'a ete charge ni enregistre,
+ * en silence, pendant deux mois : il acceptait toujours les connexions, donc
+ * rien ne paraissait casse.
+ *
+ * Le BOS, lui, atteint cette base sans probleme. On lui delegue donc les deux
+ * operations, authentifie par le meme REALTIME_TOKEN que les clients
+ * presentent deja. Une seule variable a tenir a jour au lieu de deux, et la
+ * plus fragile des deux disparait.
+ *
+ * Postgres reste le chemin de repli si BOS_URL n'est pas defini, pour qu'une
+ * installation locale continue de fonctionner sans rien configurer.
+ */
+const BOS = (process.env.BOS_URL || 'https://ops.shinecosmetics.ma').replace(/\/+$/, '')
+const viaBos = async (chemin, options = {}) => {
+  const r = await fetch(`${BOS}/api/ops/workspace/state${chemin}`, {
+    ...options,
+    headers: { Authorization: `Bearer ${TOKEN}`, 'Content-Type': 'application/json', ...(options.headers || {}) },
+  })
+  if (!r.ok) throw new Error(`BOS ${r.status}`)
+  return r.json()
+}
+
 const server = Server.configure({
   port: Number(process.env.PORT) || 3001,
   address: '0.0.0.0',
@@ -37,16 +64,29 @@ const server = Server.configure({
     new Database({
       // Load the stored CRDT state for a document (null = brand new doc).
       fetch: async ({ documentName }) => {
-        const r = await pool.query('SELECT data FROM "WorkspaceDoc" WHERE name = $1', [documentName])
-        return r.rows[0]?.data ? new Uint8Array(r.rows[0].data) : null
+        try {
+          const { state } = await viaBos(`?name=${encodeURIComponent(documentName)}`)
+          return state ? new Uint8Array(Buffer.from(state, 'base64')) : null
+        } catch (e) {
+          console.error('[shine-realtime] lecture par le BOS impossible, repli Postgres :', e.message)
+          const r = await pool.query('SELECT data FROM "WorkspaceDoc" WHERE name = $1', [documentName])
+          return r.rows[0]?.data ? new Uint8Array(r.rows[0].data) : null
+        }
       },
       // Persist the latest CRDT state (Hocuspocus debounces the calls).
       store: async ({ documentName, state }) => {
-        await pool.query(
-          `INSERT INTO "WorkspaceDoc" (name, data, "updatedAt") VALUES ($1, $2, now())
-           ON CONFLICT (name) DO UPDATE SET data = EXCLUDED.data, "updatedAt" = now()`,
-          [documentName, Buffer.from(state)]
-        )
+        try {
+          // Le BOS FUSIONNE l'etat recu avec le stocke : aucune ecriture ne
+          // peut effacer ce qu'un autre editeur aurait ajoute entre-temps.
+          await viaBos('', { method: 'POST', body: JSON.stringify({ name: documentName, update: Buffer.from(state).toString('base64') }) })
+        } catch (e) {
+          console.error('[shine-realtime] ecriture par le BOS impossible, repli Postgres :', e.message)
+          await pool.query(
+            `INSERT INTO "WorkspaceDoc" (name, data, "updatedAt") VALUES ($1, $2, now())
+             ON CONFLICT (name) DO UPDATE SET data = EXCLUDED.data, "updatedAt" = now()`,
+            [documentName, Buffer.from(state)]
+          )
+        }
       },
     }),
   ],
@@ -72,12 +112,7 @@ const server = Server.configure({
 const DEMARRE_A = new Date()
 async function battement() {
   try {
-    await pool.query(
-      `INSERT INTO "RealtimeHeartbeat" (id, "beatAt", "startedAt", version)
-       VALUES (1, NOW(), $1, $2)
-       ON CONFLICT (id) DO UPDATE SET "beatAt" = NOW(), "startedAt" = EXCLUDED."startedAt", version = EXCLUDED.version`,
-      [DEMARRE_A, process.version]
-    )
+    await viaBos('', { method: 'POST', body: JSON.stringify({ heartbeat: true, startedAt: DEMARRE_A, version: process.version }) })
   } catch (e) {
     console.error('[shine-realtime] base INJOIGNABLE pour le battement :', e.message)
   }
