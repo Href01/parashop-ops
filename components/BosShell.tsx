@@ -25,6 +25,7 @@ import {
   Users,
   Warehouse,
   X,
+  Handshake,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Link from 'next/link'
@@ -62,6 +63,7 @@ const sections: Array<{ label: string; items: NavItem[] }> = [
       { label: 'Produits', href: '/products', icon: Box },
       { label: 'Stock & Réappro', href: '/inventory', icon: Warehouse },
       { label: 'Prix & Marges', href: '/prices', icon: Tag },
+      { label: 'Partenaires', href: '/partenaires', icon: Handshake },
     ],
   },
   {
@@ -106,7 +108,7 @@ export default function BosShell({
   crumb,
   children,
 }: {
-  active: 'dashboard' | 'intelligence' | 'activity' | 'analytics' | 'orders' | 'sendit' | 'products' | 'customers' | 'inventory' | 'prices' | 'leads' | 'restock' | 'campaigns' | 'ads' | 'events' | 'content' | 'work' | 'workspace' | 'guide' | 'settings' | 'health'
+  active: 'dashboard' | 'intelligence' | 'activity' | 'analytics' | 'orders' | 'sendit' | 'products' | 'customers' | 'inventory' | 'prices' | 'partenaires' | 'leads' | 'restock' | 'campaigns' | 'ads' | 'events' | 'content' | 'work' | 'workspace' | 'guide' | 'settings' | 'health'
   title: string
   crumb: string
   children: ReactNode

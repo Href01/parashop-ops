@@ -71,8 +71,8 @@ interface DashboardStats {
 }
 
 interface DashboardPnl {
-  rentabilite: { caLivre: number; profitLivre: number; margeLivree: number; pub: number; emballage: number; retours: number; net: number; marginPct: number }
-  tresorerie: { encaisse: number; achats: number; pub: number; emballage: number; emballageEstime: boolean; frais: number; retours: number; net: number }
+  rentabilite: { caLivre: number; profitLivre: number; margeLivree: number; pub: number; emballage: number; retours: number; depotVente?: number; net: number; marginPct: number }
+  tresorerie: { encaisse: number; achats: number; pub: number; emballage: number; emballageEstime: boolean; frais: number; retours: number; depotVente?: number; net: number }
   packagingRate: number
   deliveredParcels: number
 }
@@ -544,6 +544,7 @@ export default function GlowDashboard() {
                   <PnlRow label="Pub" value={-r.pub} neg />
                   <PnlRow label="Emballage" sub={`${activePnl.deliveredParcels} colis × ${activePnl.packagingRate} DH`} value={-r.emballage} neg />
                   {r.retours > 0 && <PnlRow label="Retours / échanges" sub="frais livraison retour" value={-r.retours} neg />}
+                  {(r.depotVente ?? 0) !== 0 && <PnlRow label="Dépôt-vente" sub="part du partenaire + frais du partenariat" value={-(r.depotVente ?? 0)} neg />}
                   <PnlRow label="Profit net" value={r.net} total pct={r.marginPct} />
                 </div>
                 <div className="card-modern g-stagger" style={{ background: 'var(--bg-1)', padding: 16 }}>
@@ -554,6 +555,7 @@ export default function GlowDashboard() {
                   <PnlRow label="Emballage" sub={t.emballageEstime ? 'estimé · colis × taux' : 'réel loggé'} value={-t.emballage} neg />
                   {t.frais > 0 && <PnlRow label="Dépenses (frais divers)" value={-t.frais} neg />}
                   {t.retours > 0 && <PnlRow label="Retours / échanges" sub="frais livraison retour" value={-t.retours} neg />}
+                  {(t.depotVente ?? 0) !== 0 && <PnlRow label="Dépôt-vente" sub="versé au partenaire + frais payés par Shine" value={-(t.depotVente ?? 0)} neg />}
                   <PnlRow label="Cash net généré" value={t.net} total />
                 </div>
               </div>

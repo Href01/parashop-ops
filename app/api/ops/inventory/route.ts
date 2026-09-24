@@ -110,6 +110,7 @@ export async function GET(request: NextRequest) {
           COALESCE(p."importUnavailable", false) AS "importUnavailable",
           p."reorderPoint", p."reorderQuantity", p."stockStatus",
           p.supplier, p."supplierSKU", p."lastRestockDate", p."costPrice",
+          p."partnerId",
           p."weeklySales", p."monthlyRevenue", p."profitMargin",
           COALESCE(d.committed, 0) AS committed,
           COALESCE(d.to_ship, 0) AS "toShip",
@@ -302,6 +303,14 @@ export async function GET(request: NextRequest) {
       items: r.items || [],
     }))
 
+    /* LE STOCK EN DEPOT-VENTE N'EST PAS A SHINE. Il est physiquement ici et se
+       gere ici, mais il appartient au partenaire : le compter dans la valeur
+       du stock gonflait le patrimoine de Shine de 17 325 DH, et le compter
+       dans le reassort presentait comme une depense de Shine un achat que le
+       partenaire fera lui-meme. Il reste visible produit par produit ; seuls
+       les TOTAUX de Shine l'excluent, et sa valeur s'affiche a part. */
+    const aShine = products.filter((p) => !p.partnerId)
+    const enDepot = products.filter((p) => p.partnerId)
     const summary = {
       totalProducts: products.length,
       // How the catalogue splits: truly stocked vs sourced-on-demand from the supplier.
@@ -309,7 +318,9 @@ export async function GET(request: NextRequest) {
       onDemandProducts: products.filter((p) => p.mode === 'on_demand').length,
       // Value counts PHYSICAL stock only, clamped at 0 — the virtual buffer and any
       // negative backorder never inflate (nor deflate) the real inventory value.
-      stockValue: products.reduce((s, p) => s + Math.max(0, p.stock) * (p.costPrice || 0), 0),
+      stockValue: aShine.reduce((s, p) => s + Math.max(0, p.stock) * (p.costPrice || 0), 0),
+      partnerStockValue: enDepot.reduce((s, p) => s + Math.max(0, p.stock) * (p.costPrice || 0), 0),
+      partnerStockUnits: enDepot.reduce((s, p) => s + Math.max(0, p.stock), 0),
       // Shortages only count STOCKED products — an on-demand SKU at 0 is normal, not a shortage.
       shortages: products.filter((p) => p.mode === 'stock' && p.available < 0).length,
       // Low stock only for STOCKED products that actually sell and run short vs lead time.
@@ -320,16 +331,16 @@ export async function GET(request: NextRequest) {
       supplierBacked: products.filter((p) => p.stock <= 0 && p.virtualStock > 0).length,
       toShipOrders: toShip.length,
       toShipUnits: toShip.reduce((s, o) => s + o.units, 0),
-      reorderProducts: products.filter((p) => p.suggestedReorder > 0).length,
-      reorderValue: products.reduce((s, p) => s + p.suggestedReorder * (p.costPrice || 0), 0),
+      reorderProducts: aShine.filter((p) => p.suggestedReorder > 0).length,
+      reorderValue: aShine.reduce((s, p) => s + p.suggestedReorder * (p.costPrice || 0), 0),
       // Stock value AT SALE price + the margin locked in it (what the user asked for).
-      stockRetailValue: products.reduce((s, p) => s + p.retailValue, 0),
-      stockMarginValue: products.reduce((s, p) => s + p.marginValue, 0),
+      stockRetailValue: aShine.reduce((s, p) => s + p.retailValue, 0),
+      stockMarginValue: aShine.reduce((s, p) => s + p.marginValue, 0),
       // Revenue you're losing right now on out-of-stock / high-risk sellers (per lead time).
       revenueAtRisk: products.reduce((s, p) => s + p.revenueAtRisk, 0),
       // If you order all the suggestions: cash out (cost) vs sales/margin it unlocks.
-      reorderRetail: products.reduce((s, p) => s + p.suggestedReorder * (p.price || 0), 0),
-      reorderMargin: products.reduce((s, p) => s + p.suggestedReorder * (p.marginUnit || 0), 0),
+      reorderRetail: aShine.reduce((s, p) => s + p.suggestedReorder * (p.price || 0), 0),
+      reorderMargin: aShine.reduce((s, p) => s + p.suggestedReorder * (p.marginUnit || 0), 0),
     }
 
     const policy = { targetDays, leadDefault, leadTimes: leadMap }

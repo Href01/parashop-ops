@@ -6,6 +6,7 @@ import { isFounder } from '@/lib/auth'
 import pool from '@/lib/db'
 import { cached } from '@/lib/ops-cache'
 import { getWeeklyGoal, getMonthlyGoal } from '@/app/api/ops/settings/goal/route'
+import { ajustementDepotVente } from '@/lib/partner-ledger'
 
 const DAILY_REVENUE_GOAL = 6000
 const BUSINESS_TIMEZONE = 'Africa/Casablanca'
@@ -1111,9 +1112,22 @@ export async function GET(req: Request) {
     const deliveredParcels = hasSenditLedger ? senditDelivered.orders : realizedOrders
     const createdCash = hasSenditLedger ? senditCreatedCash : cashReceivedDelivered
     const treasuryCash = hasSenditLedger ? senditDeliveredCash : realizedCash
+    /* LE DEPOT-VENTE. Les ventes d'un stock partenaire sont comptees ici a 100 %,
+       alors que Shine n'en garde que sa part. On retire une seule ligne, calculee
+       par le meme moteur que le releve du partenaire (lib/partner-ledger.ts). */
+    const depot = await ajustementDepotVente(from, to)
+    const avecDepot = (p: ReturnType<typeof buildPnl>) => {
+      if (depot.part === 0 && depot.cash === 0) return { ...p, rentabilite: { ...p.rentabilite, depotVente: 0 }, tresorerie: { ...p.tresorerie, depotVente: 0 } }
+      const net = p.rentabilite.net - depot.part
+      return {
+        ...p,
+        rentabilite: { ...p.rentabilite, depotVente: depot.part, net, marginPct: p.rentabilite.caLivre > 0 ? (net / p.rentabilite.caLivre) * 100 : 0 },
+        tresorerie: { ...p.tresorerie, depotVente: depot.cash, net: p.tresorerie.net - depot.cash },
+      }
+    }
     const pnlByBasis = {
-      created: buildPnl(revenueDelivered, profitDelivered, createdCash, createdParcels),
-      delivered: buildPnl(realizedRevenue, realizedProfit, treasuryCash, deliveredParcels),
+      created: avecDepot(buildPnl(revenueDelivered, profitDelivered, createdCash, createdParcels)),
+      delivered: avecDepot(buildPnl(realizedRevenue, realizedProfit, treasuryCash, deliveredParcels)),
     }
     // Preserve the existing field for older clients; it remains the actual cash basis.
     const pnl = pnlByBasis.delivered

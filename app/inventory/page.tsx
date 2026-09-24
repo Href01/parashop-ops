@@ -35,7 +35,7 @@ type Product = {
 type ToShipItem = { productId: number; name: string; brand: string; qty: number; stock: number }
 type ToShipOrder = { id: number; customer: string; city: string; phone: string | null; status: string; created: string; units: number; canFulfill: boolean; items: ToShipItem[] }
 type Summary = {
-  totalProducts: number; stockValue: number; shortages: number; lowStock: number; outOfStock: number
+  totalProducts: number; stockValue: number; partnerStockValue?: number; partnerStockUnits?: number; shortages: number; lowStock: number; outOfStock: number
   toShipOrders: number; toShipUnits: number; reorderProducts: number; reorderValue: number
   stockRetailValue: number; stockMarginValue: number; revenueAtRisk: number; reorderRetail: number; reorderMargin: number
 }
@@ -402,7 +402,7 @@ export default function InventoryPage() {
               const marginPct = summary && summary.stockRetailValue > 0 ? Math.round((summary.stockMarginValue / summary.stockRetailValue) * 100) : 0
               return (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4 inv-stagger">
-                  <Kpi tone="violet" icon={<DollarSign />} label="Valeur (coût)" amount={summary?.stockValue || 0} format="money" sub="prix d'achat du stock" />
+                  <Kpi tone="violet" icon={<DollarSign />} label="Valeur (coût)" amount={summary?.stockValue || 0} format="money" sub={(summary?.partnerStockValue || 0) > 0 ? `stock de Shine · hors dépôt-vente ${money(summary?.partnerStockValue || 0)}` : "prix d'achat du stock"} />
                   <Kpi tone="green" icon={<DollarSign />} label="Valeur (vente)" amount={summary?.stockRetailValue || 0} format="money" sub={`marge ${money(summary?.stockMarginValue || 0)} · ${marginPct}%`} />
                   <Kpi tone="red" icon={<TrendingDown />} label="CA à risque" amount={summary?.revenueAtRisk || 0} format="money" sub="ventes perdues (ruptures)" alert={(summary?.revenueAtRisk || 0) > 0} />
                   <Kpi tone="red" icon={<XCircle />} label="Ruptures" amount={summary?.shortages || 0} format="int" sub="commandé > stock" alert={(summary?.shortages || 0) > 0} />
