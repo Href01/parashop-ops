@@ -53,6 +53,9 @@ export const SENS: Record<string, { label: string; famille: Famille }> = {
   CMS_BLOCK_IMPRESSION: { label: 'Voit un bloc éditorial', famille: 'decouverte' },
   CMS_BLOCK_CLICK:      { label: 'Clique un bouton du Studio', famille: 'decouverte' },
   CMS_VOUCHER_COLLECT:  { label: 'Collecte un bon', famille: 'interet' },
+  CMS_MESSAGE_SHOWN:    { label: 'Voit un message de la boutique', famille: 'decouverte' },
+  CMS_MESSAGE_CLICK:    { label: 'Suit le conseil du message', famille: 'interet' },
+  CMS_MESSAGE_DISMISS:  { label: 'Ferme le message', famille: 'decouverte' },
   PRODUCT_CLICK:        { label: 'Clique un produit', famille: 'decouverte' },
   BRAND_VIEW:           { label: 'Parcourt une marque', famille: 'decouverte' },
   CLICK_BRAND:          { label: 'Clique une marque', famille: 'decouverte' },
@@ -139,6 +142,7 @@ export const SENS: Record<string, { label: string; famille: Famille }> = {
  */
 export const BRUIT = new Set([
   'CMS_BLOCK_IMPRESSION',
+  'CMS_MESSAGE_SHOWN',
   'PRODUCT_IMPRESSION',
   'SCROLL_DEPTH',
   'PAGE_VIEW_DURATION',
@@ -220,6 +224,15 @@ const CONTEXTE: Record<string, string> = {
 export function detail(e: Evenement): string | null {
   const p = e.props || {}
   const morceaux: Array<string | null> = []
+  const experience = p.pageExperience
+  if (experience && typeof experience === 'object') {
+    const x = experience as Record<string, unknown>
+    if (typeof x.pageModelId === 'string' && /^[a-z0-9][a-z0-9_-]{0,79}$/.test(x.pageModelId)) {
+      morceaux.push(`modèle ${x.pageModelId}`)
+      if (typeof x.revisionNo === 'number' && Number.isSafeInteger(x.revisionNo) && x.revisionNo > 0) morceaux.push(`publication v${x.revisionNo}`)
+      if (typeof x.templateRevisionNo === 'number' && Number.isSafeInteger(x.templateRevisionNo) && x.templateRevisionNo > 0) morceaux.push(`gabarit v${x.templateRevisionNo}`)
+    }
+  }
   const nom = txt(p.name)
 
   switch (e.name) {
@@ -439,11 +452,21 @@ export function detail(e: Evenement): string | null {
       if (e.name === 'CMS_VOUCHER_COLLECT') morceaux.push('bon retenu — pas une remise appliquée ni une vente')
       break
     }
+    case 'CMS_MESSAGE_SHOWN':
+    case 'CMS_MESSAGE_CLICK':
+    case 'CMS_MESSAGE_DISMISS':
+      morceaux.push(txt(p.scope), txt(p.messageId))
+      break
     case 'CLICK_UI':
     case 'DEAD_CLICK':
     case 'RAGE_CLICK': {
       // On affiche ET le label ET l'id pour mieux identifier l'élément.
       const label = propre(p.label)
+      if (p.component === 'studio_event') {
+        const action = p.action === 'shown' ? 'affiché' : p.action === 'dismissed' ? 'fermé' : p.action === 'clicked' ? 'cliqué' : ''
+        morceaux.push(`message ${action} · ancien suivi`, txt(p.messageId), txt(p.scope))
+        break
+      }
       const id = txt(p.id)
       const balise: Record<string, string> = { a: 'lien', button: 'bouton', input: 'champ', select: 'liste' }
       const t = txt(p.tag)

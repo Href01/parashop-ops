@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
 import { tableExists } from '@/lib/ops-schema'
+import { EVENT_STATUS_SQL } from '@/lib/event-status'
 
 /**
  * GET /api/ops/events
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest) {
       startDate: 'e."startDate"',
       endDate: 'e."endDate"',
       name: 'e."name"',
-      status: 'e."status"',
+      status: EVENT_STATUS_SQL,
       type: 'e."type"',
     }
     const sortColumn = sortColumns[sort] || sortColumns.startDate
@@ -45,7 +46,7 @@ export async function GET(request: NextRequest) {
     let paramIndex = 1
 
     if (status) {
-      conditions.push(`e.status = $${paramIndex}`)
+      conditions.push(`(${EVENT_STATUS_SQL}) = $${paramIndex}`)
       values.push(status)
       paramIndex++
     }
@@ -75,11 +76,7 @@ export async function GET(request: NextRequest) {
           FROM "EventProduct" ep
           WHERE ep."eventId" = e.id
         ) as "productsCount",
-        CASE
-          WHEN CURRENT_DATE < e."startDate"::date THEN 'Upcoming'
-          WHEN CURRENT_DATE > e."endDate"::date THEN 'Completed'
-          ELSE 'Active'
-        END as "computedStatus"
+        ${EVENT_STATUS_SQL} as "computedStatus"
       FROM "Event" e
       LEFT JOIN "EventMetrics" em ON em."eventId" = e.id
       ${whereClause}
