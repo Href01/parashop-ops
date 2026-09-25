@@ -416,6 +416,7 @@ export function DimensionTable({
 export const MODULES = [
   { href: '/analytics', label: "Vue d'ensemble" },
   { href: '/analytics/acquisition', label: 'Acquisition' },
+  { href: '/analytics/seo', label: 'SEO Insights' },
   { href: '/analytics/engagement', label: 'Engagement' },
   { href: '/analytics/conversion', label: 'Conversion' },
   { href: '/analytics/retention', label: 'Rétention' },

@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useRef } from 'react'
 import { MODULES } from './Report'
 import { V } from './Viz'
+import { analyticsModuleHref } from '@/lib/analytics/navigation'
 
 /**
  * Navigation par CYCLE DE VIE, façon GA4 : acquisition → engagement →
@@ -20,7 +21,6 @@ import { V } from './Viz'
 export default function AnalyticsNav() {
   const pathname = usePathname()
   const sp = useSearchParams()
-  const suffixe = sp.toString() ? `?${sp.toString()}` : ''
   const navRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
@@ -38,7 +38,7 @@ export default function AnalyticsNav() {
         return (
           <Link
             key={m.href}
-            href={`${m.href}${suffixe}`}
+            href={analyticsModuleHref(pathname, m.href, sp.toString())}
             aria-current={actif ? 'page' : undefined}
             className="min-h-10 px-3 py-2 text-[13px] font-medium whitespace-nowrap border-b-2 -mb-px transition-colors"
             style={{ borderColor: actif ? V.ink : 'transparent', color: actif ? V.ink : V.muted }}

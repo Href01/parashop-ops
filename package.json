@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "type-check": "tsc --noEmit",
     "test:analytics": "node --import tsx --test tests/analytics/*.test.ts",
+    "test:seo": "node --import tsx --test tests/seo/*.test.ts",
     "compute-metrics": "node scripts/compute-product-metrics.js"
   },
   "dependencies": {
@@ -19,9 +20,11 @@
     "@blocknote/react": "^0.51.4",
     "@hocuspocus/provider": "^2.15.3",
     "bcryptjs": "^3.0.3",
+    "cheerio": "^1.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
+    "google-auth-library": "^11.1.0",
     "lucide-react": "^1.17.0",
     "next": "^16.3.4",
     "next-auth": "^4.24.15",
@@ -37,6 +40,7 @@
     "zod": "^3.24.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.8",
     "@tailwindcss/postcss": "^4",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
