@@ -1,3 +1,4 @@
+.pairPage { display: block; margin-top: 4px; font-weight: 400; font-size: 11px; color: #57665f; overflow-wrap: anywhere; }
 .page {
   max-width: 1140px;
   margin: auto;

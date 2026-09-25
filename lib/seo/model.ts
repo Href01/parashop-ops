@@ -26,6 +26,8 @@ export type Metrics = {
 }
 export type Comparison = {
   key: string
+  query?: string
+  page?: string
   current: Metrics
   previous: Metrics
   positionDelta: number | null
@@ -168,22 +170,25 @@ export function makeReport(
   const summaryRows = selected.filter((r) => r.dataset === summaryDataset)
   const current = sumMetrics(summaryRows.filter((r) => r.day >= start))
   const previous = sumMetrics(summaryRows.filter((r) => r.day < start))
-  const group = (field: 'query' | 'page', dataset: Dataset) => {
+  const group = (field: 'query' | 'page' | 'pair', dataset: Dataset): Comparison[] => {
     const groups = new Map<string, SearchRow[]>()
     for (const row of selected.filter((r) => r.dataset === dataset)) {
-      const list = groups.get(row[field]) ?? []
+      // JSON tuples cannot collide when a query contains a URL or separator.
+      const key = field === 'pair' ? JSON.stringify([row.query, row.page]) : row[field]
+      const list = groups.get(key) ?? []
       list.push(row)
-      groups.set(row[field], list)
+      groups.set(key, list)
     }
     return [...groups]
-      .map(([key, rs]) =>
-        comparison(
+      .map(([key, rs]) => ({
+        ...comparison(
           key,
           sumMetrics(rs.filter((r) => r.day >= start)),
           sumMetrics(rs.filter((r) => r.day < start)),
           comparable,
         ),
-      )
+        ...(field === 'pair' ? { query: rs[0].query, page: rs[0].page } : {}),
+      }))
       .sort(
         (a, b) =>
           b.current.impressions +
@@ -193,6 +198,7 @@ export function makeReport(
   }
   const queries = group('query', filters.page ? 'detail' : 'query')
   const pages = group('page', filters.query ? 'detail' : 'page')
+  const queryPages = group('pair', 'detail')
   const daily = daysBetween(start, end).map((day, i) => {
     const oldDay = shiftDay(previousStart, i)
     return {
@@ -217,6 +223,7 @@ export function makeReport(
     daily,
     queries,
     pages,
+    queryPages,
     comparable,
     missingSlices: missing.length,
     truncated,
@@ -238,14 +245,15 @@ export function csvCell(value: string | number | null) {
   if (typeof value === 'string' && /^[\s]*[=+@\-]/.test(text)) text = `'${text}`
   return `"${text.replace(/"/g, '""')}"`
 }
-export function reportCsv(rows: Comparison[]) {
+export function reportCsv(rows: Comparison[], pairs = false) {
   const header = [
-    'Terme / URL',
+    ...(pairs ? ['Requête', 'Page d’arrivée'] : ['Terme / URL']),
     'Clics',
     'Clics précédents',
     'Impressions',
     'Impressions précédentes',
     'CTR',
+    'CTR précédent',
     'Position moyenne',
     'Position précédente',
     'Écart position',
@@ -256,12 +264,13 @@ export function reportCsv(rows: Comparison[]) {
     [
       header,
       ...rows.map((r) => [
-        r.key,
+        ...(pairs ? [r.query ?? '', r.page ?? ''] : [r.key]),
         r.current.clicks,
         r.previous.clicks,
         r.current.impressions,
         r.previous.impressions,
         r.current.ctr,
+        r.previous.ctr,
         r.current.position,
         r.previous.position,
         r.positionDelta,

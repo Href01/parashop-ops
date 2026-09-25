@@ -132,7 +132,7 @@ export default function SeoDashboard() {
   const [loadedKey, setLoadedKey] = useState('')
   const [receivedAt, setReceivedAt] = useState(0)
   const [revision, setRevision] = useState(0)
-  const [tab, setTab] = useState<'query' | 'page' | 'health'>('query')
+  const [tab, setTab] = useState<'query' | 'page' | 'pair' | 'health'>('query')
   const [chartMetric, setChartMetric] = useState<
     'clicks' | 'impressions' | 'position'
   >('impressions')
@@ -212,7 +212,7 @@ export default function SeoDashboard() {
   const report = loading ? undefined : data?.report
   const rows = useMemo(() => {
     const list = [
-      ...(tab === 'page' ? (report?.pages ?? []) : (report?.queries ?? [])),
+      ...(tab === 'pair' ? (report?.queryPages ?? []) : tab === 'page' ? (report?.pages ?? []) : (report?.queries ?? [])),
     ]
     if (sort === 'loss')
       list.sort(
@@ -230,11 +230,11 @@ export default function SeoDashboard() {
   }, [report, tab, sort])
   function download() {
     const url = URL.createObjectURL(
-      new Blob([reportCsv(rows)], { type: 'text/csv;charset=utf-8' }),
+      new Blob([reportCsv(rows, tab === 'pair')], { type: 'text/csv;charset=utf-8' }),
     )
     const anchor = document.createElement('a')
     anchor.href = url
-    anchor.download = `shine-seo-${tab}-${report?.end || 'export'}.csv`
+    anchor.download = `shine-seo-${tab}-${days}j-${report?.end || 'export'}.csv`
     anchor.click()
     setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
@@ -662,6 +662,7 @@ export default function SeoDashboard() {
               [
                 ['query', 'Mots-clés'],
                 ['page', 'Pages'],
+                ['pair', 'Requêtes × pages'],
                 ['health', 'Santé technique'],
               ] as const
             ).map(([id, label]) => (
@@ -807,7 +808,7 @@ export default function SeoDashboard() {
               <table>
                 <thead>
                   <tr>
-                    <th>{tab === 'query' ? 'Mot-clé' : 'Page'}</th>
+                    <th>{tab === 'pair' ? 'Requête / page d’arrivée' : tab === 'query' ? 'Mot-clé' : 'Page'}</th>
                     <th>Clics</th>
                     <th>Impressions</th>
                     <th>CTR</th>
@@ -833,7 +834,9 @@ export default function SeoDashboard() {
                         <th>
                           <button
                             onClick={() => {
-                              if (tab === 'query') {
+                              if (tab === 'pair' && row.query && row.page) {
+                                updateFilters({ query: row.query, page: row.page, match: 'exact' })
+                              } else if (tab === 'query') {
                                 exactKeyword(row.key)
                               } else {
                                 filter('page', row.key)
@@ -841,12 +844,13 @@ export default function SeoDashboard() {
                               }
                             }}
                           >
-                            {tab === 'page'
+                            {tab === 'pair' ? row.query : tab === 'page'
                               ? row.key.replace(
                                   'https://www.shinecosmetics.ma',
                                   '',
                                 ) || '/'
                               : row.key}
+                            {tab === 'pair' && <small className={styles.pairPage}>{row.page?.replace('https://www.shinecosmetics.ma', '') || '/'}</small>}
                           </button>
                         </th>
                         <td>
@@ -865,7 +869,7 @@ export default function SeoDashboard() {
                               : 'comparaison en attente'}
                           </small>
                         </td>
-                        <td>{percent(row.current.ctr)}</td>
+                        <td>{percent(row.current.ctr)}<small>{report?.comparable ? `avant ${percent(row.previous.ctr)}` : 'comparaison en attente'}</small></td>
                         <td>
                           {number(row.current.position, 1)}
                           <small>
@@ -915,9 +919,11 @@ export default function SeoDashboard() {
               </div>
             </div>
             <p className={styles.method}>
-              Un clic sur un mot-clé affiche ses pages ; un clic sur une page
-              affiche ses mots-clés. Les recherches anonymisées et les limites
-              de Google empêchent une exhaustivité garantie.
+              {tab === 'pair'
+                ? `Chaque ligne compare une requête et sa page d’arrivée sur ${days} jours avec les ${days} jours précédents. Un clic isole ce couple. Ces lignes ne s’ajoutent pas aux totaux du site.`
+                : 'Un clic sur un mot-clé affiche ses pages ; un clic sur une page affiche ses mots-clés.'}
+              {' '}Les recherches anonymisées et les limites de Google empêchent une exhaustivité garantie.
+              {report && <> Données arrêtées au {day(report.end)} : les changements postérieurs ne sont pas encore mesurables. Ces périodes glissantes ne prouvent pas à elles seules l’effet d’une correction SEO.</>}
             </p>
           </>
         )}
