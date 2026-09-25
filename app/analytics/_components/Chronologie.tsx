@@ -51,7 +51,7 @@ export const SENS: Record<string, { label: string; famille: Famille }> = {
   /* Découvrir */
   PRODUCT_IMPRESSION:   { label: 'Voit un produit en rayon', famille: 'decouverte' },
   CMS_BLOCK_IMPRESSION: { label: 'Voit un bloc éditorial', famille: 'decouverte' },
-  CMS_BLOCK_CLICK:      { label: 'Clique un bouton du Studio', famille: 'decouverte' },
+  CMS_BLOCK_CLICK:      { label: 'Clique dans un bloc éditorial', famille: 'decouverte' },
   CMS_VOUCHER_COLLECT:  { label: 'Collecte un bon', famille: 'interet' },
   CMS_MESSAGE_SHOWN:    { label: 'Voit un message de la boutique', famille: 'decouverte' },
   CMS_MESSAGE_CLICK:    { label: 'Suit le conseil du message', famille: 'interet' },
@@ -72,6 +72,10 @@ export const SENS: Record<string, { label: string; famille: Famille }> = {
   PRODUCT_REVIEWS_OPENED:{ label: 'Lit les avis', famille: 'interet' },
   PRODUCT_CONTENT_SECTION_CLICK:{ label: 'Déplie une section', famille: 'interet' },
   PRODUCT_ADD_TO_WISHLIST:{ label: 'Met en favori', famille: 'interet' },
+  PRODUCT_REMOVE_FROM_WISHLIST:{ label: 'Retire des favoris', famille: 'interet' },
+  WHATSAPP_ORDER:       { label: 'Prépare une commande sur WhatsApp', famille: 'interet' },
+  WHATSAPP_SHARE:       { label: 'Partage sur WhatsApp', famille: 'interet' },
+  CLICK_LOYALTY_HISTORY:{ label: 'Consulte son historique de fidélité', famille: 'interet' },
   STICKY_CTA_SHOWN:     { label: 'Voit la barre d’achat', famille: 'interet' },
   VIEW_LOYALTY_CARD:    { label: 'Regarde sa carte de fidélité', famille: 'interet' },
 
@@ -86,17 +90,28 @@ export const SENS: Record<string, { label: string; famille: Famille }> = {
   /* Payer */
   CLICK_CHECKOUT_FROM_CART:{ label: 'Passe au paiement', famille: 'paiement' },
   BEGIN_CHECKOUT:       { label: 'Démarre le paiement', famille: 'paiement' },
+  BUY_NOW_CLICK:        { label: 'Clique sur Acheter maintenant', famille: 'paiement' },
+  CHECKOUT_EXITED:      { label: 'Sort du paiement (provisoire)', famille: 'paiement' },
+  CHECKOUT_FIELD_EXIT:  { label: 'Dernier champ avant la sortie', famille: 'paiement' },
   CHECKOUT_STEP:        { label: 'Avance dans le paiement', famille: 'paiement' },
+  CHECKOUT_BLOCK_VIEWED:{ label: 'Voit une partie du checkout', famille: 'paiement' },
+  CHECKOUT_FIELD_STARTED:{ label: 'Commence un champ', famille: 'paiement' },
+  CHECKOUT_FIELD_COMPLETED:{ label: 'Complète un champ', famille: 'paiement' },
+  CHECKOUT_FIELD_RECOVERED:{ label: 'Corrige un champ bloquant', famille: 'paiement' },
+  CHECKOUT_RESUMED:     { label: 'Reprend son brouillon', famille: 'paiement' },
+  CHECKOUT_SUBMIT_ATTEMPT:{ label: 'Tente de valider sa commande', famille: 'paiement' },
+  CHECKOUT_STOCK_BLOCKED:{ label: 'Bloquée par la disponibilité du panier', famille: 'friction' },
   DELIVERY_CITY_SELECTED:{ label: 'Choisit sa ville', famille: 'paiement' },
   DELIVERY_FEE_SHOWN:   { label: 'Voit les frais de livraison', famille: 'paiement' },
   ADD_PAYMENT_INFO:     { label: 'Saisit ses coordonnées', famille: 'paiement' },
   PROMO_CODE_APPLIED:   { label: 'Applique un code promo', famille: 'paiement' },
+  PROMO_CODE_REMOVED:   { label: 'Retire un code promo', famille: 'paiement' },
   USE_POINTS:           { label: 'Utilise ses points', famille: 'paiement' },
   OTP_REQUESTED:        { label: 'Demande le code', famille: 'paiement' },
   OTP_SENT:             { label: 'Code envoyé', famille: 'paiement' },
   OTP_SUBMITTED:        { label: 'Saisit le code', famille: 'paiement' },
   OTP_RESENT:           { label: 'Code renvoyé', famille: 'paiement' },
-  OTP_VERIFIED:         { label: 'Numéro vérifié', famille: 'commande' },
+  OTP_VERIFIED:         { label: 'Numéro vérifié', famille: 'paiement' },
   PLACE_ORDER:          { label: 'Envoie la commande', famille: 'paiement' },
 
   /* Commander */
@@ -116,6 +131,9 @@ export const SENS: Record<string, { label: string; famille: Famille }> = {
   CHECKOUT_CART_EMPTY:  { label: 'Paiement ouvert, panier vide', famille: 'friction' },
   PROMO_CODE_FAILED:    { label: 'Code promo refusé', famille: 'friction' },
   OTP_DELIVERY_FAILED:  { label: 'Échec de livraison du code', famille: 'friction' },
+  OTP_INVALID:          { label: 'Code de vérification refusé', famille: 'friction' },
+  OTP_SEND_FAILED:      { label: 'Échec d’envoi du code', famille: 'friction' },
+  CHECKOUT_FIELD_ERROR: { label: 'Erreur sur un champ du paiement', famille: 'friction' },
   SEARCH_ZERO_RESULTS:  { label: 'Ne trouve rien', famille: 'friction' },
   SEARCH_ABANDONED:     { label: 'Abandonne sa recherche', famille: 'friction' },
   RAGE_CLICK:           { label: 'Clics répétés · friction possible', famille: 'suspicion' },
@@ -188,7 +206,7 @@ const propre = (v: unknown, max = 120) => {
 /** Le motif d'un départ, en clair. Partagé par le détail et le diagnostic. */
 const MOTIF_DEPART: Record<string, string> = {
   visibility_hidden: 'a basculé sur autre chose',
-  beforeunload: 'a fermé la page',
+  beforeunload: 'a quitté ou rechargé la page',
   unmount: 'a quitté le tunnel',
   navigate: 'est partie ailleurs',
 }
@@ -201,7 +219,7 @@ const CHAMPS: Record<string, string> = {
 
 /** Les étapes du tunnel, en français. */
 const ETAPES: Record<string, string> = {
-  delivery: 'livraison', summary: 'récapitulatif',
+  basket: 'panier', delivery: 'livraison', summary: 'récapitulatif', confirmed: 'confirmation',
   contact: 'coordonnées', payment: 'paiement',
 }
 
@@ -210,6 +228,7 @@ const CONTEXTE: Record<string, string> = {
   category: 'rayon catégorie', home: 'accueil', brand: 'page marque',
   search: 'résultats de recherche', related: 'produits liés',
   cart: 'panier', checkout: 'paiement', bundle: 'pack',
+  'k-beauty': 'collection K-beauty',
 }
 
 /**
@@ -224,6 +243,11 @@ const CONTEXTE: Record<string, string> = {
 export function detail(e: Evenement): string | null {
   const p = e.props || {}
   const morceaux: Array<string | null> = []
+  if (typeof p.attemptId === 'string' && p.attemptId.startsWith('co_')) {
+    morceaux.push(txt(p.entrySurface) ? `entrée ${p.entrySurface}` : null, txt(p.source) ? `via ${p.source}` : null)
+    if (p.checkoutVersion === 'atelier-v1') morceaux.push('checkout compact v1')
+    if (typeof p.elapsedMs === 'number' && Number.isFinite(p.elapsedMs)) morceaux.push(`+${Math.round(p.elapsedMs / 1000)} s`)
+  }
   const experience = p.pageExperience
   if (experience && typeof experience === 'object') {
     const x = experience as Record<string, unknown>
@@ -275,11 +299,12 @@ export function detail(e: Evenement): string | null {
       const n = nb(p.resultsCount)
       morceaux.push(q ? `« ${q} »` : null)
       if (n != null) morceaux.push(n === 0 ? 'AUCUN résultat' : `${n} résultat${n > 1 ? 's' : ''}`)
+      if (txt(p.context)) morceaux.push(CONTEXTE[txt(p.context)!] ?? txt(p.context))
       if (e.name === 'SEARCH_ABANDONED') morceaux.push('repart sans cliquer')
       break
     }
     case 'SEARCH_ZERO_RESULTS':
-      morceaux.push(txt(p.query) ? `« ${txt(p.query)} » — le catalogue ne répond pas` : null)
+      morceaux.push(txt(p.query) ? `« ${txt(p.query)} » — ${p.source === 'catalog' ? 'aucun résultat avec ces filtres' : 'aucun résultat'}` : null)
       break
     case 'SEARCH_RESULT_CLICK':
       morceaux.push(nom, mad(p.price), txt(p.query) ? `cherché « ${txt(p.query)} »` : null)
@@ -392,6 +417,33 @@ export function detail(e: Evenement): string | null {
       if (champs.length) morceaux.push(`manque : ${champs.map((c) => CHAMPS[c] ?? c).join(', ')}`)
       break
     }
+    case 'CHECKOUT_EXITED':
+    case 'CHECKOUT_FIELD_EXIT': {
+      const c = txt(p.champ), s = txt(p.step)
+      if (e.name === 'CHECKOUT_FIELD_EXIT' && c) morceaux.push(`champ « ${CHAMPS[c] ?? c} »`)
+      morceaux.push(s ? `étape ${ETAPES[s] ?? s}` : null)
+      morceaux.push(txt(p.reason) ? (MOTIF_DEPART[txt(p.reason)!] ?? txt(p.reason)) : null)
+      morceaux.push(mad(p.cartValue) ? `${mad(p.cartValue)} au panier` : null)
+      morceaux.push('sortie observée · abandon non confirmé')
+      break
+    }
+    case 'CHECKOUT_FIELD_STARTED':
+    case 'CHECKOUT_FIELD_COMPLETED':
+    case 'CHECKOUT_FIELD_RECOVERED':
+    case 'CHECKOUT_FIELD_ERROR': {
+      const c = txt(p.champ), s = txt(p.step)
+      morceaux.push(c ? `champ « ${CHAMPS[c] ?? c} »` : null, s ? `étape ${ETAPES[s] ?? s}` : null)
+      morceaux.push(p.raison === 'vide' ? 'champ requis non renseigné' : txt(p.raison))
+      break
+    }
+    case 'CHECKOUT_BLOCK_VIEWED':
+      morceaux.push(({ review: 'panier', delivery: 'formulaire de livraison', promotions: 'codes et offres', benefits: 'avantages', verification: 'vérification du téléphone', confirmation: 'confirmation' } as Record<string, string>)[txt(p.block) || ''] || txt(p.block)); break
+    case 'CHECKOUT_RESUMED':
+      morceaux.push('coordonnées conservées dans cet onglet'); break
+    case 'CHECKOUT_SUBMIT_ATTEMPT':
+      morceaux.push(mad(p.finalTotal), 'pas encore une commande acceptée'); break
+    case 'CHECKOUT_STOCK_BLOCKED':
+      morceaux.push(p.reason === 'quantity_unavailable' ? 'quantité ou référence indisponible' : 'vérification du stock non terminée'); break
     case 'CHECKOUT_ABANDONED': {
       const s = txt(p.step)
       morceaux.push(s ? `à l’étape ${ETAPES[s] ?? s}` : null)
@@ -421,6 +473,9 @@ export function detail(e: Evenement): string | null {
     case 'PROMO_CODE_APPLIED':
       morceaux.push(txt(p.code), mad(p.discountAmount) ? `−${mad(p.discountAmount)}` : null)
       break
+    case 'PROMO_CODE_REMOVED':
+      morceaux.push(txt(p.code), mad(p.discountAmount) ? `${mad(p.discountAmount)} de remise retirés` : null)
+      break
     case 'PROMO_CODE_FAILED': {
       const c = txt(p.code) || ''
       morceaux.push(c ? `« ${c.length > 28 ? c.slice(0, 28) + '…' : c} »` : null, txt(p.error))
@@ -433,6 +488,18 @@ export function detail(e: Evenement): string | null {
     }
     case 'OTP_DELIVERY_FAILED':
       morceaux.push(txt(p.channel), txt(p.errorCode) ? `code ${txt(p.errorCode)}` : null)
+      break
+    case 'OTP_INVALID':
+      morceaux.push('code non validé · aucune commande confirmée par cet événement')
+      break
+    case 'OTP_SEND_FAILED':
+      morceaux.push(txt(p.channel), p.phase === 'resend' ? 'lors du renvoi' : 'lors de la demande de code')
+      break
+    case 'WHATSAPP_ORDER':
+      morceaux.push(nom, txt(p.source), 'ouverture de WhatsApp · pas une vente confirmée')
+      break
+    case 'BUY_NOW_CLICK':
+      morceaux.push(nom, mad(p.price), 'intention d’achat · pas une vente confirmée')
       break
     case 'CART_CLEAR': {
       const c = nb(p.cartCountBefore)
@@ -529,6 +596,8 @@ type Blocage = { quoi: string; montant: string | null; level?: 'error' | 'suspec
 
 /** Les frictions, du signal le plus explicite au plus vague. */
 const FRICTIONS = new Set([
+  'CHECKOUT_STOCK_BLOCKED',
+  'OTP_INVALID', 'OTP_SEND_FAILED', 'CHECKOUT_FIELD_ERROR',
   'PURCHASE_FAILED', 'OTP_DELIVERY_FAILED', 'CHECKOUT_FIELD_ABANDON',
   'CHECKOUT_VALIDATION_FAILED', 'PROMO_CODE_FAILED', 'CHECKOUT_ABANDONED',
   'CHECKOUT_CART_EMPTY', 'RAGE_CLICK', 'DEAD_CLICK', 'SEARCH_ZERO_RESULTS',
@@ -541,8 +610,26 @@ export function diagnosticBlockage(evenements: Evenement[]): Blocage | null {
 
   // Prioritize explicit failures over later heuristic clicks. Neither proves
   // why the person left; raw chronological rows remain unchanged below.
-  const explicit = new Set(['PURCHASE_FAILED', 'OTP_DELIVERY_FAILED', 'CHECKOUT_VALIDATION_FAILED', 'PROMO_CODE_FAILED', 'JS_ERROR'])
-  const candidates = [...evenements.filter(e => !explicit.has(e.name)), ...evenements.filter(e => explicit.has(e.name))]
+  const explicit = new Set(['CHECKOUT_STOCK_BLOCKED', 'PURCHASE_FAILED', 'OTP_DELIVERY_FAILED', 'OTP_INVALID', 'OTP_SEND_FAILED', 'CHECKOUT_FIELD_ERROR', 'CHECKOUT_VALIDATION_FAILED', 'PROMO_CODE_FAILED', 'JS_ERROR'])
+  // Keep historical errors in the timeline, but do not diagnose a field as
+  // still blocking once it was explicitly corrected within the same attempt.
+  const unresolved = evenements.filter((event, index) => {
+    const id = event.props?.attemptId
+    if (typeof id !== 'string') return true
+    const later = evenements.slice(index + 1).filter(next => next.props?.attemptId === id)
+    const deliveryValidated = later.some(next => next.name === 'ADD_PAYMENT_INFO')
+    if (event.name === 'CHECKOUT_FIELD_ERROR') return !deliveryValidated && !later.some(next => next.name === 'CHECKOUT_FIELD_RECOVERED' && next.props?.champ === event.props?.champ)
+    if (event.name === 'CHECKOUT_VALIDATION_FAILED') {
+      const missing = event.props?.missingFields
+      const corrected = Array.isArray(missing) && missing.length > 0 && missing.every(field => later.some(next => next.name === 'CHECKOUT_FIELD_RECOVERED' && next.props?.champ === field))
+      return !deliveryValidated && !corrected
+    }
+    if (event.name === 'CHECKOUT_STOCK_BLOCKED') return !deliveryValidated
+    if (event.name === 'OTP_INVALID') return !later.some(next => next.name === 'OTP_VERIFIED')
+    if (event.name === 'OTP_SEND_FAILED' || event.name === 'OTP_DELIVERY_FAILED') return !later.some(next => next.name === 'OTP_SENT' || next.name === 'OTP_VERIFIED' || next.name === 'OTP_RESENT' && next.props?.ok === true)
+    return true
+  })
+  const candidates = [...unresolved.filter(e => !explicit.has(e.name)), ...unresolved.filter(e => explicit.has(e.name))]
   for (let i = candidates.length - 1; i >= 0; i--) {
     const e = candidates[i]
     if (!FRICTIONS.has(e.name)) continue
@@ -552,10 +639,20 @@ export function diagnosticBlockage(evenements: Evenement[]): Blocage | null {
     const suffixe = etape ? ` (étape ${ETAPES[etape] ?? etape})` : ''
 
     switch (e.name) {
+      case 'CHECKOUT_STOCK_BLOCKED':
+        return { quoi: p.reason === 'quantity_unavailable' ? 'Quantité indisponible au contrôle du panier' : 'Vérification de disponibilité non terminée', montant: valeur, level: 'error' }
       case 'PURCHASE_FAILED':
         return { quoi: `Échec de commande signalé — ${txt(p.error) ?? 'motif inconnu'}`, montant: valeur, level: 'error' }
       case 'OTP_DELIVERY_FAILED':
         return { quoi: `Échec de livraison du code${txt(p.channel) ? ` (${txt(p.channel)})` : ''}`, montant: valeur, level: 'error' }
+      case 'OTP_INVALID':
+        return { quoi: 'Code de vérification refusé', montant: valeur, level: 'error' }
+      case 'OTP_SEND_FAILED':
+        return { quoi: 'Échec d’envoi du code de vérification', montant: valeur, level: 'error' }
+      case 'CHECKOUT_FIELD_ERROR': {
+        const c = txt(p.champ)
+        return { quoi: `Erreur sur le champ « ${c ? CHAMPS[c] ?? c : '?'} »${suffixe}`, montant: valeur, level: 'error' }
+      }
       case 'CHECKOUT_FIELD_ABANDON': {
         const c = txt(p.champ)
         return { quoi: `Sortie détectée sur le champ « ${c ? CHAMPS[c] ?? c : '?'} »${suffixe} — motif inconnu`, montant: valeur, level: 'suspected' }
@@ -662,6 +759,25 @@ function changementsDePage(evenements: Evenement[]): boolean[] {
   })
 }
 
+export function checkoutAttempts(events: Evenement[]) {
+  const attempts = new Map<string, { id: string; source: string; surface: string; fields: Set<string>; recovered: number; resumed: boolean; ordered: boolean; exited: boolean; elapsedMs: number }>()
+  for (const event of events) {
+    const p = event.props || {}, id = p.attemptId
+    if (typeof id !== 'string' || !/^co_[\w-]{1,80}$/.test(id)) continue
+    const attempt = attempts.get(id) ?? { id, source: txt(p.source) || 'direct', surface: txt(p.entrySurface) || 'checkout', fields: new Set<string>(), recovered: 0, resumed: false, ordered: false, exited: false, elapsedMs: 0 }
+    if (event.name === 'CHECKOUT_FIELD_COMPLETED' || event.name === 'CHECKOUT_FIELD_RECOVERED') {
+      if (typeof p.champ === 'string' && ['name', 'phone', 'city', 'district', 'address'].includes(p.champ)) attempt.fields.add(p.champ)
+    }
+    if (event.name === 'CHECKOUT_FIELD_RECOVERED') attempt.recovered++
+    if (event.name === 'CHECKOUT_RESUMED') attempt.resumed = true
+    if (event.name === 'PURCHASE_SUCCESS') attempt.ordered = true
+    if (event.name === 'CHECKOUT_EXITED') attempt.exited = true
+    if (typeof p.elapsedMs === 'number' && Number.isFinite(p.elapsedMs)) attempt.elapsedMs = Math.max(attempt.elapsedMs, p.elapsedMs)
+    attempts.set(id, attempt)
+  }
+  return [...attempts.values()]
+}
+
 export function Chronologie({ evenements }: { evenements: Evenement[] }) {
   const heure = (iso: string) =>
     new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Africa/Casablanca' })
@@ -673,6 +789,10 @@ export function Chronologie({ evenements }: { evenements: Evenement[] }) {
 
   return (
     <div>
+      {checkoutAttempts(evenements).map(attempt => <div key={attempt.id} className="mb-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs">
+        <strong>Checkout · entrée {attempt.surface}</strong><span> · {attempt.source} · {Math.round(attempt.elapsedMs / 1000)} s</span>
+        <p>{attempt.fields.size} champs complétés observés · {attempt.recovered} correction(s){attempt.resumed ? ' · brouillon repris' : ''} · {attempt.ordered ? 'Commande acceptée' : attempt.exited ? 'Sortie observée, abandon non confirmé' : 'Suite non observée'}</p>
+      </div>)}
       {blocage && (
         <div className="mb-2 px-2.5 py-1.5 rounded-[5px] flex items-baseline gap-2 flex-wrap"
           style={{ background: signalStyle.fond, borderInlineStart: `3px solid ${signalStyle.couleur}` }}>
