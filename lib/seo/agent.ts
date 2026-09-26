@@ -1,8 +1,9 @@
 import 'server-only'
 import pool from '@/lib/db'
 import { PROPERTY } from './google'
-import { cibleDeAction, domaine, fenetresImpact, motsPorteurs, norm, pageCorrespond, validerChangement, type Changement } from './agent-model'
+import { cibleDeAction, domaine, executable, fenetresImpact, motsPorteurs, norm, pageCorrespond, validerChangement, validerLivrablePr, type Changement, type Livrable } from './agent-model'
 import { revalidateWebsite } from '@/lib/revalidate-website'
+import { enregistrerBrouillon } from './brouillon'
 
 /**
  * L'AGENT SEO CONCURRENCE, COTE BOS : sa file de demandes, sa memoire, et ce
@@ -19,7 +20,7 @@ import { revalidateWebsite } from '@/lib/revalidate-website'
  * du moteur de recherche de l'agent — ce n'est pas l'ordre exact de google.ma.
  */
 
-export type Genre = 'requete' | 'grappe' | 'tout'
+export type Genre = 'requete' | 'grappe' | 'tout' | 'action'
 export { domaine, motsPorteurs }
 
 type GscLigne = { query: string; day: string; clicks: number; impressions: number; position: number }
@@ -122,6 +123,15 @@ export async function creerDemande(cible: string, genre: Genre, par: string | nu
     const g = await pool.query(`SELECT 1 FROM "SeoAgentGroup" WHERE nom = $1`, [c])
     if (!g.rowCount) throw new Error('Grappe inconnue.')
   }
+  if (genre === 'action') {
+    // « Faire par l'agent » : seulement une action ouverte, executable, pas deja livree.
+    const a = await pool.query(`SELECT action, page, levier, changement, statut, livrable FROM "SeoAgentAction" WHERE id = $1`, [Number(c) || 0])
+    const x = a.rows[0]
+    if (!x) throw new Error('Action introuvable.')
+    if (x.statut !== 'a_faire') throw new Error('Cette action n’est plus à faire.')
+    if (x.livrable) throw new Error('L’agent a déjà livré cette action : relis son travail.')
+    if (!executable(x)) throw new Error('L’agent ne peut pas exécuter cette action lui-même.')
+  }
   const enAttente = await pool.query<{ n: number; meme: number }>(
     `SELECT count(*)::int AS n, count(*) FILTER (WHERE lower(cible) = lower($1))::int AS meme
      FROM "SeoAgentRequest" WHERE statut IN ('en_attente', 'en_cours')`, [genre === 'tout' ? 'tout' : c])
@@ -140,7 +150,41 @@ export async function reclamerDemande() {
     `UPDATE "SeoAgentRequest" SET statut = 'en_cours', commence_le = now()
      WHERE id = (SELECT id FROM "SeoAgentRequest" WHERE statut = 'en_attente' ORDER BY demande_le LIMIT 1 FOR UPDATE SKIP LOCKED)
      RETURNING id, cible, genre, demande_le`)
-  return r.rows[0] ?? null
+  const d = r.rows[0]
+  if (!d || d.genre !== 'action') return d ?? null
+  // Une execution : l'agent recoit l'action complete, ce qu'il doit livrer, et le rapport qui l'a motivee.
+  const a = await pool.query(
+    `SELECT a.id, a.action, a.page, a.levier, a.signal, a.effet, a.changement, r.id AS rapport_id, r.cible AS grappe
+     FROM "SeoAgentAction" a JOIN "SeoAgentReport" r ON r.id = a.rapport_id WHERE a.id = $1`, [Number(d.cible)])
+  const x = a.rows[0]
+  return x ? { ...d, execution: executable(x), action: { id: x.id, action: x.action, page: x.page, levier: x.levier, signal: x.signal, effet: x.effet, rapportId: x.rapport_id, grappe: x.grappe } } : d
+}
+
+/**
+ * Ce que l'agent a produit en executant une action : un article enregistre en
+ * brouillon (jamais publie), ou une branche claude/… avec sa pull request
+ * (jamais fusionnee). L'action reste « a faire » : Achraf relit, publie ou
+ * fusionne, puis coche « Fait ».
+ */
+export async function livrer(demandeId: number, livraison: unknown) {
+  const d = await pool.query(`SELECT id, cible, genre, statut FROM "SeoAgentRequest" WHERE id = $1`, [demandeId])
+  const demande = d.rows[0]
+  if (!demande || demande.genre !== 'action') throw new Error('Demande d’exécution introuvable.')
+  if (demande.statut !== 'en_cours') throw new Error('Cette demande n’est pas en cours : réclame-la d’abord.')
+  const o = (livraison && typeof livraison === 'object' ? livraison : {}) as Record<string, unknown>
+  let livrable: Livrable
+  if (o.type === 'brouillon') {
+    livrable = { type: 'brouillon', ...(await enregistrerBrouillon(o.article)) }
+  } else if (o.type === 'pr') {
+    const pr = validerLivrablePr(o)
+    if (!pr) throw new Error('pr : branche claude/… de ce dépôt, url https://github.com/Href01/parashop/pull/N ou null, resume de 10 à 1500 caractères.')
+    livrable = pr
+  } else {
+    throw new Error('type : « brouillon » ou « pr ».')
+  }
+  await pool.query(`UPDATE "SeoAgentAction" SET livrable = $2::jsonb, livre_le = now(), maj_le = now() WHERE id = $1`, [Number(demande.cible), JSON.stringify(livrable)])
+  await pool.query(`UPDATE "SeoAgentRequest" SET statut = 'termine', termine_le = now() WHERE id = $1`, [demandeId])
+  return livrable
 }
 
 export async function echecDemande(id: number, erreur: string) {
@@ -286,7 +330,7 @@ export async function ecran() {
     pool.query(`SELECT id, source, cible, cree_le, modele, en_bref, concurrent FROM "SeoAgentReport" ORDER BY cree_le DESC LIMIT 30`),
     // Les actions faites restent 90 jours : c'est apres 7 jours que leur impact devient mesurable.
     pool.query(`SELECT a.id, a.priorite, a.action, a.page, a.levier, a.effort, a.signal, a.effet, a.statut, a.maj_le,
-                       a.changement, a.applique_le, a.fait_le, r.id AS rapport_id, r.cible, r.cree_le
+                       a.changement, a.applique_le, a.fait_le, a.livrable, a.livre_le, r.id AS rapport_id, r.cible, r.cree_le
                 FROM "SeoAgentAction" a JOIN "SeoAgentReport" r ON r.id = a.rapport_id
                 WHERE a.statut = 'a_faire' OR a.maj_le > now() - interval '7 days'
                    OR (a.statut = 'fait' AND a.fait_le > now() - interval '90 days')

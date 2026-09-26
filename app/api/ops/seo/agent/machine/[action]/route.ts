@@ -1,4 +1,4 @@
-import { contexte, echecDemande, publierRapport, reclamerDemande, type Genre } from '@/lib/seo/agent'
+import { contexte, echecDemande, livrer, publierRapport, reclamerDemande, type Genre } from '@/lib/seo/agent'
 import { PRIVATE_HEADERS, cronAuthorized } from '@/lib/seo/http'
 
 export const dynamic = 'force-dynamic'
@@ -11,9 +11,11 @@ export const maxDuration = 60
  *   POST /api/ops/seo/agent/machine/contexte  → suivi + positions Search Console + releve precedent
  *   POST /api/ops/seo/agent/machine/rapport   → publie un rapport (+ actions, + releves du moteur)
  *   POST /api/ops/seo/agent/machine/echec     → clot une demande que l'agent n'a pas pu traiter
+ *   POST /api/ops/seo/agent/machine/livrer    → le resultat d'une execution : brouillon d'article ou branche + PR
  *
  * Le middleware laisse passer ces chemins avec le bon jeton ; on le reverifie
- * ici en temps constant. Aucune de ces routes ne modifie le site.
+ * ici en temps constant. Aucune de ces routes ne publie rien : un article livre
+ * reste un brouillon, une modification de code reste une pull request.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ action: string }> }) {
   if (!cronAuthorized(request, process.env.SEO_AGENT_TOKEN))
@@ -32,6 +34,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
       }
       case 'rapport':
         return Response.json(await publierRapport(body), { headers: PRIVATE_HEADERS })
+      case 'livrer':
+        if (!Number.isInteger(body?.demandeId)) return Response.json({ error: 'demandeId requis' }, { status: 400, headers: PRIVATE_HEADERS })
+        return Response.json({ livrable: await livrer(body.demandeId, body) }, { headers: PRIVATE_HEADERS })
       case 'echec':
         if (!Number.isInteger(body?.id)) return Response.json({ error: 'id requis' }, { status: 400, headers: PRIVATE_HEADERS })
         await echecDemande(body.id, String(body.erreur || 'Échec sans détail'))

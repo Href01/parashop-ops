@@ -117,3 +117,48 @@ export function lienRedaction(a: { action: string; page?: string | null; levier?
   if (fiches.length) q.set('produits', fiches.join(','))
   return { url: `${ATELIER_BLOG}?${q}`, libelle: 'Rédiger avec DeepSeek' }
 }
+
+/* ------------------------------------------------------------------ */
+/* « FAIRE PAR L'AGENT » : CE QU'IL PEUT EXECUTER, ET CE QU'IL LIVRE   */
+/* ------------------------------------------------------------------ */
+
+export type Execution = 'article' | 'code'
+
+/**
+ * L'agent execute deux sortes d'actions, jamais en production directement :
+ *  - un NOUVEL article de blog → enregistre en brouillon (non publie) ;
+ *  - une modification du CODE d'une page (marque, categorie, K-beauty…) →
+ *    branche claude/… et pull request, fusionnee par Achraf.
+ * Titre ou FAQ d'une fiche : c'est le « changement » + « Appliquer ». Avis,
+ * prix, offre : decisions d'Achraf. Article existant : son editeur.
+ */
+export function executable(a: { action: string; page?: string | null; levier?: string | null; changement?: unknown }): Execution | null {
+  if (validerChangement(a.changement)) return null
+  const lien = lienRedaction(a)
+  if (lien) return lien.libelle === 'Rédiger avec DeepSeek' ? 'article' : null
+  const levier = `${a.levier || ''}`
+  if (/avis|prix|offre|campagne|metaTitle|admin produit|Search Console|technique/i.test(levier)) return null
+  return /page marque|page cat[ée]gorie|page besoin|\bcode\b|BRAND_META|CATEGORY_META|\bapp\/|\blib\//i.test(levier) ? 'code' : null
+}
+
+export type Livrable =
+  | { type: 'brouillon'; postId: number; slug: string; titre: string }
+  | { type: 'pr'; branche: string; url: string | null; resume: string }
+
+/** La livraison d'une modification de code : une branche claude/… de ce depot, et sa PR si l'agent a pu l'ouvrir. */
+export function validerLivrablePr(o: unknown): Extract<Livrable, { type: 'pr' }> | null {
+  if (!o || typeof o !== 'object') return null
+  const x = o as Record<string, unknown>
+  const branche = typeof x.branche === 'string' && /^claude\/[a-z0-9._-]+(?:\/[a-z0-9._-]+)*$/i.test(x.branche) && x.branche.length <= 120 ? x.branche : null
+  const url = x.url == null || x.url === '' ? null : typeof x.url === 'string' && /^https:\/\/github\.com\/Href01\/parashop\/pull\/\d+$/.test(x.url) ? x.url : undefined
+  const resume = chaine(x.resume, 10, 1500)
+  return branche && url !== undefined && resume ? { type: 'pr', branche, url, resume } : null
+}
+
+/** Le bouton qui ouvre ce que l'agent a livre. */
+export function lienLivrable(l: Livrable): { url: string; libelle: string } {
+  if (l.type === 'brouillon') return { url: `https://www.shinecosmetics.ma/admin/blog/${l.postId}`, libelle: 'Relire le brouillon' }
+  return l.url
+    ? { url: l.url, libelle: 'Voir la modification (PR)' }
+    : { url: `https://github.com/Href01/parashop/compare/main...${l.branche}?expand=1`, libelle: 'Créer la PR' }
+}

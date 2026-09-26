@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ArrowDown, ArrowUp, Check, Send, X } from 'lucide-react'
 import Markdown from './Markdown'
-import { lienRedaction } from '@/lib/seo/agent-model'
+import { executable, lienLivrable, lienRedaction, type Livrable } from '@/lib/seo/agent-model'
 import s from './concurrence.module.css'
 
 /**
@@ -26,7 +26,7 @@ type Changement =
   | { type: 'faq'; produitId: number; questionFR: string; reponseFR: string; questionAR: string; reponseAR: string }
 type Mesure = { impressions: number; clics: number; position: number | null }
 type Impact = { tropTot: true; joursDispo: number; page: string | null } | { tropTot: false; jours: number; page: string | null; avant: Mesure; apres: Mesure }
-type Action = { id: number; priorite: number; action: string; page: string | null; levier: string | null; effort: string | null; signal: string | null; effet: string | null; statut: string; rapport_id: number; cible: string; cree_le: string; changement?: Changement | null; applique_le?: string | null; fait_le?: string | null; impact?: Impact | null }
+type Action = { id: number; priorite: number; action: string; page: string | null; levier: string | null; effort: string | null; signal: string | null; effet: string | null; statut: string; rapport_id: number; cible: string; cree_le: string; changement?: Changement | null; applique_le?: string | null; fait_le?: string | null; impact?: Impact | null; livrable?: Livrable | null; livre_le?: string | null }
 type Donnees = { opportunites?: Opportunite[]; grappes: Grappe[]; grappeDuJour: string | null; requetes: Requete[]; series: Record<string, { jour: string; shineRang: number | null; premier: string | null }[]>; demandes: Demande[]; rapports: RapportLigne[]; actions: Action[]; dernierPassage: string | null; rappel: string }
 type RapportComplet = RapportLigne & { contenu: string; actions: Action[] }
 type Opportunite = { requete: string; impressions: number; clics: number; position: number }
@@ -108,6 +108,19 @@ export default function Concurrence() {
     const j = await r.json().catch(() => ({}))
     if (!r.ok) { setMessage({ ok: false, texte: j.error || 'Échec' }); return }
     setMessage({ ok: true, texte: operation === 'appliquer' ? `Appliqué sur la fiche #${a.changement?.produitId} — en ligne sous une minute.` : 'Changement annulé, valeur d’avant remise.' })
+    await charger()
+  }
+
+  /* « Faire par l'agent » : une demande d'execution, prise au prochain passage
+     horaire. Rien n'est publie : il livre un brouillon ou une pull request. */
+  const faireParAgent = async (a: Action) => {
+    setMessage(null)
+    const r = await fetch('/api/ops/seo/agent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ demande: { genre: 'action', cible: String(a.id) } }) })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) { setMessage({ ok: false, texte: j.error || 'Envoi impossible' }); return }
+    setMessage({ ok: true, texte: executable(a) === 'article'
+      ? 'Demandé : l’agent écrit l’article au prochain passage (chaque heure à :05) et l’enregistre en brouillon. Rien n’est publié sans toi.'
+      : 'Demandé : l’agent fait la modification au prochain passage (chaque heure à :05) et ouvre une pull request. Rien n’est en ligne tant que tu ne l’as pas fusionnée.' })
     await charger()
   }
 
@@ -195,7 +208,7 @@ export default function Concurrence() {
                 const [lib, cls] = STATUTS[x.statut] ?? [x.statut, '']
                 return (
                   <li key={x.id}>
-                    <span><b>{x.cible}</b> <span className={`${s.muted} ${s.small}`}>· {x.genre} · {quand(x.demande_le)}</span></span>
+                    <span><b>{x.genre === 'action' ? `Action #${x.cible}` : x.cible}</b> <span className={`${s.muted} ${s.small}`}>· {x.genre === 'action' ? 'exécution' : x.genre} · {quand(x.demande_le)}</span></span>
                     <span style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                       {x.erreur && <span className={`${s.small} ${s.muted}`}>{x.erreur}</span>}
                       {x.rapport_id && <button type="button" className={s.ghost} onClick={() => void ouvrir(x.rapport_id!)}>Lire le rapport</button>}
@@ -217,7 +230,14 @@ export default function Concurrence() {
         <div className={s.body}>
           {!ouvertes.length && <p className={s.muted}>Aucune action ouverte. Elles apparaissent avec le premier rapport de l’agent.</p>}
           <ul className={s.actions}>
-            {[...ouvertes, ...(voirFaites ? faites : [])].map((a) => { const redaction = lienRedaction(a); return (
+            {[...ouvertes, ...(voirFaites ? faites : [])].map((a) => {
+              const redaction = lienRedaction(a)
+              const execution = executable(a)
+              const essais = d?.demandes.filter((x) => x.genre === 'action' && x.cible === String(a.id)) ?? []
+              const enCours = essais.find((x) => x.statut === 'en_attente' || x.statut === 'en_cours')
+              const rate = !enCours && !a.livrable && essais[0]?.statut === 'erreur' ? essais[0] : null
+              const livre = a.livrable ? lienLivrable(a.livrable) : null
+              return (
               <li key={a.id} className={`${s.action} ${a.statut !== 'a_faire' ? s.faite : ''}`}>
                 <div className={s.actionTop}>
                   <span className={`${s.prio} ${a.priorite === 2 ? s.prio2 : a.priorite >= 3 ? s.prio3 : ''}`}>P{a.priorite}</span>
@@ -238,13 +258,25 @@ export default function Concurrence() {
                 )}
                 {a.changement && <ChangementPret c={a.changement} applique={a.applique_le ?? null} />}
                 {a.statut === 'fait' && a.impact && <ImpactLigne impact={a.impact} />}
+                {a.livrable && (
+                  <div className={s.changement}>
+                    <div className={s.changementTete}><span className={`${s.chip} ${s.termine}`}>Livré par l’agent{a.livre_le ? ` · ${quand(a.livre_le)}` : ''}</span></div>
+                    <p className={s.small}>{a.livrable.type === 'brouillon'
+                      ? <>Article enregistré en <b>brouillon</b> : « {a.livrable.titre} ». Relis-le, coche « J’ai relu », puis publie.</>
+                      : <>{a.livrable.resume} <span className={s.muted}>Branche {a.livrable.branche}. Vérifie l’aperçu Vercel dans la PR, puis fusionne pour mettre en ligne.</span></>}</p>
+                  </div>
+                )}
+                {enCours && <p className={s.small}><span className={`${s.chip} ${s.cours}`}>L’agent s’en occupe</span> <span className={s.muted}>prochain passage à :05, livré ici</span></p>}
+                {rate && <p className={`${s.small} ${s.muted}`}>Dernier essai de l’agent : {rate.erreur}</p>}
                 <div className={s.actionBtns}>
                   {a.changement && !a.applique_le && a.statut === 'a_faire' && (
                     <button type="button" className={s.primary} onClick={() => void operer(a, 'appliquer')}>Appliquer</button>
                   )}
                   {a.applique_le && <button type="button" className={s.ghost} onClick={() => void operer(a, 'annuler')}>Annuler</button>}
-                  {/* Un article ne s'applique pas en un clic : il se redige dans l'atelier DeepSeek de la boutique, deja rempli. */}
-                  {redaction && a.statut === 'a_faire' && <a className={s.primary} href={redaction.url} target="_blank" rel="noopener noreferrer">{redaction.libelle}</a>}
+                  {livre && a.statut === 'a_faire' && <a className={s.primary} href={livre.url} target="_blank" rel="noopener noreferrer">{livre.libelle}</a>}
+                  {execution && !a.livrable && !enCours && a.statut === 'a_faire' && <button type="button" className={s.primary} onClick={() => void faireParAgent(a)}>Faire par l’agent</button>}
+                  {/* L'atelier DeepSeek reste la voie immediate pour un article ; pour un article existant, son editeur. */}
+                  {redaction && !a.livrable && a.statut === 'a_faire' && <a className={execution ? s.ghost : s.primary} href={redaction.url} target="_blank" rel="noopener noreferrer">{execution ? 'Rédiger moi-même (DeepSeek)' : redaction.libelle}</a>}
                   {a.statut === 'a_faire' ? (
                     <>
                       <button type="button" className={s.ghost} onClick={() => void cocher(a.id, 'fait')}><Check size={12} /> Fait</button>

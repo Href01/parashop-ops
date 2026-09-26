@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { cibleDeAction, domaine, fenetresImpact, lienRedaction, motsPorteurs, pageCorrespond, validerChangement } from '../../lib/seo/agent-model'
+import { cibleDeAction, domaine, executable, fenetresImpact, lienLivrable, lienRedaction, motsPorteurs, pageCorrespond, validerChangement, validerLivrablePr } from '../../lib/seo/agent-model'
 
 /**
  * Relier une requete suivie (« olaplex n°3 prix maroc ») aux recherches reelles
@@ -90,4 +90,40 @@ test('une action « article de blog » devient un lien vers l’atelier DeepSeek
   // Pas une action de blog, ou pas de sujet : pas de bouton.
   assert.equal(lienRedaction({ levier: 'champ metaTitle — admin produit', action: 'metaTitle fiche 35 : « Salerm 21 Masque sans rinçage 1 kg »' }), null)
   assert.equal(lienRedaction({ levier: 'Article de blog', action: 'Écrire un article sur les solaires' }), null)
+})
+
+test('« Faire par l’agent » : un nouvel article ou une page du code, jamais un avis, un prix ou une fiche', () => {
+  assert.equal(executable({ levier: 'Article de blog — /admin/blog', page: 'Nouvel article /blog', action: 'Article de blog FR+AR : « Quel soin sans rinçage Milk Shake choisir ? » — fiches 34, 2' }), 'article')
+  assert.equal(executable({ levier: 'Article de blog — /admin/blog', page: 'https://www.shinecosmetics.ma/blog/masque-salerm-pour-cheveux-secs', action: 'Article « masque-salerm » : titre « Masque Salerm 21 »' }), null, 'existing article: its editor')
+  assert.equal(executable({ levier: 'Page marque — BRAND_META / lib/brand-page', action: 'Page marque Salerm : metaTitle + bloc FAQ' }), 'code')
+  assert.equal(executable({ levier: 'Page categorie / besoin — app/categorie/[slug]/page.tsx (CATEGORY_META)', action: 'Créer une page besoin' }), 'code')
+  assert.equal(executable({ levier: "Campagne d'avis du BOS", action: 'Campagne d’avis fiches 35 et 14' }), null)
+  assert.equal(executable({ levier: 'Prix / offre — decision Achraf', action: 'Profondeur de gamme' }), null)
+  assert.equal(executable({ levier: 'champ metaTitle — admin produit', action: 'metaTitle fiche 3' }), null)
+  assert.equal(executable({ levier: 'Page marque', action: 'x', changement: { type: 'metaTitle', produitId: 3, valeur: 'Salerm Ampoules Vitamine E 4x13 ml' } }), null, 'a ready change is applied, not executed')
+})
+
+test('une PR livree vient d’une branche claude/ de ce depot ; sans PR, le lien propose de la creer', () => {
+  const ok = validerLivrablePr({ branche: 'claude/seo-action-23', url: 'https://github.com/Href01/parashop/pull/7', resume: 'Titre et FAQ de la page Salerm.' })
+  assert.deepEqual(ok, { type: 'pr', branche: 'claude/seo-action-23', url: 'https://github.com/Href01/parashop/pull/7', resume: 'Titre et FAQ de la page Salerm.' })
+  assert.equal(validerLivrablePr({ branche: 'main', url: null, resume: 'Pousse directement sur main.' }), null)
+  assert.equal(validerLivrablePr({ branche: 'claude/x', url: 'https://github.com/autre/depot/pull/1', resume: 'Une PR ailleurs.' }), null)
+  assert.equal(validerLivrablePr({ branche: 'claude/x; rm -rf', url: null, resume: 'Injection.' }), null)
+  assert.deepEqual(lienLivrable({ type: 'pr', branche: 'claude/seo-action-23', url: null, resume: 'x' }), { url: 'https://github.com/Href01/parashop/compare/main...claude/seo-action-23?expand=1', libelle: 'Créer la PR' })
+  assert.deepEqual(lienLivrable({ type: 'brouillon', postId: 12, slug: 's', titre: 't' }), { url: 'https://www.shinecosmetics.ma/admin/blog/12', libelle: 'Relire le brouillon' })
+})
+
+test('un article livre par l’agent : HTML simple, liens internes seulement, /ar dans la version arabe', async () => {
+  const { nettoyerArticle } = await import('../../lib/seo/article-html')
+  const sale = '<h2 onclick="x()">Titre</h2><script>alert(1)</script><p style="color:red">Voir <a href="https://www.shinecosmetics.ma/categorie/anti-taches/">les soins</a>, <a href="https://concurrent.ma/x">ailleurs</a>, <a href="/marques/olaplex">Olaplex</a> [produit:16]<img src=x onerror=y></p><table><tr><td>A</td></tr></table>'
+  const fr = nettoyerArticle(sale, 'fr')
+  assert.doesNotMatch(fr, /script|onclick|style=|img|concurrent\.ma/)
+  assert.match(fr, /<a href="\/categorie\/anti-taches">les soins<\/a>/)
+  assert.match(fr, /ailleurs/)
+  assert.match(fr, /\[produit:16\]/)
+  assert.match(fr, /<table>/)
+  const ar = nettoyerArticle('<p><a href="/marques/olaplex">أولابلكس</a> <a href="/ar/k-beauty">K</a></p>', 'ar')
+  assert.match(ar, /href="\/ar\/marques\/olaplex"/)
+  assert.match(ar, /href="\/ar\/k-beauty"/)
+  assert.doesNotMatch(ar, /\/ar\/ar\//)
 })

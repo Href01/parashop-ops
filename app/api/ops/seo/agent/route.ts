@@ -19,6 +19,7 @@ export async function GET() {
 /**
  * Deux gestes depuis l'ecran :
  *   { demande: { cible, genre } }            → une analyse, traitee au prochain passage de l'agent
+ *   { demande: { cible: '<id>', genre: 'action' } } → « Faire par l'agent » : il execute cette action
  *   { suivi: { requete, grappe, actif } }    → ajouter / retirer une requete du releve quotidien
  */
 export async function POST(request: Request) {
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
   try {
     if (body?.demande) {
       const genre = body.demande.genre as Genre
-      if (!['requete', 'grappe', 'tout'].includes(genre)) throw new Error('Type d’analyse invalide.')
+      if (!['requete', 'grappe', 'tout', 'action'].includes(genre)) throw new Error('Type d’analyse invalide.')
       const d = await creerDemande(String(body.demande.cible || ''), genre, session.user?.email ?? null)
       return Response.json({ demande: d }, { headers: PRIVATE_HEADERS })
     }
