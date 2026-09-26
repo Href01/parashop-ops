@@ -31,6 +31,21 @@ const agreger = (lignes: GscLigne[]): Agregat => {
   return { impressions: Math.round(impressions), clics: Math.round(clics), position: impressions > 0 ? Math.round((pond / impressions) * 10) / 10 : null }
 }
 
+/** Semaines de 7 jours finissant a la derniere journee connue (la plus recente peut etre complete ou non). */
+function parSemaine(lignes: GscLigne[], derniere: string | null) {
+  if (!derniere) return []
+  const fin = Date.parse(`${derniere}T00:00:00Z`)
+  const semaines = []
+  for (let k = 7; k >= 0; k--) {
+    const de = new Date(fin - (k * 7 + 6) * 864e5).toISOString().slice(0, 10)
+    const a = new Date(fin - k * 7 * 864e5).toISOString().slice(0, 10)
+    const dans = lignes.filter((l) => l.day >= de && l.day <= a)
+    const ag = agreger(dans)
+    semaines.push({ debut: de, impressions: ag.impressions, clics: ag.clics, position: ag.position, jours: new Set(dans.map((l) => l.day)).size })
+  }
+  return semaines
+}
+
 export type GscRequete = {
   derniereJournee: string | null
   exact28j: Agregat
@@ -38,6 +53,14 @@ export type GscRequete = {
   variantes7j: Agregat
   variantes7jAvant: Agregat
   topVariantes: { requete: string; impressions: number; position: number | null }[]
+  /**
+   * Les 8 dernieres semaines (variantes comprises), de la plus ancienne a la
+   * plus recente. Deux fenetres de 7 jours sur 50 impressions ne disent rien :
+   * « masque salerm » oscille entre la 6e et la 17e place une semaine sur deux
+   * depuis deux mois, et l'agent y avait vu une chute. La serie montre si un
+   * mouvement dure.
+   */
+  semaines: { debut: string; impressions: number; clics: number; position: number | null; jours: number }[]
 }
 
 /**
@@ -73,6 +96,7 @@ export async function gscPourRequetes(requetes: string[]): Promise<Record<string
       variantes28j: agreger(sur28),
       variantes7j: agreger(variantes.filter((l) => l.day > d7)),
       variantes7jAvant: agreger(variantes.filter((l) => l.day > d14 && l.day <= d7)),
+      semaines: parSemaine(variantes, derniere),
       topVariantes: [...parRequete.entries()]
         .map(([q, ls]) => ({ requete: q, ...agreger(ls) }))
         .sort((a, b) => b.impressions - a.impressions)

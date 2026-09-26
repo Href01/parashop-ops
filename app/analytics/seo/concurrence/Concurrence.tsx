@@ -15,7 +15,7 @@ import s from './concurrence.module.css'
  */
 
 type Agregat = { impressions: number; clics: number; position: number | null }
-type Gsc = { derniereJournee: string | null; exact28j: Agregat; variantes28j: Agregat; variantes7j: Agregat; variantes7jAvant: Agregat; topVariantes: { requete: string; impressions: number; position: number | null }[] }
+type Gsc = { derniereJournee: string | null; exact28j: Agregat; variantes28j: Agregat; variantes7j: Agregat; variantes7jAvant: Agregat; topVariantes: { requete: string; impressions: number; position: number | null }[]; semaines?: { debut: string; impressions: number; clics: number; position: number | null; jours: number }[] }
 type Requete = { requete: string; grappe: string; gsc?: Gsc; dernierReleve: { jour: string; domaines: string[]; shine_rang: number | null } | null }
 type Grappe = { nom: string; priorite: number; pourquoi: string; analyse_le: string | null }
 type Demande = { id: number; cible: string; genre: string; statut: string; demande_le: string; termine_le: string | null; erreur: string | null; rapport_id: number | null }
@@ -312,7 +312,9 @@ export default function Concurrence() {
                     const v = q.gsc?.variantes28j
                     const a = q.gsc?.variantes7j.position
                     const b = q.gsc?.variantes7jAvant.position
-                    const delta = a != null && b != null ? Math.round((b - a) * 10) / 10 : null
+                    // Sous 30 impressions par semaine, un ecart de position est du bruit (une recherche a la 60e place suffit a le creer).
+                    const volumeFaible = (q.gsc?.variantes7j.impressions ?? 0) < 30 || (q.gsc?.variantes7jAvant.impressions ?? 0) < 30
+                    const delta = a != null && b != null && !volumeFaible ? Math.round((b - a) * 10) / 10 : null
                     const serie = d?.series[q.requete] ?? []
                     return (
                       <tr key={q.requete}>
@@ -322,7 +324,7 @@ export default function Concurrence() {
                         <td data-label="Position Google" title={q.gsc?.topVariantes.map((t) => `${t.requete} : ${pos(t.position)} (${t.impressions} imp.)`).join('\n')}>
                           {v?.impressions ? <span><b>{pos(v.position)}</b> <span className={`${s.muted} ${s.small}`}>{v.impressions} imp.</span></span> : <span className={s.muted}>aucune impression</span>}
                         </td>
-                        <td data-label="7 j vs 7 j avant">{delta == null ? <span className={s.muted}>—</span> : delta > 0 ? <span className={s.up}><ArrowUp size={12} /> {delta}</span> : delta < 0 ? <span className={s.down}><ArrowDown size={12} /> {Math.abs(delta)}</span> : '='}</td>
+                        <td data-label="7 j vs 7 j avant">{delta == null ? <span className={s.muted}>{volumeFaible && a != null ? 'faible volume' : '—'}</span> : delta > 0 ? <span className={s.up}><ArrowUp size={12} /> {delta}</span> : delta < 0 ? <span className={s.down}><ArrowDown size={12} /> {Math.abs(delta)}</span> : '='}</td>
                         <td data-label="30 jours">
                           <div className={s.dots} aria-label={`${serie.filter((x) => x.shineRang).length} relevés avec Shine dans le top 10 sur ${serie.length}`}>
                             {serie.slice(-30).map((x) => <span key={x.jour} className={`${s.dot} ${x.shineRang ? s.dotOn : ''}`} style={{ height: x.shineRang ? `${Math.max(4, 19 - x.shineRang * 1.5)}px` : '4px' }} title={`${x.jour} : ${x.shineRang ? '#' + x.shineRang : 'absente'} · #1 ${x.premier ?? '—'}`} />)}
