@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { cibleDeAction, domaine, fenetresImpact, motsPorteurs, pageCorrespond, validerChangement } from '../../lib/seo/agent-model'
+import { cibleDeAction, domaine, fenetresImpact, lienRedaction, motsPorteurs, pageCorrespond, validerChangement } from '../../lib/seo/agent-model'
 
 /**
  * Relier une requete suivie (« olaplex n°3 prix maroc ») aux recherches reelles
@@ -68,4 +68,26 @@ test('l’impact se mesure sur deux fenetres egales, et « trop tot » sous 7 jo
   assert.equal(long.tropTot, false)
   if (!long.tropTot) assert.equal(long.jours, 28)
   assert.deepEqual(fenetresImpact('2026-09-26', null), { tropTot: true, joursDispo: 0 })
+})
+
+test('une action « article de blog » devient un lien vers l’atelier DeepSeek, deja rempli', () => {
+  // Les trois actions reelles du 26/09 (rapports 1, 2 et 4).
+  const milk = lienRedaction({ levier: 'Article de blog — /admin/blog', page: 'Nouvel article /blog', action: 'Article de blog FR+AR : « Leave In Conditioner, Incredible Milk ou Integrity : quel soin sans rinçage Milk Shake choisir ? ». Pour chaque soin : cheveux cibles, usage. Liens vers les fiches 34, 2, 50, 49 et 48.' })
+  const u = new URL(milk!.url)
+  assert.equal(milk!.libelle, 'Rédiger avec DeepSeek')
+  assert.equal(u.searchParams.get('sujet'), 'Leave In Conditioner, Incredible Milk ou Integrity : quel soin sans rinçage Milk Shake choisir ?')
+  assert.equal(u.searchParams.get('produits'), '34,2,50,49,48')
+  assert.equal(u.searchParams.get('requete'), null)
+  const solaire = new URL(lienRedaction({ levier: 'Article de blog — /admin/blog + maillage vers fiches', page: 'Nouvel article /blog', action: 'Article de blog FR+AR : « Crème solaire coréenne au Maroc : Relief Sun, Isntree Watery Sun Gel ou SKIN1004 Water-Fit Sun Serum ? » — un H2 par produit, liens vers les fiches 96, 91 et 97.' })!.url)
+  assert.equal(solaire.searchParams.get('produits'), '96,91,97')
+  // Article existant : on ouvre son editeur, on n'en cree pas un second.
+  assert.deepEqual(lienRedaction({ levier: 'Article de blog — /admin/blog ; maillage interne', page: 'https://www.shinecosmetics.ma/blog/masque-salerm-pour-cheveux-secs ; https://www.shinecosmetics.ma/blog/salerm-21-comment-utiliser-maroc', action: 'Article « masque-salerm-pour-cheveux-secs » : titre « Masque Salerm 21 » …' }), { url: 'https://www.shinecosmetics.ma/admin/blog/new?article=masque-salerm-pour-cheveux-secs', libelle: 'Ouvrir l’article' })
+  // Le format demande a l'agent (AGENT.md, point 7).
+  const format = new URL(lienRedaction({ levier: 'Article de blog', page: 'Nouvel article /blog', action: 'Article de blog FR+AR : « Quel Olaplex choisir après une coloration ? » — requête « olaplex maroc » — fiches 16, 52' })!.url)
+  assert.equal(format.searchParams.get('sujet'), 'Quel Olaplex choisir après une coloration ?')
+  assert.equal(format.searchParams.get('requete'), 'olaplex maroc')
+  assert.equal(format.searchParams.get('produits'), '16,52')
+  // Pas une action de blog, ou pas de sujet : pas de bouton.
+  assert.equal(lienRedaction({ levier: 'champ metaTitle — admin produit', action: 'metaTitle fiche 35 : « Salerm 21 Masque sans rinçage 1 kg »' }), null)
+  assert.equal(lienRedaction({ levier: 'Article de blog', action: 'Écrire un article sur les solaires' }), null)
 })

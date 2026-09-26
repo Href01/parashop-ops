@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { ArrowDown, ArrowUp, Check, Send, X } from 'lucide-react'
 import Markdown from './Markdown'
+import { lienRedaction } from '@/lib/seo/agent-model'
 import s from './concurrence.module.css'
 
 /**
@@ -216,7 +217,7 @@ export default function Concurrence() {
         <div className={s.body}>
           {!ouvertes.length && <p className={s.muted}>Aucune action ouverte. Elles apparaissent avec le premier rapport de l’agent.</p>}
           <ul className={s.actions}>
-            {[...ouvertes, ...(voirFaites ? faites : [])].map((a) => (
+            {[...ouvertes, ...(voirFaites ? faites : [])].map((a) => { const redaction = lienRedaction(a); return (
               <li key={a.id} className={`${s.action} ${a.statut !== 'a_faire' ? s.faite : ''}`}>
                 <div className={s.actionTop}>
                   <span className={`${s.prio} ${a.priorite === 2 ? s.prio2 : a.priorite >= 3 ? s.prio3 : ''}`}>P{a.priorite}</span>
@@ -242,6 +243,8 @@ export default function Concurrence() {
                     <button type="button" className={s.primary} onClick={() => void operer(a, 'appliquer')}>Appliquer</button>
                   )}
                   {a.applique_le && <button type="button" className={s.ghost} onClick={() => void operer(a, 'annuler')}>Annuler</button>}
+                  {/* Un article ne s'applique pas en un clic : il se redige dans l'atelier DeepSeek de la boutique, deja rempli. */}
+                  {redaction && a.statut === 'a_faire' && <a className={s.primary} href={redaction.url} target="_blank" rel="noopener noreferrer">{redaction.libelle}</a>}
                   {a.statut === 'a_faire' ? (
                     <>
                       <button type="button" className={s.ghost} onClick={() => void cocher(a.id, 'fait')}><Check size={12} /> Fait</button>
@@ -252,7 +255,7 @@ export default function Concurrence() {
                   <button type="button" className={s.ghost} onClick={() => void ouvrir(a.rapport_id)}>Rapport « {a.cible} »</button>
                 </div>
               </li>
-            ))}
+            ) })}
           </ul>
         </div>
       </section>

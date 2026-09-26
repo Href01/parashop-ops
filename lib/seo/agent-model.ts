@@ -88,3 +88,32 @@ export function fenetresImpact(faitLe: string, derniereJournee: string | null) {
   const n = Math.min(28, dispo)
   return { tropTot: false as const, jours: n, avant: [decaler(fait, -n), decaler(fait, -1)] as const, apres: [decaler(fait, 1), decaler(fait, n)] as const }
 }
+
+/* ------------------------------------------------------------------ */
+/* ACTIONS « ARTICLE DE BLOG » : UN BOUTON VERS L'ATELIER DEEPSEEK     */
+/* ------------------------------------------------------------------ */
+
+export const ATELIER_BLOG = 'https://www.shinecosmetics.ma/admin/blog/new'
+
+/**
+ * Une action « article de blog » ne s'applique pas en un clic : l'article se
+ * redige dans l'atelier DeepSeek de la boutique. Ce lien l'ouvre deja rempli —
+ * sujet (le premier « … »), recherche visee (« requête « … » »), produits
+ * (« fiches 34, 2 et 50 »). Un article existant (URL /blog/<slug> dans la page)
+ * ouvre son editeur. null : pas une action de blog, ou pas de sujet lisible.
+ */
+export function lienRedaction(a: { action: string; page?: string | null; levier?: string | null }): { url: string; libelle: string } | null {
+  const texte = `${a.levier || ''} ${a.action}`
+  if (!/\bblog\b/i.test(`${texte} ${a.page || ''}`) || !/article/i.test(texte)) return null
+  const existant = !/nouvel article/i.test(a.page || '') ? /\/blog\/([a-z0-9]+(?:-[a-z0-9]+)*)/.exec(a.page || '') : null
+  if (existant) return { url: `${ATELIER_BLOG}?article=${existant[1]}`, libelle: 'Ouvrir l’article' }
+  const requete = /requ[êe]te\s*«\s*([^»]{3,150}?)\s*»/i.exec(a.action)?.[1]
+  const sujet = [...a.action.matchAll(/«\s*([^»]{8,200}?)\s*»/g)].map((m) => m[1]).find((g) => g !== requete)
+  if (!sujet) return null
+  const fiches = [...new Set([...`${a.action} ${a.page || ''}`.matchAll(/fiches?\s+(\d+(?:\s*(?:,|et|\/)\s*\d+)*)/gi)]
+    .flatMap((m) => m[1].match(/\d+/g) || []).map(Number))].slice(0, 6)
+  const q = new URLSearchParams({ sujet })
+  if (requete) q.set('requete', requete)
+  if (fiches.length) q.set('produits', fiches.join(','))
+  return { url: `${ATELIER_BLOG}?${q}`, libelle: 'Rédiger avec DeepSeek' }
+}

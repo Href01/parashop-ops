@@ -5,6 +5,8 @@
 .page button { cursor: pointer; }
 .page button:disabled { opacity: .45; cursor: not-allowed; }
 .page a { color: #175f50; }
+/* Un lien habille en bouton (« Rédiger avec DeepSeek ») : la regle ci-dessus, plus specifique que .primary, le rendait vert sur vert. */
+.page a.primary { color: #fff; text-decoration: none; }
 .page :focus-visible { outline: 2px solid #175f50; outline-offset: 3px; }
 
 .header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
