@@ -14,6 +14,14 @@ Page **`/analytics/seo/concurrence`** (lien depuis SEO Insights). Pour chaque re
 
 L'agent ne touche jamais la base : il parle à Ops par `/api/ops/seo/agent/machine/{demande,contexte,rapport,echec}` avec `SEO_AGENT_TOKEN` (le middleware laisse passer ces seuls chemins avec ce jeton ; la route le revérifie en temps constant). Il ne modifie ni le site, ni le code, ni l'admin : il recommande.
 
+## Appliquer en un clic, mesurer ce que ca rapporte
+
+- **Appliquer** (migration 045) : quand une action est exactement « titre Google d'une fiche » ou « ajouter une question a la FAQ d'une fiche », l'agent joint le texte final (`changement`). La carte l'affiche mot pour mot ; « Appliquer » l'ecrit sur la fiche dans une transaction, garde l'ancienne valeur, marque l'action faite et rafraichit le site (`revalidateWebsite`). « Annuler » remet exactement l'ancienne valeur — et refuse si le titre a ete modifie entre-temps a la main. Tout autre type de changement est rejete a l'arrivee : l'action reste a faire a la main.
+- **Impact** : chaque action « Fait » a une date (`fait_le`). La carte compare Search Console (Maroc) sur la page concernee, N jours avant contre N jours apres (N ≤ 28, jour du « Fait » exclu) : position, clics, impressions. Moins de 7 jours de recul : « trop tot ». L'agent recoit ces resultats (`actionsFaites`) et dit dans son releve ce qui a rapporte.
+- **Opportunites** : recherches ou Shine est deja entre la 4e et la 20e place au Maroc (≥ 15 impressions en 28 jours) et que personne ne suit, avec « Analyser » et « Suivre ».
+
+Verifie le 26/09/2026 sur un produit de test dedie (inactif, supprime ensuite) : appliquer titre + FAQ, puis annuler — valeurs d'origine retrouvees a l'identique en base.
+
 ## Les deux routines
 
 | Routine | Quand (heure du Maroc) | Modèle | Ce qu'elle fait |

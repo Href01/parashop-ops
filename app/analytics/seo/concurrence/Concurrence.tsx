@@ -20,7 +20,12 @@ type Requete = { requete: string; grappe: string; gsc?: Gsc; dernierReleve: { jo
 type Grappe = { nom: string; priorite: number; pourquoi: string; analyse_le: string | null }
 type Demande = { id: number; cible: string; genre: string; statut: string; demande_le: string; termine_le: string | null; erreur: string | null; rapport_id: number | null }
 type RapportLigne = { id: number; source: string; cible: string; cree_le: string; modele: string | null; en_bref: string; concurrent: string | null }
-type Action = { id: number; priorite: number; action: string; page: string | null; levier: string | null; effort: string | null; signal: string | null; effet: string | null; statut: string; rapport_id: number; cible: string; cree_le: string }
+type Changement =
+  | { type: 'metaTitle'; produitId: number; valeur: string }
+  | { type: 'faq'; produitId: number; questionFR: string; reponseFR: string; questionAR: string; reponseAR: string }
+type Mesure = { impressions: number; clics: number; position: number | null }
+type Impact = { tropTot: true; joursDispo: number; page: string | null } | { tropTot: false; jours: number; page: string | null; avant: Mesure; apres: Mesure }
+type Action = { id: number; priorite: number; action: string; page: string | null; levier: string | null; effort: string | null; signal: string | null; effet: string | null; statut: string; rapport_id: number; cible: string; cree_le: string; changement?: Changement | null; applique_le?: string | null; fait_le?: string | null; impact?: Impact | null }
 type Donnees = { opportunites?: Opportunite[]; grappes: Grappe[]; grappeDuJour: string | null; requetes: Requete[]; series: Record<string, { jour: string; shineRang: number | null; premier: string | null }[]>; demandes: Demande[]; rapports: RapportLigne[]; actions: Action[]; dernierPassage: string | null; rappel: string }
 type RapportComplet = RapportLigne & { contenu: string; actions: Action[] }
 type Opportunite = { requete: string; impressions: number; clics: number; position: number }
@@ -88,6 +93,21 @@ export default function Concurrence() {
     } finally {
       setEnvoi(false)
     }
+  }
+
+  /* Appliquer ecrit sur la fiche en ligne : on le fait confirmer, et on dit
+     comment revenir en arriere. */
+  const operer = async (a: Action, operation: 'appliquer' | 'annuler') => {
+    const question = operation === 'appliquer'
+      ? `Appliquer sur la fiche #${a.changement?.produitId} ? Le site sera mis à jour tout de suite (annulable).`
+      : 'Annuler ce changement et remettre la valeur d’avant sur la fiche ?'
+    if (!window.confirm(question)) return
+    setMessage(null)
+    const r = await fetch(`/api/ops/seo/agent/actions/${a.id}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operation }) })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) { setMessage({ ok: false, texte: j.error || 'Échec' }); return }
+    setMessage({ ok: true, texte: operation === 'appliquer' ? `Appliqué sur la fiche #${a.changement?.produitId} — en ligne sous une minute.` : 'Changement annulé, valeur d’avant remise.' })
+    await charger()
   }
 
   const cocher = async (id: number, statut: 'fait' | 'ecarte' | 'a_faire') => {
@@ -215,13 +235,20 @@ export default function Concurrence() {
                     {a.effet && <p><b>Effet</b> {a.effet}</p>}
                   </details>
                 )}
+                {a.changement && <ChangementPret c={a.changement} applique={a.applique_le ?? null} />}
+                {a.statut === 'fait' && a.impact && <ImpactLigne impact={a.impact} />}
                 <div className={s.actionBtns}>
+                  {a.changement && !a.applique_le && a.statut === 'a_faire' && (
+                    <button type="button" className={s.primary} onClick={() => void operer(a, 'appliquer')}>Appliquer</button>
+                  )}
+                  {a.applique_le && <button type="button" className={s.ghost} onClick={() => void operer(a, 'annuler')}>Annuler</button>}
                   {a.statut === 'a_faire' ? (
                     <>
                       <button type="button" className={s.ghost} onClick={() => void cocher(a.id, 'fait')}><Check size={12} /> Fait</button>
                       <button type="button" className={s.ghost} onClick={() => void cocher(a.id, 'ecarte')}>Écarter</button>
                     </>
-                  ) : <button type="button" className={s.ghost} onClick={() => void cocher(a.id, 'a_faire')}>Rouvrir</button>}
+                  ) : !a.applique_le && <button type="button" className={s.ghost} onClick={() => void cocher(a.id, 'a_faire')}>Rouvrir</button>}
+                  {/* Une action appliquee se rouvre par « Annuler », qui remet aussi la fiche : « Rouvrir » laisserait le changement en ligne. */}
                   <button type="button" className={s.ghost} onClick={() => void ouvrir(a.rapport_id)}>Rapport « {a.cible} »</button>
                 </div>
               </li>
@@ -358,5 +385,47 @@ export default function Concurrence() {
         </div>
       )}
     </main>
+  )
+}
+
+/** Ce que « Appliquer » va ecrire, mot pour mot : on ne publie rien qu'on n'a pas lu. */
+function ChangementPret({ c, applique }: { c: Changement; applique: string | null }) {
+  return (
+    <div className={s.changement}>
+      <div className={s.changementTete}>
+        {applique ? <span className={`${s.chip} ${s.termine}`}>Appliqué le {quand(applique)}</span> : <span className={`${s.chip} ${s.cours}`}>Changement prêt</span>}
+        <span className={s.small}>Fiche #{c.produitId}</span>
+      </div>
+      {c.type === 'metaTitle' ? (
+        <p><b>Titre Google</b> → « {c.valeur} » <span className={s.muted}>({c.valeur.length} car.)</span></p>
+      ) : (
+        <>
+          <p><b>Question ajoutée à la FAQ</b> : « {c.questionFR} »</p>
+          <details className={s.details}>
+            <summary>Lire la réponse (FR + AR)</summary>
+            <p>{c.reponseFR}</p>
+            <p dir="rtl"><b>{c.questionAR}</b><br />{c.reponseAR}</p>
+          </details>
+        </>
+      )}
+    </div>
+  )
+}
+
+/** Search Console, N jours avant contre N jours apres le « Fait ». */
+function ImpactLigne({ impact }: { impact: Impact }) {
+  if (impact.tropTot) {
+    const reste = Math.max(1, 7 - impact.joursDispo)
+    return <div className={`${s.small} ${s.muted}`}>Impact : mesurable dans ~{reste} jour{reste > 1 ? 's' : ''} (Search Console a besoin de 7 jours de recul).</div>
+  }
+  const { avant: av, apres: ap } = impact
+  const pos = av.position != null && ap.position != null ? Math.round((av.position - ap.position) * 10) / 10 : null
+  return (
+    <div className={s.impact}>
+      <b>Impact</b> <span className={s.muted}>({impact.jours} j après vs {impact.jours} j avant, {impact.page})</span> :{' '}
+      position {av.position ?? '—'} → <b>{ap.position ?? '—'}</b>
+      {pos != null && pos !== 0 && <span className={pos > 0 ? s.up : s.down}> ({pos > 0 ? '+' : ''}{pos})</span>}
+      {' · '}clics {av.clics} → <b>{ap.clics}</b>{' · '}impressions {av.impressions} → <b>{ap.impressions}</b>
+    </div>
   )
 }

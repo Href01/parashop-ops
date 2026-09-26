@@ -11,7 +11,7 @@ migrations are run manually against the database.
 
 ## Add a new migration
 
-1. Create `NNN_short_description.sql` using the next free number (currently `045`).
+1. Create `NNN_short_description.sql` using the next free number (currently `046`).
 2. Make it idempotent (`IF NOT EXISTS`, guarded `DO $$ ... $$`) so a re-run is safe.
 3. Apply it:
 
