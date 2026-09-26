@@ -46,6 +46,19 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
+  /* L'agent SEO concurrence tourne dans le cloud d'Anthropic : ni cookie ni
+     session. Il presente SEO_AGENT_TOKEN, et seulement sur ses routes machine
+     (reclamer une demande, lire son contexte, publier un rapport). La route de
+     destination reverifie le jeton en temps constant. */
+  const jetonSeo = process.env.SEO_AGENT_TOKEN
+  if (
+    jetonSeo
+    && pathname.startsWith('/api/ops/seo/agent/machine/')
+    && req.headers.get('authorization') === `Bearer ${jetonSeo}`
+  ) {
+    return NextResponse.next()
+  }
+
   // Public storefront endpoints (cross-origin, intentionally open) — bypass
   // both the shared gate and the founder session. e.g. /api/public/districts
   // is consumed by the shinecosmetics.ma checkout.

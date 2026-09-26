@@ -262,6 +262,11 @@ export default function SeoDashboard() {
           <p>
             Comprendre ce qui monte, ce qui recule et ce qui mérite une action.
           </p>
+          <p>
+            <a href="/analytics/seo/concurrence">
+              Concurrence : qui est premier sur nos requêtes, et comment le dépasser →
+            </a>
+          </p>
         </div>
         <button
           type="button"
