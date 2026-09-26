@@ -753,3 +753,9 @@
     font-size: 15px;
   }
 }
+.releases { padding: 0 22px 20px; }
+.releases summary { cursor: pointer; display: flex; flex-direction: column; gap: 5px; padding: 12px 0; color: #263c32; font-weight: 600; }
+.releases summary small { font-weight: 400; color: #657367; }
+.releases ul { margin: 6px 0 10px; padding-inline-start: 20px; line-height: 1.6; font-size: 13px; }
+.releases p { font-size: 12px; color: #657367; line-height: 1.5; }
+.releases summary:focus-visible { outline: 2px solid #175f50; outline-offset: 3px; }

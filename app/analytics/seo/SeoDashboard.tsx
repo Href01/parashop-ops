@@ -18,6 +18,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -27,6 +28,7 @@ import type { SeoDashboard as Data } from '@/lib/seo/store'
 import { reportCsv, type Comparison, type Metrics } from '@/lib/seo/model'
 import { mergeFilterSearch, type FilterChange } from '@/lib/seo/filter-url'
 import styles from './seo.module.css'
+import { SEO_RELEASES, releaseObservationDays } from '@/lib/seo/releases'
 
 const number = (n: number | null | undefined, digits = 0) =>
   n == null ? '—' : n.toLocaleString('fr-FR', { maximumFractionDigits: digits })
@@ -566,6 +568,7 @@ export default function SeoDashboard() {
               >
                 <CartesianGrid stroke="#eceeea" vertical={false} />
                 <XAxis dataKey="name" tick={{ fontSize: 11 }} minTickGap={28} />
+                {SEO_RELEASES.filter(release => report.daily.some(r => r.day === release.day)).map(release => <ReferenceLine key={release.day} x={day(release.day)} stroke="#947447" strokeDasharray="3 3" label={{ value: 'Publication', position: 'insideTopRight', fontSize: 10 }} />)}
                 <YAxis
                   reversed={chartMetric === 'position'}
                   tick={{ fontSize: 11 }}
@@ -609,6 +612,15 @@ export default function SeoDashboard() {
             </p>
           </div>
         )}
+      </section>
+      <section className={styles.panel} aria-label="Repères de publication SEO">
+        <div className={styles.panelHeader}><div><h2>Ce qui a changé sur le site</h2><p>Repères datés, pas une preuve de causalité. Comparez la même requête et la même page sur 7 puis 28 jours.</p></div></div>
+        <div className={styles.releases}>
+          {SEO_RELEASES.map(release => {
+            const observed = releaseObservationDays(release.day, data?.latestDay)
+            return <details key={release.day}><summary><span><time dateTime={release.day}>{day(release.day)}</time> · {release.title}</span><small>{!data?.latestDay ? 'Données non disponibles' : observed === 0 ? 'Pas encore de données après publication' : `${observed} jours après publication · ${observed < 7 ? 'recul inférieur à 7 jours' : observed < 28 ? 'recul de 7 jours atteint, pas encore 28' : 'recul de 28 jours atteint'}`}</small></summary><ul>{release.changes.map(change => <li key={change}>{change}</li>)}</ul><p>Les délais d’exploration et de réindexation varient. Vérifiez aussi le volume d’impressions et la couverture du rapport avant de conclure.</p></details>
+          })}
+        </div>
       </section>
       {report && (
         <section className={styles.panel}>
