@@ -124,6 +124,33 @@ export async function echecDemande(id: number, erreur: string) {
     [id, erreur])
 }
 
+/**
+ * LES OPPORTUNITES QUE PERSONNE NE SUIT : les recherches ou Shine est deja
+ * entre la 4e et la 20e place au Maroc, avec du volume, et qui ne sont pas dans
+ * le suivi. Passer de la 11e a la 3e place multiplie les clics ; c'est le gain
+ * le plus rapide du SEO. Sans cette liste, l'agent avait classe Salerm « suivi
+ * seulement » alors que la marque faisait un tiers du trafic.
+ */
+export async function opportunites(limite = 15) {
+  const suivies = await pool.query<{ requete: string }>(`SELECT requete FROM "SeoAgentQuery"`)
+  const deja = new Set(suivies.rows.map((x) => norm(x.requete).replace(/\s+/g, ' ').trim()))
+  const r = await pool.query<{ query: string; imp: number; clics: number; pos: number }>(
+    `SELECT query, sum(impressions)::float AS imp, sum(clicks)::float AS clics,
+            sum(position * impressions) / nullif(sum(impressions), 0) AS pos
+     FROM "SeoSearchDaily"
+     WHERE property = $1 AND dataset = 'query' AND country = 'mar'
+       AND day > (SELECT max(day) FROM "SeoSearchDaily" WHERE property = $1) - 28
+     GROUP BY query
+     HAVING sum(impressions) >= 15
+        AND sum(position * impressions) / nullif(sum(impressions), 0) BETWEEN 4 AND 20
+     ORDER BY sum(impressions) DESC
+     LIMIT 60`, [PROPERTY])
+  return r.rows
+    .filter((x) => !deja.has(norm(x.query).replace(/\s+/g, ' ').trim()))
+    .slice(0, limite)
+    .map((x) => ({ requete: x.query, impressions: Math.round(x.imp), clics: Math.round(x.clics), position: Math.round(x.pos * 10) / 10 }))
+}
+
 /** Ce que l'agent recoit avant de travailler : le suivi, les positions reelles, le releve precedent. */
 export async function contexte(filtre?: { genre: Genre; cible: string }) {
   const g = await pool.query(`SELECT nom, priorite, pourquoi, analyse_le FROM "SeoAgentGroup" ORDER BY priorite, nom`)
@@ -149,6 +176,7 @@ export async function contexte(filtre?: { genre: Genre; cible: string }) {
     grappeDuJour: prochaine,
     requetes: requetes.map((x) => ({ ...x, gsc: gsc[x.requete], dernierReleve: dernier.get(x.requete) ?? null })),
     actionsOuvertes: ouvertes.rows,
+    opportunites: await opportunites(),
     rappel: 'Positions Search Console : Maroc, moyenne ponderee par les impressions. Ordre des concurrents : moteur de l’agent, pas google.ma.',
   }
 }

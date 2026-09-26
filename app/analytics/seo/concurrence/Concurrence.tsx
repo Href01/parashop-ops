@@ -21,8 +21,18 @@ type Grappe = { nom: string; priorite: number; pourquoi: string; analyse_le: str
 type Demande = { id: number; cible: string; genre: string; statut: string; demande_le: string; termine_le: string | null; erreur: string | null; rapport_id: number | null }
 type RapportLigne = { id: number; source: string; cible: string; cree_le: string; modele: string | null; en_bref: string; concurrent: string | null }
 type Action = { id: number; priorite: number; action: string; page: string | null; levier: string | null; effort: string | null; signal: string | null; effet: string | null; statut: string; rapport_id: number; cible: string; cree_le: string }
-type Donnees = { grappes: Grappe[]; grappeDuJour: string | null; requetes: Requete[]; series: Record<string, { jour: string; shineRang: number | null; premier: string | null }[]>; demandes: Demande[]; rapports: RapportLigne[]; actions: Action[]; dernierPassage: string | null; rappel: string }
+type Donnees = { opportunites?: Opportunite[]; grappes: Grappe[]; grappeDuJour: string | null; requetes: Requete[]; series: Record<string, { jour: string; shineRang: number | null; premier: string | null }[]>; demandes: Demande[]; rapports: RapportLigne[]; actions: Action[]; dernierPassage: string | null; rappel: string }
 type RapportComplet = RapportLigne & { contenu: string; actions: Action[] }
+type Opportunite = { requete: string; impressions: number; clics: number; position: number }
+
+/** La grappe la plus probable d'une recherche, pour la suivre en un geste (modifiable ensuite). */
+const grappeProbable = (q: string) =>
+  /\bshine\b/i.test(q) ? 'marque-shine'
+    : /salerm|biokera/i.test(q) ? 'salerm-biokera'
+    : /milk/i.test(q) ? 'milk-shake'
+    : /olaplex/i.test(q) ? 'olaplex'
+    : /anua|medicube|joseon|cosrx|skin1004|cor[ée]en|k-?beauty|spf|solaire|s[ée]rum/i.test(q) ? 'k-beauty'
+    : 'besoins-cheveux'
 
 const quand = (d: string | null) => (d ? new Date(d).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—')
 // « https://www.shinecosmetics.ma/products/34-… » → « /products/34-… » : le domaine n'apprend rien ici.
@@ -85,14 +95,17 @@ export default function Concurrence() {
     if (r.ok) await charger()
   }
 
-  const suivre = async () => {
+  const suivreRequete = async (requete: string, grappe: string) => {
     setMessage(null)
-    const r = await fetch('/api/ops/seo/agent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ suivi: { ...nouvelle, actif: true } }) })
+    const r = await fetch('/api/ops/seo/agent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ suivi: { requete, grappe, actif: true } }) })
     const j = await r.json()
-    if (!r.ok) return setMessage({ ok: false, texte: j.error || 'Ajout impossible' })
-    setMessage({ ok: true, texte: `« ${j.suivi.requete} » sera relevée chaque matin.` })
-    setNouvelle({ requete: '', grappe: nouvelle.grappe })
+    if (!r.ok) { setMessage({ ok: false, texte: j.error || 'Ajout impossible' }); return false }
+    setMessage({ ok: true, texte: `« ${j.suivi.requete} » sera relevée chaque matin (grappe ${j.suivi.grappe}).` })
     await charger()
+    return true
+  }
+  const suivre = async () => {
+    if (await suivreRequete(nouvelle.requete, nouvelle.grappe)) setNouvelle({ requete: '', grappe: nouvelle.grappe })
   }
 
   const ouvrir = async (id: number) => {
@@ -216,6 +229,38 @@ export default function Concurrence() {
           </ul>
         </div>
       </section>
+
+      {!!d?.opportunites?.length && (
+        <section className={s.panel} aria-labelledby="opportunites">
+          <div className={s.panelHeader}>
+            <div>
+              <h2 id="opportunites">Opportunités Search Console ({d.opportunites.length})</h2>
+              <p>Recherches où Shine est déjà entre la 4e et la 20e place au Maroc (28 jours), avec du volume, mais que personne ne suit. Gagner quelques places ici rapporte le plus vite.</p>
+            </div>
+          </div>
+          <div className={s.tableScroll}>
+            <table className={s.table}>
+              <thead><tr><th>Recherche</th><th>Position Google</th><th>Impressions</th><th>Clics</th><th /></tr></thead>
+              <tbody>
+                {d.opportunites.map((o) => (
+                  <tr key={o.requete}>
+                    <td className={s.req}>{o.requete}</td>
+                    <td data-label="Position Google"><b>{pos(o.position)}</b></td>
+                    <td data-label="Impressions">{o.impressions}</td>
+                    <td data-label="Clics">{o.clics}</td>
+                    <td className={s.cellAction}>
+                      <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <button type="button" className={s.ghost} onClick={() => void envoyer('requete', o.requete)}>Analyser</button>
+                        <button type="button" className={s.ghost} onClick={() => void suivreRequete(o.requete, grappeProbable(o.requete))}>Suivre · {grappeProbable(o.requete)}</button>
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       <section className={s.panel} aria-labelledby="suivi">
         <div className={s.panelHeader}>
