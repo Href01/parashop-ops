@@ -59,6 +59,18 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next()
   }
 
+  /* L'agent Meta Ads tourne dans le meme environnement cloud que l'agent SEO et
+     presente le meme jeton (ADS_AGENT_TOKEN s'il est defini, sinon
+     SEO_AGENT_TOKEN), seulement sur SES routes machine. La route reverifie. */
+  const jetonAds = process.env.ADS_AGENT_TOKEN || process.env.SEO_AGENT_TOKEN
+  if (
+    jetonAds
+    && pathname.startsWith('/api/ops/ads/agent/machine/')
+    && req.headers.get('authorization') === `Bearer ${jetonAds}`
+  ) {
+    return NextResponse.next()
+  }
+
   // Public storefront endpoints (cross-origin, intentionally open) — bypass
   // both the shared gate and the founder session. e.g. /api/public/districts
   // is consumed by the shinecosmetics.ma checkout.
