@@ -35,7 +35,15 @@ It never changes anything in the Meta account: Achraf decides and acts in Ads Ma
   - Without a product it falls back to `gpt-image-2.5-flare` through `/generations`.
   - The model draws NO text: the BOS draws the headline over the image, in the preview and in the canvas export, with the same proportions.
   - Images are stored on Cloudinary (folder `shine-ads`) and logged in `AdsCreativeImage` (migration 048) with the exact prompt, model, duration and usage.
-  - Caps: `ADS_IMAGES_PAR_JOUR` (default 20) and 6 images per creation. The agent can order a visual with `bos.mjs image`.
+  - Caps: `ADS_IMAGES_PAR_JOUR` (default 40) and 40 images per creation. The agent can order a visual with `bos.mjs image`.
+- **Art director (migration 049).** Claude writes the image prompts; OpenAI only paints.
+  - Achraf sends a brief from the studio (`Brief au directeur artistique`): image options to compare, a carousel, or an animated Reel. Format, styles, quality, free text, plus one-click ideas computed from margin × sales × stock, the season and the winning ads (`idees()` in `lib/ads/direction-model.ts`).
+  - The brief becomes an `AdsAgentRequest` of genre `direction`. A separate Claude routine takes only these (`bos.mjs demande --direction`), reads `scripts/ads/DIRECTION.md` (parashop repo) and looks at the real product photos. It then delivers options, cards or shots (`AdsCreativeOption`) and has each one painted (`bos.mjs image --option=<id>`). It looks at every image, redoes a failed one once, and notes its check.
+  - `ADS_DA_ROUTINE_ID` + `ADS_DA_FIRE_TOKEN` (the routine's API trigger) wake it up at once. Without them, the routine's hourly run picks the brief up.
+  - The BOS always appends the guardrails to Claude's prompt (`promptFinal`): exact product, no text, free headline zone. Carousel cards 2+ receive card 1 as a style reference.
+- **Animated Reels.** Not AI video. Each shot is a generated background plate with no product; the real product photos, cut out by Cloudinary AI (`e_background_removal`), are animated on top (`rebond`, `pop`, `glisse`, `duo`, `zoom`, `fin`) with word-by-word text in the shop's fonts and colours.
+  - `lib/ads/reel-model.ts` computes each frame (pure, tested). `app/ads/agent/ui/Reel.tsx` draws it in a canvas and exports an H.264 MP4 at 1080×1920, 30 fps, in the browser (WebCodecs + mediabunny; Chrome or Edge).
+- **Periods.** 7 d, 30 d, 3, 6, 9, 12 months. Spend is merged day by day (ad-level detail when that day was read, campaign totals otherwise); a comparison period that starts before the opening is not used.
   - Variables on the BOS: `OPENAI_API_KEY` and `CLOUDINARY_*`, copied from the shop project on 2026-09-27 as secrets.
 
 ## Why the truth is not Meta's ROAS

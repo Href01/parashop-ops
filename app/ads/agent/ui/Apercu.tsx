@@ -1,7 +1,9 @@
 'use client'
 
-import { Bookmark, ChevronRight, Heart, MessageCircle, MoreHorizontal, Send } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { Bookmark, ChevronLeft, ChevronRight, Heart, MessageCircle, MoreHorizontal, Send } from 'lucide-react'
 import { FORMATS_IMAGE, estRtl, tailleAccroche, type FormatImage, type Langue } from '@/lib/ads/creatif-model'
+import { POLICES, policesPretes } from './polices'
 import s from './apercu.module.css'
 
 /**
@@ -16,8 +18,9 @@ import s from './apercu.module.css'
 
 export type Visuel = { format: FormatImage; image: string | null; accroche: string; langue: Langue; surimpression: boolean; position: 'haut' | 'bas' }
 
-const POLICE_AR = '"Noto Naskh Arabic", "Segoe UI", Tahoma, "Geeza Pro", sans-serif'
-const POLICE = '"DM Sans", "Segoe UI", system-ui, sans-serif'
+// Les polices du site (DM Sans, Tajawal), chargees par polices.ts ; les autres ne servent que de secours.
+const POLICE_AR = `${POLICES.arabe}, "Noto Naskh Arabic", "Segoe UI", Tahoma, sans-serif`
+const POLICE = `${POLICES.titre}, "Segoe UI", system-ui, sans-serif`
 
 // Proportions communes a l'apercu et a l'export (en fraction de la largeur).
 const P = { marge: 0.075, marque: 0.026, degrade: 0.42 }
@@ -64,6 +67,30 @@ export function ApercuFeed({ v, legende, bouton, largeur = 320 }: { v: Visuel; l
   )
 }
 
+/** Carrousel du fil : une carte a la fois, fleches, points et compteur, comme dans Instagram. */
+export function ApercuCarrousel({ cartes, legende, bouton, largeur = 320 }: { cartes: Visuel[]; legende: string; bouton: string; largeur?: number }) {
+  const piste = useRef<HTMLDivElement>(null)
+  const [i, setI] = useState(0)
+  const rtl = estRtl(cartes[0]?.langue ?? 'fr')
+  const aller = (n: number) => { const x = Math.max(0, Math.min(cartes.length - 1, n)); piste.current?.scrollTo({ left: x * largeur, behavior: 'smooth' }); setI(x) }
+  return (
+    <div className={s.telephone} style={{ width: largeur }}>
+      <Tete rtl={rtl} />
+      <div className={s.carrousel}>
+        <div ref={piste} className={s.carrouselPiste} onScroll={(e) => setI(Math.round(e.currentTarget.scrollLeft / largeur))}>
+          {cartes.map((v, n) => <div key={n}><CreatifVisuel v={v} largeur={largeur} /></div>)}
+        </div>
+        <span className={s.compteur}>{i + 1}/{cartes.length}</span>
+        {i > 0 && <button type="button" className={s.carrouselFleche} style={{ left: 8 }} onClick={() => aller(i - 1)} aria-label="Carte précédente"><ChevronLeft size={16} /></button>}
+        {i < cartes.length - 1 && <button type="button" className={s.carrouselFleche} style={{ right: 8 }} onClick={() => aller(i + 1)} aria-label="Carte suivante"><ChevronRight size={16} /></button>}
+      </div>
+      <div className={s.bouton} dir={rtl ? 'rtl' : 'ltr'}><span>{bouton}</span><ChevronRight size={16} style={rtl ? { transform: 'scaleX(-1)' } : undefined} /></div>
+      <div className={s.carrouselPoints}>{cartes.map((_, n) => <i key={n} data-actif={n === i} />)}</div>
+      <p className={s.legende} dir={rtl ? 'rtl' : 'ltr'}><b dir="ltr">shinecosmetics.ma</b> {legende.length > 140 ? <>{legende.slice(0, 140)}<span className={s.plus}>… {rtl ? 'المزيد' : 'plus'}</span></> : legende}</p>
+    </div>
+  )
+}
+
 /** Story ou Reel (9:16) : plein ecran, barre de progression, bouton en bas. */
 export function ApercuStory({ v, legende, bouton, largeur = 250, reel = false }: { v: Visuel; legende: string; bouton: string; largeur?: number; reel?: boolean }) {
   const rtl = estRtl(v.langue)
@@ -99,6 +126,7 @@ function lignes(ctx: CanvasRenderingContext2D, texte: string, max: number): stri
 }
 
 export async function composerPng(v: Visuel): Promise<Blob> {
+  await policesPretes()
   const [W, H] = FORMATS_IMAGE[v.format].export
   const c = document.createElement('canvas')
   c.width = W; c.height = H

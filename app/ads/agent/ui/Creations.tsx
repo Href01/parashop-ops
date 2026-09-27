@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Check, Copy, Download, ImagePlus, Loader2, Trash2, X } from 'lucide-react'
+import { Check, Copy, Download, ImagePlus, Loader2, Trash2, Wand2, X } from 'lucide-react'
 import { BOUTONS, FORMATS_IMAGE, formatParDefaut, type FormatImage, type Langue } from '@/lib/ads/creatif-model'
 import { ApercuFeed, ApercuStory, telechargerPng, type Visuel } from './Apercu'
-import { STATUTS_CREATIF, quand, type Creatif, type Donnees, type Image } from './types'
+import { BriefDirection, DirectionsEnCours, SeriesDirection } from './Direction'
+import { STATUTS_CREATIF, quand, type Creatif, type Donnees, type Image, type Option } from './types'
 import s from '../agent.module.css'
 
 const ETAPES = ['idee', 'validee', 'produite', 'en_ligne', 'ecartee'] as const
@@ -12,20 +13,28 @@ const LANGUES: Record<Langue, string> = { fr: 'Français', darija: 'Darija', ar:
 const texteDe = (c: Creatif, l: Langue) => (l === 'fr' ? c.texte_fr : l === 'darija' ? c.texte_darija : c.texte_ar) || ''
 const premiere = (t: string) => t.split(/\n|(?<=[.!?؟])\s/)[0]?.trim() || ''
 const accrocheDe = (c: Creatif, l: Langue) => (l === 'fr' ? c.accroche : premiere(texteDe(c, l)) || c.accroche)
-const imageChoisie = (c: Creatif): Image | undefined => c.images.find((i) => i.choisie) ?? c.images[0]
+// Le visuel de la creation : l'image seule retenue ; a defaut, la premiere carte ou le premier plan de la derniere serie.
+const seules = (c: Creatif) => c.images.filter((i) => i.carte == null)
+const imageChoisie = (c: Creatif): Image | undefined => seules(c).find((i) => i.choisie) ?? seules(c)[0]
+  ?? c.images.filter((i) => i.carte === 1).sort((a, b) => b.cree_le.localeCompare(a.cree_le))[0] ?? c.images[0]
 
-export function Creations({ d, maj, ouvrir, demander }: { d: Donnees; maj: (id: number, statut: string) => void; ouvrir: (id: number) => void; demander: () => void }) {
+export function Creations({ d, maj, ouvrir, demander, rafraichir, message }: { d: Donnees; maj: (id: number, statut: string) => void; ouvrir: (id: number) => void; demander: () => void; rafraichir: () => Promise<void>; message: (ok: boolean, t: string) => void }) {
   const [etape, setEtape] = useState<'toutes' | (typeof ETAPES)[number]>('toutes')
+  const [brief, setBrief] = useState(false)
   const compte = useMemo(() => Object.fromEntries(ETAPES.map((e) => [e, d.creatifs.filter((c) => c.statut === e).length])), [d.creatifs])
   const liste = d.creatifs.filter((c) => (etape === 'toutes' ? c.statut !== 'ecartee' : c.statut === etape))
   const nom = new Map(d.produits.map((p) => [p.id, `${p.marque} ${p.nom}`]))
   return (
     <section className={s.panel} aria-labelledby="creas">
       <div className={s.panelHeader}>
-        <div><h2 id="creas">Studio de création</h2><p>Les créations de l’agent, de l’idée à la mise en ligne. Ouvre-en une pour l’aperçu Instagram, générer le visuel à partir de la vraie photo du produit et télécharger l’image prête pour Meta.</p></div>
-        <button type="button" className={s.primary} onClick={demander}><ImagePlus size={14} /> Demander des créations</button>
+        <div><h2 id="creas">Studio de création</h2><p>Dis au directeur artistique ce que tu veux : Claude écrit les consignes, OpenAI peint à partir de tes vraies photos produit. Options à comparer, carrousels, Reels animés ; aperçu Instagram et export prêt pour Meta.</p></div>
+        <div className={s.btns} style={{ marginTop: 0 }}>
+          <button type="button" className={s.primary} onClick={() => setBrief(true)}><Wand2 size={14} /> Brief au directeur artistique</button>
+          <button type="button" className={s.ghost} onClick={demander}><ImagePlus size={14} /> Idées de créations (texte)</button>
+        </div>
       </div>
       <div className={s.body}>
+        <DirectionsEnCours demandes={d.demandes} creatifId={null} />
         <div className={s.filtres}><div className={s.groupeFiltres}>
           <button type="button" className={s.filtre} aria-pressed={etape === 'toutes'} onClick={() => setEtape('toutes')}>En cours ({d.creatifs.filter((c) => c.statut !== 'ecartee').length})</button>
           {ETAPES.map((e) => <button key={e} type="button" className={s.filtre} aria-pressed={etape === e} onClick={() => setEtape(e)}>{STATUTS_CREATIF[e]} ({compte[e]})</button>)}
@@ -40,7 +49,7 @@ export function Creations({ d, maj, ouvrir, demander }: { d: Donnees; maj: (id: 
                 <ApercuFeed v={v} legende={c.texte_fr || ''} bouton={BOUTONS.message.fr} largeur={236} />
               </button>
               <div className={s.carteCreaInfos}>
-                <div className={s.carteTop}><span className={s.chip}>{c.format}</span><span className={`${s.chip} ${c.statut === 'en_ligne' ? s.chipVert : c.statut === 'validee' || c.statut === 'produite' ? s.chipBleu : ''}`}>{STATUTS_CREATIF[c.statut]?.replace(/s$/, '')}</span>{c.images.length > 0 && <span className={s.chip}>{c.images.length} visuel(s)</span>}</div>
+                <div className={s.carteTop}><span className={s.chip}>{c.format}</span>{new Set(c.options.map((o) => o.serie)).size > 0 && <span className={`${s.chip} ${s.chipBleu}`}>{new Set(c.options.map((o) => o.serie)).size} direction(s)</span>}<span className={`${s.chip} ${c.statut === 'en_ligne' ? s.chipVert : c.statut === 'validee' || c.statut === 'produite' ? s.chipBleu : ''}`}>{STATUTS_CREATIF[c.statut]?.replace(/s$/, '')}</span>{c.images.length > 0 && <span className={s.chip}>{c.images.length} visuel(s)</span>}</div>
                 <p className={s.accroche}>« {c.accroche} »</p>
                 <p className={`${s.small} ${s.muted}`}>{c.angle}{c.produit_ids.length ? ` · ${c.produit_ids.map((id) => nom.get(id) || `#${id}`).join(', ')}` : ''}</p>
                 <div className={s.btns}>
@@ -52,6 +61,17 @@ export function Creations({ d, maj, ouvrir, demander }: { d: Donnees; maj: (id: 
             </article>)
         })}</div>
       </div>
+      {brief && (
+        <div className={s.drawer} role="dialog" aria-modal="true" aria-label="Brief au directeur artistique" onClick={() => setBrief(false)}>
+          <div className={`${s.drawerBody} ${s.drawerLarge}`} onClick={(e) => e.stopPropagation()}>
+            <div className={s.panelHeader} style={{ padding: 0 }}>
+              <div><p className={s.eyebrow}>Nouvelle création</p><h2>Brief au directeur artistique</h2></div>
+              <button type="button" className={s.ghost} onClick={() => setBrief(false)} aria-label="Fermer"><X size={14} /></button>
+            </div>
+            <BriefDirection d={d} envoye={(texte) => { setBrief(false); message(true, texte); void rafraichir() }} erreur={(texte) => message(false, texte)} />
+          </div>
+        </div>
+      )}
     </section>
   )
 }
@@ -68,6 +88,8 @@ export function Studio({ c, d, fermer, maj, rafraichir, message }: { c: Creatif;
   const [qualite, setQualite] = useState<'low' | 'medium' | 'high'>('medium')
   const [precision, setPrecision] = useState('')
   const [genere, setGenere] = useState<number | null>(null)
+  const [nouvelleDirection, setNouvelleDirection] = useState(false)
+  const haut = useRef<HTMLDivElement>(null)
   const debut = useRef(0)
   useEffect(() => { setAccroche(accrocheDe(c, langue)) }, [langue, c])
   useEffect(() => {
@@ -76,6 +98,13 @@ export function Studio({ c, d, fermer, maj, rafraichir, message }: { c: Creatif;
     return () => clearInterval(t)
   }, [genere])
   const image = c.images.find((i) => i.id === imageId) ?? imageChoisie(c)
+  const galerie = seules(c)
+  // Une option du directeur artistique passe dans l'apercu : son visuel, son texte, sa position.
+  const utiliser = (i: Image, o: Option) => {
+    setImageId(i.id); setAccroche(o.texte?.[langue] || o.texte?.fr || accroche); setPosition(o.position)
+    if (i.format === 'story') setFormat('story')
+    haut.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
   const v = (f: FormatImage): Visuel => ({ format: f, image: image?.url ?? null, accroche, langue, surimpression, position })
   const legende = texteDe(c, langue) || c.texte_fr || ''
   const bouton = BOUTONS[canal][langue]
@@ -106,7 +135,7 @@ export function Studio({ c, d, fermer, maj, rafraichir, message }: { c: Creatif;
   return (
     <div className={s.drawer} role="dialog" aria-modal="true" aria-label="Studio de création" onClick={fermer}>
       <div className={`${s.drawerBody} ${s.drawerLarge}`} onClick={(e) => e.stopPropagation()}>
-        <div className={s.panelHeader} style={{ padding: 0 }}>
+        <div ref={haut} className={s.panelHeader} style={{ padding: 0 }}>
           <div><p className={s.eyebrow}>{c.format} · {c.angle} · {quand(c.cree_le)}</p><h2>« {c.accroche} »</h2>
             {c.produit_ids.length > 0 && <p className={`${s.small} ${s.muted}`}>{c.produit_ids.map((id) => nom.get(id) || `#${id}`).join(' · ')}{c.public ? ` · Pour : ${c.public}` : ''}</p>}</div>
           <button type="button" className={s.ghost} onClick={fermer} aria-label="Fermer"><X size={14} /></button>
@@ -133,8 +162,8 @@ export function Studio({ c, d, fermer, maj, rafraichir, message }: { c: Creatif;
               <button type="button" className={s.filtre} aria-pressed={canal === 'message'} onClick={() => setCanal('message')}>Envoyer un message</button>
               <button type="button" className={s.filtre} aria-pressed={canal === 'site'} onClick={() => setCanal('site')}>Commander sur le site</button>
             </div></fieldset>
-            <fieldset className={s.reglage}><legend>Visuels ({c.images.length})</legend>
-              {c.images.length > 0 && <div className={s.galerie}>{c.images.map((i) => (
+            <fieldset className={s.reglage}><legend>Visuels ({galerie.length})</legend>
+              {galerie.length > 0 && <div className={s.galerie}>{galerie.map((i) => (
                 <div key={i.id} className={`${s.miniature} ${image?.id === i.id ? s.miniatureActive : ''}`}>
                   <button type="button" onClick={() => setImageId(i.id)} aria-label="Utiliser ce visuel dans l’aperçu"><img src={i.url} alt="" /></button>
                   <span className={s.miniatureInfos}>{FORMATS_IMAGE[i.format].label.split(' ')[0]}{i.choisie ? ' · choisi' : ''}</span>
@@ -158,6 +187,16 @@ export function Studio({ c, d, fermer, maj, rafraichir, message }: { c: Creatif;
             </div>{!image && <p className={`${s.small} ${s.muted}`}>Génère d’abord un visuel.</p>}</fieldset>
           </div>
         </div>
+
+        <section className={s.dirSeries} aria-label="Directeur artistique">
+          <div className={s.dirSerieTete}>
+            <div><h3><Wand2 size={15} /> Directeur artistique</h3><p className={`${s.small} ${s.muted}`}>Options à comparer, carrousel ou Reel animé : Claude écrit les consignes, OpenAI peint avec tes vraies photos produit.</p></div>
+            <button type="button" className={nouvelleDirection ? s.ghost : s.primary} onClick={() => setNouvelleDirection((x) => !x)}>{nouvelleDirection ? 'Fermer le brief' : <><Wand2 size={13} /> Nouvelle direction</>}</button>
+          </div>
+          <DirectionsEnCours demandes={d.demandes} creatifId={c.id} />
+          {nouvelleDirection && <BriefDirection d={d} creatif={c} envoye={(texte) => { setNouvelleDirection(false); message(true, texte); void rafraichir() }} erreur={(texte) => message(false, texte)} />}
+          <SeriesDirection c={c} d={d} langue={langue} bouton={bouton} legende={legende} rafraichir={rafraichir} message={message} utiliser={utiliser} />
+        </section>
 
         <div className={s.studioTextes}>
           {(['fr', 'darija', 'ar'] as Langue[]).filter((l) => texteDe(c, l)).map((l) => (

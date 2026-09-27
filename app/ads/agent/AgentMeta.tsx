@@ -138,7 +138,7 @@ export default function AgentMeta() {
           </nav>
           {onglet === 'ensemble' && <Ensemble d={d} />}
           {onglet === 'campagnes' && <Campagnes d={d} ouvrirPub={setPubOuverte} demander={preparerDemande} />}
-          {onglet === 'creations' && <Creations d={d} ouvrir={setCreatifOuvert} demander={() => preparerDemande('creatifs', '')} maj={(id, statut) => void envoyer({ creatif: { id, statut } }, 'Création mise à jour.')} />}
+          {onglet === 'creations' && <Creations d={d} ouvrir={setCreatifOuvert} demander={() => preparerDemande('creatifs', '')} maj={(id, statut) => void envoyer({ creatif: { id, statut } }, 'Création mise à jour.')} rafraichir={charger} message={(ok, texte) => setMessage({ ok, texte })} />}
           {onglet === 'afaire' && <AFaire actions={d.actions} ouvrirRapport={(id) => void ouvrirRapport(id)} cocher={(id, statut) => void envoyer({ action: { id, statut } }, statut === 'fait' ? 'Décision marquée faite : l’agent en mesurera l’effet.' : statut === 'ecarte' ? 'Décision écartée.' : 'Décision rouverte.')} />}
           {onglet === 'strategie' && <StrategieOnglet st={d.strategie} d={d} occupe={occupe} enregistrer={(config) => envoyer({ strategie: config }, 'Stratégie enregistrée : l’agent la suit dès son prochain passage.')} />}
           {onglet === 'agent' && <AgentOnglet d={d} occupe={occupe} prerempli={prerempli} ouvrir={(id) => void ouvrirRapport(id)} envoyer={(genre, sujet) => envoyer({ demande: { genre, sujet } }, 'Demande envoyée : réponse au prochain passage de l’agent (chaque heure, 8 h – 23 h).')} />}

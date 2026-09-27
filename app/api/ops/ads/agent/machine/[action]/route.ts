@@ -1,6 +1,7 @@
 import { contexte, echecDemande, publierRapport, reclamerDemande } from '@/lib/ads/agent'
 import { synchroniserPubsMeta } from '@/lib/ads/meta-sync'
-import { genererImage } from '@/lib/ads/images'
+import { genererImage, lireImage, supprimerImage } from '@/lib/ads/images'
+import { contexteDirection, enregistrerDirection, modifierOption, terminerDirection } from '@/lib/ads/direction'
 import type { FormatImage } from '@/lib/ads/creatif-model'
 import { PRIVATE_HEADERS, cronAuthorized } from '@/lib/seo/http'
 
@@ -16,7 +17,16 @@ export const maxDuration = 300
  *   POST …/machine/contexte  → strategie, verite (livre vs pub), pubs, produits, memoire
  *   POST …/machine/rapport   → publie un rapport (+ actions, + creatifs)
  *   POST …/machine/echec     → clot une demande impossible
- *   POST …/machine/image     → le visuel d'une creation publiee (OpenAI, photo produit en reference ; plafonne)
+ *   POST …/machine/image     → le visuel d'une creation, ou d'une option / carte / plan (optionId) — OpenAI, plafonne
+ *
+ * Le directeur artistique (routine a part) :
+ *   POST …/machine/demande { direction: true } → reserve la plus ancienne demande « direction »
+ *   POST …/machine/direction-contexte { id }   → brief, creation, vrais produits (photo + detouree), pubs qui marchent
+ *   POST …/machine/direction                   → livre les options / cartes / plans (valides, puis enregistres)
+ *   POST …/machine/option { id, prompt?, note? } → retouche une consigne, note le controle d'un visuel
+ *   POST …/machine/image-supprimee { id }      → retire un visuel rate
+ *   POST …/machine/fichier { url }             → une image du Cloudinary de Shine, en base64 (si le cloud ne le joint pas)
+ *   POST …/machine/termine { id, resultat }    → clot la direction avec son mot de fin
  *
  * Rien ici ne modifie Meta ni le site.
  */
@@ -30,14 +40,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
       case 'synchro':
         return Response.json(await synchroniserPubsMeta(Number(body?.jours) || 30), { headers: PRIVATE_HEADERS })
       case 'demande':
-        return Response.json({ demande: await reclamerDemande() }, { headers: PRIVATE_HEADERS })
+        return Response.json({ demande: await reclamerDemande(body?.direction === true) }, { headers: PRIVATE_HEADERS })
       case 'contexte':
         return Response.json(await contexte(), { headers: PRIVATE_HEADERS })
       case 'rapport':
         return Response.json(await publierRapport(body), { headers: PRIVATE_HEADERS })
       case 'image':
-        if (!Number.isInteger(body?.creatifId)) return Response.json({ error: 'creatifId requis' }, { status: 400, headers: PRIVATE_HEADERS })
+        if (Number.isInteger(body?.optionId)) return Response.json({ image: await genererImage({ optionId: body.optionId, qualite: body.qualite, par: 'agent' }) }, { headers: PRIVATE_HEADERS })
+        if (!Number.isInteger(body?.creatifId)) return Response.json({ error: 'creatifId ou optionId requis' }, { status: 400, headers: PRIVATE_HEADERS })
         return Response.json({ image: await genererImage({ creatifId: body.creatifId, format: body.format as FormatImage, qualite: body.qualite, precision: body.precision, par: 'agent' }) }, { headers: PRIVATE_HEADERS })
+      case 'direction-contexte':
+        return Response.json(await contexteDirection(Number(body?.id)), { headers: PRIVATE_HEADERS })
+      case 'direction':
+        return Response.json(await enregistrerDirection(body), { headers: PRIVATE_HEADERS })
+      case 'option':
+        return Response.json({ option: await modifierOption(Number(body?.id), { prompt: body?.prompt, note: body?.note, texte: body?.texte, position: body?.position }) }, { headers: PRIVATE_HEADERS })
+      case 'image-supprimee':
+        return Response.json(await supprimerImage(Number(body?.id)), { headers: PRIVATE_HEADERS })
+      case 'fichier':
+        return Response.json(await lireImage(String(body?.url || '')), { headers: PRIVATE_HEADERS })
+      case 'termine':
+        return Response.json(await terminerDirection(Number(body?.id), String(body?.resultat || '')), { headers: PRIVATE_HEADERS })
       case 'echec':
         if (!Number.isInteger(body?.id)) return Response.json({ error: 'id requis' }, { status: 400, headers: PRIVATE_HEADERS })
         await echecDemande(body.id, String(body.erreur || 'Échec sans détail'))

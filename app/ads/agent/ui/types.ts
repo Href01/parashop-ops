@@ -1,5 +1,6 @@
 import type { Strategie } from '@/lib/ads/strategie-model'
 import type { Conseil, Verdict, Famille } from '@/lib/ads/conseils'
+import type { Idee, Mouvement, TypeDirection } from '@/lib/ads/direction-model'
 
 /* Ce que GET /api/ops/ads/agent renvoie (ecran()). Un seul endroit pour les formes. */
 
@@ -21,13 +22,22 @@ export type Pub = {
 }
 export type Produit = { id: number; nom: string; marque: string; categorie: string; prix: number; margeUnitaire: number | null; margeShine: number | null; partenaire: boolean; tauxMarge: number | null; stockVendable: number; importBloque: boolean; vendus90j: number; ca90j: number }
 export type Action = { id: number; priorite: number; type: string; action: string; cible: string | null; signal: string | null; effet: string | null; effort: string | null; statut: string; rapport_id: number; rapport_titre: string; rapport_le: string }
-export type Image = { id: number; creatif_id: number; format: 'feed' | 'story' | 'carre'; url: string; largeur: number; hauteur: number; modele: string; qualite: string | null; choisie: boolean; duree_ms: number | null; cree_le: string }
+export type Image = { id: number; creatif_id: number; option_id: number | null; carte: number | null; format: 'feed' | 'story' | 'carre'; url: string; largeur: number; hauteur: number; modele: string; qualite: string | null; choisie: boolean; duree_ms: number | null; cree_le: string }
 export type Creatif = {
   id: number; rapport_id: number | null; produit_ids: number[]; angle: string; format: string; public: string | null; accroche: string; script: string | null
   texte_fr: string | null; texte_darija: string | null; texte_ar: string | null; titre: string | null; cta: string | null; visuel: string | null
-  statut: string; ad_id: string | null; cree_le: string; images: Image[]
+  statut: string; ad_id: string | null; cree_le: string; images: Image[]; options: Option[]
 }
-export type Demande = { id: number; genre: string; sujet: string; statut: string; demande_le: string; termine_le: string | null; erreur: string | null; rapport_id: number | null }
+/** Une option (image seule), une carte (carrousel) ou un plan (Reel) du directeur artistique. */
+export type Option = {
+  id: number; creatif_id: number; demande_id: number | null; serie: number; carte: number | null; role: string | null; concept: string; pourquoi: string | null
+  prompt: string; texte: { fr?: string; darija?: string; ar?: string }; position: 'haut' | 'bas'; format: 'feed' | 'story' | 'carre'
+  produit_ids: number[] | null; animes: number[] | null; mouvement: Mouvement | null; duree: string | number | null
+  style: string | null; brief: string | null; qualite: string | null; note: string | null; modele: string | null; cree_le: string
+}
+export type ProduitCatalogue = { id: number; nom: string; marque: string; categorie: string; image: string | null; stockVendable: number; importBloque: boolean }
+export type ParametresDirection = { type: TypeDirection; nombre: number; format: 'feed' | 'story' | 'carre'; styles: string[]; qualite: 'medium' | 'high'; brief: string; creatifId?: number; produitIds?: number[] }
+export type Demande = { id: number; genre: string; sujet: string; statut: string; demande_le: string; termine_le: string | null; erreur: string | null; rapport_id: number | null; creatif_id?: number | null; parametres?: ParametresDirection | null; resultat?: string | null }
 export type Rapport = { id: number; source: string; titre: string; cree_le: string; modele: string | null; en_bref: string }
 export type Jour = { jour: string; depense: number; messages: number; achats: number; clics: number; livrees: number; ca: number; marge: number }
 export type Repartition = { dimension: string; valeur: string; depense: number; impressions: number; clics_lien: number; achats: number; messages: number }
@@ -37,6 +47,7 @@ export type Donnees = {
   pubs: Pub[]; produits: Produit[]; verdicts: Record<string, { verdict: Verdict; raison: string; famille: Famille }>; conseils: Conseil[]
   demandes: Demande[]; rapports: Rapport[]; actions: Action[]; creatifs: Creatif[]
   synchro: { le: string | null; jusquAu: string | null }; repartitions: Record<string, Repartition[]>
+  catalogue: ProduitCatalogue[]; idees: Idee[]
 }
 export type Onglet = 'ensemble' | 'campagnes' | 'creations' | 'afaire' | 'strategie' | 'agent'
 

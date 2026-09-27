@@ -240,3 +240,57 @@
   .drawerBody { padding: 16px 14px 60px; }
   .campagneChiffres { margin-inline-start: 0; width: 100%; }
 }
+
+/* Directeur artistique : le brief. */
+.dirBrief { display: grid; gap: 12px; }
+.dirBrief .aide { display: flex; gap: 6px; align-items: flex-start; }
+.dirIdees { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.dirIdee { text-align: start; border: 1px solid #dfe6e1; border-radius: 10px; background: #fff; padding: 10px 11px; display: grid; gap: 5px; align-content: start; }
+.dirIdee:hover { border-color: #0c6b52; background: #f6fbf8; }
+.dirIdee b { font-size: 13px; line-height: 1.3; }
+.dirIdee small { color: #5b6760; font-size: 11.5px; line-height: 1.4; }
+.dirTypes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.dirTypes button { text-align: start; border: 1px solid #dfe6e1; border-radius: 10px; background: #fff; padding: 10px; display: grid; gap: 4px; align-content: start; color: #2f3c35; }
+.dirTypes button[aria-pressed='true'] { border-color: #0c6b52; background: #eef7f3; box-shadow: inset 0 0 0 1px #0c6b52; }
+.dirTypes small { color: #5b6760; font-size: 11.5px; line-height: 1.35; }
+.dirChips { display: flex; flex-wrap: wrap; gap: 6px; }
+.dirProduits { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px; max-height: 220px; overflow-y: auto; padding-right: 4px; }
+.dirProduit { display: grid; grid-template-columns: auto 34px 1fr auto; gap: 8px; align-items: center; font-size: 12px; padding: 4px 6px; border-radius: 8px; cursor: pointer; }
+.dirProduit:hover { background: #f3f6f2; }
+.dirProduit img, .dirProduit > span:nth-child(2) { width: 34px; height: 34px; object-fit: contain; border-radius: 6px; background: #fff; border: 1px solid #edf1ec; }
+.dirIngredients { display: grid; gap: 6px; }
+.dirIngredients > div { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.dirIngredients small { width: 64px; font-weight: 700; color: #5b6760; font-size: 11px; }
+.dirIngredients .filtre { font-size: 11.5px; padding: 4px 9px; }
+.dirAttentes { display: grid; gap: 6px; }
+
+/* Directeur artistique : les series livrees. */
+.dirSeries { display: grid; gap: 14px; margin-top: 14px; }
+.dirSerie { border: 1px solid #e1e7e2; border-radius: 12px; padding: 12px; display: grid; gap: 10px; background: #fcfdfc; }
+.dirSerieTete { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; flex-wrap: wrap; }
+.dirSerieTete h3 { margin: 0; font-size: 14px; display: flex; gap: 6px; align-items: center; }
+.dirSerieTete p { margin: 2px 0 0; }
+.dirOptions { display: flex; gap: 12px; flex-wrap: wrap; }
+.dirMontage { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 16px; align-items: start; }
+.dirApercu { display: grid; gap: 6px; justify-items: center; max-width: 300px; }
+.dirBande { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 6px; align-items: flex-start; }
+.dirOption { border: 1px solid #e3e8e3; border-radius: 10px; background: #fff; overflow: hidden; flex-shrink: 0; display: grid; align-content: start; }
+.dirOptionVisuel { position: relative; }
+.dirGeneration { position: absolute; inset: 0; display: flex; gap: 6px; align-items: center; justify-content: center; background: rgba(255, 255, 255, .72); font-weight: 700; font-size: 13px; color: #0c6b52; }
+.dirOptionInfos { padding: 9px 10px 10px; display: grid; gap: 5px; font-size: 12.5px; }
+.dirOptionInfos .btns { margin-top: 2px; }
+.dirOptionInfos p { margin: 0; }
+.dirTexte { font-weight: 650; color: #1c1410; }
+.dirNote { display: flex; gap: 5px; align-items: flex-start; color: #0c6b52; font-size: 11.5px; background: #eef7f3; border-radius: 7px; padding: 5px 7px; }
+.dirVariantes { display: flex; gap: 4px; }
+.dirVariantes button { border: 2px solid transparent; border-radius: 6px; padding: 0; width: 38px; height: 38px; overflow: hidden; background: #eef2ee; }
+.dirVariantes img { width: 100%; height: 100%; object-fit: cover; }
+.dirPrompt summary { cursor: pointer; font-size: 11.5px; font-weight: 650; color: #4b5750; }
+.dirPrompt textarea { margin: 6px 0; font-size: 11.5px; font-family: ui-monospace, Consolas, monospace; }
+
+@media (max-width: 760px) {
+  .dirTypes { grid-template-columns: 1fr; }
+  .dirMontage { grid-template-columns: 1fr; }
+  .dirApercu { max-width: none; }
+  .dirOptions { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; }
+}

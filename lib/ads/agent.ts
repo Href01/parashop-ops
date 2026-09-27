@@ -5,7 +5,8 @@ import { estBoost, fatigue, indicateurs, type Cumul } from './meta-model'
 import { economieProduits, verite } from './verite'
 import { conseils, verdicts } from './conseils'
 import { commandesEnRoute, moisEnCours, serie as serieDe } from './series'
-import { imagesDesCreations } from './images'
+import { imagesDesCreations, optionsDesCreations } from './images'
+import { idees } from './direction-model'
 
 /**
  * L'AGENT META ADS, COTE BOS : sa strategie, sa file de demandes, sa memoire,
@@ -70,12 +71,17 @@ export async function creerDemande(genre: GenreAds, sujet: string, par: string |
   return r.rows[0]
 }
 
-export async function reclamerDemande() {
+/**
+ * Reserve la plus ancienne demande en attente. Le directeur artistique (routine
+ * a part, reveillee a la demande) ne prend que les « direction » ; la routine
+ * horaire prend tout le reste.
+ */
+export async function reclamerDemande(direction = false) {
   await liberer()
   const r = await pool.query(
     `UPDATE "AdsAgentRequest" SET statut = 'en_cours', commence_le = now()
-     WHERE id = (SELECT id FROM "AdsAgentRequest" WHERE statut = 'en_attente' ORDER BY demande_le LIMIT 1 FOR UPDATE SKIP LOCKED)
-     RETURNING id, genre, sujet, demande_le`)
+     WHERE id = (SELECT id FROM "AdsAgentRequest" WHERE statut = 'en_attente' AND (genre = 'direction') = $1 ORDER BY demande_le LIMIT 1 FOR UPDATE SKIP LOCKED)
+     RETURNING id, genre, sujet, demande_le, to_jsonb("AdsAgentRequest") -> 'creatif_id' AS creatif_id, to_jsonb("AdsAgentRequest") -> 'parametres' AS parametres`, [direction])
   return r.rows[0] ?? null
 }
 
@@ -236,19 +242,26 @@ export async function ecran(jours = 30) {
   const [v, precedent, serie, mois, enRoute, historique, pubs, produits, demandes, rapports, actions, creatifs, synchro, reparts] = await Promise.all([
     verite(jours), verite(jours, jours), serieDe(jours), moisEnCours(), commandesEnRoute(),
     historiqueStrategie(), performancePubs(s.config.regles.frequenceMax), economieProduits(60),
-    pool.query(`SELECT id, genre, sujet, statut, demande_le, termine_le, erreur, rapport_id FROM "AdsAgentRequest" ORDER BY demande_le DESC LIMIT 12`),
+    // SELECT * : creatif_id, parametres et resultat n'existent qu'apres la migration 049.
+    pool.query(`SELECT * FROM "AdsAgentRequest" ORDER BY demande_le DESC LIMIT 15`),
     pool.query(`SELECT id, source, titre, cree_le, modele, en_bref FROM "AdsAgentReport" ORDER BY cree_le DESC LIMIT 20`),
     pool.query(`SELECT a.*, r.titre AS rapport_titre, r.cree_le AS rapport_le FROM "AdsAgentAction" a JOIN "AdsAgentReport" r ON r.id = a.rapport_id
                 WHERE a.statut = 'a_faire' OR a.maj_le > now() - interval '7 days' ORDER BY (a.statut = 'a_faire') DESC, a.priorite, r.cree_le DESC LIMIT 40`),
     pool.query(`SELECT * FROM "AdsCreative" WHERE statut <> 'ecartee' OR maj_le > now() - interval '7 days' ORDER BY cree_le DESC LIMIT 30`),
     derniereSynchro(), repartitions(),
   ])
+  const catalogue = await pool.query(
+    `SELECT id, name AS nom, brand AS marque, category AS categorie, image, (coalesce(stock, 0) + coalesce("virtualStock", 0))::int AS stock_vendable,
+            coalesce("importUnavailable", false) AS import_bloque
+     FROM "Product" WHERE active = true AND coalesce(discontinued, false) = false ORDER BY brand, name`)
   const manques = manquesStrategie(s.config)
   const cfg = s.config
-  const images = await imagesDesCreations(creatifs.rows.map((c) => c.id))
+  const ids = creatifs.rows.map((c) => c.id)
+  const [images, options] = await Promise.all([imagesDesCreations(ids), optionsDesCreations(ids)])
+  const verd = verdicts(pubs, cfg.regles.depenseMinAvantVerdict)
   return {
     strategie: { ...s, manques, historique }, verite: v, precedent, serie: serie.points, pas: serie.pas, mois, enRoute, pubs, produits,
-    verdicts: verdicts(pubs, cfg.regles.depenseMinAvantVerdict),
+    verdicts: verd,
     conseils: conseils({
       // Une periode d'avant tronquee (avant l'ouverture) ne sert pas de reference.
       v, precedent: precedent.partiel ? null : precedent, pubs, produits, enAttente: enRoute, repartitions: reparts, ...mois,
@@ -256,7 +269,12 @@ export async function ecran(jours = 30) {
         depenseMinAvantVerdict: cfg.regles.depenseMinAvantVerdict, boostsAutorises: cfg.regles.boostsAutorises, manques, produitsExclus: cfg.produitsExclus },
     }),
     demandes: demandes.rows, rapports: rapports.rows, actions: actions.rows,
-    creatifs: creatifs.rows.map((c) => ({ ...c, images: images[c.id] ?? [] })), synchro, repartitions: reparts,
+    creatifs: creatifs.rows.map((c) => ({ ...c, images: images[c.id] ?? [], options: options[c.id] ?? [] })), synchro, repartitions: reparts,
+    catalogue: catalogue.rows.map((p) => ({ id: p.id, nom: p.nom, marque: p.marque, categorie: p.categorie, image: p.image, stockVendable: p.stock_vendable, importBloque: p.import_bloque })),
+    idees: idees({
+      produits, exclus: cfg.produitsExclus, mois: new Date().getMonth(),
+      pubsGagnantes: pubs.filter((x) => verd[x.adId]?.verdict === 'gagnante').map((x) => ({ nom: x.nom, texte: x.texte, raison: verd[x.adId].raison })),
+    }),
   }
 }
 

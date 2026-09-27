@@ -3,6 +3,7 @@ import { PERIODES, creerDemande, ecran, enregistrerStrategie, majAction, majCrea
 import { synchroniserPubsMeta } from '@/lib/ads/meta-sync'
 import { choisirImage, genererImage, supprimerImage, type Qualite } from '@/lib/ads/images'
 import { detailPub } from '@/lib/ads/series'
+import { demanderDirection, modifierOption, supprimerSerie } from '@/lib/ads/direction'
 import type { FormatImage } from '@/lib/ads/creatif-model'
 import { PRIVATE_HEADERS, sameOrigin } from '@/lib/seo/http'
 
@@ -40,6 +41,9 @@ export async function GET(request: Request) {
  *   { action: { id, statut } }           → a_faire / fait / ecarte
  *   { creatif: { id, statut, adId? } }   → idee / validee / produite / en_ligne / ecartee
  *   { image: { creatifId, format, qualite?, precision? } } → genere un visuel (OpenAI, photo produit en reference)
+ *   { image: { optionId, qualite? } }    → genere le visuel d'une option / carte / plan (consigne ecrite par Claude)
+ *   { direction: { type, nombre, format, styles, qualite, brief, creatifId? | produitIds? } } → brief au directeur artistique
+ *   { option: { id, prompt?, texte?, position? } } / { serieSupprimee: { creatifId, serie } }
  *   { imageChoisie: id } / { imageSupprimee: id }
  */
 export async function POST(request: Request) {
@@ -62,8 +66,13 @@ export async function POST(request: Request) {
     }
     if (body?.image) {
       const i = body.image
-      return Response.json({ image: await genererImage({ creatifId: Number(i.creatifId), format: i.format as FormatImage, qualite: i.qualite as Qualite, precision: typeof i.precision === 'string' ? i.precision : undefined, par }) }, { headers: PRIVATE_HEADERS })
+      return Response.json({ image: await genererImage(i.optionId
+        ? { optionId: Number(i.optionId), qualite: i.qualite as Qualite, par }
+        : { creatifId: Number(i.creatifId), format: i.format as FormatImage, qualite: i.qualite as Qualite, precision: typeof i.precision === 'string' ? i.precision : undefined, par }) }, { headers: PRIVATE_HEADERS })
     }
+    if (body?.direction) return Response.json(await demanderDirection(body.direction, par), { headers: PRIVATE_HEADERS })
+    if (body?.option) return Response.json({ option: await modifierOption(Number(body.option.id), { prompt: body.option.prompt, texte: body.option.texte, position: body.option.position }) }, { headers: PRIVATE_HEADERS })
+    if (body?.serieSupprimee) return Response.json(await supprimerSerie(Number(body.serieSupprimee.creatifId), Number(body.serieSupprimee.serie)), { headers: PRIVATE_HEADERS })
     if (body?.imageChoisie) return Response.json(await choisirImage(Number(body.imageChoisie)), { headers: PRIVATE_HEADERS })
     if (body?.imageSupprimee) return Response.json(await supprimerImage(Number(body.imageSupprimee)), { headers: PRIVATE_HEADERS })
     return Response.json({ error: 'Rien à faire.' }, { status: 400, headers: PRIVATE_HEADERS })
