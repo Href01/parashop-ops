@@ -17,8 +17,13 @@ import pool from '@/lib/db'
 export type Canal = { canal: string; commandes: number; ca: number; marge: number }
 export type Verite = {
   jours: number; de: string; a: string
-  depense: number; sourceDepense: 'MetaAdDaily' | 'AdSpendDaily'
+  depense: number; sourceDepense: 'MetaAdDaily' | 'AdSpendDaily' | 'mixte'
+  // Jours de la fenetre ou la depense n'est connue qu'au niveau campagne : les DM et les achats pixel de ces jours manquent.
+  joursSansDetail: number
+  messages: number
   pixel: { achats: number | null; valeur: number }
+  // La fenetre commence avant l'ouverture de la boutique : ses totaux (et une comparaison avec elle) sont incomplets.
+  partiel: boolean; ouverture: string | null
   livrees: number; annulees: number; ca: number; marge: number
   parCanal: Canal[]
   suiviesMeta: { commandes: number; ca: number }   // UTM Facebook / Instagram
@@ -31,14 +36,31 @@ export type Verite = {
 
 const arrondi = (x: number) => Math.round(x * 100) / 100
 
+/**
+ * La depense JOUR PAR JOUR : le detail par pub ("MetaAdDaily") quand ce jour a
+ * ete lu, sinon le total par campagne ("AdSpendDaily"). Choisir une source pour
+ * toute la fenetre faussait tout : le detail par pub ne couvrait que 30 jours,
+ * et « 90 jours » affichait la depense de 30 (2 281 DH au lieu de ~7 000).
+ */
+const DEPENSE_PAR_JOUR = `
+  WITH j AS (SELECT generate_series(current_date - $1::int - $2::int + 1, current_date - $2::int, interval '1 day')::date AS jour),
+  ad AS (SELECT jour, sum(depense) depense, sum(achats) achats, sum(valeur_achats) valeur, sum(messages) messages
+         FROM "MetaAdDaily" WHERE jour > current_date - $1::int - $2::int AND jour <= current_date - $2::int GROUP BY jour),
+  sp AS (SELECT date AS jour, sum(spend) depense, sum(revenue) valeur
+         FROM "AdSpendDaily" WHERE platform = 'Meta' AND date > current_date - $1::int - $2::int AND date <= current_date - $2::int GROUP BY date)
+  SELECT coalesce(sum(coalesce(ad.depense, sp.depense, 0)), 0) depense,
+         coalesce(sum(coalesce(ad.valeur, sp.valeur, 0)), 0) valeur,
+         coalesce(sum(ad.achats), 0) achats, coalesce(sum(ad.messages), 0) messages,
+         count(ad.jour)::int jours_detail,
+         count(*) FILTER (WHERE ad.jour IS NULL AND sp.depense > 0)::int jours_sans_detail
+  FROM j LEFT JOIN ad USING (jour) LEFT JOIN sp USING (jour)`
+
 /** decalage : la meme fenetre, reculee de N jours (decalage = jours → la periode d'avant, pour comparer). */
 export async function verite(jours: number, decalage = 0): Promise<Verite> {
-  const [adJour, spendJour, commandes, canaux] = await Promise.all([
-    pool.query<{ depense: string; achats: string; valeur: string; n: string }>(
-      `SELECT coalesce(sum(depense),0) depense, coalesce(sum(achats),0) achats, coalesce(sum(valeur_achats),0) valeur, count(*) n
-       FROM "MetaAdDaily" WHERE jour > current_date - $1::int - $2::int AND jour <= current_date - $2::int`, [jours, decalage]).catch(() => ({ rows: [{ depense: '0', achats: '0', valeur: '0', n: '0' }] })),
-    pool.query<{ depense: string; valeur: string }>(
-      `SELECT coalesce(sum(spend),0) depense, coalesce(sum(revenue),0) valeur FROM "AdSpendDaily" WHERE platform = 'Meta' AND date > current_date - $1::int - $2::int AND date <= current_date - $2::int`, [jours, decalage]),
+  const [depenses, ouverture, commandes, canaux] = await Promise.all([
+    pool.query<{ depense: string; valeur: string; achats: string; messages: string; jours_detail: number; jours_sans_detail: number }>(DEPENSE_PAR_JOUR, [jours, decalage]),
+    // L'ouverture : la premiere commande ou le premier dirham de pub, le plus ancien des deux.
+    pool.query<{ d: string | null }>(`SELECT least((SELECT min("createdAt") FROM "Order"), (SELECT min(date)::timestamptz FROM "AdSpendDaily"))::date::text AS d`),
     pool.query<{ livrees: number; annulees: number; ca: string; marge: string; meta_n: number; meta_ca: string }>(
       `SELECT count(*) FILTER (WHERE status = 'DELIVERED')::int livrees,
               -- Le statut n'a que PENDING, CONFIRMED, DELIVERED, CANCELLED ; un retour se lit a "returnedAt".
@@ -55,15 +77,22 @@ export async function verite(jours: number, decalage = 0): Promise<Verite> {
        FROM "Order" WHERE status = 'DELIVERED' AND coalesce("deliveredAt", "createdAt") > now() - (($1::int + $2::int) * interval '1 day') AND coalesce("deliveredAt", "createdAt") <= now() - ($2::int * interval '1 day')
        GROUP BY 1 ORDER BY 3 DESC`, [jours, decalage]),
   ])
-  const parAd = Number(adJour.rows[0].n) > 0
-  const depense = parAd ? Number(adJour.rows[0].depense) : Number(spendJour.rows[0].depense)
+  const dj = depenses.rows[0]
+  const depense = Number(dj.depense)
   const c = commandes.rows[0]
   const ca = Number(c.ca), marge = Number(c.marge), livrees = c.livrees
   const fin = new Date(Date.now() - decalage * 864e5), debut = new Date(fin.getTime() - jours * 864e5)
+  const de = debut.toISOString().slice(0, 10)
+  const ouvert = ouverture.rows[0]?.d ?? null
   return {
-    jours, de: debut.toISOString().slice(0, 10), a: fin.toISOString().slice(0, 10),
-    depense: arrondi(depense), sourceDepense: parAd ? 'MetaAdDaily' : 'AdSpendDaily',
-    pixel: { achats: parAd ? Number(adJour.rows[0].achats) : null, valeur: arrondi(parAd ? Number(adJour.rows[0].valeur) : Number(spendJour.rows[0].valeur)) },
+    jours, de, a: fin.toISOString().slice(0, 10),
+    depense: arrondi(depense),
+    sourceDepense: dj.jours_sans_detail === 0 ? 'MetaAdDaily' : dj.jours_detail === 0 ? 'AdSpendDaily' : 'mixte',
+    joursSansDetail: dj.jours_sans_detail,
+    messages: Number(dj.messages),
+    // Sans detail par pub sur une partie de la fenetre, le nombre d'achats du pixel serait faux : on ne le donne pas.
+    pixel: { achats: dj.jours_sans_detail === 0 ? Number(dj.achats) : null, valeur: arrondi(Number(dj.valeur)) },
+    partiel: ouvert != null && de < ouvert, ouverture: ouvert,
     livrees, annulees: c.annulees, ca: arrondi(ca), marge: arrondi(marge),
     parCanal: canaux.rows.map((r) => ({ canal: r.canal, commandes: r.commandes, ca: arrondi(Number(r.ca)), marge: arrondi(Number(r.marge)) })),
     suiviesMeta: { commandes: c.meta_n, ca: arrondi(Number(c.meta_ca)) },

@@ -10,7 +10,7 @@ import { Ensemble } from './ui/Ensemble'
 import { Campagnes, TiroirPub } from './ui/Campagnes'
 import { Creations, Studio } from './ui/Creations'
 import { AFaire, AgentOnglet, StrategieOnglet } from './ui/Onglets'
-import { quand, type Donnees, type Onglet, type Rapport } from './ui/types'
+import { PERIODES, quand, type Donnees, type Onglet, type Rapport } from './ui/types'
 import s from './agent.module.css'
 
 /**
@@ -111,7 +111,7 @@ export default function AgentMeta() {
             <p>Consultant, analyste et créatif. Chaque pub est jugée à ce qu’elle rapporte en commandes <b>livrées</b> (DM compris), pas à ce que voit Meta. Il ne touche jamais à ton compte : c’est toi qui décides.</p>
           </div>
           <div className={s.headerBtns}>
-            <div className={s.periode} role="group" aria-label="Période">{[7, 30, 90].map((j) => <button key={j} type="button" aria-pressed={j === jours} onClick={() => setJours(j)}>{j} j</button>)}</div>
+            <div className={s.periode} role="group" aria-label="Période">{PERIODES.map(([j, nom]) => <button key={j} type="button" aria-pressed={j === jours} onClick={() => setJours(j)}>{nom}</button>)}</div>
             <button type="button" className={s.ghost} disabled={occupe} onClick={() => void envoyer({ synchro: true }, 'Meta relu pub par pub.')}><RefreshCw size={13} className={occupe ? s.tourne : undefined} /> Relire Meta</button>
             <span className={`${s.small} ${s.muted}`}>Meta : {d?.synchro.le ? `${quand(d.synchro.le)}, jusqu’au ${d.synchro.jusquAu}` : 'jamais lu au niveau pub'}</span>
           </div>

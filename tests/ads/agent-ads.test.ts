@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { actionsParJour, estBoost, fatigue, indicateurs } from '../../lib/ads/meta-model'
+import { actionsParJour, estBoost, fatigue, indicateurs, parSemaine } from '../../lib/ads/meta-model'
 import { StrategieSchema, manquesStrategie, strategieParDefaut } from '../../lib/ads/strategie-model'
 import { nettoyerArticle } from '../../lib/seo/article-html'
 
@@ -65,4 +65,13 @@ test('la stratégie : défauts prudents, cibles vides tant qu’Achraf ne les fi
 
 test('le nettoyeur d’articles est partagé et reste pur (garde-fou de la livraison SEO)', () => {
   assert.match(nettoyerArticle('<p><a href="/k-beauty">K</a></p>', 'ar'), /\/ar\/k-beauty/)
+})
+
+test('au-delà de 90 jours, la série se somme par semaine (du lundi au dimanche)', () => {
+  const j = (jour: string, depense: number, livrees = 0) => ({ jour, depense, messages: 1, achats: 0, clics: 0, livrees, ca: 100 * livrees, marge: 40 * livrees })
+  // 2026-09-20 est un dimanche, 2026-09-21 un lundi.
+  const s = parSemaine([j('2026-09-19', 10), j('2026-09-20', 20, 1), j('2026-09-21', 5), j('2026-09-27', 7, 2)])
+  assert.deepEqual(s.map((x) => x.jour), ['2026-09-14', '2026-09-21'])
+  assert.equal(s[0].depense, 30); assert.equal(s[0].livrees, 1); assert.equal(s[0].messages, 2)
+  assert.equal(s[1].depense, 12); assert.equal(s[1].ca, 200); assert.equal(s[1].marge, 80)
 })

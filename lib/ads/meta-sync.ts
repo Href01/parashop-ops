@@ -68,7 +68,12 @@ const n = (v: unknown) => Number(v) || 0
 
 export type ResultatSynchro = { configure: boolean; jours: number; pubs: number; lignes: number; repartitions: number; taux: number; erreurs: string[] }
 
+/** Jusqu'a 37 mois en arriere (la limite de Meta) : 1 100 jours. */
+export const JOURS_MAX_SYNCHRO = 1100
+const TRANCHE = 60
+
 export async function synchroniserPubsMeta(jours = 30): Promise<ResultatSynchro> {
+  jours = Math.min(JOURS_MAX_SYNCHRO, Math.max(1, Math.round(jours)))
   const jeton = await getMetaToken()
   const brut = process.env.META_AD_ACCOUNT_ID
   if (!jeton || !brut) return { configure: false, jours, pubs: 0, lignes: 0, repartitions: 0, taux: 1, erreurs: ['META_ACCESS_TOKEN ou META_AD_ACCOUNT_ID absent'] }
@@ -77,27 +82,36 @@ export async function synchroniserPubsMeta(jours = 30): Promise<ResultatSynchro>
   const erreurs: string[] = []
   const fin = new Date(Date.now() - 864e5) // hier : la journee du jour n'est pas close
   const debut = new Date(fin.getTime() - (jours - 1) * 864e5)
-  const periode = encodeURIComponent(JSON.stringify({ since: jour(debut), until: jour(fin) }))
 
-  // 1. Une ligne par pub et par jour.
-  const quotidien = await toutesLesPages(
-    `${compte}/insights?level=ad&time_range=${periode}&time_increment=1&limit=500`
-    + `&fields=ad_id,spend,impressions,reach,inline_link_clicks,actions,action_values,video_thruplay_watched_actions`, jeton)
-  let lignes = 0
-  for (const r of quotidien) {
-    if (!r.ad_id || !r.date_start) continue
-    const a = actionsParJour(r.actions as MetaActions, r.action_values as MetaActions, r.video_thruplay_watched_actions as MetaActions)
+  // 1. Une ligne par pub et par jour, par tranches de 60 jours : une fenetre de
+  //    deux ans en une requete depasse ce que Meta accepte de calculer.
+  const quotidien: Json[] = []
+  for (let de = debut; de <= fin; de = new Date(de.getTime() + TRANCHE * 864e5)) {
+    const a = new Date(Math.min(fin.getTime(), de.getTime() + (TRANCHE - 1) * 864e5))
+    const periode = encodeURIComponent(JSON.stringify({ since: jour(de), until: jour(a) }))
+    try {
+      quotidien.push(...await toutesLesPages(
+        `${compte}/insights?level=ad&time_range=${periode}&time_increment=1&limit=500`
+        + `&fields=ad_id,spend,impressions,reach,inline_link_clicks,actions,action_values,video_thruplay_watched_actions`, jeton))
+    } catch (e) { erreurs.push(`${jour(de)} → ${jour(a)} : ${(e as Error).message}`) }
+  }
+  const valides = quotidien.filter((r) => r.ad_id && r.date_start)
+  // Ecriture groupee (unnest) : une requete par lot de 500 lignes, pas une par ligne.
+  for (let i = 0; i < valides.length; i += 500) {
+    const lot = valides.slice(i, i + 500).map((r) => ({ r, a: actionsParJour(r.actions as MetaActions, r.action_values as MetaActions, r.video_thruplay_watched_actions as MetaActions) }))
+    const col = <T,>(f: (x: (typeof lot)[number]) => T) => lot.map(f)
     await pool.query(
       `INSERT INTO "MetaAdDaily" (jour, ad_id, depense, impressions, portee, clics_lien, vues_page, paniers, commandes_initiees, achats, valeur_achats, messages, vues_video_3s, thruplays, engagements, maj_le)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15, now())
+       SELECT *, now() FROM unnest($1::date[], $2::text[], $3::numeric[], $4::int[], $5::int[], $6::int[], $7::int[], $8::int[], $9::int[], $10::int[], $11::numeric[], $12::int[], $13::int[], $14::int[], $15::int[])
        ON CONFLICT (jour, ad_id) DO UPDATE SET depense=EXCLUDED.depense, impressions=EXCLUDED.impressions, portee=EXCLUDED.portee,
          clics_lien=EXCLUDED.clics_lien, vues_page=EXCLUDED.vues_page, paniers=EXCLUDED.paniers, commandes_initiees=EXCLUDED.commandes_initiees,
          achats=EXCLUDED.achats, valeur_achats=EXCLUDED.valeur_achats, messages=EXCLUDED.messages, vues_video_3s=EXCLUDED.vues_video_3s,
          thruplays=EXCLUDED.thruplays, engagements=EXCLUDED.engagements, maj_le=now()`,
-      [r.date_start, r.ad_id, n(r.spend) * taux, n(r.impressions), n(r.reach), n(r.inline_link_clicks), a.vuesPage, a.paniers, a.commandesInitiees,
-        a.achats, a.valeurAchats * taux, a.messages, a.vuesVideo3s, a.thruplays, a.engagements])
-    lignes++
+      [col((x) => x.r.date_start), col((x) => String(x.r.ad_id)), col((x) => n(x.r.spend) * taux), col((x) => n(x.r.impressions)), col((x) => n(x.r.reach)),
+        col((x) => n(x.r.inline_link_clicks)), col((x) => x.a.vuesPage), col((x) => x.a.paniers), col((x) => x.a.commandesInitiees), col((x) => x.a.achats),
+        col((x) => x.a.valeurAchats * taux), col((x) => x.a.messages), col((x) => x.a.vuesVideo3s), col((x) => x.a.thruplays), col((x) => x.a.engagements)])
   }
+  const lignes = valides.length
 
   // 2. La creation et le reglage de chaque pub vue dans la periode (par lots de 50).
   const idsPubs = [...new Set(quotidien.map((r) => String(r.ad_id || '')).filter(Boolean))]

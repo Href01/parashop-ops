@@ -6,6 +6,8 @@ import s from '../agent.module.css'
 
 const VERT = '#175f50', BLEU = '#3b6fd4', ORANGE = '#c47d12', GRIS = '#a9b8af'
 const axe = { fontSize: 11, fill: '#66716a' }
+// 10000 ne tient pas dans l'axe : 10 k.
+const court = (v: number) => (Math.abs(v) >= 1000 ? `${(v / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} k` : String(v))
 
 function Carte({ titre, aide, children }: { titre: string; aide?: string; children: React.ReactNode }) {
   return <section className={s.panel}><div className={s.panelHeader}><div><h2>{titre}</h2>{aide && <p>{aide}</p>}</div></div><div className={s.body}>{children}</div></section>
@@ -36,7 +38,10 @@ function Audience({ dim, lignes }: { dim: string; lignes: Repartition[] }) {
 }
 
 export function Ensemble({ d }: { d: Donnees }) {
-  const serie = d.serie.map((j) => ({ ...j, label: jourCourt(j.jour), coutConv: j.messages ? Math.round((j.depense / j.messages) * 10) / 10 : null }))
+  const semaine = d.pas === 'semaine'
+  // Sur 9 ou 12 mois, les semaines d'avant l'ouverture sont vides : la courbe commence a la premiere activite.
+  const debut = d.serie.findIndex((j) => j.depense || j.ca || j.messages)
+  const serie = d.serie.slice(Math.max(0, debut)).map((j) => ({ ...j, label: semaine ? `sem. ${jourCourt(j.jour)}` : jourCourt(j.jour), coutConv: j.messages ? Math.round((j.depense / j.messages) * 10) / 10 : null }))
   const v = d.verite
   const canaux = v.parCanal
   const maxCanal = Math.max(...canaux.map((c) => c.ca), 1)
@@ -45,13 +50,13 @@ export function Ensemble({ d }: { d: Donnees }) {
   const dims = ['age', 'placement', 'region', 'sexe'].filter((k) => d.repartitions[k]?.length)
   return (
     <>
-      <Carte titre="Dépense contre ventes livrées, jour par jour" aide="Les barres : ce que la pub a coûté. Les courbes : le chiffre d’affaires et la marge des commandes livrées ce jour-là (tous canaux). Une vente arrive 1 à 2 jours après la pub : lis la tendance, pas un jour isolé.">
+      <Carte titre={`Dépense contre ventes livrées, ${semaine ? 'semaine par semaine' : 'jour par jour'}`} aide={`Les barres : ce que la pub a coûté. Les courbes : le chiffre d’affaires et la marge des commandes livrées ${semaine ? 'cette semaine-là' : 'ce jour-là'} (tous canaux). Une vente arrive 1 à 2 jours après la pub : lis la tendance, pas un point isolé.`}>
         <div style={{ height: 260 }}>
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart data={serie} margin={{ top: 6, right: 8, left: -12, bottom: 0 }}>
               <CartesianGrid stroke="#eef1ed" vertical={false} />
               <XAxis dataKey="label" tick={axe} interval="preserveStartEnd" minTickGap={18} />
-              <YAxis tick={axe} width={52} />
+              <YAxis tick={axe} width={44} tickFormatter={court} />
               <Tooltip formatter={(x, n) => [dh(Number(x)), String(n)]} labelStyle={{ fontWeight: 700 }} />
               <Legend wrapperStyle={{ fontSize: 11.5 }} />
               <Bar dataKey="depense" name="Dépense pub" fill={GRIS} radius={[3, 3, 0, 0]} />

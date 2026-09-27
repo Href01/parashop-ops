@@ -78,3 +78,23 @@ export function estBoost(objectif: string | null | undefined, optimisation: stri
   return /ENGAGEMENT|POST_ENGAGEMENT|PAGE_LIKES|REACH|THRUPLAY|VIDEO_VIEWS/i.test(`${objectif || ''} ${optimisation || ''}`)
     && !/CONVERSATIONS|OFFSITE_CONVERSIONS|VALUE|LANDING_PAGE_VIEWS|LINK_CLICKS/i.test(optimisation || '')
 }
+
+/** Un point de serie : ce que la pub a coute et ce qui a ete livre ce jour-la (ou cette semaine-la). */
+export type Jour = { jour: string; depense: number; messages: number; achats: number; clics: number; livrees: number; ca: number; marge: number }
+
+/**
+ * Au-dela de 90 jours, 365 barres ne se lisent plus : on somme par semaine
+ * (du lundi au dimanche, la semaine portant la date de son lundi). Pur, teste seul.
+ */
+export function parSemaine(jours: Jour[]): Jour[] {
+  const out = new Map<string, Jour>()
+  for (const j of jours) {
+    const d = new Date(`${j.jour}T12:00:00Z`)
+    d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7))
+    const cle = d.toISOString().slice(0, 10)
+    const s = out.get(cle) ?? { jour: cle, depense: 0, messages: 0, achats: 0, clics: 0, livrees: 0, ca: 0, marge: 0 }
+    for (const k of ['depense', 'messages', 'achats', 'clics', 'livrees', 'ca', 'marge'] as const) s[k] += j[k]
+    out.set(cle, s)
+  }
+  return [...out.values()]
+}

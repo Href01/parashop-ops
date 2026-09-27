@@ -4,7 +4,7 @@ import { StrategieSchema, manquesStrategie, strategieParDefaut, type Strategie }
 import { estBoost, fatigue, indicateurs, type Cumul } from './meta-model'
 import { economieProduits, verite } from './verite'
 import { conseils, verdicts } from './conseils'
-import { commandesEnRoute, moisEnCours, serieQuotidienne } from './series'
+import { commandesEnRoute, moisEnCours, serie as serieDe } from './series'
 import { imagesDesCreations } from './images'
 
 /**
@@ -138,8 +138,8 @@ async function repartitions(): Promise<Record<string, LigneRepartition[]>> {
 
 export async function contexte() {
   const s = await strategie()
-  const [v7, v30, v90, pubs, produits, reparts, synchro, ouvertes, faites, creatifs] = await Promise.all([
-    verite(7), verite(30), verite(90), performancePubs(s.config.regles.frequenceMax), economieProduits(60), repartitions(), derniereSynchro(),
+  const [v7, v30, v90, v365, pubs, produits, reparts, synchro, ouvertes, faites, creatifs] = await Promise.all([
+    verite(7), verite(30), verite(90), verite(365), performancePubs(s.config.regles.frequenceMax), economieProduits(60), repartitions(), derniereSynchro(),
     pool.query(`SELECT a.id, a.priorite, a.type, a.action, a.cible, a.signal, r.cree_le FROM "AdsAgentAction" a JOIN "AdsAgentReport" r ON r.id = a.rapport_id WHERE a.statut = 'a_faire' ORDER BY a.priorite, r.cree_le DESC LIMIT 30`),
     pool.query(`SELECT id, type, action, cible, fait_le FROM "AdsAgentAction" WHERE statut = 'fait' AND fait_le > now() - interval '60 days' ORDER BY fait_le DESC LIMIT 30`),
     pool.query(`SELECT id, angle, format, accroche, produit_ids, statut, ad_id, cree_le FROM "AdsCreative" ORDER BY cree_le DESC LIMIT 25`),
@@ -151,7 +151,7 @@ export async function contexte() {
   return {
     genereLe: new Date().toISOString(),
     strategie: { ...s, manques: manquesStrategie(s.config) },
-    verite: { j7: v7, j30: v30, j90: v90 },
+    verite: { j7: v7, j30: v30, j90: v90, j365: v365 },
     pubs, produits, repartitions: reparts, synchro,
     actionsOuvertes: ouvertes.rows, actionsFaites: faites.rows, creatifsRecents: creatifs.rows,
     donneesManquantes: manques,
@@ -228,10 +228,13 @@ export async function publierRapport(p: PublicationAds) {
 /* ECRAN ET GESTES                                                     */
 /* ------------------------------------------------------------------ */
 
+/** Les periodes de l'ecran : 7 et 30 jours, puis 3, 6, 9 et 12 mois. */
+export const PERIODES = [7, 30, 90, 180, 270, 365] as const
+
 export async function ecran(jours = 30) {
   const s = await strategie()
   const [v, precedent, serie, mois, enRoute, historique, pubs, produits, demandes, rapports, actions, creatifs, synchro, reparts] = await Promise.all([
-    verite(jours), verite(jours, jours), serieQuotidienne(jours), moisEnCours(), commandesEnRoute(),
+    verite(jours), verite(jours, jours), serieDe(jours), moisEnCours(), commandesEnRoute(),
     historiqueStrategie(), performancePubs(s.config.regles.frequenceMax), economieProduits(60),
     pool.query(`SELECT id, genre, sujet, statut, demande_le, termine_le, erreur, rapport_id FROM "AdsAgentRequest" ORDER BY demande_le DESC LIMIT 12`),
     pool.query(`SELECT id, source, titre, cree_le, modele, en_bref FROM "AdsAgentReport" ORDER BY cree_le DESC LIMIT 20`),
@@ -244,10 +247,11 @@ export async function ecran(jours = 30) {
   const cfg = s.config
   const images = await imagesDesCreations(creatifs.rows.map((c) => c.id))
   return {
-    strategie: { ...s, manques, historique }, verite: v, precedent, serie, mois, enRoute, pubs, produits,
+    strategie: { ...s, manques, historique }, verite: v, precedent, serie: serie.points, pas: serie.pas, mois, enRoute, pubs, produits,
     verdicts: verdicts(pubs, cfg.regles.depenseMinAvantVerdict),
     conseils: conseils({
-      v, precedent, pubs, produits, enAttente: enRoute, repartitions: reparts, ...mois,
+      // Une periode d'avant tronquee (avant l'ouverture) ne sert pas de reference.
+      v, precedent: precedent.partiel ? null : precedent, pubs, produits, enAttente: enRoute, repartitions: reparts, ...mois,
       strategie: { budgetMensuel: cfg.budgetMensuel, coutParCommandeMax: cfg.cibles.coutParCommandeMax, frequenceMax: cfg.regles.frequenceMax,
         depenseMinAvantVerdict: cfg.regles.depenseMinAvantVerdict, boostsAutorises: cfg.regles.boostsAutorises, manques, produitsExclus: cfg.produitsExclus },
     }),

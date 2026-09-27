@@ -1,5 +1,5 @@
 import { getOpsSession } from '@/lib/auth'
-import { creerDemande, ecran, enregistrerStrategie, majAction, majCreatif, rapport, type GenreAds } from '@/lib/ads/agent'
+import { PERIODES, creerDemande, ecran, enregistrerStrategie, majAction, majCreatif, rapport, type GenreAds } from '@/lib/ads/agent'
 import { synchroniserPubsMeta } from '@/lib/ads/meta-sync'
 import { choisirImage, genererImage, supprimerImage, type Qualite } from '@/lib/ads/images'
 import { detailPub } from '@/lib/ads/series'
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
       const r = await rapport(id)
       return r ? Response.json(r, { headers: PRIVATE_HEADERS }) : Response.json({ error: 'Rapport introuvable' }, { status: 404, headers: PRIVATE_HEADERS })
     }
-    const jours = [7, 30, 90].includes(Number(url.searchParams.get('jours'))) ? Number(url.searchParams.get('jours')) : 30
+    const jours = (PERIODES as readonly number[]).includes(Number(url.searchParams.get('jours'))) ? Number(url.searchParams.get('jours')) : 30
     return Response.json(await ecran(jours), { headers: PRIVATE_HEADERS })
   } catch {
     return Response.json({ error: 'Les données de l’agent sont indisponibles (migration 047 appliquée ?).' }, { status: 503, headers: PRIVATE_HEADERS })

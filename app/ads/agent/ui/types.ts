@@ -4,7 +4,8 @@ import type { Conseil, Verdict, Famille } from '@/lib/ads/conseils'
 /* Ce que GET /api/ops/ads/agent renvoie (ecran()). Un seul endroit pour les formes. */
 
 export type Verite = {
-  jours: number; de: string; a: string; depense: number; sourceDepense: string; pixel: { achats: number | null; valeur: number }
+  jours: number; de: string; a: string; depense: number; sourceDepense: string; joursSansDetail: number; messages: number; pixel: { achats: number | null; valeur: number }
+  partiel: boolean; ouverture: string | null
   livrees: number; annulees: number; ca: number; marge: number; parCanal: { canal: string; commandes: number; ca: number; marge: number }[]
   suiviesMeta: { commandes: number; ca: number }; profitApresPub: number; coutParCommandeLivree: number | null
   merLivre: number | null; seuilParCommande: number | null; panierMoyen: number | null
@@ -32,7 +33,7 @@ export type Jour = { jour: string; depense: number; messages: number; achats: nu
 export type Repartition = { dimension: string; valeur: string; depense: number; impressions: number; clics_lien: number; achats: number; messages: number }
 export type Donnees = {
   strategie: { config: Strategie; modifie_le: string | null; modifie_par: string | null; manques: string[]; historique: { id: number; modifie_le: string; modifie_par: string | null }[] }
-  verite: Verite; precedent: Verite; serie: Jour[]; mois: { depenseMois: number; jourDuMois: number; joursDansMois: number }; enRoute: number
+  verite: Verite; precedent: Verite; serie: Jour[]; pas: 'jour' | 'semaine'; mois: { depenseMois: number; jourDuMois: number; joursDansMois: number }; enRoute: number
   pubs: Pub[]; produits: Produit[]; verdicts: Record<string, { verdict: Verdict; raison: string; famille: Famille }>; conseils: Conseil[]
   demandes: Demande[]; rapports: Rapport[]; actions: Action[]; creatifs: Creatif[]
   synchro: { le: string | null; jusquAu: string | null }; repartitions: Record<string, Repartition[]>
@@ -44,6 +45,10 @@ export const dh1 = (v: number | null | undefined) => (v == null ? '—' : `${v.t
 export const nb = (v: number | null | undefined, d = 1) => (v == null ? '—' : v.toLocaleString('fr-FR', { maximumFractionDigits: d }))
 export const pct = (v: number | null | undefined, d = 1) => (v == null ? '—' : `${v.toLocaleString('fr-FR', { maximumFractionDigits: d })} %`)
 export const quand = (d: string | null) => (d ? new Date(d).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—')
+/** Les periodes de l'ecran (en jours) et leur nom. */
+export const PERIODES: [number, string][] = [[7, '7 j'], [30, '30 j'], [90, '3 mois'], [180, '6 mois'], [270, '9 mois'], [365, '12 mois']]
+export const nomPeriode = (j: number) => { const p = PERIODES.find(([x]) => x === j); return p ? (j < 90 ? `${j} jours` : p[1]) : `${j} jours` }
+export const moisAnnee = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' })
 export const jourCourt = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
 
 /** Evolution contre la periode d'avant, en %, ou null si la base est nulle. */

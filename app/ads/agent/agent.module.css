@@ -16,8 +16,8 @@
 .header h1 { font-size: 28px; letter-spacing: -.03em; font-weight: 750; line-height: 1.1; margin: 0 0 8px; }
 .header p { color: #66716a; margin: 0; max-width: 680px; }
 .headerBtns { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: flex-end; }
-.periode { display: inline-flex; border: 1px solid #d6ded7; border-radius: 9px; overflow: hidden; background: #fff; }
-.periode button { border: 0; background: transparent; padding: 7px 12px; font-weight: 650; color: #3f4d45; }
+.periode { display: inline-flex; max-width: 100%; border: 1px solid #d6ded7; border-radius: 9px; overflow-x: auto; background: #fff; scrollbar-width: none; }
+.periode button { flex: none; border: 0; background: transparent; padding: 7px 11px; font-weight: 650; color: #3f4d45; white-space: nowrap; }
 .periode button[aria-pressed='true'] { background: #175f50; color: #fff; }
 
 /* Boutons, puces */

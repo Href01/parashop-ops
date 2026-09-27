@@ -28,7 +28,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
   try {
     switch (action) {
       case 'synchro':
-        return Response.json(await synchroniserPubsMeta(Math.min(90, Math.max(1, Number(body?.jours) || 30))), { headers: PRIVATE_HEADERS })
+        return Response.json(await synchroniserPubsMeta(Number(body?.jours) || 30), { headers: PRIVATE_HEADERS })
       case 'demande':
         return Response.json({ demande: await reclamerDemande() }, { headers: PRIVATE_HEADERS })
       case 'contexte':

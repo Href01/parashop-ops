@@ -1,5 +1,6 @@
 import 'server-only'
 import pool from '@/lib/db'
+import { parSemaine, type Jour } from './meta-model'
 
 /**
  * LES SERIES DE L'ECRAN META ADS : jour par jour, ce que la pub a coute et ce
@@ -8,7 +9,7 @@ import pool from '@/lib/db'
  * souvent pas encore).
  */
 
-export type Jour = { jour: string; depense: number; messages: number; achats: number; clics: number; livrees: number; ca: number; marge: number }
+export type { Jour }
 
 export async function serieQuotidienne(jours: number): Promise<Jour[]> {
   const r = await pool.query(
@@ -22,6 +23,11 @@ export async function serieQuotidienne(jours: number): Promise<Jour[]> {
             coalesce(pub.clics, 0) clics, coalesce(cmd.livrees, 0) livrees, coalesce(cmd.ca, 0) ca, coalesce(cmd.marge, 0) marge
      FROM j LEFT JOIN pub USING (jour) LEFT JOIN spend USING (jour) LEFT JOIN cmd USING (jour) ORDER BY j.jour`, [jours])
   return r.rows.map((x) => ({ jour: x.jour, depense: Number(x.depense), messages: x.messages, achats: x.achats, clics: x.clics, livrees: x.livrees, ca: Number(x.ca), marge: Number(x.marge) }))
+}
+
+export async function serie(jours: number): Promise<{ pas: 'jour' | 'semaine'; points: Jour[] }> {
+  const q = await serieQuotidienne(jours)
+  return jours > 90 ? { pas: 'semaine', points: parSemaine(q) } : { pas: 'jour', points: q }
 }
 
 /** Le mois en cours (heure du Maroc) : depense a date et position dans le mois, pour le rythme du budget. */
