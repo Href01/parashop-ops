@@ -44,6 +44,8 @@ const TYPES: Record<string, [string, string]> = {
   lancer: ['Lancer', s.chipVert], corriger_suivi: ['Corriger le suivi', s.chipOrange], offre: ['Offre', s.chipBleu], autre: ['Autre', ''],
 }
 const GENRES: Record<string, string> = { analyse: 'Analyser', creatifs: 'Créations à produire', audit: 'Audit complet du compte', question: 'Question' }
+/** Le statut Meta en francais : « CAMPAIGN_PAUSED » ne dit rien a personne. */
+const statutPub = (x: string) => x === 'ACTIVE' ? 'Active' : /PAUSED/.test(x) ? (x.startsWith('CAMPAIGN') ? 'Campagne en pause' : x.startsWith('ADSET') ? 'Ensemble en pause' : 'En pause') : x === 'ARCHIVED' ? 'Archivée' : x === 'DELETED' ? 'Supprimée' : /REVIEW|PENDING/.test(x) ? 'En validation' : /DISAPPROVED|REJECTED/.test(x) ? 'Refusée' : x.toLowerCase()
 const STATUTS_CREATIF: Record<string, string> = { idee: 'Idée', validee: 'Validée', produite: 'Produite', en_ligne: 'En ligne', ecartee: 'Écartée' }
 
 export default function AgentMeta() {
@@ -199,7 +201,7 @@ function PubsPanel({ pubs }: { pubs: Pub[] }) {
             <tr key={p.adId}>
               <td className={s.pleine}><div className={s.pubCell}>{p.vignette ? <img className={s.vignette} src={p.vignette} alt="" loading="lazy" /> : <span className={s.vignette} />}<div>
                 <div className={s.pubNom}>{p.nom || p.adId}</div>
-                <div className={s.meta} style={{ marginTop: 2 }}>{p.statut && <span className={`${s.chip} ${p.statut === 'ACTIVE' ? s.chipVert : ''}`}>{p.statut === 'ACTIVE' ? 'Active' : p.statut.toLowerCase()}</span>}{p.boost && <span className={`${s.chip} ${s.chipOrange}`}>Boost</span>}{p.fatigue && <span className={`${s.chip} ${s.chipRouge}`}>Fatigue</span>}{p.format && <span className={s.chip}>{p.format.toLowerCase()}</span>}</div>
+                <div className={s.meta} style={{ marginTop: 2 }}>{p.statut && <span className={`${s.chip} ${p.statut === 'ACTIVE' ? s.chipVert : /DISAPPROVED|REJECTED/.test(p.statut) ? s.chipRouge : ''}`}>{statutPub(p.statut)}</span>}{p.boost && <span className={`${s.chip} ${s.chipOrange}`}>Boost</span>}{p.fatigue && <span className={`${s.chip} ${s.chipRouge}`}>Fatigue</span>}{p.format && <span className={s.chip}>{p.format.toLowerCase()}</span>}</div>
                 {p.texte && <div className={s.pubTexte}>{p.texte}</div>}
               </div></div></td>
               <td className={s.num} data-l="30 j">{dh(p.j30.depense)}</td><td className={s.num} data-l="7 j">{dh(p.j7.depense)}</td>
