@@ -1,6 +1,7 @@
 import 'server-only'
 import pool from '@/lib/db'
 import { parSemaine, type Jour } from './meta-model'
+import { OUVERTURE } from './verite'
 
 /**
  * LES SERIES DE L'ECRAN META ADS : jour par jour, ce que la pub a coute et ce
@@ -13,7 +14,8 @@ export type { Jour }
 
 export async function serieQuotidienne(jours: number): Promise<Jour[]> {
   const r = await pool.query(
-    `WITH j AS (SELECT generate_series(current_date - $1::int + 1, current_date, interval '1 day')::date AS jour),
+    // Comme la verite : la serie commence au plus tot a la premiere commande enregistree.
+    `WITH j AS (SELECT generate_series(greatest(current_date - $1::int + 1, ${OUVERTURE}), current_date, interval '1 day')::date AS jour),
      pub AS (SELECT jour, sum(depense)::float depense, sum(messages)::int messages, sum(achats)::int achats, sum(clics_lien)::int clics FROM "MetaAdDaily" GROUP BY jour),
      spend AS (SELECT date AS jour, sum(spend)::float depense FROM "AdSpendDaily" WHERE platform = 'Meta' GROUP BY date),
      cmd AS (SELECT (coalesce("deliveredAt", "createdAt") AT TIME ZONE 'Africa/Casablanca')::date AS jour, count(*)::int livrees,

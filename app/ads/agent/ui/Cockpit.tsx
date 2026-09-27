@@ -2,7 +2,7 @@
 
 import { AlertTriangle, ArrowDownRight, ArrowUpRight, Lightbulb, Sparkles } from 'lucide-react'
 import type { Conseil } from '@/lib/ads/conseils'
-import { dh, dh1, evolution, moisAnnee, nb, nomPeriode, type Donnees } from './types'
+import { dh, dh1, evolution, nb, nomPeriode, type Donnees } from './types'
 import s from '../agent.module.css'
 
 /** Une courbe de 24 px : la tendance d'un indicateur sur la periode, sans axe. */
@@ -31,7 +31,8 @@ export function Cockpit({ d }: { d: Donnees }) {
   const dmComplets = v.joursSansDetail === 0
   const coutMessage = messages && dmComplets ? v.depense / messages : null
   const gagne = v.profitApresPub >= 0
-  const periode = v.partiel && v.ouverture ? `depuis l’ouverture (${moisAnnee(v.ouverture)})` : `sur ${nomPeriode(v.jours)}`
+  // Avant la premiere commande enregistree, rien n'est compte (ni pub, ni ventes) : on le dit.
+  const periode = v.partiel && v.ouverture ? `depuis la 1re commande enregistrée (${new Date(`${v.ouverture}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' })})` : `sur ${nomPeriode(v.jours)}`
   const kpis: { label: string; valeur: string; a: number | null; b: number | null | undefined; bonSiHausse?: boolean; courbe: number[]; aide: string; court?: string }[] = [
     { label: 'Dépense pub', valeur: dh(v.depense), a: v.depense, b: p?.depense, bonSiHausse: false, courbe: serie.map((j) => j.depense), aide: 'Tout ce que Meta a facturé sur la période (converti en DH).' },
     { label: 'Commandes livrées', valeur: String(v.livrees), a: v.livrees, b: p?.livrees, courbe: serie.map((j) => j.livrees), aide: 'Tous canaux : site, DM Instagram, WhatsApp. Une commande ne compte qu’une fois livrée.' },

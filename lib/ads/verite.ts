@@ -42,8 +42,17 @@ const arrondi = (x: number) => Math.round(x * 100) / 100
  * toute la fenetre faussait tout : le detail par pub ne couvrait que 30 jours,
  * et « 90 jours » affichait la depense de 30 (2 281 DH au lieu de ~7 000).
  */
+/**
+ * Le compte publicitaire a servi AVANT Shine (une agence web fin 2024, des
+ * annonces Marketplace debut 2025), et Shine a vendu en DM avant que ses
+ * commandes soient saisies (la premiere date du 23/02/2026). Compter cette
+ * depense contre des commandes qui n'existent pas dans la base fausserait
+ * tout : aucune fenetre ne commence avant la premiere commande enregistree.
+ */
+export const OUVERTURE = `(SELECT min(("createdAt" AT TIME ZONE 'Africa/Casablanca')::date) FROM "Order")`
+
 const DEPENSE_PAR_JOUR = `
-  WITH j AS (SELECT generate_series(current_date - $1::int - $2::int + 1, current_date - $2::int, interval '1 day')::date AS jour),
+  WITH j AS (SELECT generate_series(greatest(current_date - $1::int - $2::int + 1, ${OUVERTURE}), current_date - $2::int, interval '1 day')::date AS jour),
   ad AS (SELECT jour, sum(depense) depense, sum(achats) achats, sum(valeur_achats) valeur, sum(messages) messages
          FROM "MetaAdDaily" WHERE jour > current_date - $1::int - $2::int AND jour <= current_date - $2::int GROUP BY jour),
   sp AS (SELECT date AS jour, sum(spend) depense, sum(revenue) valeur
@@ -59,8 +68,7 @@ const DEPENSE_PAR_JOUR = `
 export async function verite(jours: number, decalage = 0): Promise<Verite> {
   const [depenses, ouverture, commandes, canaux] = await Promise.all([
     pool.query<{ depense: string; valeur: string; achats: string; messages: string; jours_detail: number; jours_sans_detail: number }>(DEPENSE_PAR_JOUR, [jours, decalage]),
-    // L'ouverture : la premiere commande ou le premier dirham de pub, le plus ancien des deux.
-    pool.query<{ d: string | null }>(`SELECT least((SELECT min("createdAt") FROM "Order"), (SELECT min(date)::timestamptz FROM "AdSpendDaily"))::date::text AS d`),
+    pool.query<{ d: string | null }>(`SELECT ${OUVERTURE}::text AS d`),
     pool.query<{ livrees: number; annulees: number; ca: string; marge: string; meta_n: number; meta_ca: string }>(
       `SELECT count(*) FILTER (WHERE status = 'DELIVERED')::int livrees,
               -- Le statut n'a que PENDING, CONFIRMED, DELIVERED, CANCELLED ; un retour se lit a "returnedAt".
