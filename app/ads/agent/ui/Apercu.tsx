@@ -1,7 +1,7 @@
 'use client'
 
 import { Bookmark, ChevronRight, Heart, MessageCircle, MoreHorizontal, Send } from 'lucide-react'
-import { FORMATS_IMAGE, estRtl, type FormatImage, type Langue } from '@/lib/ads/creatif-model'
+import { FORMATS_IMAGE, estRtl, tailleAccroche, type FormatImage, type Langue } from '@/lib/ads/creatif-model'
 import s from './apercu.module.css'
 
 /**
@@ -20,12 +20,12 @@ const POLICE_AR = '"Noto Naskh Arabic", "Segoe UI", Tahoma, "Geeza Pro", sans-se
 const POLICE = '"DM Sans", "Segoe UI", system-ui, sans-serif'
 
 // Proportions communes a l'apercu et a l'export (en fraction de la largeur).
-const P = { marge: 0.075, titre: { feed: 0.068, story: 0.074, carre: 0.07 }, marque: 0.026, degrade: 0.42 }
+const P = { marge: 0.075, marque: 0.026, degrade: 0.42 }
 
 /** Le visuel seul (image + surimpression), a la largeur de son conteneur. */
 export function CreatifVisuel({ v, largeur }: { v: Visuel; largeur: number }) {
   const rtl = estRtl(v.langue)
-  const taille = largeur * P.titre[v.format]
+  const taille = largeur * tailleAccroche(v.format, v.accroche)
   return (
     <div className={s.visuel} style={{ aspectRatio: String(FORMATS_IMAGE[v.format].ratio) }}>
       {v.image ? <img src={v.image} alt="" className={s.image} crossOrigin="anonymous" /> : <div className={s.vide}>Pas encore de visuel</div>}
@@ -122,7 +122,7 @@ export async function composerPng(v: Visuel): Promise<Blob> {
     g.addColorStop(0, 'rgba(0,0,0,0.62)'); g.addColorStop(1, 'rgba(0,0,0,0)')
     ctx.fillStyle = g
     ctx.fillRect(0, v.position === 'haut' ? 0 : H - hDeg, W, hDeg)
-    const taille = W * P.titre[v.format]
+    const taille = W * tailleAccroche(v.format, v.accroche)
     ctx.font = `700 ${taille}px ${rtl ? POLICE_AR : POLICE}`
     ctx.fillStyle = '#fff'
     ctx.direction = rtl ? 'rtl' : 'ltr'

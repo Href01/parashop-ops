@@ -35,9 +35,11 @@ export function consigneImage(c: CreatifPourImage, produits: ProduitPourImage[],
   const produitsTexte = produits.length
     ? produits.map((p) => `${p.marque} « ${p.nom} »`).join(', ')
     : 'the beauty product described in the brief'
+  // Premier visuel reel (27/09) : les flacons montaient jusqu'en haut du cadre et l'accroche couvrait
+  // leurs bouchons. La zone libre est donc explicite, et le produit tient dans la partie basse.
   const zones = format === 'story'
-    ? 'Keep the top 18% and the bottom 25% of the frame calm and uncluttered (soft background only): text and a button will be added there later.'
-    : 'Keep the top 15% and the bottom 20% of the frame calm and uncluttered: a headline and a button will be added there later.'
+    ? 'Composition: place the product(s) between 25% and 75% of the frame height. The top 22% and the bottom 22% must be plain soft background only (wall, light, fabric), with no product, no bottle cap, no object: a headline and a button will be added there later.'
+    : 'Composition: place the product(s) entirely in the lower 65% of the frame, fully visible. The top 32% must be plain soft background only (wall, light), with no product, no bottle cap, no object: a headline will be added there later.'
   return [
     `Premium advertising photograph for Instagram (${FORMATS_IMAGE[format].label}) for Shine Cosmetics, a beauty shop in Morocco.`,
     produits.length
@@ -52,6 +54,17 @@ export function consigneImage(c: CreatifPourImage, produits: ProduitPourImage[],
     'No before/after comparison, no medical imagery, no exaggerated result.',
     precision ? `Extra instruction: ${precision}` : '',
   ].filter(Boolean).join('\n')
+}
+
+/**
+ * La taille de l'accroche, en fraction de la largeur : une accroche longue
+ * retrecit pour tenir en deux ou trois lignes au lieu d'envahir l'image.
+ * Meme fonction pour l'apercu (HTML) et l'export (canvas).
+ */
+export function tailleAccroche(format: FormatImage, accroche: string): number {
+  const base = { feed: 0.068, story: 0.074, carre: 0.07 }[format]
+  const n = accroche.trim().length
+  return base * (n > 70 ? 0.68 : n > 50 ? 0.78 : n > 34 ? 0.88 : 1)
 }
 
 /** Le texte du bouton selon le canal de commande, dans la langue de la creation. */

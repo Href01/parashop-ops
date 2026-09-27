@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { conseils, famille, verdicts, type EntreeConseils, type PubPourConseil } from '../../lib/ads/conseils'
-import { BOUTONS, FORMATS_IMAGE, consigneImage, formatParDefaut } from '../../lib/ads/creatif-model'
+import { BOUTONS, FORMATS_IMAGE, consigneImage, formatParDefaut, tailleAccroche } from '../../lib/ads/creatif-model'
 
 const m = (depense: number, messages: number, achats = 0, ctr: number | null = 1) => ({ depense, messages, achats, coutParResultat: messages + achats ? depense / (messages + achats) : null, ctr })
 const pub = (adId: string, o: Partial<PubPourConseil> & { j30: PubPourConseil['j30'] }): PubPourConseil => ({
@@ -88,7 +88,9 @@ test('la consigne du visuel : le vrai produit, aucun texte, de la place pour l�
   assert.match(t, /Milk Shake « Sun And More »/)
   assert.match(t, /Reproduce the product EXACTLY/)
   assert.match(t, /ABSOLUTELY NO TEXT/)
-  assert.match(t, /top 18%.*bottom 25%/)
+  // Premier visuel reel : les bouchons montaient sous l'accroche. La zone libre est explicite.
+  assert.match(t, /top 22% and the bottom 22% must be plain soft background/)
+  assert.match(consigneImage({ angle: 'x', accroche: 'y', visuel: null, public: null, format: 'carrousel' }, [], 'carre'), /lower 65%.*top 32%/)
   assert.match(t, /Flacon sur une serviette/)
   assert.equal(formatParDefaut('reel'), 'story')
   assert.equal(formatParDefaut('image'), 'feed')
@@ -99,4 +101,7 @@ test('la consigne du visuel : le vrai produit, aucun texte, de la place pour l�
     assert.ok(Math.abs(w / h - f.ratio) < 0.01)
   }
   assert.equal(BOUTONS.message.ar, 'أرسلي رسالة')
+  // Une accroche longue retrecit (meme calcul pour l'apercu et l'export).
+  assert.equal(tailleAccroche('carre', 'Court et net'), 0.07)
+  assert.ok(tailleAccroche('carre', '3 sans-rinçage milk_shake. Lequel pour quels cheveux ?') < 0.07 * 0.8)
 })
