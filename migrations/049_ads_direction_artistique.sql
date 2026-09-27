@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS "AdsCreativeOption" (
   -- Reel anime : chaque option est un plan. Le decor est genere ; les VRAIS produits,
   -- detoures, sont poses et animes par-dessus (rebond, pop, glisse…) par le BOS.
   animes      integer[],                        -- produits detoures animes sur le plan
-  mouvement   text CHECK (mouvement IS NULL OR mouvement IN ('rebond', 'pop', 'glisse', 'zoom', 'duo', 'fin')),
+  mouvement   text,                             -- rebond, pop, glisse, duo, revele, etiquette, quiz, dm, zoom, fin (contrainte plus bas)
   duree       numeric CHECK (duree IS NULL OR duree BETWEEN 1 AND 6),   -- secondes
   style       text,                             -- le decor commun a la serie
   brief       text,                             -- ce qu'Achraf a demande, mot pour mot
@@ -47,6 +47,12 @@ CREATE TABLE IF NOT EXISTS "AdsCreativeOption" (
   maj_le      timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS ads_creative_option_creatif ON "AdsCreativeOption" (creatif_id, serie, carte);
+
+-- Le vocabulaire du Reel (ajoute avant la premiere direction : rejouer ce fichier le met a jour).
+ALTER TABLE "AdsCreativeOption" ADD COLUMN IF NOT EXISTS motion jsonb;   -- { transition, ambiance, bulles, points, choix }
+ALTER TABLE "AdsCreativeOption" DROP CONSTRAINT IF EXISTS "AdsCreativeOption_mouvement_check";
+ALTER TABLE "AdsCreativeOption" ADD CONSTRAINT "AdsCreativeOption_mouvement_check"
+  CHECK (mouvement IS NULL OR mouvement IN ('rebond', 'pop', 'glisse', 'duo', 'revele', 'etiquette', 'quiz', 'dm', 'zoom', 'fin'));
 
 -- 3. Un visuel appartient a une option ou a une carte. Choix : un visuel par
 --    carte de carrousel, un visuel pour l'image seule de la creation.

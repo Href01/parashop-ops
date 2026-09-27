@@ -134,12 +134,13 @@ export async function enregistrerDirection(entree: unknown) {
     const options = []
     for (const [i, o] of l.options.entries()) {
       const r = await client.query(
-        `INSERT INTO "AdsCreativeOption" (creatif_id, demande_id, serie, carte, role, concept, pourquoi, prompt, texte, position, format, produit_ids, animes, mouvement, duree, style, brief, qualite, modele)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING id, carte, concept, mouvement`,
+        `INSERT INTO "AdsCreativeOption" (creatif_id, demande_id, serie, carte, role, concept, pourquoi, prompt, texte, position, format, produit_ids, animes, mouvement, duree, style, brief, qualite, modele, motion)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20::jsonb) RETURNING id, carte, concept, mouvement`,
         [creatifId, dem.id, serie, d.type === 'options' ? null : i + 1, o.role || (d.type === 'carrousel' ? `carte ${i + 1}` : d.type === 'reel' ? `plan ${i + 1}` : `option ${i + 1}`),
           o.concept, o.pourquoi, o.prompt, JSON.stringify(o.texte), o.position, d.format, o.produitIds === undefined ? null : o.produitIds,
           d.type === 'reel' ? o.animes ?? [] : null, d.type === 'reel' ? o.mouvement : null, d.type === 'reel' ? o.duree : null,
-          l.style, d.brief || null, d.qualite, l.modele || null])
+          l.style, d.brief || null, d.qualite, l.modele || null,
+          d.type === 'reel' ? JSON.stringify({ transition: o.transition ?? 'coupe', ambiance: o.ambiance ?? 'aucune', bulles: o.bulles ?? [], points: o.points ?? [], choix: o.choix ?? [] }) : null])
       options.push(r.rows[0])
     }
     await client.query('COMMIT')

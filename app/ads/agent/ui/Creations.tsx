@@ -101,7 +101,7 @@ export function Studio({ c, d, fermer, maj, rafraichir, message }: { c: Creatif;
   const galerie = seules(c)
   // Une option du directeur artistique passe dans l'apercu : son visuel, son texte, sa position.
   const utiliser = (i: Image, o: Option) => {
-    setImageId(i.id); setAccroche(o.texte?.[langue] || o.texte?.fr || accroche); setPosition(o.position)
+    setImageId(i.id); setAccroche((o.texte?.[langue] || o.texte?.fr || accroche).replace(/\*/g, '')); setPosition(o.position)
     if (i.format === 'story') setFormat('story')
     haut.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }

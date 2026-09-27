@@ -41,9 +41,14 @@ It never changes anything in the Meta account: Achraf decides and acts in Ads Ma
   - The brief becomes an `AdsAgentRequest` of genre `direction`. A separate Claude routine takes only these (`bos.mjs demande --direction`), reads `scripts/ads/DIRECTION.md` (parashop repo) and looks at the real product photos. It then delivers options, cards or shots (`AdsCreativeOption`) and has each one painted (`bos.mjs image --option=<id>`). It looks at every image, redoes a failed one once, and notes its check.
   - `ADS_DA_ROUTINE_ID` + `ADS_DA_FIRE_TOKEN` (the routine's API trigger) wake it up at once. Without them, the routine's hourly run picks the brief up.
   - The BOS always appends the guardrails to Claude's prompt (`promptFinal`): exact product, no text, free headline zone. Carousel cards 2+ receive card 1 as a style reference.
-- **Animated Reels.** Not AI video. Each shot is a generated background plate with no product; the real product photos, cut out by Cloudinary AI (`e_background_removal`), are animated on top (`rebond`, `pop`, `glisse`, `duo`, `zoom`, `fin`) with word-by-word text in the shop's fonts and colours.
+- **Animated Reels.** Not AI video. Each shot is a generated background plate with no product; the real product photos, cut out by Cloudinary AI (`e_background_removal`), are animated on top with word-by-word text in the shop's fonts and colours.
+  - Shots: `rebond` (drop, squash, screen shake), `pop`, `glisse`, `duo` (« ou » between two products), `revele` (premium rise), `etiquette` (2–3 benefits linked to the bottle), `quiz` (answers, a finger taps the first, the product answers), `dm` (an animated Instagram conversation that ends with the product card), `zoom`, `fin` (pulsing green button).
+  - Transitions: cut, zoom-through, whip pan (motion blur), circle reveal, green wave. Ambiances: sparkles, droplets, bubbles, sand. Shine signature: a light sweep across each bottle when it lands, sparkles, motion trails. Durations go by half-seconds so cuts land on a 120 BPM beat.
+  - Claude composes each Reel from this vocabulary (`scripts/ads/DIRECTION.md`); the motion parameters live in `AdsCreativeOption.motion`.
   - `lib/ads/reel-model.ts` computes each frame (pure, tested). `app/ads/agent/ui/Reel.tsx` draws it in a canvas and exports an H.264 MP4 at 1080×1920, 30 fps, in the browser (WebCodecs + mediabunny; Chrome or Edge).
-- **Periods.** 7 d, 30 d, 3, 6, 9, 12 months. Spend is merged day by day (ad-level detail when that day was read, campaign totals otherwise); a comparison period that starts before the opening is not used.
+- **Periods.** 7 d, 30 d, 3, 6, 9, 12 months. Spend is merged day by day (ad-level detail when that day was read, campaign totals otherwise).
+  - The ad account was used before Shine (a web agency in late 2024, Marketplace boosts in early 2025), and Shine sold in DMs before its orders were recorded (first order: 2026-02-23). No window starts before the first recorded order, so spend is never set against orders that are not in the database. A comparison period that starts before it is not used.
+  - Ad-level history was backfilled on 2026-09-27 back to October 2024 (`synchro` accepts up to 1,100 days).
   - Variables on the BOS: `OPENAI_API_KEY` and `CLOUDINARY_*`, copied from the shop project on 2026-09-27 as secrets.
 
 ## Why the truth is not Meta's ROAS

@@ -35,16 +35,28 @@ export const BORNES: Record<TypeDirection, { min: number; max: number; defaut: n
   reel: { min: 3, max: 6, defaut: 4, formats: ['story'] },
 }
 
-/** Les animations d'un plan de Reel (dessinees par le BOS, lib/ads/reel-model.ts). */
+/** Le vocabulaire des Reels animes (dessines par le BOS, lib/ads/reel-model.ts). */
 export const MOUVEMENTS = {
-  rebond: 'Le produit tombe et rebondit sur le décor',
-  pop: 'Les produits surgissent l’un après l’autre',
-  glisse: 'Le produit entre en glissant, le texte en face',
-  zoom: 'Zoom lent sur le décor (le produit est dans l’image)',
-  duo: 'Deux produits côte à côte : « lequel pour toi ? »',
-  fin: 'Carte de fin : les produits + le bouton qui pulse',
+  rebond: 'Le produit tombe, s’écrase au contact et rebondit ; le reflet Shine le traverse',
+  pop: 'Les produits surgissent en ressort, l’un après l’autre',
+  glisse: 'Le produit entre de côté en pivotant',
+  duo: 'Deux produits face à face, un « ou » entre eux',
+  revele: 'Révélation premium : le flacon monte lentement, lumière et étincelles',
+  etiquette: 'Étiquette annotée : zoom sur le produit, 2 ou 3 atouts reliés par un trait',
+  quiz: 'Quiz : 2 ou 3 réponses, un doigt touche la bonne, le produit répond',
+  dm: 'Conversation DM animée : la cliente demande, Shine répond et envoie le produit',
+  zoom: 'Zoom lent sur le décor (texture, geste, ambiance ; le produit peut être dans l’image)',
+  fin: 'Carte de fin : les produits + le bouton vert qui pulse',
 } as const
 export type Mouvement = keyof typeof MOUVEMENTS
+export const TRANSITIONS = {
+  coupe: 'Coupe franche sur le temps (flash bref)',
+  traversee: 'Traversée : on plonge à travers le plan d’avant',
+  balayage: 'Balayage (whip pan) : les plans filent de côté',
+  revelation: 'Révélation : le plan s’ouvre en cercle',
+  vague: 'Vague : une lame verte ondulée dévoile le plan',
+} as const
+export const AMBIANCES = { aucune: 'Aucune', etincelles: 'Étincelles', gouttes: 'Gouttes d’eau', bulles: 'Bulles', sable: 'Grains de sable' } as const
 
 export const DemandeDirectionSchema = z.object({
   creatifId: z.number().int().positive().optional(),
@@ -79,6 +91,7 @@ export function sujetDemande(d: DemandeDirection): string {
 }
 
 const Texte = z.object({ fr: z.string().trim().max(120).default(''), darija: z.string().trim().max(120).default(''), ar: z.string().trim().max(120).default('') })
+const Court = z.object({ fr: z.string().trim().min(1).max(40), darija: z.string().trim().max(40).default(''), ar: z.string().trim().max(40).default('') })
 
 /** Ce que Claude livre au BOS pour une demande « direction ». */
 export const LivraisonDirection = z.object({
@@ -107,8 +120,13 @@ export const LivraisonDirection = z.object({
     produitIds: z.array(z.number().int().positive()).max(3).nullable().optional(),
     // Reel seulement : les vrais produits detoures, animes par-dessus le decor.
     animes: z.array(z.number().int().positive()).max(3).optional(),
-    mouvement: z.enum(['rebond', 'pop', 'glisse', 'zoom', 'duo', 'fin']).optional(),
+    mouvement: z.enum(['rebond', 'pop', 'glisse', 'zoom', 'duo', 'fin', 'revele', 'etiquette', 'quiz', 'dm']).optional(),
     duree: z.number().min(1).max(6).optional(),
+    transition: z.enum(['coupe', 'traversee', 'balayage', 'revelation', 'vague']).optional(),
+    ambiance: z.enum(['aucune', 'etincelles', 'gouttes', 'bulles', 'sable']).optional(),
+    bulles: z.array(z.object({ de: z.enum(['cliente', 'shine']), texte: z.object({ fr: z.string().trim().min(1).max(90), darija: z.string().trim().max(90).default(''), ar: z.string().trim().max(90).default('') }) })).max(5).optional(),
+    points: z.array(Court).max(3).optional(),
+    choix: z.array(Court).max(3).optional(),
   })).min(1).max(10),
 })
 export type Livraison = z.infer<typeof LivraisonDirection>
@@ -124,12 +142,20 @@ export function verifierLivraison(l: Livraison, d: DemandeDirection, produitsCre
     if (!o.texte.fr) throw new Error(`${nom} ${i + 1} : le texte à poser en français manque.`)
     if (d.type === 'reel') {
       if (!o.mouvement || !o.duree) throw new Error(`Plan ${i + 1} : « mouvement » et « duree » sont obligatoires dans un Reel.`)
-      if (o.mouvement !== 'zoom' && !o.animes?.length) throw new Error(`Plan ${i + 1} : le mouvement « ${o.mouvement} » anime des produits : remplis « animes ».`)
+      // Des coupes sur le temps : a 120 BPM, un temps dure 0,5 s.
+      if (!Number.isInteger(o.duree * 2)) throw new Error(`Plan ${i + 1} : durée en demi-secondes (1,5 · 2 · 2,5…) pour couper sur le temps.`)
+      if (!['zoom', 'dm'].includes(o.mouvement) && !o.animes?.length) throw new Error(`Plan ${i + 1} : le mouvement « ${o.mouvement} » anime des produits : remplis « animes ».`)
       if (o.mouvement === 'duo' && o.animes!.length !== 2) throw new Error(`Plan ${i + 1} : « duo » anime exactement deux produits.`)
+      if (['etiquette', 'quiz', 'revele'].includes(o.mouvement) && o.animes!.length !== 1) throw new Error(`Plan ${i + 1} : « ${o.mouvement} » anime un seul produit.`)
+      if (o.mouvement === 'dm' && (o.animes?.length ?? 0) > 1) throw new Error(`Plan ${i + 1} : une conversation DM envoie un seul produit.`)
+      if (o.mouvement === 'dm' && ((o.bulles?.length ?? 0) < 2)) throw new Error(`Plan ${i + 1} : une conversation DM a 2 à 5 messages (« bulles »).`)
+      if (o.mouvement === 'etiquette' && ((o.points?.length ?? 0) < 2)) throw new Error(`Plan ${i + 1} : une étiquette annotée montre 2 ou 3 atouts (« points »).`)
+      if (o.mouvement === 'quiz' && ((o.choix?.length ?? 0) < 2)) throw new Error(`Plan ${i + 1} : un quiz propose 2 ou 3 réponses (« choix »), la première menant au produit.`)
+      if (i === 0 && o.transition && o.transition !== 'coupe') throw new Error('Plan 1 : pas de transition d’entrée sur le premier plan.')
       // Un produit anime ET peint dans le decor apparaitrait deux fois.
       if (o.animes?.length && (o.produitIds === undefined || o.produitIds === null || o.produitIds.length)) throw new Error(`Plan ${i + 1} : les produits sont animés par-dessus : le décor doit être vide (« produitIds »: []).`)
-    } else if (o.animes?.length || o.mouvement) {
-      throw new Error(`${nom} ${i + 1} : « animes » et « mouvement » ne servent que dans un Reel.`)
+    } else if (o.animes?.length || o.mouvement || o.transition || o.bulles || o.points || o.choix) {
+      throw new Error(`${nom} ${i + 1} : « animes », « mouvement », « transition », « bulles », « points » et « choix » ne servent que dans un Reel.`)
     }
   }
   if (d.type === 'reel') {

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { idees, promptFinal, saison, sujetDemande, validerDemande, verifierLivraison, LivraisonDirection, type ProduitPourIdee } from '../../lib/ads/direction-model'
-import { dureeTotale, etatPlan, mots, nbImages, planA, rebondir, ressort, urlDetouree, type PlanReel } from '../../lib/ads/reel-model'
+import { dureeTotale, etatPlan, mots, nbImages, particules, planA, rebondir, ressort, transitionA, urlDetouree, type PlanReel } from '../../lib/ads/reel-model'
 
 test('le brief : bornes, format et produits', () => {
   assert.throws(() => validerDemande({ type: 'carrousel', nombre: 12, format: 'carre', produitIds: [1], brief: 'Un carrousel produit' }), /de 3 à 10 cartes/)
@@ -98,6 +98,8 @@ test('le moteur du Reel : timeline, courbes, rebond et carte de fin', () => {
   // Le mot marque *secs* est mis en valeur ; sans marque, c'est le dernier.
   assert.deepEqual(mots('Cheveux *secs* après').map((m) => m.accent), [false, true, false])
   assert.deepEqual(mots('Écris-nous en DM').map((m) => m.accent), [false, false, true])
+  // « ? » isole reste colle a son mot, et le mot marque le reste.
+  assert.deepEqual(mots('Lequel pour *toi* ?').map((m) => [m.texte, m.accent]), [['Lequel', false], ['pour', false], ['toi ?', true]])
   // Une coupe, pas un fondu : le voile blanc ne vit que 0,12 s, jamais sur le premier plan.
   assert.ok(etatPlan(PLANS[1], 0, false).flash > 0.3)
   assert.equal(etatPlan(PLANS[1], 0.2, false).flash, 0)
@@ -120,4 +122,54 @@ test('le détourage : la photo de fiche, par l’IA de Cloudinary', () => {
     'https://res.cloudinary.com/dlgdhwfqa/image/upload/e_background_removal/c_limit,w_900,h_900/f_png/v1790456557/shine-cosmetics/products/nladd352uwqozmsyg5jt.jpg')
   assert.equal(urlDetouree('https://exemple.com/a.jpg'), null)
   assert.equal(urlDetouree(null), null)
+})
+
+test('le vocabulaire créatif : DM, étiquette, quiz, tempo, transitions', () => {
+  const d = validerDemande({ type: 'reel', nombre: 3, format: 'story', produitIds: [49, 34], brief: 'Reel conversation DM' })
+  const base = LivraisonDirection.parse({
+    demandeId: 1, style: 'Warm Casablanca apartment, cream linen, soft morning light',
+    creation: { angle: 'conversation', accroche: 'Elle a demandé, on a répondu' },
+    options: [
+      plan({ mouvement: 'quiz', duree: 2.5, animes: [49], produitIds: [], choix: [{ fr: 'Secs' }, { fr: 'Frisés' }, { fr: 'Colorés' }] }),
+      plan({ mouvement: 'dm', duree: 4, animes: [49], produitIds: [], transition: 'vague', bulles: [{ de: 'cliente', texte: { fr: 'Salam, vous avez un soin pour cheveux secs ?' } }, { de: 'shine', texte: { fr: 'Oui ! Le Sun And More, sans rinçage.' } }] }),
+      plan({ mouvement: 'etiquette', duree: 3, animes: [49], produitIds: [], transition: 'traversee', ambiance: 'etincelles', points: [{ fr: '12 bienfaits' }, { fr: 'Filtre UV' }] }),
+    ],
+  })
+  assert.doesNotThrow(() => verifierLivraison(base, d, [49, 34], false))
+  const casse = (i: number, patch: Record<string, unknown>) => ({ ...base, options: base.options.map((o, j) => (j === i ? { ...o, ...patch } : o)) })
+  assert.throws(() => verifierLivraison(casse(1, { bulles: base.options[1].bulles!.slice(0, 1) }), d, [49, 34], false), /2 à 5 messages/)
+  assert.throws(() => verifierLivraison(casse(2, { points: base.options[2].points!.slice(0, 1) }), d, [49, 34], false), /2 ou 3 atouts/)
+  assert.throws(() => verifierLivraison(casse(0, { choix: [] }), d, [49, 34], false), /2 ou 3 réponses/)
+  assert.throws(() => verifierLivraison(casse(2, { duree: 2.25 }), d, [49, 34], false), /demi-secondes/)
+  assert.throws(() => verifierLivraison(casse(0, { transition: 'balayage' }), d, [49, 34], false), /premier plan/)
+  assert.throws(() => verifierLivraison(casse(2, { animes: [49, 34] }), d, [49, 34], false), /un seul produit/)
+})
+
+test('le moteur : bulles tapées puis envoyées, doigt du quiz, reflet, transitions, particules reproductibles', () => {
+  const dm: PlanReel = { mouvement: 'dm', duree: 4, produits: 1, texte: 'Elle a demandé', bulles: [{ de: 'cliente', texte: 'Salam' }, { de: 'shine', texte: 'Oui !' }] }
+  const tot = etatPlan(dm, 0.5, true).dm!
+  assert.ok(tot.bulles[0].frappe > 0 && tot.bulles[0].echelle === 0, 'the three dots come before the message')
+  const tard = etatPlan(dm, 3.9, true)
+  assert.ok(tard.dm!.bulles.every((b) => b.echelle > 0.9) && tard.dm!.fiche > 0.9, 'every message and the product card are shown')
+  assert.ok(tard.produits[0].opacite > 0.9)
+  const quiz: PlanReel = { mouvement: 'quiz', duree: 2.5, produits: 1, texte: 'Tes cheveux sont…', choix: ['Secs', 'Frisés', 'Colorés'] }
+  assert.equal(etatPlan(quiz, 0.5, true).quiz!.choix[0].choisi, false)
+  const apres = etatPlan(quiz, 2.2, true).quiz!
+  assert.ok(apres.choix[0].choisi && apres.choix[1].eteint > 0.9)
+  // Le reflet Shine passe une fois, peu apres la pose du flacon.
+  const chute: PlanReel = { mouvement: 'rebond', duree: 2, produits: 1, texte: 'x' }
+  assert.equal(etatPlan(chute, 0.2, true).produits[0].reflet, null)
+  assert.ok(etatPlan(chute, 0.6, true).produits[0].reflet! > 0)
+  assert.equal(etatPlan(chute, 1.8, true).produits[0].reflet, null)
+  assert.ok(etatPlan(chute, 0.4, true).secousse.dy !== 0, 'the frame shakes on impact')
+  // Transitions : seulement a l'entree d'un plan, et jamais sur le premier.
+  const plans: PlanReel[] = [chute, { ...dm, transition: 'vague' }]
+  assert.equal(transitionA(plans, 0, 0.1), null)
+  assert.deepEqual(transitionA(plans, 1, 0.19), { type: 'vague', p: 0.5 })
+  assert.equal(transitionA(plans, 1, 0.5), null)
+  assert.equal(etatPlan(plans[1], 0, false).flash, 0, 'no white flash under a designed transition')
+  // Les particules : les memes a chaque rendu (apercu = export).
+  assert.deepEqual(particules('bulles', 1.3, 2), particules('bulles', 1.3, 2))
+  assert.equal(particules('sable', 1, 1).length, 34)
+  assert.deepEqual(particules('aucune', 1, 1), [])
 })

@@ -33,6 +33,8 @@ export async function poster(corps: unknown) {
 }
 
 const texteDe = (o: Option, l: Langue) => o.texte?.[l] || o.texte?.fr || ''
+// *mot* : le mot mis en valeur dans un Reel ; a l'ecran et sur les images fixes, sans les etoiles.
+const lisible = (t: string) => t.replace(/\*/g, '')
 const imagesDe = (c: Creatif, o: Option) => c.images.filter((i) => i.option_id === o.id).sort((a, b) => Number(b.choisie) - Number(a.choisie) || b.cree_le.localeCompare(a.cree_le))
 const typeDeSerie = (opts: Option[]): TypeDirection => (opts.some((o) => o.mouvement) ? 'reel' : opts.some((o) => o.carte != null) ? 'carrousel' : 'options')
 
@@ -183,7 +185,7 @@ function CarteOption({ c, o, rang, type, langue, genere, a, largeur, noms }: { c
   const img = images[0]
   const [prompt, setPrompt] = useState(o.prompt)
   useEffect(() => setPrompt(o.prompt), [o.prompt])
-  const v: Visuel = { format: o.format, image: img?.url ?? null, accroche: type === 'reel' ? '' : texteDe(o, langue), langue, surimpression: type !== 'reel', position: o.position }
+  const v: Visuel = { format: o.format, image: img?.url ?? null, accroche: type === 'reel' ? '' : lisible(texteDe(o, langue)), langue, surimpression: type !== 'reel', position: o.position }
   return (
     <article className={s.dirOption} style={{ width: largeur }}>
       <div className={s.dirOptionVisuel}>
@@ -193,11 +195,13 @@ function CarteOption({ c, o, rang, type, langue, genere, a, largeur, noms }: { c
       <div className={s.dirOptionInfos}>
         <p className={s.carteTop}><span className={s.chip}>{type === 'carrousel' ? `Carte ${o.carte}` : type === 'reel' ? `Plan ${o.carte}` : `Option ${rang}`}</span>
           {o.role && <span className={s.chip}>{o.role}</span>}
-          {o.mouvement && <span className={`${s.chip} ${s.chipBleu}`}>{o.mouvement} · {Number(o.duree)} s</span>}</p>
+          {o.mouvement && <span className={`${s.chip} ${s.chipBleu}`}>{o.mouvement} · {Number(o.duree)} s</span>}
+          {o.motion?.transition && o.motion.transition !== 'coupe' && <span className={s.chip}>↪ {o.motion.transition}</span>}
+          {o.motion?.ambiance && o.motion.ambiance !== 'aucune' && <span className={s.chip}>✦ {o.motion.ambiance}</span>}</p>
         <b>{o.concept}</b>
         {o.pourquoi && <p className={s.small}>{o.pourquoi}</p>}
         {type === 'reel' && o.mouvement && <p className={`${s.small} ${s.muted}`}>{MOUVEMENTS[o.mouvement]}{o.animes?.length ? ` · produits ${o.animes.map((id) => noms.get(id) || `#${id}`).join(', ')}` : ''}</p>}
-        <p className={s.dirTexte} dir={langue === 'ar' ? 'rtl' : 'ltr'}>« {texteDe(o, langue)} »</p>
+        <p className={s.dirTexte} dir={langue === 'ar' ? 'rtl' : 'ltr'}>« {lisible(texteDe(o, langue))} »</p>
         {o.note && <p className={s.dirNote}><Check size={12} /> {o.note}</p>}
         {images.length > 1 && <div className={s.dirVariantes}>{images.map((i) => (
           <button key={i.id} type="button" className={i.choisie ? s.miniatureActive : undefined} onClick={() => void a.choisir(i)} title={i.choisie ? 'Visuel retenu' : 'Retenir ce visuel'}><img src={i.url} alt="" /></button>))}</div>}
@@ -265,10 +269,15 @@ export function SeriesDirection({ c, d, langue, bouton, legende, rafraichir, mes
       {series.map(({ serie, opts }) => {
         const type = typeDeSerie(opts)
         const manquants = opts.filter((o) => !imagesDe(c, o).length).length
-        const visuel = (o: Option): Visuel => ({ format: o.format, image: imagesDe(c, o)[0]?.url ?? null, accroche: texteDe(o, langue), langue, surimpression: true, position: o.position })
+        const visuel = (o: Option): Visuel => ({ format: o.format, image: imagesDe(c, o)[0]?.url ?? null, accroche: lisible(texteDe(o, langue)), langue, surimpression: true, position: o.position })
+        const dans = (m: { fr?: string; darija?: string; ar?: string }) => m[langue] || m.fr || ''
         const plans: PlanDessin[] = opts.map((o) => ({
           mouvement: o.mouvement ?? 'zoom', duree: Number(o.duree) || 2.5, produits: o.animes?.length ?? 0, texte: texteDe(o, langue),
           image: imagesDe(c, o)[0]?.url ?? null, detourees: (o.animes ?? []).map((id) => urlDetouree(imageDe.get(id)) ?? ''),
+          noms: (o.animes ?? []).map((id) => noms.get(id) ?? ''),
+          transition: o.motion?.transition, ambiance: o.motion?.ambiance,
+          bulles: (o.motion?.bulles ?? []).map((b) => ({ de: b.de, texte: dans(b.texte) })),
+          points: (o.motion?.points ?? []).map(dans), choix: (o.motion?.choix ?? []).map(dans),
         }))
         const { Icone, label } = TYPES[type]
         return (
