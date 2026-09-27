@@ -3,6 +3,9 @@ import pool from '@/lib/db'
 import { StrategieSchema, manquesStrategie, strategieParDefaut, type Strategie } from './strategie-model'
 import { estBoost, fatigue, indicateurs, type Cumul } from './meta-model'
 import { economieProduits, verite } from './verite'
+import { conseils, verdicts } from './conseils'
+import { commandesEnRoute, moisEnCours, serieQuotidienne } from './series'
+import { imagesDesCreations } from './images'
 
 /**
  * L'AGENT META ADS, COTE BOS : sa strategie, sa file de demandes, sa memoire,
@@ -120,10 +123,11 @@ async function derniereSynchro() {
   return { le: r.rows[0].d, jusquAu: r.rows[0].jour }
 }
 
-async function repartitions() {
-  const r = await pool.query(`SELECT dimension, valeur, depense::float, impressions, clics_lien, achats, messages FROM "MetaBreakdown"
+type LigneRepartition = { dimension: string; valeur: string; depense: number; impressions: number; clics_lien: number; achats: number; messages: number }
+async function repartitions(): Promise<Record<string, LigneRepartition[]>> {
+  const r = await pool.query<LigneRepartition>(`SELECT dimension, valeur, depense::float AS depense, impressions, clics_lien, achats, messages FROM "MetaBreakdown"
                               WHERE (fin, jours) = (SELECT fin, jours FROM "MetaBreakdown" ORDER BY fin DESC LIMIT 1) ORDER BY dimension, depense DESC`)
-  const out: Record<string, unknown[]> = {}
+  const out: Record<string, LigneRepartition[]> = {}
   for (const x of r.rows) (out[x.dimension] ||= []).push(x)
   return out
 }
@@ -198,18 +202,20 @@ export async function publierRapport(p: PublicationAds) {
         [id, Math.min(3, Math.max(1, Math.round(Number(a.priorite) || 2))), a.type, texte(a.action, 1500), texte(a.cible, 300) || null,
           texte(a.signal, 1500) || null, texte(a.effet, 800) || null, ['S', 'M', 'L'].includes(String(a.effort)) ? a.effort : null])
     }
+    const creatifIds: number[] = []
     for (const c of creatifs) {
       const ids = (c.produitIds || []).map(Number).filter((x) => Number.isInteger(x) && x > 0).slice(0, 10)
-      await client.query(
+      const ins = await client.query(
         `INSERT INTO "AdsCreative" (rapport_id, produit_ids, angle, format, public, accroche, script, texte_fr, texte_darija, texte_ar, titre, cta, visuel)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
         [id, ids, texte(c.angle, 300), c.format, texte(c.public, 500) || null, texte(c.accroche, 500), texte(c.script, 5000) || null,
           texte(c.texteFr, 2200) || null, texte(c.texteDarija, 2200) || null, texte(c.texteAr, 2200) || null, texte(c.titre, 120) || null,
           texte(c.cta, 60) || null, texte(c.visuel, 3000) || null])
+      creatifIds.push(ins.rows[0].id)
     }
     if (p.demandeId != null) await client.query(`UPDATE "AdsAgentRequest" SET statut = 'termine', termine_le = now(), rapport_id = $2 WHERE id = $1`, [p.demandeId, id])
     await client.query('COMMIT')
-    return { id, actions: actions.length, creatifs: creatifs.length }
+    return { id, actions: actions.length, creatifs: creatifs.length, creatifIds }
   } catch (e) {
     await client.query('ROLLBACK')
     throw e
@@ -224,8 +230,9 @@ export async function publierRapport(p: PublicationAds) {
 
 export async function ecran(jours = 30) {
   const s = await strategie()
-  const [v, historique, pubs, produits, demandes, rapports, actions, creatifs, synchro, reparts] = await Promise.all([
-    verite(jours), historiqueStrategie(), performancePubs(s.config.regles.frequenceMax), economieProduits(60),
+  const [v, precedent, serie, mois, enRoute, historique, pubs, produits, demandes, rapports, actions, creatifs, synchro, reparts] = await Promise.all([
+    verite(jours), verite(jours, jours), serieQuotidienne(jours), moisEnCours(), commandesEnRoute(),
+    historiqueStrategie(), performancePubs(s.config.regles.frequenceMax), economieProduits(60),
     pool.query(`SELECT id, genre, sujet, statut, demande_le, termine_le, erreur, rapport_id FROM "AdsAgentRequest" ORDER BY demande_le DESC LIMIT 12`),
     pool.query(`SELECT id, source, titre, cree_le, modele, en_bref FROM "AdsAgentReport" ORDER BY cree_le DESC LIMIT 20`),
     pool.query(`SELECT a.*, r.titre AS rapport_titre, r.cree_le AS rapport_le FROM "AdsAgentAction" a JOIN "AdsAgentReport" r ON r.id = a.rapport_id
@@ -233,9 +240,19 @@ export async function ecran(jours = 30) {
     pool.query(`SELECT * FROM "AdsCreative" WHERE statut <> 'ecartee' OR maj_le > now() - interval '7 days' ORDER BY cree_le DESC LIMIT 30`),
     derniereSynchro(), repartitions(),
   ])
+  const manques = manquesStrategie(s.config)
+  const cfg = s.config
+  const images = await imagesDesCreations(creatifs.rows.map((c) => c.id))
   return {
-    strategie: { ...s, manques: manquesStrategie(s.config), historique }, verite: v, pubs, produits,
-    demandes: demandes.rows, rapports: rapports.rows, actions: actions.rows, creatifs: creatifs.rows, synchro, repartitions: reparts,
+    strategie: { ...s, manques, historique }, verite: v, precedent, serie, mois, enRoute, pubs, produits,
+    verdicts: verdicts(pubs, cfg.regles.depenseMinAvantVerdict),
+    conseils: conseils({
+      v, precedent, pubs, produits, enAttente: enRoute, repartitions: reparts, ...mois,
+      strategie: { budgetMensuel: cfg.budgetMensuel, coutParCommandeMax: cfg.cibles.coutParCommandeMax, frequenceMax: cfg.regles.frequenceMax,
+        depenseMinAvantVerdict: cfg.regles.depenseMinAvantVerdict, boostsAutorises: cfg.regles.boostsAutorises, manques, produitsExclus: cfg.produitsExclus },
+    }),
+    demandes: demandes.rows, rapports: rapports.rows, actions: actions.rows,
+    creatifs: creatifs.rows.map((c) => ({ ...c, images: images[c.id] ?? [] })), synchro, repartitions: reparts,
   }
 }
 

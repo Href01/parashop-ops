@@ -105,7 +105,7 @@ export async function synchroniserPubsMeta(jours = 30): Promise<ResultatSynchro>
   for (let i = 0; i < idsPubs.length; i += 50) {
     const lot = idsPubs.slice(i, i + 50)
     try {
-      const res = await graph(`?ids=${lot.join(',')}&fields=id,name,effective_status,created_time,campaign{id,name,objective,daily_budget},adset{id,name,optimization_goal,daily_budget},creative{object_type,body,title,call_to_action_type,thumbnail_url,instagram_permalink_url}`, jeton)
+      const res = await graph(`?ids=${lot.join(',')}&fields=id,name,effective_status,created_time,campaign{id,name,objective,daily_budget},adset{id,name,optimization_goal,daily_budget},creative{id,object_type,body,title,call_to_action_type,thumbnail_url,instagram_permalink_url}`, jeton)
       for (const id of lot) {
         const p = res[id] as Json | undefined
         if (!p) continue
@@ -123,6 +123,15 @@ export async function synchroniserPubsMeta(jours = 30): Promise<ResultatSynchro>
             s.optimization_goal ?? null, budget ? (budget / 100) * taux : null, cr.object_type ?? null, cr.body ?? null, cr.title ?? null,
             cr.call_to_action_type ?? null, cr.thumbnail_url ?? null, cr.instagram_permalink_url ?? null, p.created_time ?? null])
         pubs++
+        // La vignette par defaut fait 64 px : illisible dans un apercu. On demande l'image de la
+        // creation en grand ; un echec ici garde la petite vignette, sans casser la synchro.
+        if (cr.id) {
+          try {
+            const g = await graph(`${cr.id}?fields=image_url,thumbnail_url&thumbnail_width=1080&thumbnail_height=1080`, jeton)
+            const grande = (g.image_url || g.thumbnail_url) as string | undefined
+            if (grande) await pool.query(`UPDATE "MetaAd" SET vignette = $2 WHERE ad_id = $1`, [id, grande])
+          } catch { /* vignette d'origine conservee */ }
+        }
       }
     } catch (e) { erreurs.push(`creations : ${(e as Error).message}`) }
   }

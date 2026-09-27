@@ -1,0 +1,64 @@
+/**
+ * LES FORMATS D'UNE PUB ET LA CONSIGNE DU VISUEL — pur, partage par l'ecran
+ * (apercus, export) et le serveur (generation).
+ *
+ * Le modele d'image recoit la PHOTO REELLE du produit en reference : la pub
+ * doit montrer le vrai flacon, pas un produit invente. Et il ne met AUCUN
+ * texte : l'accroche, le bouton et la marque sont poses ensuite par le BOS,
+ * dans la bonne langue et le bon sens (l'arabe s'ecrit de droite a gauche,
+ * ce que les modeles d'image ne savent pas faire).
+ */
+
+export type FormatImage = 'feed' | 'story' | 'carre'
+
+export const FORMATS_IMAGE: Record<FormatImage, { label: string; taille: string; export: [number, number]; ratio: number }> = {
+  // Tailles de generation : multiples de 16, rapport exact. Export : ce que Meta recommande.
+  feed: { label: 'Fil Instagram 4:5', taille: '1024x1280', export: [1080, 1350], ratio: 4 / 5 },
+  story: { label: 'Story / Reel 9:16', taille: '1008x1792', export: [1080, 1920], ratio: 9 / 16 },
+  carre: { label: 'Carré 1:1', taille: '1024x1024', export: [1080, 1080], ratio: 1 },
+}
+
+/** Le format d'image par defaut d'une creation : vertical pour les Reels et Stories. */
+export function formatParDefaut(formatCreatif: string): FormatImage {
+  return ['reel', 'story', 'video'].includes(formatCreatif) ? 'story' : formatCreatif === 'carrousel' ? 'carre' : 'feed'
+}
+
+export type CreatifPourImage = { angle: string; accroche: string; visuel: string | null; public: string | null; format: string }
+export type ProduitPourImage = { nom: string; marque: string; categorie?: string | null }
+
+/**
+ * La consigne envoyee au modele d'image. En anglais : c'est la langue ou ces
+ * modeles suivent le mieux les consignes fines. Le brief visuel de l'agent
+ * (en francais) est cite tel quel : le modele le comprend.
+ */
+export function consigneImage(c: CreatifPourImage, produits: ProduitPourImage[], format: FormatImage, precision?: string): string {
+  const produitsTexte = produits.length
+    ? produits.map((p) => `${p.marque} « ${p.nom} »`).join(', ')
+    : 'the beauty product described in the brief'
+  const zones = format === 'story'
+    ? 'Keep the top 18% and the bottom 25% of the frame calm and uncluttered (soft background only): text and a button will be added there later.'
+    : 'Keep the top 15% and the bottom 20% of the frame calm and uncluttered: a headline and a button will be added there later.'
+  return [
+    `Premium advertising photograph for Instagram (${FORMATS_IMAGE[format].label}) for Shine Cosmetics, a beauty shop in Morocco.`,
+    produits.length
+      ? `The reference image(s) show the REAL product(s): ${produitsTexte}. Reproduce the product EXACTLY as in the reference: same bottle or jar shape, same colours, same label layout. Never invent a different package, never change or misspell the label, never add a second brand.`
+      : `Subject: ${produitsTexte}.`,
+    `Creative angle: ${c.angle}. Opening line of the ad (context only, do NOT write it in the image): « ${c.accroche} ».`,
+    c.visuel ? `Art direction from our creative director (in French): ${c.visuel}` : '',
+    c.public ? `Audience: ${c.public}.` : '',
+    'Style: natural soft light, clean and warm, modern Moroccan touch only if it fits (warm light, zellige or plaster textures, never a cliché). Realistic skin and hands if any, no distortion.',
+    'ABSOLUTELY NO TEXT in the image: no words, letters, numbers, prices, logos, watermarks or captions, except the text already printed on the real product label.',
+    zones,
+    'No before/after comparison, no medical imagery, no exaggerated result.',
+    precision ? `Extra instruction: ${precision}` : '',
+  ].filter(Boolean).join('\n')
+}
+
+/** Le texte du bouton selon le canal de commande, dans la langue de la creation. */
+export const BOUTONS = {
+  message: { fr: 'Envoyer un message', darija: 'Sift lina message', ar: 'أرسلي رسالة' },
+  site: { fr: 'Commander', darija: 'Commandi daba', ar: 'اطلبي الآن' },
+} as const
+
+export type Langue = 'fr' | 'darija' | 'ar'
+export const estRtl = (l: Langue) => l === 'ar'

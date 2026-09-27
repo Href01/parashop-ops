@@ -1,16 +1,25 @@
 import { getOpsSession } from '@/lib/auth'
 import { creerDemande, ecran, enregistrerStrategie, majAction, majCreatif, rapport, type GenreAds } from '@/lib/ads/agent'
 import { synchroniserPubsMeta } from '@/lib/ads/meta-sync'
+import { choisirImage, genererImage, supprimerImage, type Qualite } from '@/lib/ads/images'
+import { detailPub } from '@/lib/ads/series'
+import type { FormatImage } from '@/lib/ads/creatif-model'
 import { PRIVATE_HEADERS, sameOrigin } from '@/lib/seo/http'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 120
+// Un visuel OpenAI peut prendre jusqu'a deux minutes, plus l'envoi a Cloudinary.
+export const maxDuration = 300
 
 /** L'ecran « Agent Meta Ads » : verite, strategie, pubs, actions, creatifs ; ?rapport=<id> pour un rapport complet. */
 export async function GET(request: Request) {
   if (!(await getOpsSession())) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: PRIVATE_HEADERS })
   const url = new URL(request.url)
   try {
+    const adId = url.searchParams.get('pub')
+    if (adId) {
+      const d = /^\d{5,30}$/.test(adId) ? await detailPub(adId) : null
+      return d ? Response.json(d, { headers: PRIVATE_HEADERS }) : Response.json({ error: 'Pub introuvable' }, { status: 404, headers: PRIVATE_HEADERS })
+    }
     const id = Number(url.searchParams.get('rapport'))
     if (id) {
       const r = await rapport(id)
@@ -30,6 +39,8 @@ export async function GET(request: Request) {
  *   { synchro: true }                    → relire Meta maintenant
  *   { action: { id, statut } }           → a_faire / fait / ecarte
  *   { creatif: { id, statut, adId? } }   → idee / validee / produite / en_ligne / ecartee
+ *   { image: { creatifId, format, qualite?, precision? } } → genere un visuel (OpenAI, photo produit en reference)
+ *   { imageChoisie: id } / { imageSupprimee: id }
  */
 export async function POST(request: Request) {
   const session = await getOpsSession()
@@ -49,6 +60,12 @@ export async function POST(request: Request) {
       if (!['idee', 'validee', 'produite', 'en_ligne', 'ecartee'].includes(body.creatif.statut)) throw new Error('Statut invalide.')
       return Response.json({ creatif: await majCreatif(Number(body.creatif.id), body.creatif.statut, body.creatif.adId ?? null) }, { headers: PRIVATE_HEADERS })
     }
+    if (body?.image) {
+      const i = body.image
+      return Response.json({ image: await genererImage({ creatifId: Number(i.creatifId), format: i.format as FormatImage, qualite: i.qualite as Qualite, precision: typeof i.precision === 'string' ? i.precision : undefined, par }) }, { headers: PRIVATE_HEADERS })
+    }
+    if (body?.imageChoisie) return Response.json(await choisirImage(Number(body.imageChoisie)), { headers: PRIVATE_HEADERS })
+    if (body?.imageSupprimee) return Response.json(await supprimerImage(Number(body.imageSupprimee)), { headers: PRIVATE_HEADERS })
     return Response.json({ error: 'Rien à faire.' }, { status: 400, headers: PRIVATE_HEADERS })
   } catch (e) {
     return Response.json({ error: e instanceof Error ? e.message : 'Erreur' }, { status: 400, headers: PRIVATE_HEADERS })

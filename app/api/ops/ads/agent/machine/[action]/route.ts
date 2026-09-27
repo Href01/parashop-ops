@@ -1,9 +1,11 @@
 import { contexte, echecDemande, publierRapport, reclamerDemande } from '@/lib/ads/agent'
 import { synchroniserPubsMeta } from '@/lib/ads/meta-sync'
+import { genererImage } from '@/lib/ads/images'
+import type { FormatImage } from '@/lib/ads/creatif-model'
 import { PRIVATE_HEADERS, cronAuthorized } from '@/lib/seo/http'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 120
+export const maxDuration = 300
 
 /**
  * LES ROUTES DE L'AGENT META ADS (cloud d'Anthropic), authentifiees par
@@ -14,6 +16,7 @@ export const maxDuration = 120
  *   POST …/machine/contexte  → strategie, verite (livre vs pub), pubs, produits, memoire
  *   POST …/machine/rapport   → publie un rapport (+ actions, + creatifs)
  *   POST …/machine/echec     → clot une demande impossible
+ *   POST …/machine/image     → le visuel d'une creation publiee (OpenAI, photo produit en reference ; plafonne)
  *
  * Rien ici ne modifie Meta ni le site.
  */
@@ -32,6 +35,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
         return Response.json(await contexte(), { headers: PRIVATE_HEADERS })
       case 'rapport':
         return Response.json(await publierRapport(body), { headers: PRIVATE_HEADERS })
+      case 'image':
+        if (!Number.isInteger(body?.creatifId)) return Response.json({ error: 'creatifId requis' }, { status: 400, headers: PRIVATE_HEADERS })
+        return Response.json({ image: await genererImage({ creatifId: body.creatifId, format: body.format as FormatImage, qualite: body.qualite, precision: body.precision, par: 'agent' }) }, { headers: PRIVATE_HEADERS })
       case 'echec':
         if (!Number.isInteger(body?.id)) return Response.json({ error: 'id requis' }, { status: 400, headers: PRIVATE_HEADERS })
         await echecDemande(body.id, String(body.erreur || 'Échec sans détail'))

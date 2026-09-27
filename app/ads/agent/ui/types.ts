@@ -1,0 +1,62 @@
+import type { Strategie } from '@/lib/ads/strategie-model'
+import type { Conseil, Verdict, Famille } from '@/lib/ads/conseils'
+
+/* Ce que GET /api/ops/ads/agent renvoie (ecran()). Un seul endroit pour les formes. */
+
+export type Verite = {
+  jours: number; de: string; a: string; depense: number; sourceDepense: string; pixel: { achats: number | null; valeur: number }
+  livrees: number; annulees: number; ca: number; marge: number; parCanal: { canal: string; commandes: number; ca: number; marge: number }[]
+  suiviesMeta: { commandes: number; ca: number }; profitApresPub: number; coutParCommandeLivree: number | null
+  merLivre: number | null; seuilParCommande: number | null; panierMoyen: number | null
+}
+export type Indic = {
+  depense: number; impressions: number; clicsLien: number; vuesPage: number; messages: number; achats: number; valeurAchats: number; vuesVideo3s: number; thruplays: number
+  ctr: number | null; cpm: number | null; cpc: number | null; coutParMessage: number | null; coutParAchatPixel: number | null; coutParResultat: number | null; roasPixel: number | null; accroche: number | null; retention: number | null
+}
+export type Pub = {
+  adId: string; nom: string | null; statut: string | null; campagne: string | null; objectif: string | null; optimisation: string | null; budgetJour: number | null
+  format: string | null; texte: string; titre: string | null; cta: string | null; vignette: string | null; permalien: string | null; creeLe: string | null
+  frequence7j: number | null; boost: boolean; fatigue: boolean; j30: Indic; j7: Indic
+}
+export type Produit = { id: number; nom: string; marque: string; categorie: string; prix: number; margeUnitaire: number | null; margeShine: number | null; partenaire: boolean; tauxMarge: number | null; stockVendable: number; importBloque: boolean; vendus90j: number; ca90j: number }
+export type Action = { id: number; priorite: number; type: string; action: string; cible: string | null; signal: string | null; effet: string | null; effort: string | null; statut: string; rapport_id: number; rapport_titre: string; rapport_le: string }
+export type Image = { id: number; creatif_id: number; format: 'feed' | 'story' | 'carre'; url: string; largeur: number; hauteur: number; modele: string; qualite: string | null; choisie: boolean; duree_ms: number | null; cree_le: string }
+export type Creatif = {
+  id: number; rapport_id: number | null; produit_ids: number[]; angle: string; format: string; public: string | null; accroche: string; script: string | null
+  texte_fr: string | null; texte_darija: string | null; texte_ar: string | null; titre: string | null; cta: string | null; visuel: string | null
+  statut: string; ad_id: string | null; cree_le: string; images: Image[]
+}
+export type Demande = { id: number; genre: string; sujet: string; statut: string; demande_le: string; termine_le: string | null; erreur: string | null; rapport_id: number | null }
+export type Rapport = { id: number; source: string; titre: string; cree_le: string; modele: string | null; en_bref: string }
+export type Jour = { jour: string; depense: number; messages: number; achats: number; clics: number; livrees: number; ca: number; marge: number }
+export type Repartition = { dimension: string; valeur: string; depense: number; impressions: number; clics_lien: number; achats: number; messages: number }
+export type Donnees = {
+  strategie: { config: Strategie; modifie_le: string | null; modifie_par: string | null; manques: string[]; historique: { id: number; modifie_le: string; modifie_par: string | null }[] }
+  verite: Verite; precedent: Verite; serie: Jour[]; mois: { depenseMois: number; jourDuMois: number; joursDansMois: number }; enRoute: number
+  pubs: Pub[]; produits: Produit[]; verdicts: Record<string, { verdict: Verdict; raison: string; famille: Famille }>; conseils: Conseil[]
+  demandes: Demande[]; rapports: Rapport[]; actions: Action[]; creatifs: Creatif[]
+  synchro: { le: string | null; jusquAu: string | null }; repartitions: Record<string, Repartition[]>
+}
+export type Onglet = 'ensemble' | 'campagnes' | 'creations' | 'afaire' | 'strategie' | 'agent'
+
+export const dh = (v: number | null | undefined) => (v == null ? '—' : `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v)} DH`)
+export const dh1 = (v: number | null | undefined) => (v == null ? '—' : `${v.toLocaleString('fr-FR', { maximumFractionDigits: v < 10 ? 1 : 0 })} DH`)
+export const nb = (v: number | null | undefined, d = 1) => (v == null ? '—' : v.toLocaleString('fr-FR', { maximumFractionDigits: d }))
+export const pct = (v: number | null | undefined, d = 1) => (v == null ? '—' : `${v.toLocaleString('fr-FR', { maximumFractionDigits: d })} %`)
+export const quand = (d: string | null) => (d ? new Date(d).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—')
+export const jourCourt = (d: string) => new Date(`${d}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
+
+/** Evolution contre la periode d'avant, en %, ou null si la base est nulle. */
+export const evolution = (a: number | null | undefined, b: number | null | undefined) => (a == null || b == null || b === 0 ? null : ((a - b) / Math.abs(b)) * 100)
+
+export const statutPub = (x: string | null) => !x ? '—' : x === 'ACTIVE' ? 'Active' : /PAUSED/.test(x) ? (x.startsWith('CAMPAIGN') ? 'Campagne en pause' : x.startsWith('ADSET') ? 'Ensemble en pause' : 'En pause') : x === 'ARCHIVED' ? 'Archivée' : x === 'DELETED' ? 'Supprimée' : /REVIEW|PENDING/.test(x) ? 'En validation' : /DISAPPROVED|REJECTED/.test(x) ? 'Refusée' : x.toLowerCase()
+
+export const VERDICTS: Record<Verdict, { label: string; ton: 'vert' | 'orange' | 'rouge' | 'gris' }> = {
+  gagnante: { label: 'Gagnante', ton: 'vert' }, surveiller: { label: 'À surveiller', ton: 'orange' }, couper: { label: 'À couper', ton: 'rouge' }, trop_tot: { label: 'Trop tôt', ton: 'gris' },
+}
+export const FAMILLES: Record<Famille, string> = { messages: 'Messages', ventes: 'Ventes', autre: 'Autre' }
+export const TYPES_ACTION: Record<string, { label: string; ton: 'vert' | 'orange' | 'rouge' | 'bleu' | 'gris' }> = {
+  couper: { label: 'Couper', ton: 'rouge' }, reduire: { label: 'Réduire', ton: 'orange' }, augmenter: { label: 'Augmenter', ton: 'vert' }, tester: { label: 'Tester', ton: 'bleu' },
+  lancer: { label: 'Lancer', ton: 'vert' }, corriger_suivi: { label: 'Corriger le suivi', ton: 'orange' }, offre: { label: 'Offre', ton: 'bleu' }, autre: { label: 'Autre', ton: 'gris' },
+}
+export const STATUTS_CREATIF: Record<string, string> = { idee: 'Idées', validee: 'Validées', produite: 'Produites', en_ligne: 'En ligne', ecartee: 'Écartées' }

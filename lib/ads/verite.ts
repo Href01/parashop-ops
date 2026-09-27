@@ -31,13 +31,14 @@ export type Verite = {
 
 const arrondi = (x: number) => Math.round(x * 100) / 100
 
-export async function verite(jours: number): Promise<Verite> {
+/** decalage : la meme fenetre, reculee de N jours (decalage = jours → la periode d'avant, pour comparer). */
+export async function verite(jours: number, decalage = 0): Promise<Verite> {
   const [adJour, spendJour, commandes, canaux] = await Promise.all([
     pool.query<{ depense: string; achats: string; valeur: string; n: string }>(
       `SELECT coalesce(sum(depense),0) depense, coalesce(sum(achats),0) achats, coalesce(sum(valeur_achats),0) valeur, count(*) n
-       FROM "MetaAdDaily" WHERE jour > current_date - $1::int`, [jours]).catch(() => ({ rows: [{ depense: '0', achats: '0', valeur: '0', n: '0' }] })),
+       FROM "MetaAdDaily" WHERE jour > current_date - $1::int - $2::int AND jour <= current_date - $2::int`, [jours, decalage]).catch(() => ({ rows: [{ depense: '0', achats: '0', valeur: '0', n: '0' }] })),
     pool.query<{ depense: string; valeur: string }>(
-      `SELECT coalesce(sum(spend),0) depense, coalesce(sum(revenue),0) valeur FROM "AdSpendDaily" WHERE platform = 'Meta' AND date > current_date - $1::int`, [jours]),
+      `SELECT coalesce(sum(spend),0) depense, coalesce(sum(revenue),0) valeur FROM "AdSpendDaily" WHERE platform = 'Meta' AND date > current_date - $1::int - $2::int AND date <= current_date - $2::int`, [jours, decalage]),
     pool.query<{ livrees: number; annulees: number; ca: string; marge: string; meta_n: number; meta_ca: string }>(
       `SELECT count(*) FILTER (WHERE status = 'DELIVERED')::int livrees,
               -- Le statut n'a que PENDING, CONFIRMED, DELIVERED, CANCELLED ; un retour se lit a "returnedAt".
@@ -46,19 +47,19 @@ export async function verite(jours: number): Promise<Verite> {
               coalesce(sum(coalesce("finalProfit", "estimatedProfit")) FILTER (WHERE status = 'DELIVERED'), 0) marge,
               count(*) FILTER (WHERE status = 'DELIVERED' AND "utmSource" ~* '^(fb|facebook|ig|instagram|meta)')::int meta_n,
               coalesce(sum(coalesce(revenue, "productsTotal")) FILTER (WHERE status = 'DELIVERED' AND "utmSource" ~* '^(fb|facebook|ig|instagram|meta)'), 0) meta_ca
-       FROM "Order" WHERE coalesce("deliveredAt", "createdAt") > now() - ($1::int * interval '1 day')`, [jours]),
+       FROM "Order" WHERE coalesce("deliveredAt", "createdAt") > now() - (($1::int + $2::int) * interval '1 day') AND coalesce("deliveredAt", "createdAt") <= now() - ($2::int * interval '1 day')`, [jours, decalage]),
     pool.query<{ canal: string; commandes: number; ca: string; marge: string }>(
       `SELECT CASE WHEN "sourceChannel" = 'Website' AND "utmSource" ~* '^(fb|facebook|ig|instagram|meta)' THEN 'Site (pub Meta suivie)'
                    ELSE coalesce("sourceChannel", 'Inconnu') END canal,
               count(*)::int commandes, coalesce(sum(coalesce(revenue, "productsTotal")), 0) ca, coalesce(sum(coalesce("finalProfit", "estimatedProfit")), 0) marge
-       FROM "Order" WHERE status = 'DELIVERED' AND coalesce("deliveredAt", "createdAt") > now() - ($1::int * interval '1 day')
-       GROUP BY 1 ORDER BY 3 DESC`, [jours]),
+       FROM "Order" WHERE status = 'DELIVERED' AND coalesce("deliveredAt", "createdAt") > now() - (($1::int + $2::int) * interval '1 day') AND coalesce("deliveredAt", "createdAt") <= now() - ($2::int * interval '1 day')
+       GROUP BY 1 ORDER BY 3 DESC`, [jours, decalage]),
   ])
   const parAd = Number(adJour.rows[0].n) > 0
   const depense = parAd ? Number(adJour.rows[0].depense) : Number(spendJour.rows[0].depense)
   const c = commandes.rows[0]
   const ca = Number(c.ca), marge = Number(c.marge), livrees = c.livrees
-  const fin = new Date(), debut = new Date(Date.now() - jours * 864e5)
+  const fin = new Date(Date.now() - decalage * 864e5), debut = new Date(fin.getTime() - jours * 864e5)
   return {
     jours, de: debut.toISOString().slice(0, 10), a: fin.toISOString().slice(0, 10),
     depense: arrondi(depense), sourceDepense: parAd ? 'MetaAdDaily' : 'AdSpendDaily',
