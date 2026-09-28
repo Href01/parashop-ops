@@ -114,7 +114,10 @@ const FONDS_SHINE: Record<'vert' | 'aurore' | 'prune' | 'creme', { degrade: [num
   creme: { degrade: [[0, '#FBFAF6'], [1, '#DCEFE6']], halos: [['247,222,146', 0.55, 0.82, 0.3, 0.34], ['155,48,112', 0.12, 0.12, 0.62, 0.3]], clair: true },
 }
 
-function dessinerFondShine(ctx: Ctx, nom: keyof typeof FONDS_SHINE, tg: number) {
+/** La vraie spirale de Shine (public/logo.png de la boutique, sur Cloudinary pour le canvas). */
+export const SPIRALE = 'https://res.cloudinary.com/dlgdhwfqa/image/upload/shine-ads/marque/spirale.png'
+
+function dessinerFondShine(ctx: Ctx, nom: keyof typeof FONDS_SHINE, tg: number, res: Ressources) {
   const f = FONDS_SHINE[nom]
   const g = ctx.createLinearGradient(0, 0, W * 0.25, H)
   for (const [p, c] of f.degrade) g.addColorStop(p, c)
@@ -125,12 +128,19 @@ function dessinerFondShine(ctx: Ctx, nom: keyof typeof FONDS_SHINE, tg: number) 
     h.addColorStop(0, `rgba(${c},${a})`); h.addColorStop(1, `rgba(${c},0)`)
     ctx.fillStyle = h; ctx.fillRect(0, 0, W, H)
   })
-  // La spirale Shine en filigrane : des cercles qui tournent doucement, en pointilles.
+  // La spirale Shine en filigrane : le vrai logo, grand, qui tourne doucement d'un plan a l'autre.
+  const spirale = res.get(SPIRALE)
   ctx.save()
-  ctx.translate(W * 0.5, H * 0.5); ctx.rotate(tg * 0.06)
-  ctx.strokeStyle = f.clair ? 'rgba(12,107,82,.07)' : 'rgba(255,255,255,.07)'; ctx.lineWidth = W * 0.0035
-  for (let k = 0; k < 6; k++) { ctx.setLineDash([W * (0.02 + k * 0.006), W * 0.018]); ctx.beginPath(); ctx.arc(0, 0, W * (0.2 + k * 0.11), k * 0.7, k * 0.7 + Math.PI * 1.7); ctx.stroke() }
-  ctx.setLineDash([]); ctx.restore()
+  ctx.translate(W * 0.5, H * 0.47); ctx.rotate(tg * 0.08)
+  if (spirale && !f.clair) {
+    ctx.globalAlpha = 0.09
+    ctx.drawImage(spirale, -W * 0.62, -W * 0.62, W * 1.24, W * 1.24)
+  } else {
+    ctx.strokeStyle = f.clair ? 'rgba(12,107,82,.07)' : 'rgba(255,255,255,.07)'; ctx.lineWidth = W * 0.0035
+    for (let k = 0; k < 6; k++) { ctx.setLineDash([W * (0.02 + k * 0.006), W * 0.018]); ctx.beginPath(); ctx.arc(0, 0, W * (0.2 + k * 0.11), k * 0.7, k * 0.7 + Math.PI * 1.7); ctx.stroke() }
+    ctx.setLineDash([])
+  }
+  ctx.restore()
   // La scene : une flaque de lumiere douce ou les produits atterrissent.
   const s = ctx.createRadialGradient(W * 0.5, H * 0.74, 0, W * 0.5, H * 0.74, W * 0.62)
   s.addColorStop(0, f.clair ? 'rgba(255,255,255,.7)' : 'rgba(255,255,255,.16)'); s.addColorStop(1, 'rgba(255,255,255,0)')
@@ -155,7 +165,7 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
   const shine = plan.fond && plan.fond !== 'decor' ? plan.fond : null
   const fond = !shine && plan.image ? res.get(plan.image) : undefined
   if (shine) {
-    dessinerFondShine(ctx, shine, plans.slice(0, i).reduce((n, p) => n + p.duree, 0) + local)
+    dessinerFondShine(ctx, shine, plans.slice(0, i).reduce((n, p) => n + p.duree, 0) + local, res)
   } else if (fond) {
     const ech = Math.max(W / fond.naturalWidth, H / fond.naturalHeight) * e.fond.echelle
     const w = fond.naturalWidth * ech, h = fond.naturalHeight * ech
@@ -346,6 +356,31 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
     ctx.restore()
   }
 
+  // 3 bis. Le bonneteau : l'anneau beurre autour du produit a suivre.
+  if (e.anneau) {
+    ctx.save()
+    ctx.globalAlpha = e.anneau.alpha
+    ctx.strokeStyle = COULEURS.beurre; ctx.lineWidth = W * 0.009; ctx.shadowColor = COULEURS.beurre; ctx.shadowBlur = W * 0.03
+    ctx.beginPath(); ctx.ellipse(e.anneau.cx * W, e.anneau.cy * H, e.anneau.r * H * 0.62, e.anneau.r * H, 0, 0, Math.PI * 2); ctx.stroke()
+    ctx.restore()
+  }
+
+  // 3 ter. Les marques, au-dessus de chaque produit de la carte de fin (COSRX, Anua…).
+  if (plan.mouvement === 'fin' && plan.marques?.length) {
+    ctx.save()
+    ctx.font = `800 ${W * 0.024}px ${POLICES.titre}`
+    e.produits.forEach((p, j) => {
+      const m = plan.marques?.[j]
+      if (!m || p.opacite <= 0.2) return
+      const l = ctx.measureText(m.toUpperCase()).width + W * 0.03, hh = W * 0.046
+      const y = (p.bas - p.hauteur * p.echelle) * H - hh * 0.9
+      ctx.globalAlpha = Math.min(1, p.opacite * p.echelle)
+      ctx.fillStyle = 'rgba(12,40,32,.55)'; rondRect(ctx, p.cx * W - l / 2, y - hh / 2, l, hh, hh / 2); ctx.fill()
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(m.toUpperCase(), p.cx * W, y + W * 0.002)
+    })
+    ctx.restore()
+  }
+
   // 4 bis. La routine numerotee : le numero et le nom du produit en vedette, puis un numero sur chacun dans la rangee.
   for (const et of e.etapes) {
     if (et.echelle <= 0) continue
@@ -504,6 +539,19 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
     ctx.restore()
   }
 
+  // 8 quater. Le sceau Shine : la spirale de la marque dans le carre vert du logo, qui tombe en tournant.
+  const spirale = res.get(SPIRALE)
+  if (e.sceau && e.sceau.echelle > 0 && spirale) {
+    const c = W * 0.13
+    ctx.save()
+    ctx.translate(e.sceau.cx * W, H * 0.345); ctx.rotate((e.sceau.rotation * Math.PI) / 180); ctx.scale(e.sceau.echelle, e.sceau.echelle)
+    ctx.shadowColor = 'rgba(0,0,0,.28)'; ctx.shadowBlur = W * 0.025; ctx.shadowOffsetY = W * 0.006
+    ctx.fillStyle = COULEURS.vert; rondRect(ctx, -c / 2, -c / 2, c, c, c * 0.24); ctx.fill()
+    ctx.shadowColor = 'transparent'; ctx.shadowOffsetY = 0
+    ctx.drawImage(spirale, -c * 0.36, -c * 0.36, c * 0.72, c * 0.72)
+    ctx.restore()
+  }
+
   // 8 bis. Les badges de confiance (entre les produits et le bouton) : la cliente marocaine
   // hesite a commander en ligne, on leve le frein la ou elle decide.
   if (e.badges.length) {
@@ -535,7 +583,7 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
   if (e.sticker && e.sticker.echelle > 0) {
     const r = W * 0.088
     ctx.save()
-    ctx.translate(W * 0.8, H * 0.4); ctx.rotate((e.sticker.rotation * Math.PI) / 180); ctx.scale(e.sticker.echelle, e.sticker.echelle)
+    ctx.translate(W * 0.83, H * 0.345); ctx.rotate((e.sticker.rotation * Math.PI) / 180); ctx.scale(e.sticker.echelle, e.sticker.echelle)
     ctx.shadowColor = 'rgba(0,0,0,.25)'; ctx.shadowBlur = W * 0.02; ctx.shadowOffsetY = W * 0.006
     ctx.fillStyle = COULEURS.prune; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill()
     ctx.shadowColor = 'transparent'; ctx.shadowOffsetY = 0
@@ -614,7 +662,7 @@ export function dessiner(ctx: Ctx, plans: PlanDessin[], t: number, res: Ressourc
   }
 }
 
-const urlsDe = (plans: PlanDessin[]) => plans.flatMap((p) => [p.image, ...p.detourees, ...(p.captures ?? [])]).filter((u): u is string => Boolean(u))
+const urlsDe = (plans: PlanDessin[]) => [SPIRALE, ...plans.flatMap((p) => [p.image, ...p.detourees, ...(p.captures ?? [])])].filter((u): u is string => Boolean(u))
 const debutDe = (plans: PlanDessin[], i: number) => plans.slice(0, i).reduce((n, p) => n + p.duree, 0)
 /** Les voix off posees : 0,15 s apres le debut de leur plan. */
 const voixDe = (plans: PlanDessin[]): VoixPlacee[] => plans.flatMap((p, i) => (p.voixUrl ? [{ url: p.voixUrl, debut: debutDe(plans, i) + 0.15 }] : []))

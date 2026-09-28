@@ -34,6 +34,8 @@ export type PlanReel = {
   ecrans?: { cible: Cible }[]   // site : les captures, dans l'ordre, et le bouton que le doigt touche
   choix?: string[]        // quiz : 2 ou 3 reponses ; la premiere est celle qui mene au produit
   ouvert?: boolean        // quiz ouvert : pas de doigt ni de reponse, « Commente ta réponse » ; la reponse vient plus loin
+  melange?: boolean       // pop : le bonneteau — le premier produit est entoure, tout le monde echange de place, on le retrouve
+  marques?: string[]      // la marque de chaque produit anime (etapes : dans l'etiquette ; fin : au-dessus du produit)
   appel?: string | null   // quiz ouvert : l'appel a commenter, deja traduit
   confiance?: string[]    // fin : badges de confiance deja traduits (« Paiement à la livraison »…)
   prix?: string | null    // fin : le sticker de prix (« 997 DH »)
@@ -122,6 +124,8 @@ export type EtatPlan = {
   sticker: { texte: string; barre: string | null; echelle: number; rotation: number } | null   // fin : le prix, qui tombe en tournant
   etapes: EtatEtape[]                                     // etapes : le numero et le nom de chaque produit
   site: EtatSite | null                                   // site : le telephone, l'ecran, le doigt
+  anneau: { cx: number; cy: number; r: number; alpha: number } | null   // bonneteau : le produit a suivre
+  sceau: { echelle: number; rotation: number; cx: number } | null      // fin : la spirale Shine, en sceau
 }
 export type EtatEtape = { numero: number; texte: string; cx: number; cy: number; echelle: number; grand: boolean }
 export type EtatSite = {
@@ -133,7 +137,7 @@ export type EtatSite = {
 }
 
 /** La routine numerotee : le produit en vedette, puis la rangee ou chacun se range. */
-export const ETAPES_VEDETTE = { cx: 0.5, bas: 0.56, hauteur: 0.32 }
+export const ETAPES_VEDETTE = { cx: 0.5, bas: 0.61, hauteur: 0.36 }
 export function etapesCreneaux(plan: PlanReel) {
   const n = Math.max(1, plan.produits)
   const pas = Math.max(0.6, (plan.duree - 0.75) / n)
@@ -152,7 +156,7 @@ export function disposition(n: number, mouvement: Mouvement = 'rebond'): { cx: n
   // La rangee de la routine : petite, sous le produit en vedette, au-dessus de l'interface d'Instagram.
   if (mouvement === 'etapes') {
     const xs = n <= 2 ? [0.36, 0.64] : n === 3 ? [0.26, 0.5, 0.74] : [0.2, 0.4, 0.6, 0.8]
-    return xs.slice(0, Math.max(1, n)).map((cx) => ({ cx, bas: 0.79, hauteur: 0.12 }))
+    return xs.slice(0, Math.max(1, n)).map((cx) => ({ cx, bas: 0.8, hauteur: 0.12 }))
   }
   if (mouvement === 'etiquette' || mouvement === 'revele') return [{ cx: 0.5, bas: 0.76, hauteur: mouvement === 'etiquette' ? 0.44 : 0.46 }]
   if (mouvement === 'quiz') return [{ cx: 0.5, bas: 0.78, hauteur: 0.24 }]
@@ -161,8 +165,10 @@ export function disposition(n: number, mouvement: Mouvement = 'rebond'): { cx: n
   const fin = mouvement === 'fin'
   const bas = fin ? 0.66 : 0.78
   // Jusqu'a 4 produits : une routine complete tient dans un seul plan (le premier Reel en perdait un).
-  const h = fin ? [0.3, 0.25, 0.21, 0.18] : [0.4, 0.31, 0.25, 0.21]
-  const xs = n <= 1 ? [0.5] : n === 2 ? [0.31, 0.69] : n === 3 ? [0.2, 0.5, 0.8] : [0.14, 0.38, 0.62, 0.86]
+  // Plus grands qu'avant : sur un telephone, un flacon a 18 % de l'ecran ne se reconnait pas.
+  // Quatre produits : resserres (15-85 %) pour qu'aucun ne sorte de l'ecran ni ne passe sous les boutons d'Instagram.
+  const h = fin ? [0.34, 0.3, 0.26, 0.24] : [0.44, 0.36, 0.3, 0.25]
+  const xs = n <= 1 ? [0.5] : n === 2 ? [0.3, 0.7] : n === 3 ? [0.19, 0.5, 0.81] : [0.15, 0.383, 0.617, 0.85]
   return xs.slice(0, Math.max(1, n)).map((cx) => ({ cx, bas, hauteur: h[Math.min(3, Math.max(0, n - 1))] }))
 }
 
@@ -181,6 +187,25 @@ export function mots(texte: string): { texte: string; accent: boolean }[] {
     if (ferme) dedans = false
     return { texte: m.replace(/\*/g, ''), accent }
   })
+}
+
+/** Le bonneteau : des echanges de places (paires d'emplacements), un toutes les 0,26 s. */
+// L'ordre fait finir le produit suivi au centre (place 1 ou 2) apres 2 a 6 echanges : jamais sous les boutons d'Instagram.
+const ECHANGES: [number, number][] = [[0, 3], [1, 3], [0, 2], [1, 2], [0, 3], [1, 2]]
+export function melangeCreneaux(plan: PlanReel) {
+  const debut = 0.85, pas = 0.26
+  const n = Math.min(ECHANGES.length, Math.max(0, Math.floor((plan.duree - debut - 0.55) / pas)))
+  return { debut, pas, n, revele: debut + n * pas + 0.05 }
+}
+/** L'emplacement de chaque produit apres k echanges (les paires qui depassent le nombre de produits sont sautees). */
+export function emplacements(nProduits: number, k: number): number[] {
+  const pos = Array.from({ length: nProduits }, (_, i) => i)
+  for (const [a, b] of ECHANGES.slice(0, k)) {
+    if (a >= nProduits || b >= nProduits) continue
+    const pa = pos.indexOf(a), pb = pos.indexOf(b)
+    pos[pa] = b; pos[pb] = a
+  }
+  return pos
 }
 
 /** Quand le produit i se pose (le reflet part a ce moment-la). */
@@ -225,7 +250,20 @@ function produitA(plan: PlanReel, p: { cx: number; bas: number; hauteur: number 
     case 'pop': case 'fin': {
       if (x < 0) return { ...e, opacite: 0, ombre: 0 }
       const s = ressort(x * 2.3)
-      return { ...e, echelle: Math.max(0, s), rotation: -10 * (1 - Math.min(1, s)), opacite: borne(x / 0.08), ombre: borne(s) }
+      const base = { ...e, echelle: Math.max(0, s), rotation: -10 * (1 - Math.min(1, s)), opacite: borne(x / 0.08), ombre: borne(s) }
+      if (plan.mouvement !== 'pop' || !plan.melange || plan.produits < 3) return base
+      // Le bonneteau : chacun glisse vers sa nouvelle place en arc (l'un passe dessus, l'autre dessous).
+      const { debut, pas, n, revele } = melangeCreneaux(plan)
+      const place = disposition(plan.produits, 'pop')
+      const k = Math.floor((t - debut) / pas)
+      const avant = emplacements(plan.produits, Math.max(0, Math.min(n, k)))[i], apres = emplacements(plan.produits, Math.max(0, Math.min(n, k + 1)))[i]
+      const u = k >= 0 && k < n ? douce((t - debut - k * pas) / pas) : 0
+      const sens = apres > avant ? 1 : -1
+      const cx = place[avant].cx + (place[apres].cx - place[avant].cx) * u
+      const bas = p.bas - (avant !== apres ? sens * 0.07 * Math.sin(Math.PI * u) : 0)
+      // La revelation : le produit suivi grandit, les autres s'effacent.
+      const r = t > revele ? ressort((t - revele) * 2.4) : 0
+      return { ...base, cx, bas, sol: p.bas, echelle: base.echelle * (i === 0 ? 1 + 0.16 * Math.min(1, r) : 1), opacite: base.opacite * (i === 0 ? 1 : 1 - 0.55 * Math.min(1, r)) }
     }
     case 'glisse': {
       if (x < 0) return { ...e, opacite: 0, ombre: 0 }
@@ -413,6 +451,17 @@ export function etatPlan(plan: PlanReel, t: number, premier: boolean, indice = 0
     ? { texte: plan.prix, barre: plan.prixBarre ?? null, echelle: Math.min(1.1, ressort((t - 0.6) * 2.4)), rotation: -12 + 14 * (1 - Math.min(1, ressort((t - 0.6) * 2.4))) }
     : null
 
+  // Le bonneteau : un anneau beurre autour du produit a suivre, avant le melange et a la revelation.
+  let anneau: EtatPlan['anneau'] = null
+  if (plan.mouvement === 'pop' && plan.melange && plan.produits >= 3 && produits[0]) {
+    const { debut, revele } = melangeCreneaux(plan)
+    const p0 = produits[0]
+    const vu = t > 0.5 && t < debut ? borne((t - 0.5) / 0.15) * borne((debut - t) / 0.1) : t > revele ? borne((t - revele) / 0.15) : 0
+    if (vu > 0) anneau = { cx: p0.cx, cy: p0.bas - p0.hauteur * p0.echelle * 0.5, r: p0.hauteur * p0.echelle * 0.62, alpha: vu * (0.75 + 0.25 * Math.sin(t * 12)) }
+  }
+  // Le sceau Shine : la spirale de la marque tombe en tournant sur la carte de fin (a gauche si le prix est a droite).
+  const sceau = plan.mouvement === 'fin' && t > 0.3 ? { echelle: Math.min(1.08, ressort((t - 0.3) * 2.2)), rotation: -40 * (1 - Math.min(1, ressort((t - 0.3) * 2.2))), cx: plan.prix ? 0.17 : 0.83 } : null
+
   // La routine : le numero et le nom du produit en vedette ; puis un petit numero au-dessus de chacun dans la rangee.
   const etapes: EtatEtape[] = []
   if (plan.mouvement === 'etapes') {
@@ -422,8 +471,8 @@ export function etatPlan(plan: PlanReel, t: number, premier: boolean, indice = 0
       if (y < 0.12) return
       const vedette = y < pas - 0.28
       etapes.push(vedette
-        ? { numero: k + 1, texte: plan.points?.[k] ?? '', cx: 0.5, cy: ETAPES_VEDETTE.bas + 0.04, echelle: Math.min(1.06, ressort((y - 0.12) * 2.6)), grand: true }
-        : { numero: k + 1, texte: '', cx: pr.cx, cy: pr.bas - pr.hauteur - 0.018, echelle: Math.min(1.06, ressort((y - pas + 0.1) * 3)), grand: false })
+        ? { numero: k + 1, texte: [plan.points?.[k], plan.marques?.[k]].filter(Boolean).join(' · '), cx: 0.5, cy: ETAPES_VEDETTE.bas + 0.032, echelle: Math.min(1.06, ressort((y - 0.12) * 2.6)), grand: true }
+        : { numero: k + 1, texte: '', cx: pr.cx, cy: pr.bas - pr.hauteur + 0.014, echelle: Math.min(1.06, ressort((y - pas + 0.1) * 3)), grand: false })
     })
   }
 
@@ -454,7 +503,7 @@ export function etatPlan(plan: PlanReel, t: number, premier: boolean, indice = 0
 
   return {
     fond, secousse, produits, mots: etatsMots, texteHaut: ZONE.haut + 0.035, chip, cta, dm, points, quiz,
-    particules: particules(plan.ambiance, t, indice + 1), etincelles, flash, badges, sticker, etapes, site,
+    particules: particules(plan.ambiance, t, indice + 1), etincelles, flash, badges, sticker, etapes, site, anneau, sceau,
   }
 }
 
@@ -502,6 +551,13 @@ export function evenementsSonores(plans: PlanReel[]): EvenementSonore[] {
         break
       }
       case 'fin': ev(0.45, 'cta'); if (plan.prix) ev(0.6, 'pop', 0.8); (plan.confiance ?? []).slice(0, 3).forEach((_, k) => ev(0.75 + k * 0.15, 'tic', 0.8)); break
+      case 'pop': {
+        if (!plan.melange || n < 3) break
+        const { debut, pas, n: m, revele } = melangeCreneaux(plan)
+        for (let s = 0; s < m; s++) ev(debut + s * pas, 'glisse', 0.45)
+        ev(revele, 'ding', 0.9)
+        break
+      }
       case 'etapes': {
         const { debut } = etapesCreneaux(plan)
         for (let k = 0; k < n; k++) { ev(debut(k) + 0.05, 'pop', 0.9); ev(debut(k) + 0.2, 'tic', 0.7) }

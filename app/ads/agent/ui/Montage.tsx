@@ -23,7 +23,7 @@ export type Brouillon = {
   transition: Transition; ambiance: Ambiance
   bulles: { de: 'cliente' | 'shine'; texte: Multi }[]; points: Multi[]; choix: Multi[]; voix: Multi
   confiance: CleConfiance[]; prix: boolean
-  ecrans: EtapeSite[]; fond: FondShine; ouvert: boolean
+  ecrans: EtapeSite[]; fond: FondShine; ouvert: boolean; melange: boolean
 }
 
 /**
@@ -53,7 +53,7 @@ export function depuisOption(o: Option): Brouillon {
     transition: m.transition ?? 'coupe', ambiance: m.ambiance ?? 'aucune',
     bulles: (m.bulles ?? []).map((b) => ({ de: b.de, texte: multi(b.texte) })), points: (m.points ?? []).map(multi), choix: (m.choix ?? []).map(multi), voix: multi(m.voix),
     confiance: (m.confiance ?? []) as CleConfiance[], prix: Boolean(m.prix),
-    ecrans: (m.ecrans ?? []) as EtapeSite[], fond: (m.fond ?? 'decor') as FondShine, ouvert: Boolean(m.ouvert),
+    ecrans: (m.ecrans ?? []) as EtapeSite[], fond: (m.fond ?? 'decor') as FondShine, ouvert: Boolean(m.ouvert), melange: Boolean(m.melange),
   }
 }
 
@@ -98,7 +98,8 @@ export function planDessin(c: Creatif, o: Option, b: Brouillon, langue: Langue, 
     prix: b.mouvement === 'fin' && b.prix ? prixAnimes(b.animes, d) : null,
     prixBarre: b.mouvement === 'fin' && b.prix ? prixBarre(b.animes, d) : null,
     fond: b.fond,
-    ouvert: b.mouvement === 'quiz' && b.ouvert, appel: b.mouvement === 'quiz' && b.ouvert ? APPEL_COMMENTAIRE[langue] : null,
+    ouvert: b.mouvement === 'quiz' && b.ouvert, melange: b.mouvement === 'pop' && b.melange,
+    marques: b.animes.map((id) => d.catalogue.find((p) => p.id === id)?.marque ?? ''), appel: b.mouvement === 'quiz' && b.ouvert ? APPEL_COMMENTAIRE[langue] : null,
   }
 }
 
@@ -233,6 +234,7 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
                     </div>))}
                   {b.bulles.length < 5 && <button type="button" className={s.ghost} onClick={() => maj({ bulles: [...b.bulles, { de: b.bulles.at(-1)?.de === 'cliente' ? 'shine' : 'cliente', texte: vide() }] })}><Plus size={12} /> Message</button>}
                 </fieldset>}
+                {b.mouvement === 'pop' && b.animes.length >= 3 && <label className={s.caseInline}><input type="checkbox" checked={b.melange} onChange={(e) => maj({ melange: e.target.checked })} /> Bonneteau : le 1er produit est entouré, ils échangent de place, on le retrouve (« Où est… ? »)</label>}
                 {b.mouvement === 'etapes' && <fieldset className={s.reglage}><legend>Le nom de chaque étape (court)</legend>
                   {b.animes.map((id, k) => (
                     <div key={id} className={s.montageLigne}>
@@ -295,7 +297,7 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
                 {al.length > 0 && <ul className={s.montageAlertes}>{al.map((x) => <li key={x}>⚠ {x}</li>)}</ul>}
                 <div className={s.btns}>
                   <button type="button" className={s.primary} disabled={!modifie || occupe != null} onClick={() => void (async () => {
-                    const j = await action(`e${o.id}`, { option: { id: o.id, texte: b.texte, position: b.position, mouvement: b.mouvement, duree: b.duree, animes: b.animes, transition: b.transition, ambiance: b.ambiance, bulles: b.bulles, points: b.mouvement === 'site' ? b.points.filter((x) => x.fr.trim()).length === b.ecrans.length ? b.points : [] : b.points, choix: b.choix, voix: b.voix, confiance: b.confiance, prix: b.prix, ...(b.mouvement === 'site' ? { ecrans: b.ecrans } : {}), fond: b.fond, ...(b.mouvement === 'quiz' ? { ouvert: b.ouvert } : {}) } }, 'Plan enregistré.')
+                    const j = await action(`e${o.id}`, { option: { id: o.id, texte: b.texte, position: b.position, mouvement: b.mouvement, duree: b.duree, animes: b.animes, transition: b.transition, ambiance: b.ambiance, bulles: b.bulles, points: b.mouvement === 'site' ? b.points.filter((x) => x.fr.trim()).length === b.ecrans.length ? b.points : [] : b.points, choix: b.choix, voix: b.voix, confiance: b.confiance, prix: b.prix, ...(b.mouvement === 'site' ? { ecrans: b.ecrans } : {}), fond: b.fond, ...(b.mouvement === 'quiz' ? { ouvert: b.ouvert } : {}), ...(b.mouvement === 'pop' ? { melange: b.melange } : {}) } }, 'Plan enregistré.')
                     if (j) setBrouillon(o.id, null)
                   })()}>{occupe === `e${o.id}` ? <Loader2 size={13} className={s.tourne} /> : <Save size={13} />} Enregistrer</button>
                   {modifie && <button type="button" className={s.ghost} onClick={() => setBrouillon(o.id, null)}><Undo2 size={13} /> Annuler</button>}

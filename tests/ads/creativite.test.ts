@@ -166,3 +166,27 @@ test('la mise en valeur tient sur plusieurs mots', async () => {
   assert.deepEqual(mots('Cheveux *secs* après').map((m) => m.accent), [false, true, false])
   assert.deepEqual(mots('Sans étoiles ici').map((m) => m.accent), [false, false, true])
 })
+
+test('le bonneteau : on entoure, on mélange, on retrouve le produit suivi', async () => {
+  const { emplacements, melangeCreneaux } = await import('../../lib/ads/reel-model')
+  const pop: PlanReel = { mouvement: 'pop', duree: 2.5, produits: 4, texte: 'Où est le *sérum* ? 👀', melange: true }
+  const { debut, n, revele } = melangeCreneaux(pop)
+  assert.ok(n >= 3, 'au moins 3 échanges')
+  // Chaque échange garde une permutation : 4 produits, 4 places.
+  for (let k = 0; k <= n; k++) assert.deepEqual([...emplacements(4, k)].sort(), [0, 1, 2, 3])
+  // Le produit suivi finit au centre, pas sous les boutons d'Instagram (v3 : il finissait à droite).
+  for (const k of [2, 3, 4, 5, 6]) assert.ok([1, 2].includes(emplacements(4, k)[0]), `après ${k} échanges`)
+  // L'anneau avant le mélange, rien pendant, puis la révélation : le suivi grandit, les autres s'effacent.
+  assert.ok(etatPlan(pop, 0.7, true).anneau)
+  assert.equal(etatPlan(pop, debut + 0.3, true).anneau, null)
+  const fin = etatPlan(pop, 2.45, true)
+  assert.ok(fin.anneau)
+  assert.ok(fin.produits[0].echelle > fin.produits[1].echelle && fin.produits[1].opacite < 0.6)
+  // Le suivi finit à la place que donnent les échanges, et tous restent dans l'écran.
+  assert.ok(Math.abs(fin.produits[0].cx - disposition(4, 'pop')[emplacements(4, n)[0]].cx) < 0.01)
+  assert.ok(fin.produits.every((p) => p.cx >= 0.15 && p.cx <= 0.85))
+  const sons = evenementsSonores([pop])
+  assert.equal(sons.filter((x) => x.son === 'glisse').length, n)
+  assert.ok(sons.some((x) => x.son === 'ding' && Math.abs(x.t - revele) < 0.01))
+  assert.throws(() => verifierOption(plan({ mouvement: 'pop', duree: 2.5, animes: [102, 98], melange: true }), 0, 'reel', [102, 98]), /3 ou 4 produits/)
+})

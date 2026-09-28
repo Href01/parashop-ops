@@ -274,6 +274,8 @@ export const LivraisonDirection = z.object({
     prix: z.boolean().optional(),
     // Quiz : question ouverte (pas de doigt, « Commente ta réponse »), la reponse vient dans un plan suivant.
     ouvert: z.boolean().optional(),
+    // Pop : le bonneteau — le premier produit de « animes » est entoure, tout le monde echange de place, on le retrouve.
+    melange: z.boolean().optional(),
   })).min(1).max(10),
   // Chaque consigne du brief, et le ou les plans qui la tiennent ([] = tenue partout, ex. « ne parle pas de l'été »).
   couverture: z.array(z.object({ consigne: z.string().trim().min(2).max(300), plans: z.array(z.number().int().min(1).max(10)).max(10) })).max(15).optional(),
@@ -326,6 +328,8 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
       if (o.duree < dureeMinSite(e.length)) throw new Error(`${nom} : ${e.length} écrans se suivent en ${dureeMinSite(e.length)} s au moins (${o.duree} s donnés).`)
     } else if (o.ecrans) throw new Error(`${nom} : « ecrans » ne sert que dans un plan « site ».`)
     if (o.ouvert && o.mouvement !== 'quiz') throw new Error(`${nom} : « ouvert » ne sert qu'à un quiz.`)
+    if (o.melange && (o.mouvement !== 'pop' || n < 3)) throw new Error(`${nom} : le bonneteau (« melange ») est un « pop » de 3 ou 4 produits.`)
+    if (o.melange && o.duree < 2) throw new Error(`${nom} : le bonneteau se joue en 2 s au moins (entourer, mélanger, retrouver).`)
     if (o.mouvement === 'quiz' && ((o.choix?.length ?? 0) < 2)) throw new Error(`${nom} : un quiz propose 2 ou 3 réponses (« choix »), la première menant au produit.`)
     if (i === 0 && o.transition && o.transition !== 'coupe') throw new Error(`${nom} : pas de transition d’entrée sur le premier plan.`)
     // Un produit anime ET peint dans le decor apparaitrait deux fois.
