@@ -132,7 +132,19 @@ export async function contexteDirection(demandeId: number) {
     // Les vraies captures du tunnel d'achat, par produit (plan « site » : animes = [ce produit]).
     captures: Object.fromEntries(Object.entries(captures).map(([id, c]) => [id, ETAPES_SITE.filter((e) => c[e]).map((e) => ({ ecran: e, bouton: c[e]!.bouton, libelleParDefaut: LIBELLES_SITE[e], image: c[e]!.url }))])),
     siteDemande: VEUT_SITE.test(p.brief ?? ''),
-    packs: Object.fromEntries(Object.entries(packs).map(([pack, comps]) => [pack, { produits: comps, regle: `Anime ces ${comps.length} produits eux-mêmes (pas la photo du pack) et montre-les TOUS dans un plan « etapes », « pop » ou « fin ».` }])),
+    // L'economie reelle d'un pack : la somme des prix d'AUJOURD'HUI de ses produits moins le prix du pack. Le Reel #18
+    // disait « moins cher que séparément » alors que les 4 soins coûtaient 997 DH, comme le pack.
+    packs: Object.fromEntries(Object.entries(packs).map(([pack, comps]) => {
+      const prixDe = (id: number) => Number((produits.rows as Json[]).find((x) => x.id === id)?.prix ?? 0)
+      const somme = Math.round(comps.reduce((n, id) => n + prixDe(id), 0)), prixPack = Math.round(prixDe(Number(pack)))
+      const economie = somme - prixPack
+      return [pack, {
+        produits: comps, prixPack, sommeDesProduitsAujourdhui: somme, economie,
+        regle: `Anime ces ${comps.length} produits eux-mêmes (pas la photo du pack) et montre-les TOUS dans un plan « etapes », « pop » ou « fin ». ${economie > 0
+          ? `Le pack fait économiser ${economie} DH par rapport à ses produits achetés séparément aujourd'hui.`
+          : `Le pack coûte AUTANT que ses produits achetés séparément aujourd'hui : n'écris jamais « moins cher que séparément », « économise » ni « offert » ; son prix barré est le prix de référence, dis « au lieu de » seulement avec ce prix-là.`}`,
+      }]
+    })),
     produits: (produits.rows as Json[]).map((x) => ({
       id: x.id, nom: x.nom, marque: x.marque, categorie: x.categorie, prix: Number(x.prix), stockVendable: Number(x.stock_vendable),
       ...(packs[x.id as number] ? { pack: packs[x.id as number] } : {}),

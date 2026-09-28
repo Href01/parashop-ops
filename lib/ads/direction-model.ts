@@ -106,7 +106,7 @@ export const OFFRES = {
   aucune: 'Pas d’offre',
   bienvenue: 'Le code de bienvenue (1re commande)',
   livraison: 'La livraison offerte (dès le seuil)',
-  pack: 'Le pack : moins cher que les produits séparés',
+  pack: 'Le prix du pack (et son prix barré)',
 } as const
 export type Offre = keyof typeof OFFRES
 /** Ce qui DOIT se voir dans le Reel : le BOS verifie chaque case a la livraison. */
