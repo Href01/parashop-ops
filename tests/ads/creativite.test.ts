@@ -143,3 +143,26 @@ test('les fonds Shine dessinés : pas de consigne d’image, et exigés par le b
   assert.doesNotThrow(() => verifierAMontrer(opts.map((o) => ({ ...o, fond: 'aurore' as const })), { brief: 'Un reel', montrer: [], fond: 'shine' }, false))
   assert.equal(validerDemande({ type: 'reel', nombre: 4, format: 'story', produitIds: [111], brief: 'Un reel du pack' }).fond, 'libre')
 })
+
+test('le quiz ouvert : personne ne touche, l’appel à commenter arrive, le produit attend la suite', () => {
+  const q: PlanReel = { mouvement: 'quiz', duree: 2, produits: 1, texte: '*Taches* : on met quoi dessus ?', choix: ['4 soins coréens', 'Du citron', 'Du dentifrice'], ouvert: true, appel: 'Commente ta réponse 👇' }
+  const fin = etatPlan(q, 1.95, true)
+  assert.equal(fin.quiz!.doigt, null)
+  assert.ok(fin.quiz!.choix.every((c) => !c.choisi && c.eteint === 0), 'aucune réponse choisie')
+  assert.ok(fin.quiz!.appel && fin.quiz!.appel.echelle > 0.9)
+  assert.equal(etatPlan(q, 0.6, true).quiz!.appel, null, 'pas avant que les réponses soient là')
+  assert.equal(fin.produits[0].opacite, 0)
+  const sons = evenementsSonores([q])
+  assert.ok(!sons.some((x) => x.son === 'clic'))
+  assert.throws(() => verifierOption(plan({ mouvement: 'rebond', duree: 2, animes: [102], ouvert: true }), 0, 'reel', [102]), /ne sert qu'à un quiz/)
+})
+
+test('la mise en valeur tient sur plusieurs mots', async () => {
+  const { mots } = await import('../../lib/ads/reel-model')
+  // Le Reel #18 : « *897 DH* » et « *4 soins coréens* » ne surlignaient que le dernier mot de la phrase.
+  assert.deepEqual(mots('*897 DH* avec BIENVENUE10, livraison offerte').map((m) => m.accent), [true, true, false, false, false, false])
+  assert.deepEqual(mots('Réponse C : *4 soins coréens*').map((m) => m.accent), [false, false, true, true, true])
+  assert.deepEqual(mots('*Sans compte*, en 2 gestes').map((m) => m.accent), [true, true, false, false, false])
+  assert.deepEqual(mots('Cheveux *secs* après').map((m) => m.accent), [false, true, false])
+  assert.deepEqual(mots('Sans étoiles ici').map((m) => m.accent), [false, false, true])
+})

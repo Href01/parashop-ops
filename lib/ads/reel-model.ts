@@ -33,6 +33,8 @@ export type PlanReel = {
   points?: string[]       // etiquette : 2 ou 3 atouts ; etapes : le nom de chaque produit ; site : le libelle de chaque ecran
   ecrans?: { cible: Cible }[]   // site : les captures, dans l'ordre, et le bouton que le doigt touche
   choix?: string[]        // quiz : 2 ou 3 reponses ; la premiere est celle qui mene au produit
+  ouvert?: boolean        // quiz ouvert : pas de doigt ni de reponse, « Commente ta réponse » ; la reponse vient plus loin
+  appel?: string | null   // quiz ouvert : l'appel a commenter, deja traduit
   confiance?: string[]    // fin : badges de confiance deja traduits (« Paiement à la livraison »…)
   prix?: string | null    // fin : le sticker de prix (« 997 DH »)
   prixBarre?: string | null   // fin : l'ancien prix, barre sur le sticker (un pack : la somme de ses produits)
@@ -112,7 +114,7 @@ export type EtatPlan = {
   cta: { echelle: number; opacite: number; cy: number } | null
   dm: { carte: number; bulles: EtatBulle[]; fiche: number } | null   // conversation : la carte, les bulles, la fiche produit envoyee
   points: EtatPoint[]
-  quiz: { choix: EtatChoix[]; doigt: { x: number; y: number; appui: number } | null } | null
+  quiz: { choix: EtatChoix[]; doigt: { x: number; y: number; appui: number } | null; appel: { texte: string; echelle: number } | null } | null
   particules: Particule[]
   etincelles: Particule[]        // autour du flacon, apres le reflet
   flash: number
@@ -169,8 +171,16 @@ export function mots(texte: string): { texte: string; accent: boolean }[] {
   // « sont… ? » : la ponctuation isolee reste collee au mot d'avant (jamais seule en debut de ligne).
   const brut = texte.trim().split(/\s+/).filter(Boolean)
     .reduce<string[]>((acc, m) => (/^[?!:;؟…»]+$/.test(m) && acc.length ? [...acc.slice(0, -1), `${acc[acc.length - 1]} ${m}`] : [...acc, m]), [])
-  const marques = brut.some((m) => /^\*.+\*[\s.,!?؟…»:;]*$/.test(m))
-  return brut.map((m, i) => ({ texte: m.replace(/\*/g, ''), accent: marques ? /^\*.+\*/.test(m) : i === brut.length - 1 }))
+  // *mot* ou *plusieurs mots* : tout ce qui est entre les etoiles est mis en valeur (« *897 DH* », « *4 soins coréens* »).
+  const marques = /\*[^*]+\*/.test(brut.join(' '))
+  let dedans = false
+  return brut.map((m, i) => {
+    const ouvre = m.startsWith('*'), ferme = /\*[\s.,!?؟…»:;]*$/.test(m) && (m.length > 1)
+    const accent = marques ? dedans || ouvre : i === brut.length - 1
+    if (ouvre) dedans = true
+    if (ferme) dedans = false
+    return { texte: m.replace(/\*/g, ''), accent }
+  })
 }
 
 /** Quand le produit i se pose (le reflet part a ce moment-la). */
@@ -240,6 +250,8 @@ function produitA(plan: PlanReel, p: { cx: number; bas: number; hauteur: number 
       return { ...e, echelle: 0.85 + 0.15 * u + 0.05 * douce(t / plan.duree), opacite: borne(t / 0.15), ombre: u }
     }
     case 'quiz': {
+      // Ouvert : le produit ne repond pas ici (la reponse vient dans un plan suivant).
+      if (plan.ouvert) return { ...e, opacite: 0, ombre: 0 }
       const y = t - quizTap(plan) - 0.1
       if (y < 0) return { ...e, opacite: 0, ombre: 0 }
       const s = ressort(y * 2.2)
@@ -369,13 +381,19 @@ export function etatPlan(plan: PlanReel, t: number, premier: boolean, indice = 0
   // Le quiz : les reponses tombent, un doigt touche la premiere, le produit repond.
   let quiz: EtatPlan['quiz'] = null
   if (plan.mouvement === 'quiz') {
-    const tap = quizTap(plan)
+    // Un quiz ouvert n'est jamais touche : la question reste posee jusqu'a la fin du plan.
+    const tap = plan.ouvert ? Infinity : quizTap(plan)
     const choix = (plan.choix ?? []).slice(0, 3).map((texte, i) => {
       const x = t - 0.35 - i * 0.22
       return { texte, echelle: x <= 0 ? 0 : Math.min(1.08, ressort(x * 2.6)) * (i === 0 && t > tap ? 1 + 0.06 * Math.exp(-6 * (t - tap)) : 1), choisi: i === 0 && t > tap, eteint: i > 0 ? borne((t - tap) / 0.3) : 0 }
     })
     const vu = t > tap - 0.35 && t < tap + 0.5
-    quiz = { choix, doigt: vu ? { x: 0.72 - 0.1 * sortie((t - tap + 0.35) / 0.35), y: 0.42 + 0.03 * sortie((t - tap + 0.35) / 0.35), appui: borne(1 - Math.abs(t - tap) / 0.12) } : null }
+    const finChoix = 0.35 + (plan.choix?.length ?? 2) * 0.22
+    quiz = {
+      choix, doigt: vu ? { x: 0.72 - 0.1 * sortie((t - tap + 0.35) / 0.35), y: 0.42 + 0.03 * sortie((t - tap + 0.35) / 0.35), appui: borne(1 - Math.abs(t - tap) / 0.12) } : null,
+      // L'appel a commenter arrive quand toutes les reponses sont la, et bat doucement.
+      appel: plan.ouvert && plan.appel && t > finChoix ? { texte: plan.appel, echelle: Math.min(1.06, ressort((t - finChoix) * 2.6)) * (1 + 0.04 * Math.sin(2 * Math.PI * 1.6 * Math.max(0, t - finChoix - 0.4))) } : null,
+    }
   }
 
   // Etincelles de la signature, autour du produit principal, apres le reflet.
@@ -472,7 +490,11 @@ export function evenementsSonores(plans: PlanReel[]): EvenementSonore[] {
       case 'duo': ev(0.6, 'pop'); break
       case 'revele': ev(0, 'montee'); break
       case 'etiquette': ev(0.1, 'pop', 0.6); (plan.points ?? []).slice(0, 3).forEach((_, k) => ev(0.6 + k * 0.38 + 0.2, 'tic')); break
-      case 'quiz': (plan.choix ?? []).slice(0, 3).forEach((_, k) => ev(0.35 + k * 0.22, 'pop', 0.5)); ev(quizTap(plan), 'clic'); if (n) ev(quizTap(plan) + 0.12, 'pop'); break
+      case 'quiz':
+        (plan.choix ?? []).slice(0, 3).forEach((_, k) => ev(0.35 + k * 0.22, 'pop', 0.5))
+        if (plan.ouvert) ev(0.35 + (plan.choix?.length ?? 2) * 0.22, 'tic', 0.8)
+        else { ev(quizTap(plan), 'clic'); if (n) ev(quizTap(plan) + 0.12, 'pop') }
+        break
       case 'dm': {
         const { pas } = dmCreneaux(plan)
         ;(plan.bulles ?? []).forEach((b, k) => ev(0.35 + k * pas + 0.38, b.de === 'cliente' ? 'envoi' : 'ding'))
@@ -494,7 +516,7 @@ export function evenementsSonores(plans: PlanReel[]): EvenementSonore[] {
       default: break
     }
     // La signature : le reflet qui traverse le flacon se fait entendre, doucement.
-    if (n && plan.mouvement !== 'zoom' && plan.mouvement !== 'site') ev(pose(plan.mouvement, 0, plan), 'scintille', 0.5)
+    if (n && plan.mouvement !== 'zoom' && plan.mouvement !== 'site' && !(plan.mouvement === 'quiz' && plan.ouvert)) ev(pose(plan.mouvement, 0, plan), 'scintille', 0.5)
     debut += plan.duree
   }
   return out.sort((a, b) => a.t - b.t)

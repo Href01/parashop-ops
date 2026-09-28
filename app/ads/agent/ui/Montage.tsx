@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { ArrowDown, ArrowUp, Copy, ImagePlus, Loader2, Mic, Plus, Save, Trash2, Undo2, Wand2, X } from 'lucide-react'
 import type { Langue } from '@/lib/ads/creatif-model'
-import { AMBIANCES, CONFIANCE, ETAPES_SITE, FONDS, LIBELLES_SITE, MOUVEMENTS, TRANSITIONS, dureeMinDm, dureeMinEtapes, dureeMinSite, dureeVoix, fautesFrancais, motMisEnValeurVide, motsVoixMax, voixTropLongue, type CleConfiance, type EtapeSite, type FondShine, type Mouvement } from '@/lib/ads/direction-model'
+import { AMBIANCES, APPEL_COMMENTAIRE, CONFIANCE, ETAPES_SITE, FONDS, LIBELLES_SITE, MOUVEMENTS, TRANSITIONS, dureeMinDm, dureeMinEtapes, dureeMinSite, dureeVoix, fautesFrancais, motMisEnValeurVide, motsVoixMax, voixTropLongue, type CleConfiance, type EtapeSite, type FondShine, type Mouvement } from '@/lib/ads/direction-model'
 import { urlDetouree, type Ambiance, type Transition } from '@/lib/ads/reel-model'
 import type { PlanDessin } from './Reel'
 import type { BaseCreative, Creatif, Image, Option } from './types'
@@ -23,7 +23,7 @@ export type Brouillon = {
   transition: Transition; ambiance: Ambiance
   bulles: { de: 'cliente' | 'shine'; texte: Multi }[]; points: Multi[]; choix: Multi[]; voix: Multi
   confiance: CleConfiance[]; prix: boolean
-  ecrans: EtapeSite[]; fond: FondShine
+  ecrans: EtapeSite[]; fond: FondShine; ouvert: boolean
 }
 
 /**
@@ -53,7 +53,7 @@ export function depuisOption(o: Option): Brouillon {
     transition: m.transition ?? 'coupe', ambiance: m.ambiance ?? 'aucune',
     bulles: (m.bulles ?? []).map((b) => ({ de: b.de, texte: multi(b.texte) })), points: (m.points ?? []).map(multi), choix: (m.choix ?? []).map(multi), voix: multi(m.voix),
     confiance: (m.confiance ?? []) as CleConfiance[], prix: Boolean(m.prix),
-    ecrans: (m.ecrans ?? []) as EtapeSite[], fond: (m.fond ?? 'decor') as FondShine,
+    ecrans: (m.ecrans ?? []) as EtapeSite[], fond: (m.fond ?? 'decor') as FondShine, ouvert: Boolean(m.ouvert),
   }
 }
 
@@ -98,6 +98,7 @@ export function planDessin(c: Creatif, o: Option, b: Brouillon, langue: Langue, 
     prix: b.mouvement === 'fin' && b.prix ? prixAnimes(b.animes, d) : null,
     prixBarre: b.mouvement === 'fin' && b.prix ? prixBarre(b.animes, d) : null,
     fond: b.fond,
+    ouvert: b.mouvement === 'quiz' && b.ouvert, appel: b.mouvement === 'quiz' && b.ouvert ? APPEL_COMMENTAIRE[langue] : null,
   }
 }
 
@@ -270,6 +271,7 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
                       <ChampsMulti valeur={x} max={40} changer={(v) => maj({ choix: b.choix.map((y, j) => (j === k ? v : y)) })} />
                     </div>))}
                   {b.choix.length < 3 && <button type="button" className={s.ghost} onClick={() => maj({ choix: [...b.choix, vide()] })}><Plus size={12} /> Réponse</button>}
+                  <label className={s.caseInline}><input type="checkbox" checked={b.ouvert} onChange={(e) => maj({ ouvert: e.target.checked })} /> Question ouverte : personne ne répond, « Commente ta réponse 👇 » (la réponse vient dans un plan suivant)</label>
                 </fieldset>}
                 {b.mouvement === 'fin' && <fieldset className={s.reglage}><legend>Rassurer la cliente (fin du Reel)</legend>
                   <div className={s.dirChips}>{(Object.keys(CONFIANCE) as CleConfiance[]).map((k) => (
@@ -293,7 +295,7 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
                 {al.length > 0 && <ul className={s.montageAlertes}>{al.map((x) => <li key={x}>⚠ {x}</li>)}</ul>}
                 <div className={s.btns}>
                   <button type="button" className={s.primary} disabled={!modifie || occupe != null} onClick={() => void (async () => {
-                    const j = await action(`e${o.id}`, { option: { id: o.id, texte: b.texte, position: b.position, mouvement: b.mouvement, duree: b.duree, animes: b.animes, transition: b.transition, ambiance: b.ambiance, bulles: b.bulles, points: b.mouvement === 'site' ? b.points.filter((x) => x.fr.trim()).length === b.ecrans.length ? b.points : [] : b.points, choix: b.choix, voix: b.voix, confiance: b.confiance, prix: b.prix, ...(b.mouvement === 'site' ? { ecrans: b.ecrans } : {}), fond: b.fond } }, 'Plan enregistré.')
+                    const j = await action(`e${o.id}`, { option: { id: o.id, texte: b.texte, position: b.position, mouvement: b.mouvement, duree: b.duree, animes: b.animes, transition: b.transition, ambiance: b.ambiance, bulles: b.bulles, points: b.mouvement === 'site' ? b.points.filter((x) => x.fr.trim()).length === b.ecrans.length ? b.points : [] : b.points, choix: b.choix, voix: b.voix, confiance: b.confiance, prix: b.prix, ...(b.mouvement === 'site' ? { ecrans: b.ecrans } : {}), fond: b.fond, ...(b.mouvement === 'quiz' ? { ouvert: b.ouvert } : {}) } }, 'Plan enregistré.')
                     if (j) setBrouillon(o.id, null)
                   })()}>{occupe === `e${o.id}` ? <Loader2 size={13} className={s.tourne} /> : <Save size={13} />} Enregistrer</button>
                   {modifie && <button type="button" className={s.ghost} onClick={() => setBrouillon(o.id, null)}><Undo2 size={13} /> Annuler</button>}

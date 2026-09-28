@@ -391,6 +391,18 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
       ctx.fillStyle = c.choisi ? '#fff' : COULEURS.brun; ctx.font = `700 ${W * 0.042}px ${police}`; ctx.fillText(c.texte, th * 0.3, W * 0.002)
       ctx.restore()
     })
+    const ap = e.quiz.appel
+    if (ap && ap.echelle > 0) {
+      ctx.save()
+      ctx.font = `800 ${W * 0.042}px ${police}`
+      const lw = ctx.measureText(ap.texte).width + W * 0.1, lh = W * 0.1
+      ctx.translate(W / 2, H * (0.37 + (plan.choix?.length ?? 2) * 0.075 + 0.02)); ctx.scale(ap.echelle, ap.echelle)
+      ctx.shadowColor = 'rgba(0,0,0,.25)'; ctx.shadowBlur = W * 0.03
+      ctx.fillStyle = COULEURS.beurre; rondRect(ctx, -lw / 2, -lh / 2, lw, lh, lh / 2); ctx.fill()
+      ctx.shadowColor = 'transparent'; ctx.fillStyle = COULEURS.brun; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+      ctx.fillText(ap.texte, 0, W * 0.003)
+      ctx.restore()
+    }
     const d = e.quiz.doigt
     if (d) {
       ctx.save()
