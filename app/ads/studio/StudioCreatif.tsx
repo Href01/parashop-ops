@@ -8,7 +8,7 @@ import { A_MONTRER, OBJECTIFS, OFFRES, RECETTES, consignesBrief, fautesFrancais,
 import { ApercuCarrousel, ApercuFeed, ApercuStory, telechargerPng, type Visuel } from '../agent/ui/Apercu'
 import { LecteurReel } from '../agent/ui/Reel'
 import { TableMontage, depuisOption, planDessin, type Brouillon } from '../agent/ui/Montage'
-import { BriefDirection, CarteOption, DirectionsEnCours, imagesDe, lisible, poster, texteDe, typeDeSerie, useActionsSerie } from '../agent/ui/Direction'
+import { BriefDirection, CarteOption, DirectionsEnCours, avecGras, imagesDe, lisible, poster, texteDe, typeDeSerie, useActionsSerie } from '../agent/ui/Direction'
 import { STATUTS_CREATIF, dh1, quand, type BaseCreative, type Creatif, type Demande, type Image, type Lecon, type Option } from '../agent/ui/types'
 import { dureeVoixPlan, hashtags, verifierPublication } from './publier'
 import a from '../agent/agent.module.css'
@@ -120,7 +120,7 @@ export default function StudioCreatif() {
                 {ETAPES.map((x) => <option key={x} value={x}>{STATUTS_CREATIF[x]}</option>)}
                 <option value="ecartee">Écartées</option>
               </select>
-              <DirectionsEnCours demandes={d.demandes} creatifId={null} />
+              <DirectionsEnCours demandes={d.demandes} creatifId={null} rafraichir={charger} dire={dire} />
               <ul className={s.liste}>
                 {liste.map((c) => {
                   const t = typeDe(c), Icone = ICONES[t], img = vignette(c)
@@ -169,7 +169,7 @@ function Accueil({ d, lancer, rafraichir, dire }: { d: Donnees; lancer: (i?: Ide
       <h2>Créer une pub qui vend au Maroc</h2>
       <ol className={s.parcours}>
         <li><b>1. Brief</b><span>Ce que tu veux, en une phrase — ou une idée prête ci-dessous.</span></li>
-        <li><b>2. Direction</b><span>Claude regarde tes vrais produits, écrit les plans et fait peindre les décors.</span></li>
+        <li><b>2. Direction</b><span>Claude regarde tes vrais produits et ce que font les meilleures pubs, te propose l’idée et les plans ; tu valides, il crée (animé ou filmé par Higgsfield).</span></li>
         <li><b>3. Montage</b><span>Tu retouches plan par plan : textes, animation, son, badges de confiance.</span></li>
         <li><b>4. Publier</b><span>La vérification, l’export MP4 ou PNG, la légende — puis tu relies la pub Meta pour voir ce qu’elle rapporte.</span></li>
       </ol>
@@ -242,7 +242,11 @@ function OngletBrief({ c, d, opts, rafraichir, dire }: { c: CreatifStudio; d: Do
           <dt>Offre</dt><dd>{OFFRES[p.offre ?? 'aucune']}</dd>
           <dt>À montrer</dt><dd>{p.montrer?.length ? p.montrer.map((k) => A_MONTRER[k as AMontrer] ?? k).join(' · ') : '—'}</dd>
           <dt>Format</dt><dd>{p.type === 'reel' ? `Reel, ${p.nombre} plans` : p.type === 'carrousel' ? `Carrousel, ${p.nombre} cartes` : `${p.nombre} options`}</dd>
+          {p.type === 'reel' && <><dt>Rendu</dt><dd>{p.rendu === 'video' ? 'Vidéo Higgsfield (chaque plan filmé)' : 'Motion Shine (animé par le BOS)'}</dd></>}
         </dl>
+        {(dem.echanges?.length ?? 0) > 0 && <details className={s.briefDiscussion}><summary>La discussion avant la création ({dem.echanges!.length} message{dem.echanges!.length > 1 ? 's' : ''})</summary>
+          {dem.echanges!.map((m, i) => <p key={i} className={a.small}><b>{m.auteur === 'agent' ? 'Directeur artistique' : 'Toi'}</b> <span className={a.muted}>· {quand(m.le)}</span><br /><span style={{ whiteSpace: 'pre-wrap' }}>{avecGras(m.texte)}</span></p>)}
+        </details>}
         {consignes.length > 0 && <>
           <h3>Ton brief, consigne par consigne</h3>
           <ul className={s.couverture}>{consignes.map((cons, k) => {
@@ -336,7 +340,7 @@ function Espace({ c, d, fermer, rafraichir, dire }: { c: CreatifStudio; d: Donne
             <button key={k} type="button" role="tab" aria-selected={onglet === k} onClick={() => setOnglet(k)}><span className={s.ongletNum}>{i + 1}</span>{nom}</button>))}
         </div>
         <div className={s.inspecteurCorps}>
-          <DirectionsEnCours demandes={d.demandes} creatifId={c.id} />
+          <DirectionsEnCours demandes={d.demandes} creatifId={c.id} rafraichir={rafraichir} dire={dire} />
           {onglet === 'brief' && <OngletBrief c={c} d={d} opts={opts} rafraichir={rafraichir} dire={dire} />}
           {onglet === 'plans' && <>
             {!opts.length && <p className={`${a.small} ${a.muted}`}>Pas encore de plans : onglet 1 · Brief pour lancer une direction.</p>}

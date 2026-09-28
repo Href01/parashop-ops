@@ -237,6 +237,11 @@ export const DemandeDirectionSchema = z.object({
   fond: z.enum(['libre', 'shine']).default('libre'),
   // Une recette choisie : la charpente est imposee (et la regle « pas deux fois la meme charpente » ne s'applique pas).
   recette: z.enum(['secret', 'reconnais', 'piege', 'bonneteau']).optional(),
+  // « video » : TOUS les plans filmes par Higgsfield (image de depart avec le vrai produit, puis video) ;
+  // « motion » : l'animation Shine (le BOS anime les vrais produits detoures sur des fonds).
+  rendu: z.enum(['motion', 'video']).default('motion'),
+  // Discuter avant de creer : le directeur artistique propose d'abord (concept, plans, modeles, questions).
+  alignement: z.boolean().default(true),
 })
 export type DemandeDirection = z.infer<typeof DemandeDirectionSchema>
 
@@ -245,6 +250,8 @@ export function validerDemande(entree: unknown): DemandeDirection {
   const p = DemandeDirectionSchema.safeParse(entree)
   if (!p.success) throw new Error(p.error.issues.map((i) => `${i.path.join('.') || 'demande'} : ${i.message}`).join(' · '))
   const d = p.data
+  // Tout en video : un Reel vertical, sans recette (ce sont des montages animes) ni fond dessine.
+  if (d.rendu === 'video') { d.type = 'reel'; d.format = 'story'; d.recette = undefined; d.fond = 'libre' }
   // Une recette fixe le type et le nombre de plans.
   if (d.recette) { d.type = 'reel'; d.format = 'story'; d.nombre = RECETTES[d.recette].plans.length }
   const b = BORNES[d.type]
@@ -257,7 +264,7 @@ export function validerDemande(entree: unknown): DemandeDirection {
 
 /** Le sujet lisible de la demande, dans la file de l'agent. */
 export function sujetDemande(d: DemandeDirection): string {
-  const quoi = d.type === 'carrousel' ? `Carrousel de ${d.nombre} cartes` : d.type === 'reel' ? `Reel animé en ${d.nombre} plans` : `${d.nombre} options de visuel`
+  const quoi = d.type === 'carrousel' ? `Carrousel de ${d.nombre} cartes` : d.type === 'reel' ? (d.rendu === 'video' ? `Reel vidéo (Higgsfield) en ${d.nombre} plans` : `Reel animé en ${d.nombre} plans`) : `${d.nombre} options de visuel`
   const format = { feed: '4:5', story: '9:16', carre: '1:1' }[d.format]
   return `${quoi} (${format})${d.brief ? ` — ${d.brief}` : ''}`.slice(0, 1500)
 }
@@ -397,6 +404,10 @@ export const LivraisonDirection = z.object({
     }).nullable().optional(),
     // La consigne pour filmer ou generer ce clip (en anglais, a coller dans l'outil video) : le plan l'affiche avec « Copier ».
     clipPrompt: z.string().trim().max(2000).nullable().optional(),
+    // Garder le son du clip (Veo, Kling avec son…) dans le Reel ; sinon il est muet sous les bruitages et la voix du BOS.
+    clipSon: z.boolean().optional(),
+    // Le texte est deja dans la video (genere par Higgsfield) : le BOS ne l'ecrit pas. `texte` reste la reference (legende, verification).
+    texteVideo: z.boolean().optional(),
   })).min(1).max(10),
   // Chaque consigne du brief, et le ou les plans qui la tiennent ([] = tenue partout, ex. « ne parle pas de l'été »).
   couverture: z.array(z.object({ consigne: z.string().trim().min(2).max(300), plans: z.array(z.number().int().min(1).max(10)).max(10) })).max(15).optional(),
@@ -450,6 +461,7 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
     } else if (o.ecrans) throw new Error(`${nom} : « ecrans » ne sert que dans un plan « site ».`)
     if (o.ouvert && o.mouvement !== 'quiz') throw new Error(`${nom} : « ouvert » ne sert qu'à un quiz.`)
     if (o.illustration && o.mouvement !== 'zoom') throw new Error(`${nom} : un schéma (« illustration ») se dessine sur un plan « zoom ».`)
+    if ((o.clipSon || o.texteVideo) && !o.clip && !String(o.clipPrompt ?? '').trim()) throw new Error(`${nom} : le son ou le texte « dans la vidéo » ne servent qu'à un plan à clip (écris sa consigne « clipPrompt »).`)
     if (o.clip?.duree && o.clip.debut >= o.clip.duree) throw new Error(`${nom} : le clip commence après sa fin (${o.clip.debut} s pour un clip de ${o.clip.duree} s).`)
     if (o.avisId && o.mouvement !== 'zoom') throw new Error(`${nom} : un avis client se montre sur un plan « zoom ».`)
     if (o.avisId && o.illustration) throw new Error(`${nom} : un schéma OU un avis par plan, pas les deux.`)
@@ -477,6 +489,24 @@ export function verifierMontage(durees: number[]) {
   const total = durees.reduce((n, d) => n + d, 0)
   if (total < 6 || total > 30) throw new Error(`Un Reel de ${total} s : vise 12 à 25 s (6 à 30 au plus).`)
   if ((durees[0] ?? 0) > 2.5) throw new Error('Plan 1 : l’accroche tient en 2,5 s au plus, sinon on a déjà scrollé.')
+}
+
+/**
+ * Le Reel TOUT EN VIDEO : chaque plan est filme par Higgsfield a partir d'une image de depart (le vrai
+ * produit y est exact). Le BOS garde le montage, le texte (sauf s'il est dans la video), la carte de fin,
+ * le son. La charpente vient du brief (pas de recette : ce sont des montages animes).
+ */
+export function verifierRenduVideo(options: OptionLivree[], d: Pick<DemandeDirection, 'recette'>) {
+  if (d.recette) throw new Error('Rendu vidéo : pas de recette (les recettes sont des montages animés) ; construis la charpente à partir du brief.')
+  options.forEach((o, i) => {
+    const nom = `Plan ${i + 1}`
+    if (!['zoom', 'fin', 'site'].includes(o.mouvement ?? '')) throw new Error(`${nom} : en rendu vidéo, un plan est un clip (« zoom »), la carte de fin (« fin ») ou le site (« site ») — pas « ${o.mouvement} ».`)
+    // Le site (vraies captures) et une carte de fin sur un fond Shine dessine n'ont pas de clip.
+    if (o.mouvement === 'site' || (o.mouvement === 'fin' && fondDessine(o.fond))) return
+    if (String(o.clipPrompt ?? '').trim().length < 60) throw new Error(`${nom} : en rendu vidéo, chaque plan a sa consigne de mouvement (« clipPrompt », 60 caractères au moins).`)
+    if (o.prompt.trim().length < 120) throw new Error(`${nom} : l'image de départ a besoin d'une vraie consigne (« prompt », 120 caractères au moins) : c'est elle que Higgsfield anime.`)
+  })
+  if (options.at(-1)?.mouvement !== 'fin') throw new Error('Rendu vidéo : le dernier plan est la carte de fin (« fin »), avec le bouton et l’offre.')
 }
 
 /** Les packs de la creation et leurs produits : { idDuPack: [composants] }. */
@@ -552,7 +582,8 @@ export function verifierLivraison(l: Livraison, d: DemandeDirection, produitsCre
   if (d.type === 'reel') {
     verifierMontage(l.options.map((o) => o.duree ?? 0))
     verifierPack(l.options, contexte.packs ?? {})
-    if (d.recette) verifierRecette(l.options, d.recette, contexte.avisDispo ?? true)
+    if (d.rendu === 'video') verifierRenduVideo(l.options, d)
+    else if (d.recette) verifierRecette(l.options, d.recette, contexte.avisDispo ?? true)
     else verifierVariete(l.options.map((o) => o.mouvement ?? ''), contexte.recents ?? [], d.brief ?? '')
     verifierAMontrer(l.options, d, Boolean(contexte.siteDispo))
   }

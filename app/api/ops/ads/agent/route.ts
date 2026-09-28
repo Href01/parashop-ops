@@ -3,11 +3,10 @@ import { PERIODES, creerDemande, ecran, ecranStudio, majTextesCreatif, enregistr
 import { synchroniserPubsMeta } from '@/lib/ads/meta-sync'
 import { choisirImage, genererImage, supprimerImage, type Qualite } from '@/lib/ads/images'
 import { detailPub } from '@/lib/ads/series'
-import { demanderDirection, demanderRetouche, deplacerPlan, dupliquerPlan, modifierPlan, supprimerPlan, supprimerSerie } from '@/lib/ads/direction'
+import { abandonnerDirection, demanderDirection, demanderRetouche, repondreDirection, validerDirection, deplacerPlan, dupliquerPlan, modifierPlan, supprimerPlan, supprimerSerie } from '@/lib/ads/direction'
 import { genererVoix, type LangueVoix } from '@/lib/ads/voix'
 import { ajouterLecon, basculerLecon } from '@/lib/ads/apprentissage'
-import { animerPlan, clipsDuPlan, estimerClip, poserClipDepuisUrl, signatureClip, suivreClip } from '@/lib/ads/clips'
-import type { CleModeleVideo } from '@/lib/ads/clips-model'
+import { poserClipDepuisUrl, signatureClip } from '@/lib/ads/clips'
 import type { FormatImage } from '@/lib/ads/creatif-model'
 import { PRIVATE_HEADERS, sameOrigin } from '@/lib/seo/http'
 
@@ -82,13 +81,13 @@ export async function POST(request: Request) {
     if (body?.direction) return Response.json(await demanderDirection(body.direction, par), { headers: PRIVATE_HEADERS })
     if (body?.option) return Response.json({ option: await modifierPlan(Number(body.option.id), body.option) }, { headers: PRIVATE_HEADERS })
     // Un clip video : le navigateur l'envoie a Cloudinary avec cette signature (dossier impose).
+    // La discussion avant la creation : repondre, ou valider (la creation part).
+    if (body?.directionReponse) return Response.json(await repondreDirection(Number(body.directionReponse.id), String(body.directionReponse.texte || ''), par), { headers: PRIVATE_HEADERS })
+    if (body?.directionAbandonnee) return Response.json(await abandonnerDirection(Number(body.directionAbandonnee)), { headers: PRIVATE_HEADERS })
+    if (body?.directionValidee) return Response.json(await validerDirection(Number(body.directionValidee.id), String(body.directionValidee.texte || ''), par), { headers: PRIVATE_HEADERS })
     if (body?.clipSignature) return Response.json(signatureClip(), { headers: PRIVATE_HEADERS })
-    // Higgsfield : estimer, lancer, suivre l'animation de l'image de depart d'un plan.
-    if (body?.clipEstimation) return Response.json(await estimerClip(Number(body.clipEstimation.optionId), body.clipEstimation.modele as CleModeleVideo, Number(body.clipEstimation.duree)), { headers: PRIVATE_HEADERS })
-    if (body?.clipIA) return Response.json({ generation: await animerPlan({ optionId: Number(body.clipIA.optionId), modele: body.clipIA.modele as CleModeleVideo, duree: Number(body.clipIA.duree) || undefined, par }) }, { headers: PRIVATE_HEADERS })
-    if (body?.clipSuivi) return Response.json({ generation: await suivreClip(Number(body.clipSuivi.id)) }, { headers: PRIVATE_HEADERS })
+    // Un clip genere hors du BOS (Higgsfield via le connecteur de Claude) : copie et pose dans le plan.
     if (body?.clipUrl) return Response.json({ clip: await poserClipDepuisUrl({ optionId: Number(body.clipUrl.optionId), url: String(body.clipUrl.url || ''), source: body.clipUrl.source, par }) }, { headers: PRIVATE_HEADERS })
-    if (body?.clipsDuPlan) return Response.json({ generations: await clipsDuPlan(Number(body.clipsDuPlan.optionId)) }, { headers: PRIVATE_HEADERS })
     // Ce que le directeur artistique doit retenir : relu avant chaque direction.
     if (body?.lecon) return Response.json({ lecon: await ajouterLecon(body.lecon, par) }, { headers: PRIVATE_HEADERS })
     if (body?.leconActive) return Response.json({ lecon: await basculerLecon(Number(body.leconActive.id), Boolean(body.leconActive.active)) }, { headers: PRIVATE_HEADERS })

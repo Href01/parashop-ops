@@ -39,7 +39,7 @@ export type Option = {
     voix?: Multi | null; voixUrl?: Partial<Record<'fr' | 'darija' | 'ar', { url: string; texte: string; duree?: number | null }>>
     confiance?: string[]; prix?: boolean; ecrans?: ('produit' | 'panier' | 'livraison')[]; fond?: 'decor' | 'vert' | 'aurore' | 'prune' | 'creme' | 'nuit'; ouvert?: boolean; melange?: boolean; lettres?: boolean; appel?: 'reponse' | 'peau' | 'partage' | 'enregistre' | null
     illustration?: 'taches' | 'citron' | 'barriere' | 'bouclier' | 'cheveu-abime' | 'cheveu-repare' | null; cache?: boolean; avis?: { id: number; texte: string; note: number } | null
-    clip?: { url: string; duree?: number | null; debut?: number } | null; clipPrompt?: string | null
+    clip?: { url: string; duree?: number | null; debut?: number } | null; clipPrompt?: string | null; clipSon?: boolean; texteVideo?: boolean
   } | null
   style: string | null; brief: string | null; qualite: string | null; note: string | null; modele: string | null; cree_le: string
 }
@@ -53,11 +53,12 @@ export type ProduitCatalogue = {
 }
 export type ParametresDirection = {
   type: TypeDirection; nombre: number; format: 'feed' | 'story' | 'carre'; styles: string[]; qualite: 'medium' | 'high'; brief: string; creatifId?: number; produitIds?: number[]
-  objectif?: 'site' | 'dm' | 'portee'; offre?: 'aucune' | 'bienvenue' | 'livraison' | 'pack'; montrer?: string[]; langue?: 'fr' | 'darija' | 'mix'; fond?: 'libre' | 'shine'; recette?: 'secret' | 'reconnais' | 'piege' | 'bonneteau'
+  objectif?: 'site' | 'dm' | 'portee'; offre?: 'aucune' | 'bienvenue' | 'livraison' | 'pack'; montrer?: string[]; langue?: 'fr' | 'darija' | 'mix'; fond?: 'libre' | 'shine'; recette?: 'secret' | 'reconnais' | 'piege' | 'bonneteau'; rendu?: 'motion' | 'video'; alignement?: boolean
   retouche?: { optionId: number; note: string }
 }
 export type Demande = { id: number; genre: string; sujet: string; statut: string; demande_le: string; termine_le: string | null; erreur: string | null; rapport_id: number | null; creatif_id?: number | null; parametres?: ParametresDirection | null; resultat?: string | null
-  couverture?: { consigne: string; plans: number[] }[] | null }
+  couverture?: { consigne: string; plans: number[] }[] | null
+  echanges?: { auteur: 'agent' | 'achraf'; texte: string; le: string; valide?: boolean }[]; valide_le?: string | null }
 export type Rapport = { id: number; source: string; titre: string; cree_le: string; modele: string | null; en_bref: string }
 export type Jour = { jour: string; depense: number; messages: number; achats: number; clics: number; livrees: number; ca: number; marge: number }
 export type Repartition = { dimension: string; valeur: string; depense: number; impressions: number; clics_lien: number; achats: number; messages: number }
@@ -68,11 +69,9 @@ export type Donnees = {
   demandes: Demande[]; rapports: Rapport[]; actions: Action[]; creatifs: Creatif[]
   synchro: { le: string | null; jusquAu: string | null }; repartitions: Record<string, Repartition[]>
   catalogue: ProduitCatalogue[]; idees: Idee[]
-  // Higgsfield : la generation de clips est-elle branchee, le plafond, ce qui est deja engage aujourd'hui.
-  clipsIA?: { disponible: boolean; simulation: boolean; plafondJour: number; plafondClip: number; depenseJour: number; modeles: { cle: 'kling-3-turbo' | 'seedance-2-5' | 'kling-3-std'; nom: string; aide: string; min: number; max: number }[] }
 }
 /** Ce dont le directeur artistique a besoin a l'ecran, dans l'agent comme dans le studio. */
-export type BaseCreative = Pick<Donnees, 'catalogue' | 'idees' | 'demandes' | 'clipsIA'>
+export type BaseCreative = Pick<Donnees, 'catalogue' | 'idees' | 'demandes'>
 export type Onglet = 'ensemble' | 'campagnes' | 'creations' | 'afaire' | 'strategie' | 'agent'
 
 export const dh = (v: number | null | undefined) => (v == null ? '—' : `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v)} DH`)

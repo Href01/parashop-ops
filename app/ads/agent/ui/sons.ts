@@ -15,6 +15,8 @@ import { dureeTotale, evenementsSonores, graine, type EvenementSonore, type Plan
 
 export const TAUX = 48000
 export type VoixPlacee = { url: string; debut: number }
+/** Le son propre d'un clip (Higgsfield, Veo…) : pose au debut de son plan, a partir de son « Départ », coupe a la fin du plan. */
+export type SonClip = { url: string; debut: number; decalage: number; duree: number }
 
 type Ctx = OfflineAudioContext
 
@@ -77,13 +79,13 @@ async function decoder(ctx: BaseAudioContext, url: string): Promise<AudioBuffer 
  * La piste complete : bruitages (si demandes) + voix off posees au debut de leur
  * plan, a la suite l'une de l'autre. Les bruitages baissent sous une voix.
  */
-export async function mixerPiste(plans: PlanReel[], o: { bruitages: boolean; voix: VoixPlacee[] }): Promise<AudioBuffer> {
+export async function mixerPiste(plans: PlanReel[], o: { bruitages: boolean; voix: VoixPlacee[]; clips?: SonClip[] }): Promise<AudioBuffer> {
   const total = dureeTotale(plans)
   const ctx = new OfflineAudioContext(2, Math.ceil((total + 0.05) * TAUX), TAUX)
   const compresseur = ctx.createDynamicsCompressor()
   compresseur.threshold.value = -14; compresseur.ratio.value = 4
   compresseur.connect(ctx.destination)
-  const sfx = ctx.createGain(); sfx.gain.value = o.voix.length ? 0.45 : 0.8
+  const sfx = ctx.createGain(); sfx.gain.value = o.voix.length || o.clips?.length ? 0.45 : 0.8
   sfx.connect(compresseur)
   if (o.bruitages) evenementsSonores(plans).forEach((e, k) => jouer(ctx, sfx, e, k + 1))
   const voix = ctx.createGain(); voix.gain.value = 1.1; voix.connect(compresseur)
@@ -98,6 +100,15 @@ export async function mixerPiste(plans: PlanReel[], o: { bruitages: boolean; voi
     const s = ctx.createBufferSource(); s.buffer = b; s.connect(voix)
     s.start(debut, 0, total - debut)
     libre = debut + b.duration + 0.1
+  })
+  // Le son des clips : sous les voix, au-dessus des bruitages.
+  const sonClips = ctx.createGain(); sonClips.gain.value = 0.9; sonClips.connect(compresseur)
+  const pistes = await Promise.all((o.clips ?? []).map((c) => decoder(ctx, c.url)))
+  pistes.forEach((b, k) => {
+    const c = o.clips![k]
+    if (!b || c.debut >= total || c.decalage >= b.duration) return
+    const s = ctx.createBufferSource(); s.buffer = b; s.connect(sonClips)
+    s.start(c.debut, c.decalage, Math.min(c.duree, b.duration - c.decalage, total - c.debut))
   })
   return ctx.startRendering()
 }

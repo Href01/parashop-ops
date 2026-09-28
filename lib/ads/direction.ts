@@ -42,7 +42,7 @@ export async function demanderDirection(entree: unknown, par: string | null) {
     const p = await pool.query<{ n: number }>(`SELECT count(*)::int n FROM "Product" WHERE id = ANY($1::int[])`, [d.produitIds])
     if (p.rows[0].n !== d.produitIds!.length) throw new Error('Un des produits choisis n’existe pas.')
   }
-  const n = await pool.query<{ n: number }>(`SELECT count(*)::int n FROM "AdsAgentRequest" WHERE genre = 'direction' AND statut IN ('en_attente', 'en_cours')`)
+  const n = await pool.query<{ n: number }>(`SELECT count(*)::int n FROM "AdsAgentRequest" WHERE genre = 'direction' AND statut IN ('en_attente', 'en_cours', 'a_valider')`)
   if (n.rows[0].n >= MAX_EN_ATTENTE) throw new Error(`${MAX_EN_ATTENTE} directions sont déjà en cours : attends que le directeur artistique en livre une.`)
   const r = await pool.query(
     `INSERT INTO "AdsAgentRequest" (genre, sujet, demande_par, creatif_id, parametres) VALUES ('direction', $1, $2, $3, $4::jsonb)
@@ -52,10 +52,10 @@ export async function demanderDirection(entree: unknown, par: string | null) {
   return { demande, lancee: await reveillerDirecteur(demande.id) }
 }
 
-type DemandeEnCours = { id: number; genre: string; statut: string; sujet: string; creatif_id: number | null; parametres: DemandeDirection; retouche: Retouche | null; demande_par: string | null }
+type DemandeEnCours = { id: number; genre: string; statut: string; sujet: string; creatif_id: number | null; parametres: DemandeDirection; retouche: Retouche | null; demande_par: string | null; valide_le: string | null; echanges: Json[] }
 
 async function demandeEnCours(id: number): Promise<DemandeEnCours> {
-  const r = await pool.query(`SELECT id, genre, statut, sujet, creatif_id, parametres, demande_par FROM "AdsAgentRequest" WHERE id = $1`, [id])
+  const r = await pool.query(`SELECT id, genre, statut, sujet, creatif_id, parametres, demande_par, valide_le, echanges FROM "AdsAgentRequest" WHERE id = $1`, [id])
   const x = r.rows[0]
   if (!x) throw new Error('Demande inconnue.')
   if (x.genre !== 'direction') throw new Error('Ce n’est pas une demande de direction artistique.')
@@ -107,7 +107,7 @@ export async function contexteDirection(demandeId: number) {
     : null
   const produitIds: number[] = creation ? creation.produit_ids : p.produitIds ?? []
   const { packs, ids: animables } = await produitsAnimables(produitIds)
-  const [produits, s, pubs, passees, captures, charpentes, retours, boutique, avis] = await Promise.all([
+  const [produits, s, pubs, passees, captures, charpentes, retours, boutique, avis, journal] = await Promise.all([
     animables.length
       ? pool.query(`SELECT id, name AS nom, brand AS marque, category AS categorie, price AS prix, image, description, benefits,
                            (coalesce(stock, 0) + coalesce("virtualStock", 0)) AS stock_vendable FROM "Product" WHERE id = ANY($1::int[])`, [animables])
@@ -123,6 +123,11 @@ export async function contexteDirection(demandeId: number) {
     lecons(),
     reglesBoutique(),
     avisReels(animables),
+    // Les dernieres directions livrees : ton mot de fin (ce que tu as appris) et ce qu'Achraf t'a repondu.
+    pool.query(`SELECT id, sujet, parametres->>'rendu' AS rendu, termine_le, resultat,
+                       (SELECT jsonb_agg(e->>'texte') FROM jsonb_array_elements(coalesce(echanges, '[]'::jsonb)) e WHERE e->>'auteur' = 'achraf') AS reponses_achraf
+                FROM "AdsAgentRequest" WHERE genre = 'direction' AND statut = 'termine' AND id <> $1 AND parametres->'retouche' IS NULL
+                ORDER BY termine_le DESC NULLS LAST LIMIT 6`, [dem.id]),
   ])
   const composantDe = new Map(Object.entries(packs).flatMap(([pack, comps]) => comps.map((c) => [c, Number(pack)] as const)))
   const v = verdicts(pubs, s.config.regles.depenseMinAvantVerdict)
@@ -134,6 +139,11 @@ export async function contexteDirection(demandeId: number) {
       objectifDetail: p.objectif ? OBJECTIFS[p.objectif] : null, offreDetail: OFFRES[p.offre], aMontrer: p.montrer.map((k) => A_MONTRER[k]),
       // La recette choisie par Achraf : suis sa charpente plan par plan (le BOS la verifie) ; tu ecris les textes et choisis les schemas.
       recetteDetail: p.recette ? RECETTES[p.recette] : null,
+      renduDetail: p.rendu === 'video'
+        ? 'VIDEO : chaque plan est filmé par Higgsfield (connecteur) à partir de son image de départ (le vrai produit y est exact) ; le BOS garde le montage, le texte (sauf texteVideo), la carte de fin et le son (sauf clipSon).'
+        : 'MOTION : l’animation Shine — le BOS anime les vrais produits détourés sur des fonds (Shine dessinés ou décors peints).',
+      // La discussion avec Achraf : lis-la en entier ; sa derniere reponse prime.
+      discussion: dem.echanges ?? [], valide: Boolean(dem.valide_le),
     },
     // Les vraies regles du site : n'annonce que ces chiffres (livraison, code de bienvenue, paiement).
     boutique,
@@ -147,6 +157,8 @@ export async function contexteDirection(demandeId: number) {
     creation,
     // Les retours d'Achraf : ils priment sur la doctrine et sur tes habitudes.
     leconsAchraf: retours.map((x) => x.texte),
+    // Ton journal : ce que tu as livre et appris aux dernieres directions, et ce qu'Achraf a repondu a tes propositions.
+    journal: journal.rows,
     // Le brief, consigne par consigne : chacune doit etre tenue (« couverture » dans la livraison).
     consignes: consignesBrief(p.brief),
     // Les charpentes des derniers Reels : n'en reprends aucune, et ne les ouvre pas pareil.
@@ -186,12 +198,19 @@ export async function contexteDirection(demandeId: number) {
 
 /** Claude livre ses options (ou cartes) : on cree la creation si besoin, on enregistre la serie. */
 export async function enregistrerDirection(entree: unknown) {
+  // D'abord : Achraf a-t-il valide ? (avant de detailler les fautes d'une livraison qui n'a pas lieu d'etre)
+  const demandeId = Number((entree as { demandeId?: unknown } | null)?.demandeId)
+  if (Number.isInteger(demandeId) && demandeId > 0) {
+    const avant = await demandeEnCours(demandeId)
+    if (!avant.retouche && avant.parametres.alignement && !avant.valide_le) throw new Error('Achraf veut discuter avant la création : propose d’abord (« bos.mjs proposer <id> <proposition.md> ») et attends sa validation.')
+  }
   const p = LivraisonDirection.safeParse(entree)
   if (!p.success) throw new Error(p.error.issues.map((i) => `${i.path.join('.')} : ${i.message}`).join(' · '))
   const l = p.data
   const dem = await demandeEnCours(l.demandeId)
   if (dem.retouche) throw new Error('Cette demande est une retouche : modifie le plan avec « bos.mjs option <id> », puis « termine ».')
   const d = dem.parametres
+  if (d.alignement && !dem.valide_le) throw new Error('Achraf veut discuter avant la création : propose d’abord (« bos.mjs proposer <id> <proposition.md> ») et attends sa validation.')
   const creationExistante = dem.creatif_id
     ? (await pool.query(`SELECT id, produit_ids FROM "AdsCreative" WHERE id = $1`, [dem.creatif_id])).rows[0]
     : null
@@ -230,7 +249,7 @@ export async function enregistrerDirection(entree: unknown) {
           o.concept, o.pourquoi, o.prompt, JSON.stringify(o.texte), o.position, d.format, o.produitIds === undefined ? null : o.produitIds,
           d.type === 'reel' ? o.animes ?? [] : null, d.type === 'reel' ? o.mouvement : null, d.type === 'reel' ? o.duree : null,
           l.style, d.brief || null, d.qualite, l.modele || null,
-          d.type === 'reel' ? JSON.stringify({ transition: o.transition ?? 'coupe', ambiance: o.ambiance ?? 'aucune', bulles: o.bulles ?? [], points: o.points ?? [], choix: o.choix ?? [], voix: o.voix ?? null, confiance: o.confiance ?? [], prix: o.prix ?? false, ...(o.ecrans ? { ecrans: o.ecrans } : {}), ...(o.fond ? { fond: o.fond } : {}), ...(o.ouvert ? { ouvert: true } : {}), ...(o.melange ? { melange: true } : {}), ...(o.lettres ? { lettres: true } : {}), ...(o.appel ? { appel: o.appel } : {}), ...(o.illustration ? { illustration: o.illustration } : {}), ...(o.cache ? { cache: true } : {}), ...(o.avisId ? { avis: avisDe.get(o.avisId) } : {}), ...(o.clipPrompt ? { clipPrompt: o.clipPrompt } : {}) }) : null])
+          d.type === 'reel' ? JSON.stringify({ transition: o.transition ?? 'coupe', ambiance: o.ambiance ?? 'aucune', bulles: o.bulles ?? [], points: o.points ?? [], choix: o.choix ?? [], voix: o.voix ?? null, confiance: o.confiance ?? [], prix: o.prix ?? false, ...(o.ecrans ? { ecrans: o.ecrans } : {}), ...(o.fond ? { fond: o.fond } : {}), ...(o.ouvert ? { ouvert: true } : {}), ...(o.melange ? { melange: true } : {}), ...(o.lettres ? { lettres: true } : {}), ...(o.appel ? { appel: o.appel } : {}), ...(o.illustration ? { illustration: o.illustration } : {}), ...(o.cache ? { cache: true } : {}), ...(o.avisId ? { avis: avisDe.get(o.avisId) } : {}), ...(o.clipPrompt ? { clipPrompt: o.clipPrompt } : {}), ...(o.clipSon ? { clipSon: true } : {}), ...(o.texteVideo ? { texteVideo: true } : {}) }) : null])
       options.push(r.rows[0])
     }
     await client.query('COMMIT')
@@ -241,6 +260,52 @@ export async function enregistrerDirection(entree: unknown) {
   } finally {
     client.release()
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* LA DISCUSSION AVANT LA CREATION (migration 052)                     */
+/* ------------------------------------------------------------------ */
+
+const message = (auteur: 'agent' | 'achraf', texte: string, extra: Json = {}) => JSON.stringify([{ auteur, texte: texte.trim().slice(0, 6000), le: new Date().toISOString(), ...extra }])
+
+/** Le directeur artistique propose (ou repond) : la demande attend Achraf. */
+export async function proposerDirection(id: number, texte: string) {
+  const dem = await demandeEnCours(id)
+  if (dem.retouche) throw new Error('Une retouche ne se discute pas : applique-la.')
+  if (texte.trim().length < 80) throw new Error('Une proposition dit l’idée, l’accroche, les plans et tes questions (80 caractères au moins).')
+  await pool.query(`UPDATE "AdsAgentRequest" SET statut = 'a_valider', echanges = coalesce(echanges, '[]'::jsonb) || $2::jsonb WHERE id = $1`, [id, message('agent', texte)])
+  return { id, statut: 'a_valider' }
+}
+
+async function demandeAValider(id: number) {
+  const r = await pool.query(`SELECT id, statut, genre FROM "AdsAgentRequest" WHERE id = $1`, [id])
+  const x = r.rows[0]
+  if (!x || x.genre !== 'direction') throw new Error('Demande introuvable.')
+  if (x.statut !== 'a_valider') throw new Error('Cette proposition n’attend pas de réponse (elle est déjà reprise par le directeur artistique).')
+}
+
+/** Achraf repond : le directeur artistique reprend la discussion (tout de suite si le declencheur est branche). */
+export async function repondreDirection(id: number, texte: string, par: string | null) {
+  if (texte.trim().length < 2) throw new Error('Écris ta réponse.')
+  await demandeAValider(id)
+  await pool.query(`UPDATE "AdsAgentRequest" SET statut = 'en_attente', echanges = coalesce(echanges, '[]'::jsonb) || $2::jsonb WHERE id = $1`, [id, message('achraf', texte, { par })])
+  return { id, lancee: await reveillerDirecteur(id) }
+}
+
+/** Achraf valide (avec une derniere note, s'il veut) : la creation part. */
+export async function validerDirection(id: number, texte: string, par: string | null) {
+  await demandeAValider(id)
+  const note = texte.trim() ? `✓ Validé. ${texte.trim()}` : '✓ Validé : lance la création.'
+  await pool.query(`UPDATE "AdsAgentRequest" SET statut = 'en_attente', valide_le = now(), echanges = coalesce(echanges, '[]'::jsonb) || $2::jsonb WHERE id = $1`, [id, message('achraf', note, { par, valide: true })])
+  return { id, lancee: await reveillerDirecteur(id) }
+}
+
+/** Achraf abandonne un brief pas encore cree (il en lancera un autre). */
+export async function abandonnerDirection(id: number) {
+  const r = await pool.query(`UPDATE "AdsAgentRequest" SET statut = 'termine', termine_le = now(), resultat = 'Abandonnée avant la création.'
+                              WHERE id = $1 AND genre = 'direction' AND statut IN ('a_valider', 'en_attente') RETURNING id`, [id])
+  if (!r.rowCount) throw new Error('Ce brief est déjà en cours de création : il ne peut plus être abandonné.')
+  return { id }
 }
 
 export async function terminerDirection(id: number, resultat: string) {
@@ -273,11 +338,11 @@ function enLivree(x: LigneOption): Json {
     transition: m.transition, ambiance: m.ambiance, bulles: m.bulles, points: m.points, choix: m.choix, voix: m.voix ?? undefined,
     confiance: m.confiance ?? undefined, prix: m.prix ?? undefined, ecrans: m.ecrans ?? undefined, fond: m.fond ?? undefined, ouvert: m.ouvert ?? undefined, melange: m.melange ?? undefined, lettres: m.lettres ?? undefined, appel: m.appel ?? undefined,
     illustration: m.illustration ?? undefined, cache: m.cache ?? undefined, avisId: (m.avis as { id?: number } | undefined)?.id ?? undefined,
-    clip: m.clip ?? undefined, clipPrompt: m.clipPrompt ?? undefined,
+    clip: m.clip ?? undefined, clipPrompt: m.clipPrompt ?? undefined, clipSon: m.clipSon ?? undefined, texteVideo: m.texteVideo ?? undefined,
   }
 }
 
-const CHAMPS_PLAN = ['texte', 'position', 'prompt', 'animes', 'mouvement', 'duree', 'transition', 'ambiance', 'bulles', 'points', 'choix', 'voix', 'confiance', 'prix', 'ecrans', 'fond', 'ouvert', 'melange', 'lettres', 'appel', 'illustration', 'cache', 'avisId', 'clip', 'clipPrompt', 'produitIds'] as const
+const CHAMPS_PLAN = ['texte', 'position', 'prompt', 'animes', 'mouvement', 'duree', 'transition', 'ambiance', 'bulles', 'points', 'choix', 'voix', 'confiance', 'prix', 'ecrans', 'fond', 'ouvert', 'melange', 'lettres', 'appel', 'illustration', 'cache', 'avisId', 'clip', 'clipPrompt', 'produitIds', 'clipSon', 'texteVideo'] as const
 
 /**
  * Retoucher un plan (ou une option, une carte) : textes, animation, duree,
@@ -307,7 +372,7 @@ export async function modifierPlan(id: number, patch: Json) {
   if (type === 'reel') verifierMontage(serie.map((x) => (x.id === id ? plan.duree ?? 0 : Number(x.duree) || 0)))
   const ancien = (o.motion ?? {}) as Json
   const motion = type === 'reel'
-    ? { ...ancien, transition: plan.transition ?? 'coupe', ambiance: plan.ambiance ?? 'aucune', bulles: plan.bulles ?? [], points: plan.points ?? [], choix: plan.choix ?? [], voix: plan.voix ?? ancien.voix ?? null, confiance: plan.confiance ?? [], prix: plan.prix ?? false, ecrans: plan.mouvement === 'site' ? plan.ecrans ?? [] : undefined, fond: plan.fond ?? 'decor', ouvert: plan.mouvement === 'quiz' ? plan.ouvert ?? false : undefined, melange: plan.mouvement === 'pop' ? plan.melange ?? false : undefined, lettres: plan.lettres ?? false, appel: plan.appel ?? null, illustration: plan.mouvement === 'zoom' ? plan.illustration ?? null : null, cache: plan.cache ?? false, avis: avisPlan ?? null, clip: plan.clip ?? null, clipPrompt: plan.clipPrompt ?? null }
+    ? { ...ancien, transition: plan.transition ?? 'coupe', ambiance: plan.ambiance ?? 'aucune', bulles: plan.bulles ?? [], points: plan.points ?? [], choix: plan.choix ?? [], voix: plan.voix ?? ancien.voix ?? null, confiance: plan.confiance ?? [], prix: plan.prix ?? false, ecrans: plan.mouvement === 'site' ? plan.ecrans ?? [] : undefined, fond: plan.fond ?? 'decor', ouvert: plan.mouvement === 'quiz' ? plan.ouvert ?? false : undefined, melange: plan.mouvement === 'pop' ? plan.melange ?? false : undefined, lettres: plan.lettres ?? false, appel: plan.appel ?? null, illustration: plan.mouvement === 'zoom' ? plan.illustration ?? null : null, cache: plan.cache ?? false, avis: avisPlan ?? null, clip: plan.clip ?? null, clipPrompt: plan.clipPrompt ?? null, clipSon: plan.clipSon ?? false, texteVideo: plan.texteVideo ?? false }
     : o.motion
   const note = typeof patch.note === 'string' ? patch.note.trim().slice(0, 1500) || null : o.note
   const u = await pool.query(
@@ -380,7 +445,7 @@ export async function demanderRetouche(entree: unknown, par: string | null) {
   if (!p.success) throw new Error(p.error.issues.map((i) => i.message).join(' · '))
   const o = (await pool.query(`SELECT id, creatif_id, carte, concept FROM "AdsCreativeOption" WHERE id = $1`, [p.data.optionId])).rows[0]
   if (!o) throw new Error('Plan introuvable.')
-  const n = await pool.query<{ n: number }>(`SELECT count(*)::int n FROM "AdsAgentRequest" WHERE genre = 'direction' AND statut IN ('en_attente', 'en_cours')`)
+  const n = await pool.query<{ n: number }>(`SELECT count(*)::int n FROM "AdsAgentRequest" WHERE genre = 'direction' AND statut IN ('en_attente', 'en_cours', 'a_valider')`)
   if (n.rows[0].n >= MAX_EN_ATTENTE) throw new Error(`${MAX_EN_ATTENTE} demandes sont déjà en cours chez le directeur artistique.`)
   const sujet = `Retouche ${o.carte ? `du plan ${o.carte}` : 'd’une option'} (« ${o.concept} ») — ${p.data.note}`.slice(0, 1500)
   const r = await pool.query(

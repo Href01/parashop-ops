@@ -34,6 +34,8 @@ export function verifierPublication(c: Creatif, opts: Option[], type: 'reel' | '
   } else {
     const attendent = opts.map((o, i) => (String(o.motion?.clipPrompt ?? '').trim() && !o.motion?.clip ? i + 1 : 0)).filter(Boolean)
     if (attendent.length) out.push({ id: 'clips', ok: false, bloquant: false, titre: 'Des clips réels manquent', detail: `Plan(s) ${attendent.join(', ')} : la consigne est écrite, le clip pas encore là (le fond prévu le remplace en attendant).` })
+    const sons = opts.map((o, i) => (o.motion?.clipSon && o.motion?.clip ? i + 1 : 0)).filter(Boolean)
+    if (sons.length) out.push({ id: 'sons', ok: false, bloquant: false, titre: 'Écoute le son des clips', detail: `Plan(s) ${sons.join(', ')} : le son vient de la vidéo (Higgsfield). Le directeur artistique voit les images mais ne peut pas écouter : vérifie qu’il est juste (voix, darija, bruits).` })
     out.push({ id: 'peints', ok: peints === aPeindre.length && opts.length > 0, bloquant: true, titre: type === 'reel' ? 'Tous les décors sont peints' : 'Toutes les cartes ont leur visuel', detail: aPeindre.length < opts.length ? `${peints}/${aPeindre.length} décors peints · ${opts.length - aPeindre.length} plan(s) sur fond Shine dessiné.` : `${peints}/${opts.length} prêts.` })
   }
   if (type === 'reel') {

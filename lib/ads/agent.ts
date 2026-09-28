@@ -8,7 +8,6 @@ import { commandesEnRoute, moisEnCours, serie as serieDe } from './series'
 import { imagesDesCreations, optionsDesCreations } from './images'
 import { fautesFrancais, idees } from './direction-model'
 import { enrichirCatalogue, lecons, propositions } from './apprentissage'
-import { etatClipsIA } from './clips'
 
 /**
  * L'AGENT META ADS, COTE BOS : sa strategie, sa file de demandes, sa memoire,
@@ -83,7 +82,8 @@ export async function reclamerDemande(direction = false) {
   const r = await pool.query(
     `UPDATE "AdsAgentRequest" SET statut = 'en_cours', commence_le = now()
      WHERE id = (SELECT id FROM "AdsAgentRequest" WHERE statut = 'en_attente' AND (genre = 'direction') = $1 ORDER BY demande_le LIMIT 1 FOR UPDATE SKIP LOCKED)
-     RETURNING id, genre, sujet, demande_le, to_jsonb("AdsAgentRequest") -> 'creatif_id' AS creatif_id, to_jsonb("AdsAgentRequest") -> 'parametres' AS parametres`, [direction])
+     RETURNING id, genre, sujet, demande_le, to_jsonb("AdsAgentRequest") -> 'creatif_id' AS creatif_id, to_jsonb("AdsAgentRequest") -> 'parametres' AS parametres,
+               to_jsonb("AdsAgentRequest") -> 'echanges' AS echanges, to_jsonb("AdsAgentRequest") -> 'valide_le' AS valide_le`, [direction])
   return r.rows[0] ?? null
 }
 
@@ -272,7 +272,6 @@ export async function ecran(jours = 30) {
     }),
     demandes: demandes.rows, rapports: rapports.rows, actions: actions.rows,
     creatifs: creatifs.rows.map((c) => ({ ...c, images: images[c.id] ?? [], options: options[c.id] ?? [] })), synchro, repartitions: reparts,
-    clipsIA: await etatClipsIA(),
     catalogue: await enrichirCatalogue(catalogue.rows.map((p) => ({ id: p.id as number, nom: p.nom, marque: p.marque, categorie: p.categorie, image: p.image, prix: Number(p.prix), ...(Number(p.prix_avant) > Number(p.prix) ? { prixAvant: Number(p.prix_avant) } : {}), stockVendable: p.stock_vendable, importBloque: p.import_bloque }))),
     idees: [...await propositions(), ...idees({
       produits, exclus: cfg.produitsExclus, mois: new Date().getMonth(),
@@ -340,7 +339,6 @@ export async function ecranStudio() {
       }
     }),
     demandes: demandes.rows,
-    clipsIA: await etatClipsIA(),
     catalogue: await enrichirCatalogue(catalogue.rows.map((p) => ({ id: p.id as number, nom: p.nom, marque: p.marque, categorie: p.categorie, image: p.image, prix: Number(p.prix), ...(Number(p.prix_avant) > Number(p.prix) ? { prixAvant: Number(p.prix_avant) } : {}), stockVendable: p.stock_vendable, importBloque: p.import_bloque }))),
     lecons: await lecons(true),
     produits,

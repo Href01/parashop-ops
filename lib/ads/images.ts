@@ -216,7 +216,9 @@ export async function optionsDesCreations(ids: number[]) {
  */
 export async function lireImage(url: string) {
   const nuage = process.env.CLOUDINARY_CLOUD_NAME
-  if (!nuage || !url.startsWith(`https://res.cloudinary.com/${nuage}/image/upload/`)) throw new Error('Seules les images du Cloudinary de Shine sont lisibles ici.')
+  // Une image, ou une image tiree d'un clip (…/video/upload/so_50p/….jpg) : le directeur artistique regarde les clips image par image.
+  const cadre = url.startsWith(`https://res.cloudinary.com/${nuage}/video/upload/`) && /\.(jpe?g|png)$/i.test(url)
+  if (!nuage || !(url.startsWith(`https://res.cloudinary.com/${nuage}/image/upload/`) || cadre)) throw new Error('Seules les images du Cloudinary de Shine (et les images de ses clips) sont lisibles ici.')
   const r = await fetch(url, { signal: AbortSignal.timeout(30_000) })
   if (!r.ok) throw new Error(`Image illisible (${r.status}).`)
   const b = Buffer.from(await r.arrayBuffer())

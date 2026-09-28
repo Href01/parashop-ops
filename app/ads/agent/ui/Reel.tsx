@@ -3,9 +3,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Bookmark, Camera, Download, Heart, Loader2, MessageCircle, MoreHorizontal, Music2, Pause, Play, RotateCcw, Send, Volume2, VolumeX } from 'lucide-react'
 import { estRtl, type Langue } from '@/lib/ads/creatif-model'
-import { H, IPS, W, douce, dureeTotale, etatPlan, instantClip, nbImages, planA, transitionA, urlClip, type EtatPlan, type Particule, type PlanReel } from '@/lib/ads/reel-model'
+import { H, IPS, W, douce, dureeTotale, etatPlan, instantClip, nbImages, planA, transitionA, urlClip, urlSonClip, type EtatPlan, type Particule, type PlanReel } from '@/lib/ads/reel-model'
 import { COULEURS, POLICES, policesPretes } from './polices'
-import { TAUX, mixerPiste, type VoixPlacee } from './sons'
+import { TAUX, mixerPiste, type SonClip, type VoixPlacee } from './sons'
 import { dessinerAvis, dessinerIllustration, dessinerPostIt } from './illustrations'
 import s from './apercu.module.css'
 
@@ -19,6 +19,7 @@ import s from './apercu.module.css'
 export type PlanDessin = PlanReel & {
   image: string | null; detourees: string[]; noms?: string[]; voixUrl?: string | null; captures?: string[]
   clip?: string | null; clipDebut?: number; clipDuree?: number | null   // un clip video reel en fond (Cloudinary)
+  clipSon?: boolean                                                   // garder le son du clip (sinon, muet)
 }
 type Ressources = Map<string, HTMLImageElement>
 type Ctx = CanvasRenderingContext2D
@@ -268,7 +269,7 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
   }
   // Sur un decor : un voile en haut, le texte blanc reste lisible. Sur un fond clair : texte brun, sans voile.
   const clair = clip ? false : shine ? FONDS_SHINE[shine].clair : !fond
-  if (fond || clip) {
+  if ((fond || clip) && !plan.texteVideo) {
     const voile = ctx.createLinearGradient(0, 0, 0, H * 0.46)
     voile.addColorStop(0, 'rgba(12,20,16,.5)'); voile.addColorStop(1, 'rgba(12,20,16,0)')
     ctx.fillStyle = voile; ctx.fillRect(0, 0, W, H * 0.46)
@@ -801,6 +802,8 @@ export function dessiner(ctx: Ctx, plans: PlanDessin[], t: number, res: Ressourc
 const urlsDe = (plans: PlanDessin[]) => [SPIRALE, ...plans.flatMap((p) => [p.image, ...p.detourees, ...(p.captures ?? [])])].filter((u): u is string => Boolean(u))
 const debutDe = (plans: PlanDessin[], i: number) => plans.slice(0, i).reduce((n, p) => n + p.duree, 0)
 /** Les voix off posees : 0,15 s apres le debut de leur plan. */
+/** Le son des clips gardes : au debut de leur plan, a partir du « Départ » du clip. */
+const sonsClipsDe = (plans: PlanDessin[]): SonClip[] => plans.flatMap((p, i) => (p.clip && p.clipSon ? [{ url: urlSonClip(p.clip), debut: debutDe(plans, i), decalage: p.clipDebut ?? 0, duree: p.duree }] : []))
 const voixDe = (plans: PlanDessin[]): VoixPlacee[] => plans.flatMap((p, i) => (p.voixUrl ? [{ url: p.voixUrl, debut: debutDe(plans, i) + 0.15 }] : []))
 
 /**
@@ -858,7 +861,8 @@ export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, 
   const raf = useRef(0)
   const figer = (x: number) => { enLecture.current = false; cancelAnimationFrame(raf.current); setLecture(false); setT(x) }
   const voix = avecVoix ? voixDe(plans) : []
-  const cleSon = JSON.stringify([plans.map((p) => [p.mouvement, p.duree, p.produits, p.transition, p.bulles?.length, p.points?.length, p.choix?.length]), bruitages, voix])
+  const sonsClips = sonsClipsDe(plans)
+  const cleSon = JSON.stringify([plans.map((p) => [p.mouvement, p.duree, p.produits, p.transition, p.bulles?.length, p.points?.length, p.choix?.length]), bruitages, voix, sonsClips])
 
   useEffect(() => {
     let vivant = true
@@ -871,7 +875,7 @@ export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, 
   // La piste se refabrique quand le montage change (un peu apres la derniere retouche).
   useEffect(() => {
     let vivant = true
-    const h = setTimeout(() => { void mixerPiste(plans, { bruitages, voix }).then((b) => { if (vivant) setPiste(b) }).catch(() => {}) }, 350)
+    const h = setTimeout(() => { void mixerPiste(plans, { bruitages, voix, clips: sonsClips }).then((b) => { if (vivant) setPiste(b) }).catch(() => {}) }, 350)
     return () => { vivant = false; clearTimeout(h) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cleSon])
@@ -946,7 +950,7 @@ export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, 
       const source = new CanvasSource(toile, { codec: 'avc', quality: QUALITY_HIGH })
       sortie.addVideoTrack(source, { frameRate: IPS })
       // La bande-son : en AAC, le format qu'Instagram attend. Sans AAC, la video part muette (et on le dit).
-      const bande = bruitages || voix.length ? await mixerPiste(plans, { bruitages, voix }) : null
+      const bande = bruitages || voix.length || sonsClips.length ? await mixerPiste(plans, { bruitages, voix, clips: sonsClips }) : null
       const avecSon = bande && (await canEncodeAudio('aac', { numberOfChannels: 2, sampleRate: TAUX }))
       const sonPiste = avecSon ? new AudioBufferSource({ codec: 'aac', quality: QUALITY_HIGH }) : null
       if (sonPiste) sortie.addAudioTrack(sonPiste)

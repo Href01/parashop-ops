@@ -48,6 +48,7 @@ export type PlanReel = {
   illustration?: Illustration | null   // zoom : un schema anime qui MONTRE le probleme ou la reponse (pas un avant/apres)
   cache?: boolean         // revele, pop, rebond : le produit est cache sous un post-it « ? » qui s'arrache (le masquage)
   avis?: { texte: string; note: number } | null   // zoom : un VRAI avis client (resolu par le BOS depuis la table des avis)
+  texteVideo?: boolean    // le texte est deja dans la video (genere par Higgsfield) : le BOS ne l'ecrit pas
   appel?: string | null   // quiz ouvert : l'appel a commenter, deja traduit
   confiance?: string[]    // fin : badges de confiance deja traduits (« Paiement à la livraison »…)
   prix?: string | null    // fin : le sticker de prix (« 997 DH »)
@@ -403,7 +404,7 @@ export function etatPlan(plan: PlanReel, t: number, premier: boolean, indice = 0
     if (x >= 0 && x < 0.25) { const a = 0.007 * Math.exp(-14 * x); secousse = { dx: a * Math.sin(70 * x) * 0.6, dy: a * Math.cos(55 * x) } }
   }
 
-  const liste = mots(plan.texte)
+  const liste = plan.texteVideo ? [] : mots(plan.texte)
   const debutTexte = plan.mouvement === 'rebond' || plan.mouvement === 'duo' ? 0.35 : 0.15
   const etatsMots: EtatMot[] = liste.map((m, i) => {
     const x = t - debutTexte - i * 0.075
@@ -668,6 +669,12 @@ export function urlClip(url: string, hd = false): string {
   if (!m) return url
   const [w, h] = hd ? [1080, 1920] : [720, 1280]
   return `${m[1]}c_fill,w_${w},h_${h},ac_none,q_auto:good,vc_h264/${m[2].replace(/^(?:[a-z]{1,3}_[^/]*\/)+/, '')}.mp4`
+}
+
+/** Le son d'un clip (Cloudinary extrait la piste audio d'une video en changeant l'extension). */
+export function urlSonClip(url: string): string {
+  const m = /^(https:\/\/res\.cloudinary\.com\/[^/]+\/video\/upload\/)(.+?)(\.[a-z0-9]{2,4})?$/i.exec(url)
+  return m ? `${m[1]}${m[2].replace(/^(?:[a-z]{1,3}_[^/]*\/)+/, '')}.mp3` : url
 }
 
 /** L'instant du clip a montrer, `local` secondes apres le debut du plan (il boucle s'il est plus court). */

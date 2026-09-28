@@ -34,7 +34,7 @@ export function Creations({ d, maj, ouvrir, demander, rafraichir, message }: { d
         </div>
       </div>
       <div className={s.body}>
-        <DirectionsEnCours demandes={d.demandes} creatifId={null} />
+        <DirectionsEnCours demandes={d.demandes} creatifId={null} rafraichir={rafraichir} dire={message} />
         <div className={s.filtres}><div className={s.groupeFiltres}>
           <button type="button" className={s.filtre} aria-pressed={etape === 'toutes'} onClick={() => setEtape('toutes')}>En cours ({d.creatifs.filter((c) => c.statut !== 'ecartee').length})</button>
           {ETAPES.map((e) => <button key={e} type="button" className={s.filtre} aria-pressed={etape === e} onClick={() => setEtape(e)}>{STATUTS_CREATIF[e]} ({compte[e]})</button>)}
@@ -194,7 +194,7 @@ export function Studio({ c, d, fermer, maj, rafraichir, message }: { c: Creatif;
             <div><h3><Wand2 size={15} /> Directeur artistique</h3><p className={`${s.small} ${s.muted}`}>Options à comparer, carrousel ou Reel animé : Claude écrit les consignes, OpenAI peint avec tes vraies photos produit.</p></div>
             <button type="button" className={nouvelleDirection ? s.ghost : s.primary} onClick={() => setNouvelleDirection((x) => !x)}>{nouvelleDirection ? 'Fermer le brief' : <><Wand2 size={13} /> Nouvelle direction</>}</button>
           </div>
-          <DirectionsEnCours demandes={d.demandes} creatifId={c.id} />
+          <DirectionsEnCours demandes={d.demandes} creatifId={c.id} rafraichir={rafraichir} dire={message} />
           {nouvelleDirection && <BriefDirection d={d} creatif={c} envoye={(texte) => { setNouvelleDirection(false); message(true, texte); void rafraichir() }} erreur={(texte) => message(false, texte)} />}
           <SeriesDirection c={c} d={d} langue={langue} bouton={bouton} legende={legende} rafraichir={rafraichir} message={message} utiliser={utiliser} />
         </section>

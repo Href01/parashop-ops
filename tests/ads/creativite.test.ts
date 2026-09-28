@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { LivraisonDirection, OptionLivreeSchema, consignesBrief, validerDemande, verifierAMontrer, verifierCouverture, verifierLivraison, verifierOption, verifierPack, verifierVariete } from '../../lib/ads/direction-model'
+import { APPELS, LivraisonDirection, OptionLivreeSchema, consignesBrief, validerDemande, verifierAMontrer, verifierCouverture, verifierLivraison, verifierOption, verifierPack, verifierVariete } from '../../lib/ads/direction-model'
 import { disposition, etatPlan, evenementsSonores, siteCreneaux, type PlanReel } from '../../lib/ads/reel-model'
 
 const PROMPT = 'Editorial beauty photograph, 50mm lens, soft window light from the left, a cream tadelakt shelf in a Moroccan bathroom, warm morning palette of sand, ivory and pale gold, gentle steam in the air, shallow depth of field, calm premium mood, room for a headline at the top.'
@@ -271,4 +271,41 @@ test('les clips vidéo : l’adresse recadrée, l’instant exact, les règles',
   assert.throws(() => verifierOption(plan({ mouvement: 'zoom', duree: 3, fond: 'vert', clip: { url: brut, duree: 4, debut: 4.5 } }), 1, 'reel', []), /commence après sa fin/)
   assert.doesNotThrow(() => verifierOption(plan({ mouvement: 'zoom', duree: 3, fond: 'vert', clip: { url: brut, duree: 6, debut: 0.5 } }), 1, 'reel', []))
   assert.throws(() => verifierOption(OptionLivreeSchema.parse({ concept: 'Carte', pourquoi: 'Parce que ça arrête le pouce.', prompt: PROMPT, texte: { fr: 'Ta *peau*' }, clip: { url: brut } }), 0, 'carrousel', []), /ne servent que dans un Reel/)
+})
+
+test('les appels qui poussent l’algorithme : partage et enregistrement', () => {
+  assert.match(APPELS.partage.fr, /Envoie-la/)
+  assert.match(APPELS.enregistre.fr, /Enregistre-la/)
+  for (const appel of ['partage', 'enregistre']) {
+    assert.equal(OptionLivreeSchema.safeParse({ concept: 'Plan', pourquoi: 'Parce que ça arrête le pouce.', texte: { fr: 'Ta *peau*' }, appel }).success, true)
+  }
+})
+
+test('le Reel tout en vidéo (Higgsfield) : chaque plan est un clip, la fin porte l’offre', async () => {
+  const { verifierRenduVideo } = await import('../../lib/ads/direction-model')
+  // Le brief « vidéo » devient un Reel vertical, sans recette ni fond dessiné ; on discute d'abord par défaut.
+  const d = validerDemande({ type: 'options', nombre: 5, format: 'feed', brief: 'Une goutte de sérum sur une main au soleil', produitIds: [96], rendu: 'video', recette: 'secret', fond: 'shine' })
+  assert.deepEqual([d.type, d.format, d.recette, d.fond, d.alignement], ['reel', 'story', undefined, 'libre', true])
+  assert.equal(validerDemande({ type: 'reel', nombre: 4, format: 'story', brief: 'Un reel pour le sérum', produitIds: [96], alignement: false }).alignement, false)
+  const MOUV = 'Slow push-in on the fingertips as a single golden drop falls from the dropper and spreads on the skin, soft sunlight, product stays still.'
+  const clip = (o: Record<string, unknown>) => plan({ mouvement: 'zoom', duree: 3.5, clipPrompt: MOUV, ...o })
+  const bon = [clip({}), clip({ produitIds: [96] }), plan({ mouvement: 'site', duree: 4.5, animes: [96], ecrans: ['produit', 'panier', 'livraison'] }), plan({ mouvement: 'fin', duree: 3, animes: [96], fond: 'vert', confiance: ['cod'] })]
+  assert.doesNotThrow(() => verifierRenduVideo(bon, {}))
+  assert.throws(() => verifierRenduVideo(bon, { recette: 'secret' }), /pas de recette/)
+  assert.throws(() => verifierRenduVideo([plan({ mouvement: 'rebond', duree: 2, animes: [96] }), ...bon.slice(1)], {}), /pas « rebond »/)
+  assert.throws(() => verifierRenduVideo([plan({ mouvement: 'zoom', duree: 3 }), ...bon.slice(1)], {}), /clipPrompt/)
+  assert.throws(() => verifierRenduVideo(bon.slice(0, 3), {}), /carte de fin/)
+  // Une fin sur un décor (pas de fond dessiné) est un clip comme les autres.
+  assert.throws(() => verifierRenduVideo([...bon.slice(0, 3), plan({ mouvement: 'fin', duree: 3, animes: [96], confiance: ['cod'] })], {}), /clipPrompt/)
+})
+
+test('le son et le texte « dans la vidéo » : le BOS se tait, le clip parle', async () => {
+  const { urlSonClip } = await import('../../lib/ads/reel-model')
+  assert.equal(urlSonClip('https://res.cloudinary.com/x/video/upload/c_fill,w_720/v1/shine-ads/clips/goutte.mp4'), 'https://res.cloudinary.com/x/video/upload/v1/shine-ads/clips/goutte.mp3')
+  const z: PlanReel = { mouvement: 'zoom', duree: 3, produits: 0, texte: 'Une *goutte* suffit' }
+  assert.ok(etatPlan(z, 1.5, false).mots.length > 0)
+  assert.equal(etatPlan({ ...z, texteVideo: true }, 1.5, false).mots.length, 0)
+  // Son et texte « dans la vidéo » n'existent que sur un plan à clip.
+  assert.throws(() => verifierOption(plan({ mouvement: 'zoom', duree: 3, clipSon: true }), 1, 'reel', []), /ne servent qu'à un plan à clip/)
+  assert.doesNotThrow(() => verifierOption(plan({ mouvement: 'zoom', duree: 3, clipSon: true, texteVideo: true, clipPrompt: 'Slow push-in on a drop of serum sliding down the glass, soft light, the bottle stays still.' }), 1, 'reel', []))
 })
