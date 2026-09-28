@@ -37,7 +37,7 @@ export type Option = {
   motion: {
     transition?: Transition; ambiance?: Ambiance; bulles?: { de: 'cliente' | 'shine'; texte: Multi }[]; points?: Multi[]; choix?: Multi[]
     voix?: Multi | null; voixUrl?: Partial<Record<'fr' | 'darija' | 'ar', { url: string; texte: string; duree?: number | null }>>
-    confiance?: string[]; prix?: boolean; ecrans?: ('produit' | 'panier' | 'livraison')[]; fond?: 'decor' | 'vert' | 'aurore' | 'prune' | 'creme' | 'nuit'; ouvert?: boolean; melange?: boolean; lettres?: boolean; appel?: 'reponse' | 'peau' | null
+    confiance?: string[]; prix?: boolean; ecrans?: ('produit' | 'panier' | 'livraison')[]; fond?: 'decor' | 'vert' | 'aurore' | 'prune' | 'creme' | 'nuit'; ouvert?: boolean; melange?: boolean; lettres?: boolean; appel?: 'reponse' | 'peau' | 'partage' | 'enregistre' | null
     illustration?: 'taches' | 'citron' | 'barriere' | 'bouclier' | 'cheveu-abime' | 'cheveu-repare' | null; cache?: boolean; avis?: { id: number; texte: string; note: number } | null
     clip?: { url: string; duree?: number | null; debut?: number } | null; clipPrompt?: string | null
   } | null
@@ -68,9 +68,11 @@ export type Donnees = {
   demandes: Demande[]; rapports: Rapport[]; actions: Action[]; creatifs: Creatif[]
   synchro: { le: string | null; jusquAu: string | null }; repartitions: Record<string, Repartition[]>
   catalogue: ProduitCatalogue[]; idees: Idee[]
+  // Higgsfield : la generation de clips est-elle branchee, le plafond, ce qui est deja engage aujourd'hui.
+  clipsIA?: { disponible: boolean; simulation: boolean; plafondJour: number; plafondClip: number; depenseJour: number; modeles: { cle: 'kling-3-turbo' | 'seedance-2-5' | 'kling-3-std'; nom: string; aide: string; min: number; max: number }[] }
 }
 /** Ce dont le directeur artistique a besoin a l'ecran, dans l'agent comme dans le studio. */
-export type BaseCreative = Pick<Donnees, 'catalogue' | 'idees' | 'demandes'>
+export type BaseCreative = Pick<Donnees, 'catalogue' | 'idees' | 'demandes' | 'clipsIA'>
 export type Onglet = 'ensemble' | 'campagnes' | 'creations' | 'afaire' | 'strategie' | 'agent'
 
 export const dh = (v: number | null | undefined) => (v == null ? '—' : `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v)} DH`)

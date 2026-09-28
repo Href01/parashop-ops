@@ -92,8 +92,10 @@ export async function genererImage(o: { creatifId?: number; optionId?: number; f
     ? (await pool.query(`SELECT * FROM "AdsCreativeOption" WHERE id = $1`, [o.optionId])).rows[0]
     : null
   if (o.optionId && !opt) throw new Error('Option introuvable.')
-  if (opt?.motion?.fond && opt.motion.fond !== 'decor') throw new Error('Ce plan a un fond Shine dessiné : pas d’image à peindre (le crédit OpenAI est gardé).')
-  if (opt?.motion?.clip) throw new Error('Ce plan a un clip vidéo en fond : pas de décor à peindre.')
+  // Un plan qui attend un clip anime (consigne de mouvement ecrite) peint son IMAGE DE DEPART : c'est elle que la video animera.
+  const imageDeDepart = Boolean(String(opt?.motion?.clipPrompt ?? '').trim())
+  if (!imageDeDepart && opt?.motion?.fond && opt.motion.fond !== 'decor') throw new Error('Ce plan a un fond Shine dessiné : pas d’image à peindre (le crédit OpenAI est gardé).')
+  if (!imageDeDepart && opt?.motion?.clip) throw new Error('Ce plan a un clip vidéo en fond : pas de décor à peindre.')
   const creatifId: number = opt ? opt.creatif_id : Number(o.creatifId)
   const format: FormatImage = opt ? opt.format : (o.format as FormatImage)
   if (!FORMATS_IMAGE[format]) throw new Error('Format : feed, story ou carre.')

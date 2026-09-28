@@ -277,7 +277,7 @@ function enLivree(x: LigneOption): Json {
   }
 }
 
-const CHAMPS_PLAN = ['texte', 'position', 'prompt', 'animes', 'mouvement', 'duree', 'transition', 'ambiance', 'bulles', 'points', 'choix', 'voix', 'confiance', 'prix', 'ecrans', 'fond', 'ouvert', 'melange', 'lettres', 'appel', 'illustration', 'cache', 'avisId', 'clip', 'clipPrompt'] as const
+const CHAMPS_PLAN = ['texte', 'position', 'prompt', 'animes', 'mouvement', 'duree', 'transition', 'ambiance', 'bulles', 'points', 'choix', 'voix', 'confiance', 'prix', 'ecrans', 'fond', 'ouvert', 'melange', 'lettres', 'appel', 'illustration', 'cache', 'avisId', 'clip', 'clipPrompt', 'produitIds'] as const
 
 /**
  * Retoucher un plan (ou une option, une carte) : textes, animation, duree,
@@ -311,10 +311,10 @@ export async function modifierPlan(id: number, patch: Json) {
     : o.motion
   const note = typeof patch.note === 'string' ? patch.note.trim().slice(0, 1500) || null : o.note
   const u = await pool.query(
-    `UPDATE "AdsCreativeOption" SET texte = $2::jsonb, position = $3, prompt = $4, animes = $5, mouvement = $6, duree = $7, motion = $8::jsonb, note = $9, maj_le = now()
+    `UPDATE "AdsCreativeOption" SET texte = $2::jsonb, position = $3, prompt = $4, animes = $5, mouvement = $6, duree = $7, motion = $8::jsonb, note = $9, produit_ids = $10, maj_le = now()
      WHERE id = $1 RETURNING *`,
     [id, JSON.stringify(plan.texte), plan.position, plan.prompt, type === 'reel' ? plan.animes ?? [] : null, type === 'reel' ? plan.mouvement : null,
-      type === 'reel' ? plan.duree : null, motion == null ? null : JSON.stringify(motion), note])
+      type === 'reel' ? plan.duree : null, motion == null ? null : JSON.stringify(motion), note, plan.produitIds === undefined ? o.produit_ids ?? null : plan.produitIds])
   return u.rows[0]
 }
 

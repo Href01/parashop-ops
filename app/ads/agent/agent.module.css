@@ -339,6 +339,10 @@
 .clipEnvoi input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
 .clipEnvoi[aria-disabled='true'] { opacity: .7; pointer-events: none; }
 .clipDepart { width: 64px; margin: 0 4px; padding: 3px 6px; border: 1px solid #d6ded7; border-radius: 6px; font: inherit; }
+/* L'animation Higgsfield d'un plan : image de depart puis mouvement. */
+.clipIA { display: grid; gap: 7px; border-top: 1px dashed #d6ded7; padding-top: 9px; margin-top: 4px; }
+.clipIA > b { font-size: 12.5px; }
+.clipCadre { width: 45px; height: 80px; object-fit: cover; border-radius: 6px; border: 1px solid #dfe6e1; }
 .etapeNum { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #175f50; color: #fff; font-size: 10.5px; font-weight: 800; margin-inline-end: 6px; vertical-align: 1px; }
 .montageAccroches small { color: #66716a; font-size: 11px; margin-inline-end: 2px; }
 .montageAlertes { margin: 0; padding: 8px 10px; list-style: none; background: #fff7e8; border: 1px solid #f3d9a8; border-radius: 8px; color: #7a4a00; font-size: 12px; display: grid; gap: 3px; }

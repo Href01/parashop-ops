@@ -1,6 +1,7 @@
 import { contexte, echecDemande, publierRapport, reclamerDemande } from '@/lib/ads/agent'
 import { synchroniserPubsMeta } from '@/lib/ads/meta-sync'
 import { genererImage, lireImage, supprimerImage } from '@/lib/ads/images'
+import { animerPlan, suivreClip } from '@/lib/ads/clips'
 import { contexteDirection, enregistrerDirection, modifierPlan, terminerDirection } from '@/lib/ads/direction'
 import { genererVoix, type LangueVoix } from '@/lib/ads/voix'
 import type { FormatImage } from '@/lib/ads/creatif-model'
@@ -51,6 +52,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
         if (Number.isInteger(body?.optionId)) return Response.json({ image: await genererImage({ optionId: body.optionId, qualite: body.qualite, par: 'agent' }) }, { headers: PRIVATE_HEADERS })
         if (!Number.isInteger(body?.creatifId)) return Response.json({ error: 'creatifId ou optionId requis' }, { status: 400, headers: PRIVATE_HEADERS })
         return Response.json({ image: await genererImage({ creatifId: body.creatifId, format: body.format as FormatImage, qualite: body.qualite, precision: body.precision, par: 'agent' }) }, { headers: PRIVATE_HEADERS })
+      // Le directeur artistique anime l'image de depart d'un plan (meme plafond que le studio), puis suit le clip.
+      case 'clip':
+        return Response.json({ generation: await animerPlan({ optionId: Number(body?.optionId), modele: body?.modele, duree: Number(body?.duree) || undefined, par: 'agent' }) }, { headers: PRIVATE_HEADERS })
+      case 'clip-suivi':
+        return Response.json({ generation: await suivreClip(Number(body?.id)) }, { headers: PRIVATE_HEADERS })
       case 'direction-contexte':
         return Response.json(await contexteDirection(Number(body?.id)), { headers: PRIVATE_HEADERS })
       case 'direction':

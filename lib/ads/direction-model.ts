@@ -98,6 +98,9 @@ export const APPEL_COMMENTAIRE = { fr: 'Commente ta réponse 👇', darija: 'Kte
 export const APPELS = {
   reponse: APPEL_COMMENTAIRE,
   peau: { fr: 'Commente ton type de peau 👇', darija: 'Kteb no3 dyal bachrtek 👇', ar: 'اكتبي نوع بشرتك في التعليقات 👇' },
+  // L'envoi en DM est le signal le plus fort pour toucher des non-abonnees (Instagram, 2026) ; l'enregistrement dit « utile ».
+  partage: { fr: 'Envoie-la à ta sœur 👭', darija: 'Siftiha l khtek 👭', ar: 'أرسليه لأختك 👭' },
+  enregistre: { fr: 'Enregistre-la pour ta routine 📌', darija: 'Sauvegardiha l routine dyalek 📌', ar: 'احفظيه لروتينك 📌' },
 } as const
 export type CleAppel = keyof typeof APPELS
 
@@ -352,7 +355,7 @@ export const LivraisonDirection = z.object({
     // Des lettres A, B, C au-dessus des produits (le jeu « lequel tu prends ? »), et sur les etapes a la place des numeros.
     lettres: z.boolean().optional(),
     // L'appel a commenter : « Commente ta réponse 👇 » ou « Commente ton type de peau 👇 » (quiz ouvert, pop, zoom).
-    appel: z.enum(['reponse', 'peau']).optional(),
+    appel: z.enum(['reponse', 'peau', 'partage', 'enregistre']).optional(),
     texte: Texte,
     position: z.enum(['haut', 'bas']).default('haut'),
     // Produits PEINTS dans l'image. Absent = tous ceux de la creation ; [] = aucun (decor vide, texture).
@@ -566,7 +569,8 @@ export type Retouche = z.infer<typeof RetoucheSchema>
  */
 export function promptFinal(o: { prompt: string; format: FormatImage; position: 'haut' | 'bas'; style: string | null; produits: number; styleCarte1: boolean; decorPourAnimation?: boolean }): string {
   const zone = o.format === 'story'
-    ? 'Keep the top 20% and the bottom 22% of the frame as plain background with nothing important in them.'
+    // « plain background » donnait parfois une bande plate a bord net en haut de l'image (creation #28) : on dit « continu ».
+    ? 'Keep the top 20% and the bottom 22% of the frame calm: softly out-of-focus background that continues the same scene (no band, no border, no hard horizontal edge), with nothing important in them.'
     : o.position === 'bas'
       ? 'Keep the bottom 30% of the frame as plain background with nothing important: a headline goes there.'
       : 'Keep the top 30% of the frame as plain background with nothing important: a headline goes there.'
