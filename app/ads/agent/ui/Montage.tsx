@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowDown, ArrowUp, Copy, ImagePlus, Loader2, Mic, Plus, Save, Trash2, Undo2, Wand2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, Clapperboard, Copy, ImagePlus, Loader2, Mic, Plus, Save, Trash2, Undo2, Upload, Wand2, X } from 'lucide-react'
 import type { Langue } from '@/lib/ads/creatif-model'
 import { AMBIANCES, APPELS, CONFIANCE, ETAPES_SITE, FONDS, LIBELLES_SITE, MOUVEMENTS, TRANSITIONS, dureeMinDm, dureeMinEtapes, dureeMinSite, dureeVoix, fautesFrancais, motMisEnValeurVide, motsVoixMax, voixTropLongue, type CleAppel, type CleConfiance, type EtapeSite, type FondShine, type Mouvement } from '@/lib/ads/direction-model'
 import { ILLUSTRATIONS, urlDetouree, type Ambiance, type Illustration, type Transition } from '@/lib/ads/reel-model'
@@ -25,7 +25,10 @@ export type Brouillon = {
   confiance: CleConfiance[]; prix: boolean
   ecrans: EtapeSite[]; fond: FondShine; ouvert: boolean; melange: boolean; lettres: boolean; appel: CleAppel | null
   illustration: Illustration | null; cache: boolean
+  clip: { url: string; duree: number | null; debut: number } | null; clipPrompt: string
 }
+/** Un clip de telephone pese vite 50 Mo : au-dela, Cloudinary refuse (plan gratuit : 100 Mo par video). */
+const CLIP_MAX = 95 * 1024 * 1024
 /** Ce que montre chaque schema : le probleme ou la reponse. */
 const SCHEMAS: Record<Illustration, string> = {
   taches: 'Le soleil fait monter les taches (problème)', citron: 'Citron + soleil : les taches foncent (idée reçue)',
@@ -62,6 +65,7 @@ export function depuisOption(o: Option): Brouillon {
     confiance: (m.confiance ?? []) as CleConfiance[], prix: Boolean(m.prix),
     ecrans: (m.ecrans ?? []) as EtapeSite[], fond: (m.fond ?? 'decor') as FondShine, ouvert: Boolean(m.ouvert), melange: Boolean(m.melange), lettres: Boolean(m.lettres), appel: (m.appel ?? null) as CleAppel | null,
     illustration: (m.illustration ?? null) as Illustration | null, cache: Boolean(m.cache),
+    clip: m.clip ? { url: m.clip.url, duree: m.clip.duree ?? null, debut: m.clip.debut ?? 0 } : null, clipPrompt: m.clipPrompt ?? '',
   }
 }
 
@@ -109,6 +113,7 @@ export function planDessin(c: Creatif, o: Option, b: Brouillon, langue: Langue, 
     ouvert: b.mouvement === 'quiz' && b.ouvert, melange: b.mouvement === 'pop' && b.melange,
     marques: b.animes.map((id) => d.catalogue.find((p) => p.id === id)?.marque ?? ''), lettres: b.lettres,
     illustration: b.mouvement === 'zoom' ? b.illustration : null, cache: b.cache && ['revele', 'pop', 'rebond'].includes(b.mouvement),
+    clip: b.clip?.url ?? null, clipDebut: b.clip?.debut ?? 0, clipDuree: b.clip?.duree ?? null,
     avis: b.mouvement === 'zoom' && o.motion?.avis ? { texte: o.motion.avis.texte, note: o.motion.avis.note } : null,
     // Le quiz ouvert appelle toujours a commenter sa reponse ; ailleurs, l'appel choisi.
     appel: b.mouvement === 'quiz' && b.ouvert ? APPELS[b.appel ?? 'reponse'][langue] : b.appel && ['pop', 'zoom'].includes(b.mouvement) ? APPELS[b.appel][langue] : null,
@@ -132,6 +137,7 @@ function alertes(b: Brouillon, i: number): string[] {
   for (const l of ['fr', 'darija', 'ar'] as const) {
     if (voixTropLongue(b.voix[l], b.duree)) out.push(`Voix off (${l}) : ~${dureeVoix(b.voix[l])} s chuchotée pour ${b.duree} s de plan — ${motsVoixMax(b.duree)} mots au plus.`)
   }
+  if (b.clipPrompt.trim() && !b.clip) out.push('Clip à ajouter : copie la consigne, filme ou génère le clip, puis envoie-le.')
   if (i === 0 && b.transition !== 'coupe') out.push('Le premier plan entre en coupe franche.')
   if (i === 0 && b.duree > 2.5) out.push('L’accroche tient en 2,5 s au plus.')
   const n = b.animes.length
@@ -164,6 +170,29 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
 }) {
   const [occupe, setOccupe] = useState<string | null>(null)
   const [noteClaude, setNoteClaude] = useState('')
+  // Un clip part DIRECTEMENT du navigateur vers Cloudinary (trop lourd pour passer par le BOS), avec sa progression.
+  const [envoiClip, setEnvoiClip] = useState<{ id: number; pct: number } | null>(null)
+  const envoyerClip = async (o: Option, fichier: File) => {
+    if (fichier.size > CLIP_MAX) { message(false, `Clip trop lourd (${Math.round(fichier.size / 1048576)} Mo, 95 au plus) : raccourcis-le ou exporte-le en 1080p.`); return }
+    setEnvoiClip({ id: o.id, pct: 0 })
+    try {
+      const sig = (await poster({ clipSignature: true })) as unknown as { url: string; apiKey: string; timestamp: string; folder: string; signature: string }
+      const f = new FormData()
+      f.append('file', fichier); f.append('api_key', sig.apiKey); f.append('timestamp', sig.timestamp); f.append('folder', sig.folder); f.append('signature', sig.signature)
+      const r = await new Promise<{ secure_url?: string; duration?: number; error?: { message?: string } }>((ok, ko) => {
+        const x = new XMLHttpRequest()
+        x.open('POST', sig.url)
+        x.upload.onprogress = (e) => { if (e.lengthComputable) setEnvoiClip({ id: o.id, pct: Math.round((e.loaded / e.total) * 100) }) }
+        x.onload = () => { try { ok(JSON.parse(x.responseText)) } catch { ko(new Error('Réponse de Cloudinary illisible.')) } }
+        x.onerror = () => ko(new Error('Envoi interrompu (réseau).'))
+        x.send(f)
+      })
+      if (!r.secure_url) throw new Error(`Cloudinary : ${r.error?.message ?? 'envoi refusé'}`)
+      const actuel = brouillons[o.id] ?? depuisOption(o)
+      setBrouillon(o.id, { ...actuel, clip: { url: r.secure_url, duree: typeof r.duration === 'number' ? Math.round(r.duration * 10) / 10 : null, debut: 0 } })
+      message(true, 'Clip ajouté à l’aperçu : « Enregistrer » le garde.')
+    } catch (e) { message(false, e instanceof Error ? e.message : 'Envoi impossible') } finally { setEnvoiClip(null) }
+  }
   const nom = new Map(d.catalogue.map((p) => [p.id, `${p.marque} ${p.nom}`]))
   // Les produits d'un pack s'animent un par un : ils s'ajoutent au choix.
   const choixProduits = [...new Set([...c.produit_ids, ...c.produit_ids.flatMap((id) => d.catalogue.find((p) => p.id === id)?.composants ?? [])])]
@@ -230,6 +259,23 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
                       {(Object.keys(AMBIANCES) as Ambiance[]).map((x) => <option key={x} value={x}>{AMBIANCES[x]}</option>)}
                     </select></label>
                 </div>
+                <fieldset className={s.reglage}><legend><Clapperboard size={13} /> Clip vidéo réel (fond du plan)</legend>
+                  <label className={s.champ}>Consigne pour le filmer ou le générer (Sora, Veo, Kling… ou ton téléphone)
+                    <textarea rows={b.clipPrompt ? 4 : 2} className={s.champTexte} value={b.clipPrompt} maxLength={2000} placeholder="Ex. : macro, une goutte de sérum transparent tombe sur le dos d’une main au soleil…" onChange={(e) => maj({ clipPrompt: e.target.value })} /></label>
+                  <div className={s.clipLigne}>
+                    {b.clipPrompt.trim() && <button type="button" className={s.ghost} onClick={() => void navigator.clipboard.writeText(b.clipPrompt).then(() => message(true, 'Consigne copiée : colle-la dans ton outil vidéo.'), () => message(false, 'Copie impossible : sélectionne le texte.'))}><Copy size={12} /> Copier la consigne</button>}
+                    <label className={`${s.ghost} ${s.clipEnvoi}`} aria-disabled={envoiClip != null}>
+                      <input type="file" accept="video/mp4,video/quicktime,video/webm,video/*" disabled={envoiClip != null} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void envoyerClip(o, f) }} />
+                      {envoiClip?.id === o.id ? <><Loader2 size={12} className={s.tourne} /> Envoi… {envoiClip.pct} %</> : <><Upload size={12} /> {b.clip ? 'Remplacer le clip' : 'Ajouter le clip'}</>}
+                    </label>
+                  </div>
+                  {b.clip && <div className={s.clipLigne}>
+                    <span>🎬 Clip{b.clip.duree ? ` de ${b.clip.duree.toLocaleString('fr-FR')} s` : ''}{b.clip.duree && b.clip.duree - b.clip.debut < b.duree ? ' — plus court que le plan : il reprend au début' : ''}</span>
+                    <label>Départ <input type="number" className={s.clipDepart} min={0} max={Math.max(0, (b.clip.duree ?? 60) - 0.5)} step={0.1} value={b.clip.debut} onChange={(e) => maj({ clip: { ...b.clip!, debut: Math.max(0, Number(e.target.value) || 0) } })} /> s</label>
+                    <button type="button" className={s.ghost} onClick={() => maj({ clip: null })}><X size={12} /> Retirer</button>
+                  </div>}
+                  <small className={s.muted}>MP4 ou MOV, 95 Mo au plus, vertical de préférence : il est recadré en 9:16 et joué sans son (la bande-son est celle du Reel). Les textes, schémas et produits restent par-dessus.</small>
+                </fieldset>
                 {b.mouvement !== 'zoom' && <fieldset className={s.reglage}><legend>{b.mouvement === 'site' ? 'Le produit dont on montre l’achat' : `Produits animés (${b.animes.length}${['pop', 'fin', 'etapes'].includes(b.mouvement) ? '/4' : ''})`}{b.mouvement === 'etapes' ? ' — dans l’ordre d’application' : ''}</legend>
                   <div className={s.dirChips}>{choixProduits.map((id) => (
                     <button key={id} type="button" className={s.filtre} aria-pressed={b.animes.includes(id)}
@@ -333,7 +379,7 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
                 {al.length > 0 && <ul className={s.montageAlertes}>{al.map((x) => <li key={x}>⚠ {x}</li>)}</ul>}
                 <div className={s.btns}>
                   <button type="button" className={s.primary} disabled={!modifie || occupe != null} onClick={() => void (async () => {
-                    const j = await action(`e${o.id}`, { option: { id: o.id, texte: b.texte, position: b.position, mouvement: b.mouvement, duree: b.duree, animes: b.animes, transition: b.transition, ambiance: b.ambiance, bulles: b.bulles, points: b.mouvement === 'site' ? b.points.filter((x) => x.fr.trim()).length === b.ecrans.length ? b.points : [] : b.points, choix: b.choix, voix: b.voix, confiance: b.confiance, prix: b.prix, ...(b.mouvement === 'site' ? { ecrans: b.ecrans } : {}), fond: b.fond, ...(b.mouvement === 'quiz' ? { ouvert: b.ouvert } : {}), ...(b.mouvement === 'pop' ? { melange: b.melange } : {}), lettres: b.lettres, ...(b.appel ? { appel: b.appel } : {}), ...(b.mouvement === 'zoom' ? { illustration: b.illustration ?? undefined } : {}), cache: b.cache } }, 'Plan enregistré.')
+                    const j = await action(`e${o.id}`, { option: { id: o.id, texte: b.texte, position: b.position, mouvement: b.mouvement, duree: b.duree, animes: b.animes, transition: b.transition, ambiance: b.ambiance, bulles: b.bulles, points: b.mouvement === 'site' ? b.points.filter((x) => x.fr.trim()).length === b.ecrans.length ? b.points : [] : b.points, choix: b.choix, voix: b.voix, confiance: b.confiance, prix: b.prix, ...(b.mouvement === 'site' ? { ecrans: b.ecrans } : {}), fond: b.fond, ...(b.mouvement === 'quiz' ? { ouvert: b.ouvert } : {}), ...(b.mouvement === 'pop' ? { melange: b.melange } : {}), lettres: b.lettres, ...(b.appel ? { appel: b.appel } : {}), ...(b.mouvement === 'zoom' ? { illustration: b.illustration ?? undefined } : {}), cache: b.cache, clip: b.clip, clipPrompt: b.clipPrompt.trim() || null } }, 'Plan enregistré.')
                     if (j) setBrouillon(o.id, null)
                   })()}>{occupe === `e${o.id}` ? <Loader2 size={13} className={s.tourne} /> : <Save size={13} />} Enregistrer</button>
                   {modifie && <button type="button" className={s.ghost} onClick={() => setBrouillon(o.id, null)}><Undo2 size={13} /> Annuler</button>}

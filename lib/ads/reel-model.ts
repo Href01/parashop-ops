@@ -660,6 +660,23 @@ export function transitionA(plans: PlanReel[], i: number, local: number): { type
 /* --------------------------- detourage --------------------------- */
 
 /**
+ * Un clip video du Cloudinary de Shine, recadre en 9:16, sans son (la bande-son du Reel
+ * est faite par le BOS), en H.264 : 720x1280 pour l'apercu, 1080x1920 pour l'export.
+ */
+export function urlClip(url: string, hd = false): string {
+  const m = /^(https:\/\/res\.cloudinary\.com\/[^/]+\/video\/upload\/)(.+?)(\.[a-z0-9]{2,4})?$/i.exec(url)
+  if (!m) return url
+  const [w, h] = hd ? [1080, 1920] : [720, 1280]
+  return `${m[1]}c_fill,w_${w},h_${h},ac_none,q_auto:good,vc_h264/${m[2].replace(/^(?:[a-z]{1,3}_[^/]*\/)+/, '')}.mp4`
+}
+
+/** L'instant du clip a montrer, `local` secondes apres le debut du plan (il boucle s'il est plus court). */
+export function instantClip(local: number, debut: number, duree: number | null | undefined): number {
+  const t = Math.max(0, debut + local)
+  return duree && duree > 0 ? Math.min(duree - 0.001, t % duree) : t
+}
+
+/**
  * La photo de fiche, detouree par l'IA de Cloudinary (fond transparent, PNG).
  * Le premier appel calcule le detourage (quelques secondes), les suivants
  * viennent du cache de Cloudinary.

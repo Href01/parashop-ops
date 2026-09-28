@@ -33,7 +33,7 @@ export const BORNES: Record<TypeDirection, { min: number; max: number; defaut: n
   // Un carrousel Instagram : toutes les cartes au meme format, 1:1 ou 4:5.
   carrousel: { min: 3, max: 10, defaut: 5, formats: ['carre', 'feed'] },
   // Un Reel anime : 3 a 6 plans verticaux, 8 a 15 secondes.
-  reel: { min: 3, max: 7, defaut: 4, formats: ['story'] },
+  reel: { min: 3, max: 8, defaut: 4, formats: ['story'] },
 }
 
 /** Le vocabulaire des Reels animes (dessines par le BOS, lib/ads/reel-model.ts). */
@@ -385,6 +385,15 @@ export const LivraisonDirection = z.object({
     cache: z.boolean().optional(),
     // Zoom : un VRAI avis (son id dans « avisReels » du contexte) ; le BOS en recopie le texte exact.
     avisId: z.number().int().positive().optional(),
+    // Un clip video REEL en fond du plan (tourne au telephone ou genere par une IA video), a la place du decor :
+    // une video du Cloudinary de Shine, envoyee depuis le studio. `debut` : ou le clip commence (secondes).
+    clip: z.object({
+      url: z.string().trim().max(600).regex(/^https:\/\/res\.cloudinary\.com\/[a-z0-9_-]+\/video\/upload\/\S+$/i, 'clip : une vidéo envoyée depuis le studio'),
+      duree: z.number().positive().max(300).nullable().optional(),
+      debut: z.number().min(0).max(300).default(0),
+    }).nullable().optional(),
+    // La consigne pour filmer ou generer ce clip (en anglais, a coller dans l'outil video) : le plan l'affiche avec « Copier ».
+    clipPrompt: z.string().trim().max(2000).nullable().optional(),
   })).min(1).max(10),
   // Chaque consigne du brief, et le ou les plans qui la tiennent ([] = tenue partout, ex. « ne parle pas de l'été »).
   couverture: z.array(z.object({ consigne: z.string().trim().min(2).max(300), plans: z.array(z.number().int().min(1).max(10)).max(10) })).max(15).optional(),
@@ -438,6 +447,7 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
     } else if (o.ecrans) throw new Error(`${nom} : « ecrans » ne sert que dans un plan « site ».`)
     if (o.ouvert && o.mouvement !== 'quiz') throw new Error(`${nom} : « ouvert » ne sert qu'à un quiz.`)
     if (o.illustration && o.mouvement !== 'zoom') throw new Error(`${nom} : un schéma (« illustration ») se dessine sur un plan « zoom ».`)
+    if (o.clip?.duree && o.clip.debut >= o.clip.duree) throw new Error(`${nom} : le clip commence après sa fin (${o.clip.debut} s pour un clip de ${o.clip.duree} s).`)
     if (o.avisId && o.mouvement !== 'zoom') throw new Error(`${nom} : un avis client se montre sur un plan « zoom ».`)
     if (o.avisId && o.illustration) throw new Error(`${nom} : un schéma OU un avis par plan, pas les deux.`)
     if (o.cache && (!['revele', 'pop', 'rebond'].includes(o.mouvement) || n < 1)) throw new Error(`${nom} : le post-it (« cache ») couvre un produit d'un « revele », « pop » ou « rebond ».`)
@@ -454,7 +464,7 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
     for (const [langue, texte] of Object.entries(o.voix ?? {})) {
       if (typeof texte === 'string' && voixTropLongue(texte, o.duree)) throw new Error(`${nom} : la voix off (${langue}) dure ~${dureeVoix(texte)} s chuchotée pour un plan de ${o.duree} s — elle déborderait sur le plan suivant. ${motsVoixMax(o.duree)} mots au plus, ou allonge le plan.`)
     }
-  } else if (o.animes?.length || o.mouvement || o.transition || o.bulles || o.points || o.choix || o.voix || o.ecrans) {
+  } else if (o.animes?.length || o.mouvement || o.transition || o.bulles || o.points || o.choix || o.voix || o.ecrans || o.clip) {
     throw new Error(`${nom} : « animes », « mouvement », « transition », « bulles », « points », « choix », « voix » et « ecrans » ne servent que dans un Reel.`)
   }
 }
@@ -462,7 +472,7 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
 /** Le Reel entier : duree totale, accroche courte. */
 export function verifierMontage(durees: number[]) {
   const total = durees.reduce((n, d) => n + d, 0)
-  if (total < 6 || total > 25) throw new Error(`Un Reel de ${total} s : vise 8 à 15 s (6 à 25 au plus).`)
+  if (total < 6 || total > 30) throw new Error(`Un Reel de ${total} s : vise 12 à 25 s (6 à 30 au plus).`)
   if ((durees[0] ?? 0) > 2.5) throw new Error('Plan 1 : l’accroche tient en 2,5 s au plus, sinon on a déjà scrollé.')
 }
 

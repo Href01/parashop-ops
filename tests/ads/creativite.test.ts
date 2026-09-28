@@ -254,3 +254,21 @@ test('les recettes : la charpente imposée, vérifiée plan par plan', async () 
   const recents = [bon.map((o) => o.mouvement ?? '')]
   assert.throws(() => verifierVariete(bon.map((o) => o.mouvement ?? ''), recents, 'Un reel'), /Même charpente/)
 })
+
+test('les clips vidéo : l’adresse recadrée, l’instant exact, les règles', async () => {
+  const { urlClip, instantClip } = await import('../../lib/ads/reel-model')
+  const brut = 'https://res.cloudinary.com/dlgdhwfqa/video/upload/v1790600000/shine-ads/clips/goutte.mov'
+  assert.equal(urlClip(brut), 'https://res.cloudinary.com/dlgdhwfqa/video/upload/c_fill,w_720,h_1280,ac_none,q_auto:good,vc_h264/v1790600000/shine-ads/clips/goutte.mp4')
+  assert.match(urlClip(brut, true), /c_fill,w_1080,h_1920/)
+  // Une transformation déjà présente est remplacée, pas empilée.
+  assert.equal(urlClip('https://res.cloudinary.com/x/video/upload/q_auto/v1/a/b.mp4'), 'https://res.cloudinary.com/x/video/upload/c_fill,w_720,h_1280,ac_none,q_auto:good,vc_h264/v1/a/b.mp4')
+  // L'instant : départ décalé, et un clip plus court que le plan reprend au début.
+  assert.equal(instantClip(1, 0.5, 6), 1.5)
+  assert.ok(Math.abs(instantClip(4.5, 0, 4) - 0.5) < 1e-9)
+  assert.ok(instantClip(4, 0, 4) < 4)
+  // Seules les vidéos Cloudinary passent ; un départ après la fin est refusé ; pas de clip hors d'un Reel.
+  assert.equal(OptionLivreeSchema.safeParse({ concept: 'P', pourquoi: 'Parce que ça arrête le pouce.', texte: { fr: 'Ta *peau*' }, clip: { url: 'https://exemple.com/v.mp4' } }).success, false)
+  assert.throws(() => verifierOption(plan({ mouvement: 'zoom', duree: 3, fond: 'vert', clip: { url: brut, duree: 4, debut: 4.5 } }), 1, 'reel', []), /commence après sa fin/)
+  assert.doesNotThrow(() => verifierOption(plan({ mouvement: 'zoom', duree: 3, fond: 'vert', clip: { url: brut, duree: 6, debut: 0.5 } }), 1, 'reel', []))
+  assert.throws(() => verifierOption(OptionLivreeSchema.parse({ concept: 'Carte', pourquoi: 'Parce que ça arrête le pouce.', prompt: PROMPT, texte: { fr: 'Ta *peau*' }, clip: { url: brut } }), 0, 'carrousel', []), /ne servent que dans un Reel/)
+})

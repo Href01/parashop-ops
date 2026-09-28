@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Bookmark, Camera, Download, Heart, Loader2, MessageCircle, MoreHorizontal, Music2, Pause, Play, RotateCcw, Send, Volume2, VolumeX } from 'lucide-react'
 import { estRtl, type Langue } from '@/lib/ads/creatif-model'
-import { H, IPS, W, douce, dureeTotale, etatPlan, nbImages, planA, transitionA, type EtatPlan, type Particule, type PlanReel } from '@/lib/ads/reel-model'
+import { H, IPS, W, douce, dureeTotale, etatPlan, instantClip, nbImages, planA, transitionA, urlClip, type EtatPlan, type Particule, type PlanReel } from '@/lib/ads/reel-model'
 import { COULEURS, POLICES, policesPretes } from './polices'
 import { TAUX, mixerPiste, type VoixPlacee } from './sons'
 import { dessinerAvis, dessinerIllustration, dessinerPostIt } from './illustrations'
@@ -16,7 +16,10 @@ import s from './apercu.module.css'
  * navigateur : rien ne part sur un serveur).
  */
 
-export type PlanDessin = PlanReel & { image: string | null; detourees: string[]; noms?: string[]; voixUrl?: string | null; captures?: string[] }
+export type PlanDessin = PlanReel & {
+  image: string | null; detourees: string[]; noms?: string[]; voixUrl?: string | null; captures?: string[]
+  clip?: string | null; clipDebut?: number; clipDuree?: number | null   // un clip video reel en fond (Cloudinary)
+}
 type Ressources = Map<string, HTMLImageElement>
 type Ctx = CanvasRenderingContext2D
 
@@ -51,6 +54,72 @@ function etoile(ctx: Ctx, x: number, y: number, r: number, rot: number) {
   ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.beginPath()
   for (let k = 0; k < 8; k++) { const a = (k * Math.PI) / 4, rr = k % 2 ? r * 0.28 : r; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr) }
   ctx.closePath(); ctx.fill(); ctx.restore()
+}
+
+/**
+ * LES CLIPS VIDEO : une balise <video> par clip (720p pour l'apercu, 1080p pour
+ * l'export), muette, chargee une fois. L'apercu les fait jouer en suivant l'horloge
+ * du Reel ; l'export les place image par image (seek) : la video exportee montre
+ * exactement la meme image que l'apercu.
+ */
+const VIDEOS = new Map<string, HTMLVideoElement>()
+const cleVideo = (url: string, hd: boolean) => (hd ? `hd|${url}` : url)
+function chargerClip(url: string, hd: boolean): Promise<void> {
+  const cle = cleVideo(url, hd)
+  if (VIDEOS.has(cle)) return Promise.resolve()
+  return new Promise((ok) => {
+    // Une premiere transformation Cloudinary peut repondre « pas encore prete » : on reessaie.
+    const essai = (n: number) => {
+      const v = document.createElement('video')
+      v.crossOrigin = 'anonymous'; v.muted = true; v.playsInline = true; v.preload = 'auto'; v.loop = true
+      v.onloadeddata = () => { VIDEOS.set(cle, v); ok() }
+      v.onerror = () => { if (n >= 4) ok(); else setTimeout(() => essai(n + 1), 2500 * (n + 1)) }
+      v.src = urlClip(url, hd) + (n ? `?r=${n}` : '')
+      v.load()
+    }
+    essai(0)
+  })
+}
+const clipsDe = (plans: PlanDessin[]) => [...new Set(plans.map((p) => p.clip).filter((u): u is string => Boolean(u)))]
+
+/** Apercu : le clip du plan joue suit l'horloge du Reel ; les autres attendent. Rend les videos a re-peindre apres un seek. */
+function caleClips(plans: PlanDessin[], t: number, joue: boolean): HTMLVideoElement[] {
+  const { i, local } = planA(plans, t)
+  const cherchent: HTMLVideoElement[] = []
+  plans.forEach((p, k) => {
+    if (!p.clip) return
+    const v = VIDEOS.get(cleVideo(p.clip, false))
+    if (!v) return
+    if (k !== i) { if (!v.paused) v.pause(); return }
+    const voulu = instantClip(local, p.clipDebut ?? 0, v.duration || p.clipDuree)
+    if (joue) {
+      if (v.paused) { v.currentTime = voulu; void v.play().catch(() => {}) } else if (Math.abs(v.currentTime - voulu) > 0.3) v.currentTime = voulu
+    } else {
+      if (!v.paused) v.pause()
+      if (Math.abs(v.currentTime - voulu) > 0.04) { v.currentTime = voulu; cherchent.push(v) }
+    }
+  })
+  return cherchent
+}
+
+/** Export : place le clip du plan (et celui d'avant pendant une transition) sur l'image exacte, et attend qu'elle soit decodee. */
+async function placerClipsExport(plans: PlanDessin[], t: number) {
+  const { i, local } = planA(plans, t)
+  const cibles: [PlanDessin, number][] = [[plans[i], local]]
+  if (i > 0 && transitionA(plans, i, local)) cibles.push([plans[i - 1], plans[i - 1].duree])
+  await Promise.all(cibles.map(([p, l]) => {
+    if (!p.clip) return undefined
+    const v = VIDEOS.get(cleVideo(p.clip, true))
+    if (!v) return undefined
+    const voulu = instantClip(l, p.clipDebut ?? 0, v.duration || p.clipDuree)
+    if (Math.abs(v.currentTime - voulu) < 0.001 && v.readyState >= 2) return undefined
+    return new Promise<void>((ok) => {
+      const fin = () => { clearTimeout(h); ok() }
+      const h = setTimeout(fin, 4000)
+      v.addEventListener('seeked', fin, { once: true })
+      v.currentTime = voulu
+    })
+  }))
 }
 
 /** Lignes d'un texte dans une largeur donnee (police deja posee). */
@@ -163,7 +232,7 @@ function dessinerFondShine(ctx: Ctx, nom: keyof typeof FONDS_SHINE, tg: number, 
 }
 
 /** Un plan, a son instant local, dans le repere 1080x1920. */
-function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, res: Ressources, langue: Langue, bouton: string) {
+function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, res: Ressources, langue: Langue, bouton: string, hd = false) {
   const k = ctx.canvas.width / W
   const plan = plans[i]
   const e: EtatPlan = etatPlan(plan, local, i === 0, i)
@@ -175,7 +244,16 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
   // Un fond inconnu (une creation plus recente que ce code) retombe sur le vert Shine au lieu de tout arreter.
   const shine = plan.fond && plan.fond !== 'decor' ? (plan.fond in FONDS_SHINE ? plan.fond : 'vert') : null
   const fond = !shine && plan.image ? res.get(plan.image) : undefined
-  if (shine) {
+  // Un clip reel passe avant tout le reste (tant qu'il charge, le fond prevu le remplace).
+  const video = plan.clip ? VIDEOS.get(cleVideo(plan.clip, hd)) : undefined
+  const clip = video && video.readyState >= 2 && video.videoWidth > 0 ? video : undefined
+  if (clip) {
+    // Une poussee plus douce que sur une image : le clip bouge deja.
+    const zoom = 1 + (e.fond.echelle - 1) * 0.4
+    const ech = Math.max(W / clip.videoWidth, H / clip.videoHeight) * zoom
+    const w = clip.videoWidth * ech, h = clip.videoHeight * ech
+    ctx.drawImage(clip, (W - w) / 2, (H - h) / 2, w, h)
+  } else if (shine) {
     dessinerFondShine(ctx, shine, plans.slice(0, i).reduce((n, p) => n + p.duree, 0) + local, res)
   } else if (fond) {
     const ech = Math.max(W / fond.naturalWidth, H / fond.naturalHeight) * e.fond.echelle
@@ -189,8 +267,8 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
     ctx.fillStyle = 'rgba(155,48,112,.12)'; ctx.beginPath(); ctx.arc(W * 0.12, H * 0.62, W * 0.28, 0, Math.PI * 2); ctx.fill()
   }
   // Sur un decor : un voile en haut, le texte blanc reste lisible. Sur un fond clair : texte brun, sans voile.
-  const clair = shine ? FONDS_SHINE[shine].clair : !fond
-  if (fond) {
+  const clair = clip ? false : shine ? FONDS_SHINE[shine].clair : !fond
+  if (fond || clip) {
     const voile = ctx.createLinearGradient(0, 0, 0, H * 0.46)
     voile.addColorStop(0, 'rgba(12,20,16,.5)'); voile.addColorStop(1, 'rgba(12,20,16,0)')
     ctx.fillStyle = voile; ctx.fillRect(0, 0, W, H * 0.46)
@@ -669,15 +747,15 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
 }
 
 /** Une image du Reel a l'instant t, transitions comprises (le canvas peut etre plus petit que 1080x1920). */
-export function dessiner(ctx: Ctx, plans: PlanDessin[], t: number, res: Ressources, langue: Langue, bouton: string) {
+export function dessiner(ctx: Ctx, plans: PlanDessin[], t: number, res: Ressources, langue: Langue, bouton: string, hd = false) {
   const { i, local } = planA(plans, t)
   const tr = transitionA(plans, i, local)
-  if (!tr) { dessinerPlan(ctx, plans, i, local, res, langue, bouton); return }
+  if (!tr) { dessinerPlan(ctx, plans, i, local, res, langue, bouton, hd); return }
   // Pendant une transition : le plan d'avant (fige sur sa derniere image) et le nouveau, sur deux calques.
   const cw = ctx.canvas.width, chh = ctx.canvas.height
   const a = calque('avant', cw, chh), b = calque('apres', cw, chh)
-  dessinerPlan(a.getContext('2d')!, plans, i - 1, plans[i - 1].duree, res, langue, bouton)
-  dessinerPlan(b.getContext('2d')!, plans, i, local, res, langue, bouton)
+  dessinerPlan(a.getContext('2d')!, plans, i - 1, plans[i - 1].duree, res, langue, bouton, hd)
+  dessinerPlan(b.getContext('2d')!, plans, i, local, res, langue, bouton, hd)
   const p = douce(tr.p)
   ctx.setTransform(1, 0, 0, 1, 0, 0)
   ctx.clearRect(0, 0, cw, chh)
@@ -770,7 +848,7 @@ export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, 
   const [piste, setPiste] = useState<AudioBuffer | null>(null)
   const audio = useRef<{ ctx: AudioContext; source: AudioBufferSourceNode | null } | null>(null)
   const total = dureeTotale(plans)
-  const cle = urlsDe(plans).join('|')
+  const cle = [...urlsDe(plans), ...clipsDe(plans)].join('|')
   const origine = useRef(0)
   // La boucle d'animation lit ces references : une pause decidee ailleurs (clic sur un plan)
   // s'applique tout de suite, sans qu'une image deja programmee ecrase la position choisie.
@@ -785,7 +863,7 @@ export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, 
   useEffect(() => {
     let vivant = true
     setPret(false)
-    void Promise.all([policesPretes(), charger(urlsDe(plans), res.current)]).then(() => { if (vivant) setPret(true) })
+    void Promise.all([policesPretes(), charger(urlsDe(plans), res.current), ...clipsDe(plans).map((u) => chargerClip(u, false))]).then(() => { if (vivant) setPret(true) })
     return () => { vivant = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cle])
@@ -811,12 +889,17 @@ export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, 
     audio.current.source = src
   }, [son, piste, total])
   useEffect(() => () => { couperSon(); void audio.current?.ctx.close() }, [])
+  // Le lecteur ferme ou en pause : aucun clip ne continue de tourner en arriere-plan.
+  useEffect(() => { if (!lecture) for (const u of clipsDe(plans)) VIDEOS.get(cleVideo(u, false))?.pause() }, [lecture, plans])
+  useEffect(() => () => { for (const u of clipsDe(plans)) VIDEOS.get(cleVideo(u, false))?.pause() }, [plans])
 
   // Une image qui echoue ne doit pas figer le lecteur : on le dit une fois, la lecture continue.
   const [erreurRendu, setErreurRendu] = useState<string | null>(null)
   const peindre = useCallback((instant: number) => {
     const ctx = canvas.current?.getContext('2d')
     if (!ctx || !plans.length) return
+    // En pause, un clip deplace n'a son image qu'apres le seek : on repeint a ce moment-la.
+    for (const v of caleClips(plans, instant, enLecture.current)) v.addEventListener('seeked', () => { try { dessiner(ctx, plans, instant, res.current, langue, bouton) } catch { /* l'image suivante reessaiera */ } }, { once: true })
     try { dessiner(ctx, plans, instant, res.current, langue, bouton) } catch (e) {
       ctx.setTransform(1, 0, 0, 1, 0, 0)
       setErreurRendu((x) => { if (!x) console.error('[reel] image impossible à dessiner', e); return x ?? (e instanceof Error ? e.message : String(e)) })
@@ -855,6 +938,7 @@ export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, 
       const { Output, Mp4OutputFormat, BufferTarget, CanvasSource, AudioBufferSource, QUALITY_HIGH, canEncodeVideo, canEncodeAudio } = await import('mediabunny')
       if (!(await canEncodeVideo('avc', { width: W, height: H }))) throw new Error('Ce navigateur ne sait pas encoder en H.264.')
       await policesPretes(); await charger(urlsDe(plans), res.current)
+      await Promise.all(clipsDe(plans).map((u) => chargerClip(u, true)))
       const toile = document.createElement('canvas')
       toile.width = W; toile.height = H
       const ctx = toile.getContext('2d')!
@@ -870,7 +954,8 @@ export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, 
       if (sonPiste && bande) await sonPiste.add(bande)
       const n = nbImages(plans)
       for (let f = 0; f < n; f++) {
-        dessiner(ctx, plans, f / IPS, res.current, langue, bouton)
+        await placerClipsExport(plans, f / IPS)
+        dessiner(ctx, plans, f / IPS, res.current, langue, bouton, true)
         await source.add(f / IPS, 1 / IPS)
         if (f % 10 === 0) setExport(Math.round((f / n) * 100))
       }

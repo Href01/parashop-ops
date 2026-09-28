@@ -6,6 +6,7 @@ import { detailPub } from '@/lib/ads/series'
 import { demanderDirection, demanderRetouche, deplacerPlan, dupliquerPlan, modifierPlan, supprimerPlan, supprimerSerie } from '@/lib/ads/direction'
 import { genererVoix, type LangueVoix } from '@/lib/ads/voix'
 import { ajouterLecon, basculerLecon } from '@/lib/ads/apprentissage'
+import { signatureClip } from '@/lib/ads/clips'
 import type { FormatImage } from '@/lib/ads/creatif-model'
 import { PRIVATE_HEADERS, sameOrigin } from '@/lib/seo/http'
 
@@ -78,6 +79,8 @@ export async function POST(request: Request) {
     }
     if (body?.direction) return Response.json(await demanderDirection(body.direction, par), { headers: PRIVATE_HEADERS })
     if (body?.option) return Response.json({ option: await modifierPlan(Number(body.option.id), body.option) }, { headers: PRIVATE_HEADERS })
+    // Un clip video : le navigateur l'envoie a Cloudinary avec cette signature (dossier impose).
+    if (body?.clipSignature) return Response.json(signatureClip(), { headers: PRIVATE_HEADERS })
     // Ce que le directeur artistique doit retenir : relu avant chaque direction.
     if (body?.lecon) return Response.json({ lecon: await ajouterLecon(body.lecon, par) }, { headers: PRIVATE_HEADERS })
     if (body?.leconActive) return Response.json({ lecon: await basculerLecon(Number(body.leconActive.id), Boolean(body.leconActive.active)) }, { headers: PRIVATE_HEADERS })

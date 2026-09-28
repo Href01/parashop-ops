@@ -93,6 +93,7 @@ export async function genererImage(o: { creatifId?: number; optionId?: number; f
     : null
   if (o.optionId && !opt) throw new Error('Option introuvable.')
   if (opt?.motion?.fond && opt.motion.fond !== 'decor') throw new Error('Ce plan a un fond Shine dessiné : pas d’image à peindre (le crédit OpenAI est gardé).')
+  if (opt?.motion?.clip) throw new Error('Ce plan a un clip vidéo en fond : pas de décor à peindre.')
   const creatifId: number = opt ? opt.creatif_id : Number(o.creatifId)
   const format: FormatImage = opt ? opt.format : (o.format as FormatImage)
   if (!FORMATS_IMAGE[format]) throw new Error('Format : feed, story ou carre.')

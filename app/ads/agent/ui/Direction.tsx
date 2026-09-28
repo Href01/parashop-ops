@@ -301,7 +301,7 @@ export function useActionsSerie(c: Creatif, rafraichir: () => Promise<void>, mes
   }
   // La carte 1 d'abord : elle donne le decor aux suivantes ; puis le reste en parallele.
   const genererManquants = async (opts: Option[]) => {
-    const manquants = opts.filter((o) => !imagesDe(c, o).length && (!o.motion?.fond || o.motion.fond === 'decor'))
+    const manquants = opts.filter((o) => !imagesDe(c, o).length && (!o.motion?.fond || o.motion.fond === 'decor') && !o.motion?.clip)
     const premiere = manquants.find((o) => o.carte === 1)
     if (premiere) await generer(premiere)
     await Promise.all(manquants.filter((o) => o !== premiere).map(generer))

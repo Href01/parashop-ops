@@ -39,6 +39,7 @@ export type Option = {
     voix?: Multi | null; voixUrl?: Partial<Record<'fr' | 'darija' | 'ar', { url: string; texte: string; duree?: number | null }>>
     confiance?: string[]; prix?: boolean; ecrans?: ('produit' | 'panier' | 'livraison')[]; fond?: 'decor' | 'vert' | 'aurore' | 'prune' | 'creme' | 'nuit'; ouvert?: boolean; melange?: boolean; lettres?: boolean; appel?: 'reponse' | 'peau' | null
     illustration?: 'taches' | 'citron' | 'barriere' | 'bouclier' | 'cheveu-abime' | 'cheveu-repare' | null; cache?: boolean; avis?: { id: number; texte: string; note: number } | null
+    clip?: { url: string; duree?: number | null; debut?: number } | null; clipPrompt?: string | null
   } | null
   style: string | null; brief: string | null; qualite: string | null; note: string | null; modele: string | null; cree_le: string
 }
