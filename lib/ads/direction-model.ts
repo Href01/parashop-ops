@@ -408,6 +408,8 @@ export const LivraisonDirection = z.object({
     clipSon: z.boolean().optional(),
     // Le texte est deja dans la video (genere par Higgsfield) : le BOS ne l'ecrit pas. `texte` reste la reference (legende, verification).
     texteVideo: z.boolean().optional(),
+    // Filme sans image de depart (texte → video) : seulement un plan SANS produit (ambiance, cheveux, peau, matiere).
+    sansDepart: z.boolean().optional(),
   })).min(1).max(10),
   // Chaque consigne du brief, et le ou les plans qui la tiennent ([] = tenue partout, ex. « ne parle pas de l'été »).
   couverture: z.array(z.object({ consigne: z.string().trim().min(2).max(300), plans: z.array(z.number().int().min(1).max(10)).max(10) })).max(15).optional(),
@@ -425,7 +427,7 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
   const inconnus = [...(o.produitIds ?? []), ...(o.animes ?? [])].filter((id) => !produitsCreation.includes(id))
   if (inconnus.length) throw new Error(`${nom} : produit(s) ${inconnus.join(', ')} hors de la création (${produitsCreation.join(', ') || 'aucun'}).`)
   if (!o.texte.fr) throw new Error(`${nom} : le texte à poser en français manque.`)
-  if (!fondDessine(o.fond) && o.prompt.length < 200) throw new Error(`${nom} : prompt : une consigne de photographe complète (200 caractères au moins), ou un fond Shine dessiné (« fond »).`)
+  if (!fondDessine(o.fond) && !o.sansDepart && o.prompt.length < 200) throw new Error(`${nom} : prompt : une consigne de photographe complète (200 caractères au moins), ou un fond Shine dessiné (« fond »).`)
   if (fondDessine(o.fond) && type !== 'reel') throw new Error(`${nom} : les fonds Shine dessinés servent aux Reels ; ici il faut une consigne d'image.`)
   const francais = [o.texte.fr, ...(o.bulles ?? []).map((b) => b.texte.fr), ...(o.points ?? []).map((x) => x.fr), ...(o.choix ?? []).map((x) => x.fr), o.voix?.fr]
   const fautes = [...new Set(francais.flatMap(fautesFrancais))]
@@ -462,6 +464,8 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
     if (o.ouvert && o.mouvement !== 'quiz') throw new Error(`${nom} : « ouvert » ne sert qu'à un quiz.`)
     if (o.illustration && o.mouvement !== 'zoom') throw new Error(`${nom} : un schéma (« illustration ») se dessine sur un plan « zoom ».`)
     if ((o.clipSon || o.texteVideo) && !o.clip && !String(o.clipPrompt ?? '').trim()) throw new Error(`${nom} : le son ou le texte « dans la vidéo » ne servent qu'à un plan à clip (écris sa consigne « clipPrompt »).`)
+    // Sans image de depart, le modele video invente tout ce qu'il montre : jamais un produit (il inventerait l'emballage).
+    if (o.sansDepart && (o.mouvement !== 'zoom' || !Array.isArray(o.produitIds) || o.produitIds.length || String(o.clipPrompt ?? '').trim().length < 60)) throw new Error(`${nom} : « sansDepart » (filmé sans image de départ, texte → vidéo) : un plan « zoom » SANS produit (« produitIds »: []) avec sa consigne de mouvement (« clipPrompt », 60 caractères au moins). Un produit visible part toujours d'une image de départ, sinon le modèle invente l'emballage.`)
     if (o.clip?.duree && o.clip.debut >= o.clip.duree) throw new Error(`${nom} : le clip commence après sa fin (${o.clip.debut} s pour un clip de ${o.clip.duree} s).`)
     if (o.avisId && o.mouvement !== 'zoom') throw new Error(`${nom} : un avis client se montre sur un plan « zoom ».`)
     if (o.avisId && o.illustration) throw new Error(`${nom} : un schéma OU un avis par plan, pas les deux.`)
@@ -479,7 +483,7 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
     for (const [langue, texte] of Object.entries(o.voix ?? {})) {
       if (typeof texte === 'string' && voixTropLongue(texte, o.duree)) throw new Error(`${nom} : la voix off (${langue}) dure ~${dureeVoix(texte)} s chuchotée pour un plan de ${o.duree} s — elle déborderait sur le plan suivant. ${motsVoixMax(o.duree)} mots au plus, ou allonge le plan.`)
     }
-  } else if (o.animes?.length || o.mouvement || o.transition || o.bulles || o.points || o.choix || o.voix || o.ecrans || o.clip) {
+  } else if (o.animes?.length || o.mouvement || o.transition || o.bulles || o.points || o.choix || o.voix || o.ecrans || o.clip || o.sansDepart) {
     throw new Error(`${nom} : « animes », « mouvement », « transition », « bulles », « points », « choix », « voix » et « ecrans » ne servent que dans un Reel.`)
   }
 }
@@ -504,7 +508,7 @@ export function verifierRenduVideo(options: OptionLivree[], d: Pick<DemandeDirec
     // Le site (vraies captures) et une carte de fin sur un fond Shine dessine n'ont pas de clip.
     if (o.mouvement === 'site' || (o.mouvement === 'fin' && fondDessine(o.fond))) return
     if (String(o.clipPrompt ?? '').trim().length < 60) throw new Error(`${nom} : en rendu vidéo, chaque plan a sa consigne de mouvement (« clipPrompt », 60 caractères au moins).`)
-    if (o.prompt.trim().length < 120) throw new Error(`${nom} : l'image de départ a besoin d'une vraie consigne (« prompt », 120 caractères au moins) : c'est elle que Higgsfield anime.`)
+    if (!o.sansDepart && o.prompt.trim().length < 120) throw new Error(`${nom} : l'image de départ a besoin d'une vraie consigne (« prompt », 120 caractères au moins) : c'est elle que Higgsfield anime (ou « sansDepart » pour un plan sans produit).`)
   })
   if (options.at(-1)?.mouvement !== 'fin') throw new Error('Rendu vidéo : le dernier plan est la carte de fin (« fin »), avec le bouton et l’offre.')
 }

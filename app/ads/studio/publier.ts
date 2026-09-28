@@ -27,7 +27,7 @@ export function verifierPublication(c: Creatif, opts: Option[], type: 'reel' | '
   const fautes = [...new Set(francais(c, opts).flatMap(fautesFrancais))]
   out.push({ id: 'accents', ok: !fautes.length, bloquant: true, titre: 'Le français a tous ses accents', detail: fautes.length ? `À corriger : ${fautes.map((f) => `« ${f} »`).join(', ')}` : 'Textes à l’écran, bulles, voix et légende.' })
   // Un plan sur fond Shine dessine n'a pas de decor a peindre.
-  const aPeindre = opts.filter((o) => (!o.motion?.fond || o.motion.fond === 'decor') && !o.motion?.clip)
+  const aPeindre = opts.filter((o) => (!o.motion?.fond || o.motion.fond === 'decor') && !o.motion?.clip && !o.motion?.sansDepart)
   const peints = aPeindre.filter((o) => c.images.some((i) => i.option_id === o.id)).length
   if (type === 'image') {
     out.push({ id: 'visuel', ok: c.images.some((i) => i.carte == null), bloquant: true, titre: 'Un visuel est prêt', detail: 'Génère un visuel ou lance une direction.' })

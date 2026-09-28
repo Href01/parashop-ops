@@ -27,7 +27,7 @@ export type Brouillon = {
   illustration: Illustration | null; cache: boolean
   clip: { url: string; duree: number | null; debut: number } | null; clipPrompt: string
   prompt: string; produitsImage: number[]   // l'image du plan : sa consigne, et les VRAIS produits peints dedans (image de depart d'un clip)
-  clipSon: boolean; texteVideo: boolean
+  clipSon: boolean; texteVideo: boolean; sansDepart: boolean
 }
 /** Un clip de telephone pese vite 50 Mo : au-dela, Cloudinary refuse (plan gratuit : 100 Mo par video). */
 const CLIP_MAX = 95 * 1024 * 1024
@@ -68,7 +68,7 @@ export function depuisOption(o: Option): Brouillon {
     ecrans: (m.ecrans ?? []) as EtapeSite[], fond: (m.fond ?? 'decor') as FondShine, ouvert: Boolean(m.ouvert), melange: Boolean(m.melange), lettres: Boolean(m.lettres), appel: (m.appel ?? null) as CleAppel | null,
     illustration: (m.illustration ?? null) as Illustration | null, cache: Boolean(m.cache),
     clip: m.clip ? { url: m.clip.url, duree: m.clip.duree ?? null, debut: m.clip.debut ?? 0 } : null, clipPrompt: m.clipPrompt ?? '',
-    prompt: o.prompt ?? '', produitsImage: o.produit_ids ?? [], clipSon: Boolean(m.clipSon), texteVideo: Boolean(m.texteVideo),
+    prompt: o.prompt ?? '', produitsImage: o.produit_ids ?? [], clipSon: Boolean(m.clipSon), texteVideo: Boolean(m.texteVideo), sansDepart: Boolean(m.sansDepart),
   }
 }
 
@@ -276,14 +276,15 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
                   <div className={s.clipLigne}>
                     <label className={s.caseInline}><input type="checkbox" checked={b.clipSon} onChange={(e) => maj({ clipSon: e.target.checked })} /> Garder le son du clip</label>
                     <label className={s.caseInline}><input type="checkbox" checked={b.texteVideo} onChange={(e) => maj({ texteVideo: e.target.checked })} /> Le texte est dans la vidéo (le BOS ne l’écrit pas)</label>
+                    {b.mouvement === 'zoom' && <label className={s.caseInline} title="Texte → vidéo : seulement un plan sans produit (ambiance, cheveux, peau), sinon le modèle invente l’emballage."><input type="checkbox" checked={b.sansDepart} onChange={(e) => maj({ sansDepart: e.target.checked, ...(e.target.checked ? { produitsImage: [] } : {}) })} /> Filmé sans image de départ (plan sans produit)</label>}
                   </div>
                   {b.clip && <div className={s.clipLigne}>
                     <span>🎬 Clip{b.clip.duree ? ` de ${b.clip.duree.toLocaleString('fr-FR')} s` : ''}{b.clip.duree && b.clip.duree - b.clip.debut < b.duree ? ' — plus court que le plan : il reprend au début' : ''}</span>
                     <label>Départ <input type="number" className={s.clipDepart} min={0} max={Math.max(0, (b.clip.duree ?? 60) - 0.5)} step={0.1} value={b.clip.debut} onChange={(e) => maj({ clip: { ...b.clip!, debut: Math.max(0, Number(e.target.value) || 0) } })} /> s</label>
                     <button type="button" className={s.ghost} onClick={() => maj({ clip: null })}><X size={12} /> Retirer</button>
                   </div>}
-                  <small className={s.muted}>MP4 ou MOV, 95 Mo au plus, vertical de préférence : il est recadré en 9:16 et joué sans son (la bande-son est celle du Reel). Les textes, schémas et produits restent par-dessus.</small>
-                  <div className={s.clipIA}>
+                  <small className={s.muted}>MP4 ou MOV, 95 Mo au plus, vertical de préférence : il est recadré en 9:16 et joué sans son, sauf si tu gardes son son. Les textes, schémas et produits restent par-dessus.</small>
+                  {!b.sansDepart && <div className={s.clipIA}>
                     <b>Image de départ → vidéo (la méthode des pros) : une image soignée avec le vrai produit, puis Higgsfield l’anime</b>
                     <label className={s.champ}>① Image de départ — la consigne (le vrai produit peint est exact)
                       <textarea rows={3} className={s.champTexte} value={b.prompt} maxLength={4000} placeholder="Ex. : extreme macro of the real serum bottle on wet cream tadelakt, a single clear drop hanging from the dropper tip, morning window light…" onChange={(e) => maj({ prompt: e.target.value })} /></label>
@@ -295,7 +296,7 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
                       {modifie && <small className={s.muted}>Enregistre d’abord.</small>}
                     </div>
                     <small className={s.muted}>② Le mouvement : la consigne du clip, ci-dessus. Le directeur artistique anime l’image avec Higgsfield (connecteur de Claude) ; tu peux aussi <a href={img?.url} target="_blank" rel="noreferrer">ouvrir l’image</a>, l’animer dans Higgsfield et envoyer le clip ici.</small>
-                  </div>
+                  </div>}
                 </fieldset>
                 {b.mouvement !== 'zoom' && <fieldset className={s.reglage}><legend>{b.mouvement === 'site' ? 'Le produit dont on montre l’achat' : `Produits animés (${b.animes.length}${['pop', 'fin', 'etapes'].includes(b.mouvement) ? '/4' : ''})`}{b.mouvement === 'etapes' ? ' — dans l’ordre d’application' : ''}</legend>
                   <div className={s.dirChips}>{choixProduits.map((id) => (
@@ -400,7 +401,7 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
                 {al.length > 0 && <ul className={s.montageAlertes}>{al.map((x) => <li key={x}>⚠ {x}</li>)}</ul>}
                 <div className={s.btns}>
                   <button type="button" className={s.primary} disabled={!modifie || occupe != null} onClick={() => void (async () => {
-                    const j = await action(`e${o.id}`, { option: { id: o.id, texte: b.texte, position: b.position, mouvement: b.mouvement, duree: b.duree, animes: b.animes, transition: b.transition, ambiance: b.ambiance, bulles: b.bulles, points: b.mouvement === 'site' ? b.points.filter((x) => x.fr.trim()).length === b.ecrans.length ? b.points : [] : b.points, choix: b.choix, voix: b.voix, confiance: b.confiance, prix: b.prix, ...(b.mouvement === 'site' ? { ecrans: b.ecrans } : {}), fond: b.fond, ...(b.mouvement === 'quiz' ? { ouvert: b.ouvert } : {}), ...(b.mouvement === 'pop' ? { melange: b.melange } : {}), lettres: b.lettres, ...(b.appel ? { appel: b.appel } : {}), ...(b.mouvement === 'zoom' ? { illustration: b.illustration ?? undefined } : {}), cache: b.cache, clip: b.clip, clipPrompt: b.clipPrompt.trim() || null, clipSon: b.clipSon, texteVideo: b.texteVideo, prompt: b.prompt, ...(b.mouvement === 'zoom' ? { produitIds: b.produitsImage } : {}) } }, 'Plan enregistré.')
+                    const j = await action(`e${o.id}`, { option: { id: o.id, texte: b.texte, position: b.position, mouvement: b.mouvement, duree: b.duree, animes: b.animes, transition: b.transition, ambiance: b.ambiance, bulles: b.bulles, points: b.mouvement === 'site' ? b.points.filter((x) => x.fr.trim()).length === b.ecrans.length ? b.points : [] : b.points, choix: b.choix, voix: b.voix, confiance: b.confiance, prix: b.prix, ...(b.mouvement === 'site' ? { ecrans: b.ecrans } : {}), fond: b.fond, ...(b.mouvement === 'quiz' ? { ouvert: b.ouvert } : {}), ...(b.mouvement === 'pop' ? { melange: b.melange } : {}), lettres: b.lettres, ...(b.appel ? { appel: b.appel } : {}), ...(b.mouvement === 'zoom' ? { illustration: b.illustration ?? undefined } : {}), cache: b.cache, clip: b.clip, clipPrompt: b.clipPrompt.trim() || null, clipSon: b.clipSon, texteVideo: b.texteVideo, sansDepart: b.mouvement === 'zoom' && b.sansDepart, prompt: b.prompt, ...(b.mouvement === 'zoom' ? { produitIds: b.sansDepart ? [] : b.produitsImage } : {}) } }, 'Plan enregistré.')
                     if (j) setBrouillon(o.id, null)
                   })()}>{occupe === `e${o.id}` ? <Loader2 size={13} className={s.tourne} /> : <Save size={13} />} Enregistrer</button>
                   {modifie && <button type="button" className={s.ghost} onClick={() => setBrouillon(o.id, null)}><Undo2 size={13} /> Annuler</button>}

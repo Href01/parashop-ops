@@ -1,8 +1,9 @@
 import 'server-only'
 import { createHash } from 'node:crypto'
 import pool from '@/lib/db'
-import { FORMATS_IMAGE, consigneImage, type FormatImage } from './creatif-model'
+import { FORMATS_IMAGE, consigneImage, formatProche, type FormatImage } from './creatif-model'
 import { promptFinal } from './direction-model'
+import { creditsNotes, nomModele } from './clips'
 
 /**
  * LES VISUELS DES PUBS, GENERES PAR OPENAI A PARTIR DES VRAIES PHOTOS PRODUIT.
@@ -54,21 +55,21 @@ async function openai(chemin: string, corps: BodyInit, json: boolean): Promise<J
 }
 
 /** Envoi signe a Cloudinary (API REST, sans dependance). */
-async function versCloudinary(base64: string, publicId: string): Promise<{ url: string; publicId: string }> {
+async function versCloudinary(base64: string, publicId: string, type = 'image/jpeg'): Promise<{ url: string; publicId: string; largeur: number; hauteur: number }> {
   const nuage = process.env.CLOUDINARY_CLOUD_NAME, cle = process.env.CLOUDINARY_API_KEY, secret = process.env.CLOUDINARY_API_SECRET
   if (!nuage || !cle || !secret) throw new Error('Cloudinary n’est pas configuré sur le BOS.')
   const horodatage = Math.floor(Date.now() / 1000)
   const params = { folder: 'shine-ads', public_id: publicId, timestamp: String(horodatage) }
   const signature = createHash('sha1').update(Object.entries(params).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join('&') + secret).digest('hex')
   const f = new FormData()
-  f.append('file', `data:image/jpeg;base64,${base64}`)
+  f.append('file', `data:${type};base64,${base64}`)
   for (const [k, v] of Object.entries(params)) f.append(k, v)
   f.append('api_key', cle)
   f.append('signature', signature)
   const r = await fetch(`https://api.cloudinary.com/v1_1/${nuage}/image/upload`, { method: 'POST', body: f, signal: AbortSignal.timeout(60_000) })
   const j = (await r.json().catch(() => ({}))) as Json
   if (!r.ok || typeof j.secure_url !== 'string') throw new Error(`Cloudinary : ${(j.error as Json | undefined)?.message || r.status}`)
-  return { url: j.secure_url, publicId: String(j.public_id) }
+  return { url: j.secure_url, publicId: String(j.public_id), largeur: Number(j.width) || 0, hauteur: Number(j.height) || 0 }
 }
 
 async function supprimerDeCloudinary(publicId: string) {
@@ -96,13 +97,14 @@ export async function genererImage(o: { creatifId?: number; optionId?: number; f
   const imageDeDepart = Boolean(String(opt?.motion?.clipPrompt ?? '').trim())
   if (!imageDeDepart && opt?.motion?.fond && opt.motion.fond !== 'decor') throw new Error('Ce plan a un fond Shine dessiné : pas d’image à peindre (le crédit OpenAI est gardé).')
   if (!imageDeDepart && opt?.motion?.clip) throw new Error('Ce plan a un clip vidéo en fond : pas de décor à peindre.')
+  if (opt?.motion?.sansDepart) throw new Error('Ce plan est filmé sans image de départ (texte → vidéo) : rien à peindre.')
   const creatifId: number = opt ? opt.creatif_id : Number(o.creatifId)
   const format: FormatImage = opt ? opt.format : (o.format as FormatImage)
   if (!FORMATS_IMAGE[format]) throw new Error('Format : feed, story ou carre.')
   const c = (await pool.query(`SELECT id, angle, accroche, visuel, public, format, produit_ids FROM "AdsCreative" WHERE id = $1`, [creatifId])).rows[0]
   if (!c) throw new Error('Création introuvable.')
   const plafonds = await pool.query<{ jour: number; creation: number }>(
-    `SELECT count(*) FILTER (WHERE cree_le > now() - interval '24 hours')::int jour, count(*) FILTER (WHERE creatif_id = $1)::int creation FROM "AdsCreativeImage"`, [creatifId])
+    `SELECT count(*) FILTER (WHERE cree_le > now() - interval '24 hours' AND coalesce(modele, '') NOT LIKE 'externe:%')::int jour, count(*) FILTER (WHERE creatif_id = $1)::int creation FROM "AdsCreativeImage"`, [creatifId])
   if (plafonds.rows[0].jour >= PLAFOND_JOUR) throw new Error(`${PLAFOND_JOUR} visuels déjà générés en 24 h : limite atteinte pour protéger le crédit OpenAI.`)
   if (plafonds.rows[0].creation >= PLAFOND_CREATION) throw new Error(`${PLAFOND_CREATION} visuels existent déjà pour cette création : supprime ceux qui ne servent pas.`)
 
@@ -159,6 +161,42 @@ export async function genererImage(o: { creatifId?: number; optionId?: number; f
     [creatifId, format, stock.url, stock.publicId, largeur, hauteur, modele, qualite, prompt, produits.map((p) => p.id).slice(0, 3), o.par, Date.now() - debut,
       JSON.stringify(reponse.usage ?? null), await premiereDeSaPlace(creatifId, opt), ...(opt ? [opt.id, opt.carte] : [])])
   return r.rows[0]
+}
+
+/**
+ * Une image faite ailleurs — un modele d'image de Higgsfield (Soul, Nano Banana, Seedream…) par
+ * le connecteur de Claude — posee comme visuel (ou image de depart) d'un plan : copiee sur
+ * Cloudinary, au bon format, et retenue. Elle ne compte pas dans le plafond OpenAI du jour.
+ */
+export async function poserImageDepuisUrl(o: { optionId: number; url: string; source?: string; modele?: string; credits?: unknown; par: string | null }) {
+  const url = String(o.url || '').trim()
+  if (!/^https:\/\/\S+$/.test(url)) throw new Error('Il faut l’adresse https:// de l’image.')
+  const source = nomModele(o.modele) || String(o.source || 'higgsfield').replace(/[^\w.:-]/g, '').slice(0, 60) || 'higgsfield'
+  const opt = (await pool.query(`SELECT id, creatif_id, carte, format, motion FROM "AdsCreativeOption" WHERE id = $1`, [o.optionId])).rows[0]
+  if (!opt) throw new Error('Option introuvable.')
+  if (opt.motion?.sansDepart) throw new Error('Ce plan est filmé sans image de départ : retire « sansDepart » d’abord.')
+  const n = await pool.query<{ n: number }>(`SELECT count(*)::int n FROM "AdsCreativeImage" WHERE creatif_id = $1`, [opt.creatif_id])
+  if (n.rows[0].n >= PLAFOND_CREATION) throw new Error(`${PLAFOND_CREATION} visuels existent déjà pour cette création : supprime ceux qui ne servent pas.`)
+  const r = await fetch(url, { signal: AbortSignal.timeout(60_000) })
+  if (!r.ok) throw new Error(`Image illisible (${r.status}).`)
+  const type = (r.headers.get('content-type') || '').split(';')[0].trim()
+  if (!/^image\/(jpeg|png|webp)$/.test(type)) throw new Error(`Ce n’est pas une image JPEG, PNG ou WebP (${type || 'type inconnu'}).`)
+  const octets = Buffer.from(await r.arrayBuffer())
+  if (octets.length > 15_000_000) throw new Error('Image trop lourde (15 Mo au plus).')
+  const debut = Date.now()
+  const stock = await versCloudinary(octets.toString('base64'), `creatif-${opt.creatif_id}-o${opt.id}-${opt.format}-ext-${Date.now()}`, type)
+  if (!formatProche(stock.largeur, stock.hauteur, opt.format)) {
+    await supprimerDeCloudinary(stock.publicId)
+    throw new Error(`L’image fait ${stock.largeur}×${stock.hauteur} : ce plan est en ${FORMATS_IMAGE[opt.format as FormatImage].label}. Génère-la à ce format (sinon le clip sortirait déformé ou recadré).`)
+  }
+  const ins = await pool.query(
+    `INSERT INTO "AdsCreativeImage" (creatif_id, format, url, public_id, largeur, hauteur, modele, qualite, prompt, references_produits, demande_par, duree_ms, usage, choisie, option_id, carte)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8, '{}', $9, $10, $11::jsonb, false, $12, $13) RETURNING id`,
+    [opt.creatif_id, opt.format, stock.url, stock.publicId, stock.largeur, stock.hauteur, `externe:${source}`, `Image posée depuis ${source} : ${url.slice(0, 400)}`, o.par, Date.now() - debut,
+      JSON.stringify({ credits: creditsNotes(o.credits), source: 'higgsfield' }), opt.id, opt.carte])
+  // Posee expres pour ce plan : c'est elle qu'on retient (et que la video animera).
+  await choisirImage(ins.rows[0].id)
+  return (await pool.query(`SELECT * FROM "AdsCreativeImage" WHERE id = $1`, [ins.rows[0].id])).rows[0]
 }
 
 /** Le premier visuel d'une place est choisi d'office (sans colonne option_id avant la migration 049 : ancienne regle). */

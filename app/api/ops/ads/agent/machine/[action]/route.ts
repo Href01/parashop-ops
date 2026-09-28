@@ -1,6 +1,6 @@
 import { contexte, echecDemande, publierRapport, reclamerDemande } from '@/lib/ads/agent'
 import { synchroniserPubsMeta } from '@/lib/ads/meta-sync'
-import { genererImage, lireImage, supprimerImage } from '@/lib/ads/images'
+import { genererImage, lireImage, poserImageDepuisUrl, supprimerImage } from '@/lib/ads/images'
 import { poserClipDepuisUrl } from '@/lib/ads/clips'
 import { proposerDirection, contexteDirection, enregistrerDirection, modifierPlan, terminerDirection } from '@/lib/ads/direction'
 import { genererVoix, type LangueVoix } from '@/lib/ads/voix'
@@ -48,13 +48,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
         return Response.json(await contexte(), { headers: PRIVATE_HEADERS })
       case 'rapport':
         return Response.json(await publierRapport(body), { headers: PRIVATE_HEADERS })
+      // Une image faite par un modele d'image Higgsfield (connecteur de Claude) : posee dans le plan.
+      case 'image-url':
+        return Response.json({ image: await poserImageDepuisUrl({ optionId: Number(body?.optionId), url: String(body?.url || ''), source: body?.source, modele: body?.modele, credits: body?.credits, par: 'agent' }) }, { headers: PRIVATE_HEADERS })
       case 'image':
         if (Number.isInteger(body?.optionId)) return Response.json({ image: await genererImage({ optionId: body.optionId, qualite: body.qualite, par: 'agent' }) }, { headers: PRIVATE_HEADERS })
         if (!Number.isInteger(body?.creatifId)) return Response.json({ error: 'creatifId ou optionId requis' }, { status: 400, headers: PRIVATE_HEADERS })
         return Response.json({ image: await genererImage({ creatifId: body.creatifId, format: body.format as FormatImage, qualite: body.qualite, precision: body.precision, par: 'agent' }) }, { headers: PRIVATE_HEADERS })
       // Un clip genere hors du BOS (Higgsfield via le connecteur MCP de Claude) : copie et pose dans le plan.
       case 'clip-url':
-        return Response.json({ clip: await poserClipDepuisUrl({ optionId: Number(body?.optionId), url: String(body?.url || ''), source: body?.source, par: 'agent' }) }, { headers: PRIVATE_HEADERS })
+        return Response.json({ clip: await poserClipDepuisUrl({ optionId: Number(body?.optionId), url: String(body?.url || ''), source: body?.source, modele: body?.modele, credits: body?.credits, par: 'agent' }) }, { headers: PRIVATE_HEADERS })
       // Avant de creer : la proposition (ou la reponse) a Achraf ; la demande attend sa validation.
       case 'proposer':
         return Response.json(await proposerDirection(Number(body?.id), String(body?.texte || '')), { headers: PRIVATE_HEADERS })

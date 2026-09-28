@@ -39,7 +39,7 @@ export type Option = {
     voix?: Multi | null; voixUrl?: Partial<Record<'fr' | 'darija' | 'ar', { url: string; texte: string; duree?: number | null }>>
     confiance?: string[]; prix?: boolean; ecrans?: ('produit' | 'panier' | 'livraison')[]; fond?: 'decor' | 'vert' | 'aurore' | 'prune' | 'creme' | 'nuit'; ouvert?: boolean; melange?: boolean; lettres?: boolean; appel?: 'reponse' | 'peau' | 'partage' | 'enregistre' | null
     illustration?: 'taches' | 'citron' | 'barriere' | 'bouclier' | 'cheveu-abime' | 'cheveu-repare' | null; cache?: boolean; avis?: { id: number; texte: string; note: number } | null
-    clip?: { url: string; duree?: number | null; debut?: number } | null; clipPrompt?: string | null; clipSon?: boolean; texteVideo?: boolean
+    clip?: { url: string; duree?: number | null; debut?: number } | null; clipPrompt?: string | null; clipSon?: boolean; texteVideo?: boolean; sansDepart?: boolean
   } | null
   style: string | null; brief: string | null; qualite: string | null; note: string | null; modele: string | null; cree_le: string
 }
@@ -71,7 +71,9 @@ export type Donnees = {
   catalogue: ProduitCatalogue[]; idees: Idee[]
 }
 /** Ce dont le directeur artistique a besoin a l'ecran, dans l'agent comme dans le studio. */
-export type BaseCreative = Pick<Donnees, 'catalogue' | 'idees' | 'demandes'>
+export type BaseCreative = Pick<Donnees, 'catalogue' | 'idees' | 'demandes'> & { higgsfield?: ConsoHiggsfield }
+/** Les credits Higgsfield depenses par le directeur artistique (notes a chaque clip ou image). */
+export type ConsoHiggsfield = { mois: number; nonChiffresMois: number; parCreation: Record<number, { credits: number; clips: number; images: number; nonChiffres: number; modeles: { modele: string; n: number; credits: number }[] }> }
 export type Onglet = 'ensemble' | 'campagnes' | 'creations' | 'afaire' | 'strategie' | 'agent'
 
 export const dh = (v: number | null | undefined) => (v == null ? '—' : `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v)} DH`)

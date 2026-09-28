@@ -261,6 +261,12 @@ function OngletBrief({ c, d, opts, rafraichir, dire }: { c: CreatifStudio; d: Do
         {dem.resultat && <p className={`${a.small} ${a.muted}`}><b>Le mot de Claude :</b> {dem.resultat}</p>}
       </>}
       {!p && !nouvelle && <p className={`${a.small} ${a.muted}`}>Cette création ne vient pas d’un brief au directeur artistique.</p>}
+      {d.higgsfield?.parCreation[c.id] && (() => {
+        // Ce que cette pub a coute chez Higgsfield : le cout que le directeur artistique a note a chaque clip ou image.
+        const h = d.higgsfield!.parCreation[c.id]
+        return <p className={a.small}><b>Higgsfield : {h.credits.toLocaleString('fr-FR')} crédits</b> · {h.clips} clip{h.clips > 1 ? 's' : ''}{h.images ? `, ${h.images} image${h.images > 1 ? 's' : ''}` : ''}{h.nonChiffres ? ` (${h.nonChiffres} sans coût noté)` : ''}
+          <br /><span className={a.muted}>{h.modeles.map((m) => `${m.modele} ×${m.n}${m.credits ? ` = ${m.credits.toLocaleString('fr-FR')}` : ''}`).join(' · ')}</span></p>
+      })()}
       <Lecons d={d} rafraichir={rafraichir} dire={dire} creatifId={c.id} />
     </div>
   )

@@ -140,7 +140,7 @@ export async function contexteDirection(demandeId: number) {
       // La recette choisie par Achraf : suis sa charpente plan par plan (le BOS la verifie) ; tu ecris les textes et choisis les schemas.
       recetteDetail: p.recette ? RECETTES[p.recette] : null,
       renduDetail: p.rendu === 'video'
-        ? 'VIDEO : chaque plan est filmé par Higgsfield (connecteur) à partir de son image de départ (le vrai produit y est exact) ; le BOS garde le montage, le texte (sauf texteVideo), la carte de fin et le son (sauf clipSon).'
+        ? 'VIDEO : chaque plan est filmé par Higgsfield (connecteur) à partir de son image de départ — peinte par le BOS avec le vrai produit (« image »), ou faite par un modèle d’image Higgsfield et posée (« image-url ») ; un plan sans produit peut être filmé sans image (« sansDepart »). Le BOS garde le montage, le texte (sauf texteVideo), la carte de fin et le son (sauf clipSon).'
         : 'MOTION : l’animation Shine — le BOS anime les vrais produits détourés sur des fonds (Shine dessinés ou décors peints).',
       // La discussion avec Achraf : lis-la en entier ; sa derniere reponse prime.
       discussion: dem.echanges ?? [], valide: Boolean(dem.valide_le),
@@ -249,7 +249,7 @@ export async function enregistrerDirection(entree: unknown) {
           o.concept, o.pourquoi, o.prompt, JSON.stringify(o.texte), o.position, d.format, o.produitIds === undefined ? null : o.produitIds,
           d.type === 'reel' ? o.animes ?? [] : null, d.type === 'reel' ? o.mouvement : null, d.type === 'reel' ? o.duree : null,
           l.style, d.brief || null, d.qualite, l.modele || null,
-          d.type === 'reel' ? JSON.stringify({ transition: o.transition ?? 'coupe', ambiance: o.ambiance ?? 'aucune', bulles: o.bulles ?? [], points: o.points ?? [], choix: o.choix ?? [], voix: o.voix ?? null, confiance: o.confiance ?? [], prix: o.prix ?? false, ...(o.ecrans ? { ecrans: o.ecrans } : {}), ...(o.fond ? { fond: o.fond } : {}), ...(o.ouvert ? { ouvert: true } : {}), ...(o.melange ? { melange: true } : {}), ...(o.lettres ? { lettres: true } : {}), ...(o.appel ? { appel: o.appel } : {}), ...(o.illustration ? { illustration: o.illustration } : {}), ...(o.cache ? { cache: true } : {}), ...(o.avisId ? { avis: avisDe.get(o.avisId) } : {}), ...(o.clipPrompt ? { clipPrompt: o.clipPrompt } : {}), ...(o.clipSon ? { clipSon: true } : {}), ...(o.texteVideo ? { texteVideo: true } : {}) }) : null])
+          d.type === 'reel' ? JSON.stringify({ transition: o.transition ?? 'coupe', ambiance: o.ambiance ?? 'aucune', bulles: o.bulles ?? [], points: o.points ?? [], choix: o.choix ?? [], voix: o.voix ?? null, confiance: o.confiance ?? [], prix: o.prix ?? false, ...(o.ecrans ? { ecrans: o.ecrans } : {}), ...(o.fond ? { fond: o.fond } : {}), ...(o.ouvert ? { ouvert: true } : {}), ...(o.melange ? { melange: true } : {}), ...(o.lettres ? { lettres: true } : {}), ...(o.appel ? { appel: o.appel } : {}), ...(o.illustration ? { illustration: o.illustration } : {}), ...(o.cache ? { cache: true } : {}), ...(o.avisId ? { avis: avisDe.get(o.avisId) } : {}), ...(o.clipPrompt ? { clipPrompt: o.clipPrompt } : {}), ...(o.clipSon ? { clipSon: true } : {}), ...(o.texteVideo ? { texteVideo: true } : {}), ...(o.sansDepart ? { sansDepart: true } : {}) }) : null])
       options.push(r.rows[0])
     }
     await client.query('COMMIT')
@@ -338,11 +338,11 @@ function enLivree(x: LigneOption): Json {
     transition: m.transition, ambiance: m.ambiance, bulles: m.bulles, points: m.points, choix: m.choix, voix: m.voix ?? undefined,
     confiance: m.confiance ?? undefined, prix: m.prix ?? undefined, ecrans: m.ecrans ?? undefined, fond: m.fond ?? undefined, ouvert: m.ouvert ?? undefined, melange: m.melange ?? undefined, lettres: m.lettres ?? undefined, appel: m.appel ?? undefined,
     illustration: m.illustration ?? undefined, cache: m.cache ?? undefined, avisId: (m.avis as { id?: number } | undefined)?.id ?? undefined,
-    clip: m.clip ?? undefined, clipPrompt: m.clipPrompt ?? undefined, clipSon: m.clipSon ?? undefined, texteVideo: m.texteVideo ?? undefined,
+    clip: m.clip ?? undefined, clipPrompt: m.clipPrompt ?? undefined, clipSon: m.clipSon ?? undefined, texteVideo: m.texteVideo ?? undefined, sansDepart: m.sansDepart ?? undefined,
   }
 }
 
-const CHAMPS_PLAN = ['texte', 'position', 'prompt', 'animes', 'mouvement', 'duree', 'transition', 'ambiance', 'bulles', 'points', 'choix', 'voix', 'confiance', 'prix', 'ecrans', 'fond', 'ouvert', 'melange', 'lettres', 'appel', 'illustration', 'cache', 'avisId', 'clip', 'clipPrompt', 'produitIds', 'clipSon', 'texteVideo'] as const
+const CHAMPS_PLAN = ['texte', 'position', 'prompt', 'animes', 'mouvement', 'duree', 'transition', 'ambiance', 'bulles', 'points', 'choix', 'voix', 'confiance', 'prix', 'ecrans', 'fond', 'ouvert', 'melange', 'lettres', 'appel', 'illustration', 'cache', 'avisId', 'clip', 'clipPrompt', 'produitIds', 'clipSon', 'texteVideo', 'sansDepart'] as const
 
 /**
  * Retoucher un plan (ou une option, une carte) : textes, animation, duree,
@@ -372,7 +372,7 @@ export async function modifierPlan(id: number, patch: Json) {
   if (type === 'reel') verifierMontage(serie.map((x) => (x.id === id ? plan.duree ?? 0 : Number(x.duree) || 0)))
   const ancien = (o.motion ?? {}) as Json
   const motion = type === 'reel'
-    ? { ...ancien, transition: plan.transition ?? 'coupe', ambiance: plan.ambiance ?? 'aucune', bulles: plan.bulles ?? [], points: plan.points ?? [], choix: plan.choix ?? [], voix: plan.voix ?? ancien.voix ?? null, confiance: plan.confiance ?? [], prix: plan.prix ?? false, ecrans: plan.mouvement === 'site' ? plan.ecrans ?? [] : undefined, fond: plan.fond ?? 'decor', ouvert: plan.mouvement === 'quiz' ? plan.ouvert ?? false : undefined, melange: plan.mouvement === 'pop' ? plan.melange ?? false : undefined, lettres: plan.lettres ?? false, appel: plan.appel ?? null, illustration: plan.mouvement === 'zoom' ? plan.illustration ?? null : null, cache: plan.cache ?? false, avis: avisPlan ?? null, clip: plan.clip ?? null, clipPrompt: plan.clipPrompt ?? null, clipSon: plan.clipSon ?? false, texteVideo: plan.texteVideo ?? false }
+    ? { ...ancien, transition: plan.transition ?? 'coupe', ambiance: plan.ambiance ?? 'aucune', bulles: plan.bulles ?? [], points: plan.points ?? [], choix: plan.choix ?? [], voix: plan.voix ?? ancien.voix ?? null, confiance: plan.confiance ?? [], prix: plan.prix ?? false, ecrans: plan.mouvement === 'site' ? plan.ecrans ?? [] : undefined, fond: plan.fond ?? 'decor', ouvert: plan.mouvement === 'quiz' ? plan.ouvert ?? false : undefined, melange: plan.mouvement === 'pop' ? plan.melange ?? false : undefined, lettres: plan.lettres ?? false, appel: plan.appel ?? null, illustration: plan.mouvement === 'zoom' ? plan.illustration ?? null : null, cache: plan.cache ?? false, avis: avisPlan ?? null, clip: plan.clip ?? null, clipPrompt: plan.clipPrompt ?? null, clipSon: plan.clipSon ?? false, texteVideo: plan.texteVideo ?? false, sansDepart: plan.sansDepart ?? false }
     : o.motion
   const note = typeof patch.note === 'string' ? patch.note.trim().slice(0, 1500) || null : o.note
   const u = await pool.query(
@@ -470,7 +470,7 @@ async function contexteRetouche(dem: DemandeEnCours) {
   const visuel = async (id: number) => (await pool.query(`SELECT id, url FROM "AdsCreativeImage" WHERE option_id = $1 ORDER BY choisie DESC, cree_le DESC LIMIT 1`, [id])).rows[0] ?? null
   return {
     demande: { id: dem.id, sujet: dem.sujet, retouche: r },
-    consigne: 'RETOUCHE : ne change que ce que la note demande. Modifie le plan avec « bos.mjs option <optionId> patch.json » (memes champs que la livraison : texte, mouvement, duree, animes, transition, ambiance, bulles, points, choix, voix, prompt). Si le decor doit changer, reecris « prompt » puis regenere l’image (« image --option »). Termine par « termine <id> ».',
+    consigne: 'RETOUCHE : ne change que ce que la note demande. Modifie le plan avec « bos.mjs option <optionId> patch.json » (memes champs que la livraison : texte, mouvement, duree, animes, transition, ambiance, bulles, points, choix, voix, prompt, clipPrompt, clipSon, texteVideo, sansDepart). Si le decor ou l’image de depart doit changer, reecris « prompt » puis regenere l’image (« image --option », ou « image-url » depuis un modele Higgsfield). Si la note parle du mouvement ou du clip (planVise.clip) : reecris « clipPrompt », refilme avec Higgsfield depuis l’image de depart (ou sans image si « sansDepart »), pose le clip (« clip-url », il remplace l’ancien) et regarde ses images (« cadres »). Termine par « termine <id> ».',
     type, planVise: { ...enLivree(o), id: o.id, carte: o.carte, visuel: await visuel(o.id) },
     serie: await Promise.all(serie.map(async (x) => ({ id: x.id, carte: x.carte, ...enLivree(x), visuel: await visuel(x.id) }))),
     creation: creation.rows[0] ?? null,

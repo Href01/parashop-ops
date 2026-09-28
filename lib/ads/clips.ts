@@ -57,7 +57,12 @@ async function copierSurCloudinary(url: string, nom: string): Promise<{ url: str
  * ou un autre outil : copie sur Cloudinary, pose dans le plan, et trace dans le journal (sans cout : il
  * est paye hors du BOS).
  */
-export async function poserClipDepuisUrl(o: { optionId: number; url: string; par: string | null; source?: string }) {
+/** Des credits notes par le directeur artistique : un nombre positif raisonnable, sinon rien (« non chiffre »). */
+export const creditsNotes = (x: unknown) => { const n = Number(x); return Number.isFinite(n) && n >= 0 && n <= 2000 && x !== '' && x != null ? Math.round(n * 100) / 100 : null }
+/** Le nom d'un modele Higgsfield tel que l'agent le note (« kling-3.0 », « seedance-2.0-720p »). */
+export const nomModele = (x: unknown) => String(x ?? '').toLowerCase().replace(/[^a-z0-9.:_-]/g, '').slice(0, 50)
+
+export async function poserClipDepuisUrl(o: { optionId: number; url: string; par: string | null; source?: string; modele?: string; credits?: unknown }) {
   const url = String(o.url || '').trim()
   if (!/^https:\/\/\S+$/i.test(url) || url.length > 2000) throw new Error('Adresse du clip : une URL https complète.')
   const opt = (await pool.query(`SELECT id, creatif_id, mouvement, motion FROM "AdsCreativeOption" WHERE id = $1`, [o.optionId])).rows[0]
@@ -67,9 +72,10 @@ export async function poserClipDepuisUrl(o: { optionId: number; url: string; par
   const clip = url.startsWith(`https://res.cloudinary.com/${nuage}/video/upload/`) ? { url, duree: null } : await copierSurCloudinary(url, `plan-${opt.id}-ext-${Date.now()}`)
   await pool.query(`UPDATE "AdsCreativeOption" SET motion = jsonb_set(coalesce(motion, '{}'::jsonb), '{clip}', $2::jsonb), maj_le = now() WHERE id = $1`,
     [opt.id, JSON.stringify({ url: clip.url, duree: clip.duree, debut: 0 })])
+  const modele = nomModele(o.modele)
   await pool.query(
-    `INSERT INTO "AdsClipGeneration" (option_id, creatif_id, modele, endpoint, prompt, image_url, duree, statut, video_source, clip_url, demande_par)
-     VALUES ($1, $2, $3, 'externe', $4, '', $5, 'terminee', $6, $7, $8)`,
-    [opt.id, opt.creatif_id, (o.source || 'externe').slice(0, 60), String(opt.motion?.clipPrompt ?? ''), Math.round(clip.duree ?? 0), url, clip.url, o.par])
+    `INSERT INTO "AdsClipGeneration" (option_id, creatif_id, modele, endpoint, prompt, image_url, duree, statut, video_source, clip_url, demande_par, credits)
+     VALUES ($1, $2, $3, 'externe', $4, '', $5, 'terminee', $6, $7, $8, $9)`,
+    [opt.id, opt.creatif_id, modele ? `higgsfield:${modele}` : (o.source || 'externe').slice(0, 60), String(opt.motion?.clipPrompt ?? ''), Math.round(clip.duree ?? 0), url, clip.url, o.par, creditsNotes(o.credits)])
   return clip
 }

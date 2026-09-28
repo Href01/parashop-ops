@@ -17,6 +17,9 @@ export const FORMATS_IMAGE: Record<FormatImage, { label: string; taille: string;
   story: { label: 'Story / Reel 9:16', taille: '1008x1792', export: [1080, 1920], ratio: 9 / 16 },
   carre: { label: 'Carré 1:1', taille: '1024x1024', export: [1080, 1080], ratio: 1 },
 }
+/** Une image faite ailleurs tient-elle dans le format (12 % d'ecart au plus) ? Une image 1:1 animee donnerait un clip 1:1. */
+export const formatProche = (largeur: number, hauteur: number, format: FormatImage) =>
+  largeur > 0 && hauteur > 0 && Math.abs(largeur / hauteur - FORMATS_IMAGE[format].ratio) / FORMATS_IMAGE[format].ratio <= 0.12
 
 /** Le format d'image par defaut d'une creation : vertical pour les Reels et Stories. */
 export function formatParDefaut(formatCreatif: string): FormatImage {

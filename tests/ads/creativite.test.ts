@@ -309,3 +309,28 @@ test('le son et le texte « dans la vidéo » : le BOS se tait, le clip parle', 
   assert.throws(() => verifierOption(plan({ mouvement: 'zoom', duree: 3, clipSon: true }), 1, 'reel', []), /ne servent qu'à un plan à clip/)
   assert.doesNotThrow(() => verifierOption(plan({ mouvement: 'zoom', duree: 3, clipSon: true, texteVideo: true, clipPrompt: 'Slow push-in on a drop of serum sliding down the glass, soft light, the bottle stays still.' }), 1, 'reel', []))
 })
+
+test('filmé sans image de départ : seulement un plan sans produit, avec sa consigne de mouvement', async () => {
+  const { verifierRenduVideo } = await import('../../lib/ads/direction-model')
+  const MOUV = 'Slow motion: long dark wavy hair lifts in a warm evening breeze on a Casablanca rooftop, soft backlight, shallow depth of field.'
+  const sans = (o: Record<string, unknown>) => OptionLivreeSchema.parse({ concept: 'Ambiance', pourquoi: 'Parce que ça arrête le pouce.', prompt: '', texte: { fr: 'Tes *cheveux* respirent' }, mouvement: 'zoom', duree: 3, sansDepart: true, clipPrompt: MOUV, produitIds: [], ...o })
+  assert.doesNotThrow(() => verifierOption(sans({}), 1, 'reel', [96]))
+  assert.throws(() => verifierOption(sans({ produitIds: [96] }), 1, 'reel', [96]), /SANS produit/)
+  assert.throws(() => verifierOption(sans({ produitIds: undefined }), 1, 'reel', [96]), /SANS produit/)
+  assert.throws(() => verifierOption(sans({ clipPrompt: 'Hair.' }), 1, 'reel', [96]), /clipPrompt/)
+  assert.throws(() => verifierOption(sans({ mouvement: 'revele', animes: [96] }), 1, 'reel', [96]), /SANS produit/)
+  // Sans « sansDepart », un plan sans consigne d'image reste refusé.
+  assert.throws(() => verifierOption(sans({ sansDepart: false }), 1, 'reel', [96]), /200 caractères/)
+  // En rendu vidéo, il passe sans image de départ.
+  const fin = plan({ mouvement: 'fin', duree: 3, animes: [96], fond: 'vert', confiance: ['cod'] })
+  assert.doesNotThrow(() => verifierRenduVideo([sans({}), fin], {}))
+})
+
+test('une image faite ailleurs doit être au format du plan', async () => {
+  const { formatProche } = await import('../../lib/ads/creatif-model')
+  assert.ok(formatProche(1080, 1920, 'story'))
+  assert.ok(formatProche(768, 1344, 'story'), '9:16 arrondi par le modèle')
+  assert.equal(formatProche(1024, 1024, 'story'), false, 'un carré animé donnerait un clip carré')
+  assert.ok(formatProche(1024, 1280, 'feed'))
+  assert.equal(formatProche(0, 0, 'feed'), false)
+})

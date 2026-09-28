@@ -35,7 +35,7 @@ const RENDUS = {
   video: {
     label: 'Vidéo Higgsfield', Icone: Film,
     aide: 'Chaque plan est filmé par l’IA vidéo (Kling, Veo, Seedance…) depuis une image avec ton vrai produit : textures, mains, lumière réelle. Le directeur artistique choisit le modèle, le son et où va le texte.',
-    attendre: '20 à 45 min · tes crédits Higgsfield (le coût est annoncé avant)',
+    attendre: '20 à 45 min · ≈ 50 à 120 crédits Higgsfield (chiffrés plan par plan dans sa proposition)',
     ideal: 'Une accroche visuelle forte, la texture, un rendu « pub télé ».',
   },
 } as const
@@ -197,6 +197,7 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
 
       {type === 'reel' && <fieldset className={s.reglage}><legend>{num()} Le rendu</legend>
         <Effet>Le choix qui change le plus le résultat : le look, le temps de fabrication et ce que ça coûte.</Effet>
+        {d.higgsfield && (d.higgsfield.mois > 0 || d.higgsfield.nonChiffresMois > 0) && <small className={s.muted}>Higgsfield depuis le 1er du mois : {d.higgsfield.mois.toLocaleString('fr-FR')} crédits notés par le directeur artistique{d.higgsfield.nonChiffresMois ? ` (+ ${d.higgsfield.nonChiffresMois} génération(s) non chiffrée(s))` : ''}.</small>}
         <div className={s.dirRendus}>{(Object.keys(RENDUS) as Rendu[]).map((r) => {
           const x = RENDUS[r]
           return (
@@ -462,7 +463,7 @@ export function useActionsSerie(c: Creatif, rafraichir: () => Promise<void>, mes
   }
   // La carte 1 d'abord : elle donne le decor aux suivantes ; puis le reste en parallele.
   const genererManquants = async (opts: Option[]) => {
-    const manquants = opts.filter((o) => !imagesDe(c, o).length && (!o.motion?.fond || o.motion.fond === 'decor') && !o.motion?.clip)
+    const manquants = opts.filter((o) => !imagesDe(c, o).length && (!o.motion?.fond || o.motion.fond === 'decor') && !o.motion?.clip && !o.motion?.sansDepart)
     const premiere = manquants.find((o) => o.carte === 1)
     if (premiere) await generer(premiere)
     await Promise.all(manquants.filter((o) => o !== premiere).map(generer))

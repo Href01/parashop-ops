@@ -347,7 +347,37 @@ export async function ecranStudio() {
       pubsGagnantes: pubs.filter((x) => verd[x.adId]?.verdict === 'gagnante').map((x) => ({ nom: x.nom, texte: x.texte, raison: verd[x.adId].raison })),
     })],
     pubsEnLigne: pubs.filter((p) => p.statut === 'ACTIVE').map((p) => ({ adId: p.adId, nom: p.nom, vignette: p.vignette })),
+    higgsfield: await consoHiggsfield(),
   }
+}
+
+/**
+ * Les credits Higgsfield depenses par le directeur artistique : notes a chaque clip ou image
+ * (le cout annonce par l'outil), additionnes par creation et depuis le 1er du mois.
+ * « nonChiffres » : poses sans cout note (a verifier dans l'historique Higgsfield).
+ */
+async function consoHiggsfield() {
+  const r = await pool.query(`
+    SELECT creatif_id, genre, modele, count(*)::int n, coalesce(sum(credits), 0)::float credits, count(*) FILTER (WHERE credits IS NULL)::int non_chiffres,
+           coalesce(sum(credits) FILTER (WHERE cree_le >= date_trunc('month', now())), 0)::float mois,
+           count(*) FILTER (WHERE credits IS NULL AND cree_le >= date_trunc('month', now()))::int non_chiffres_mois
+    FROM (
+      SELECT creatif_id, 'clip' AS genre, replace(modele, 'higgsfield:', '') AS modele, credits, cree_le FROM "AdsClipGeneration" WHERE endpoint = 'externe'
+      UNION ALL
+      SELECT creatif_id, 'image', replace(modele, 'externe:', ''), (usage->>'credits')::numeric, cree_le FROM "AdsCreativeImage" WHERE modele LIKE 'externe:%'
+    ) x GROUP BY 1, 2, 3`).catch((e: { code?: string }) => { if (e.code === '42703' || e.code === '42P01') return { rows: [] }; throw e })
+  type Ligne = { creatif_id: number | null; genre: 'clip' | 'image'; modele: string; n: number; credits: number; non_chiffres: number; mois: number; non_chiffres_mois: number }
+  const parCreation: Record<number, { credits: number; clips: number; images: number; nonChiffres: number; modeles: { modele: string; n: number; credits: number }[] }> = {}
+  let mois = 0, nonChiffresMois = 0
+  for (const x of r.rows as Ligne[]) {
+    mois += x.mois; nonChiffresMois += x.non_chiffres_mois
+    if (x.creatif_id == null) continue
+    const c = (parCreation[x.creatif_id] ||= { credits: 0, clips: 0, images: 0, nonChiffres: 0, modeles: [] })
+    c.credits += x.credits; c.nonChiffres += x.non_chiffres
+    if (x.genre === 'clip') c.clips += x.n; else c.images += x.n
+    c.modeles.push({ modele: x.modele, n: x.n, credits: x.credits })
+  }
+  return { mois: Math.round(mois * 100) / 100, nonChiffresMois, parCreation }
 }
 
 /** Les textes de la pub (legende, accroche, titre, bouton) : le francais passe le meme controle d'accents que les images. */
