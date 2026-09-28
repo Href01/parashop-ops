@@ -22,7 +22,7 @@ const CONSIGNES: Record<LangueVoix, string> = {
   ar: 'Soft ASMR whisper in Modern Standard Arabic addressing a woman, very close to the microphone, slow, calm and warm.',
 }
 
-async function versCloudinary(mp3: Buffer, publicId: string): Promise<string> {
+async function versCloudinary(mp3: Buffer, publicId: string): Promise<{ url: string; duree: number | null }> {
   const nuage = process.env.CLOUDINARY_CLOUD_NAME, cle = process.env.CLOUDINARY_API_KEY, secret = process.env.CLOUDINARY_API_SECRET
   if (!nuage || !cle || !secret) throw new Error('Cloudinary n’est pas configuré sur le BOS.')
   const params = { folder: 'shine-ads/voix', public_id: publicId, timestamp: String(Math.floor(Date.now() / 1000)) }
@@ -33,34 +33,36 @@ async function versCloudinary(mp3: Buffer, publicId: string): Promise<string> {
   f.append('api_key', cle); f.append('signature', signature)
   // Un son se range dans « video » chez Cloudinary.
   const r = await fetch(`https://api.cloudinary.com/v1_1/${nuage}/video/upload`, { method: 'POST', body: f, signal: AbortSignal.timeout(60_000) })
-  const j = (await r.json().catch(() => ({}))) as { secure_url?: string; error?: { message?: string } }
+  const j = (await r.json().catch(() => ({}))) as { secure_url?: string; duration?: number; error?: { message?: string } }
   if (!r.ok || !j.secure_url) throw new Error(`Cloudinary : ${j.error?.message || r.status}`)
-  return j.secure_url
+  // Cloudinary mesure le son : le studio compare cette duree a celle du plan.
+  return { url: j.secure_url, duree: typeof j.duration === 'number' ? Math.round(j.duration * 10) / 10 : null }
 }
 
 export async function genererVoix(optionId: number, langue: LangueVoix) {
   if (!CONSIGNES[langue]) throw new Error('Langue : fr, darija ou ar.')
   const cle = process.env.OPENAI_API_KEY
   if (!cle) throw new Error('OPENAI_API_KEY absente du BOS.')
-  const o = (await pool.query(`SELECT id, creatif_id, motion FROM "AdsCreativeOption" WHERE id = $1`, [optionId])).rows[0]
+  const o = (await pool.query(`SELECT id, creatif_id, duree, motion FROM "AdsCreativeOption" WHERE id = $1`, [optionId])).rows[0]
   if (!o) throw new Error('Plan introuvable.')
   const texte = String(o.motion?.voix?.[langue] || '').trim()
   if (texte.length < 3) throw new Error(`Écris d’abord la voix off en ${langue === 'fr' ? 'français' : langue === 'ar' ? 'arabe' : 'darija'} pour ce plan.`)
   const r = await fetch('https://api.openai.com/v1/audio/speech', {
     method: 'POST', signal: AbortSignal.timeout(60_000),
     headers: { Authorization: `Bearer ${cle}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: MODELE, voice: VOIX, input: texte, instructions: CONSIGNES[langue], response_format: 'mp3' }),
+    // La duree du plan est une contrainte, pas un souhait : la voix doit s'y tenir.
+    body: JSON.stringify({ model: MODELE, voice: VOIX, input: texte, instructions: `${CONSIGNES[langue]}${o.duree ? ` The whole line must fit in ${Number(o.duree)} seconds: keep pauses short.` : ''}`, response_format: 'mp3' }),
   })
   if (!r.ok) {
     const j = (await r.json().catch(() => ({}))) as { error?: { message?: string } }
     throw new Error(`OpenAI (voix) : ${j.error?.message || r.status}`)
   }
-  const url = await versCloudinary(Buffer.from(await r.arrayBuffer()), `creatif-${o.creatif_id}-o${optionId}-${langue}-${Date.now()}`)
+  const { url, duree } = await versCloudinary(Buffer.from(await r.arrayBuffer()), `creatif-${o.creatif_id}-o${optionId}-${langue}-${Date.now()}`)
   const u = await pool.query(
     // Fusion explicite : jsonb_set ne cree pas la cle parente « voixUrl » quand elle manque.
     `UPDATE "AdsCreativeOption" SET motion = coalesce(motion, '{}'::jsonb) || jsonb_build_object('voixUrl',
-       coalesce(motion->'voixUrl', '{}'::jsonb) || jsonb_build_object($2::text, jsonb_build_object('url', $3::text, 'texte', $4::text))), maj_le = now()
+       coalesce(motion->'voixUrl', '{}'::jsonb) || jsonb_build_object($2::text, jsonb_build_object('url', $3::text, 'texte', $4::text, 'duree', $5::numeric))), maj_le = now()
      WHERE id = $1 RETURNING motion`,
-    [optionId, langue, url, texte])
-  return { url, texte, motion: u.rows[0].motion }
+    [optionId, langue, url, texte, duree])
+  return { url, texte, duree, motion: u.rows[0].motion }
 }

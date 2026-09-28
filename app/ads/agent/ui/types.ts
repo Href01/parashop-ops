@@ -36,12 +36,13 @@ export type Option = {
   produit_ids: number[] | null; animes: number[] | null; mouvement: Mouvement | null; duree: string | number | null
   motion: {
     transition?: Transition; ambiance?: Ambiance; bulles?: { de: 'cliente' | 'shine'; texte: Multi }[]; points?: Multi[]; choix?: Multi[]
-    voix?: Multi | null; voixUrl?: Partial<Record<'fr' | 'darija' | 'ar', { url: string; texte: string }>>
+    voix?: Multi | null; voixUrl?: Partial<Record<'fr' | 'darija' | 'ar', { url: string; texte: string; duree?: number | null }>>
+    confiance?: string[]; prix?: boolean
   } | null
   style: string | null; brief: string | null; qualite: string | null; note: string | null; modele: string | null; cree_le: string
 }
 type Multi = { fr?: string; darija?: string; ar?: string }
-export type ProduitCatalogue = { id: number; nom: string; marque: string; categorie: string; image: string | null; stockVendable: number; importBloque: boolean }
+export type ProduitCatalogue = { id: number; nom: string; marque: string; categorie: string; image: string | null; stockVendable: number; importBloque: boolean; prix?: number }
 export type ParametresDirection = { type: TypeDirection; nombre: number; format: 'feed' | 'story' | 'carre'; styles: string[]; qualite: 'medium' | 'high'; brief: string; creatifId?: number; produitIds?: number[] }
 export type Demande = { id: number; genre: string; sujet: string; statut: string; demande_le: string; termine_le: string | null; erreur: string | null; rapport_id: number | null; creatif_id?: number | null; parametres?: ParametresDirection | null; resultat?: string | null }
 export type Rapport = { id: number; source: string; titre: string; cree_le: string; modele: string | null; en_bref: string }
@@ -55,6 +56,8 @@ export type Donnees = {
   synchro: { le: string | null; jusquAu: string | null }; repartitions: Record<string, Repartition[]>
   catalogue: ProduitCatalogue[]; idees: Idee[]
 }
+/** Ce dont le directeur artistique a besoin a l'ecran, dans l'agent comme dans le studio. */
+export type BaseCreative = Pick<Donnees, 'catalogue' | 'idees' | 'demandes'>
 export type Onglet = 'ensemble' | 'campagnes' | 'creations' | 'afaire' | 'strategie' | 'agent'
 
 export const dh = (v: number | null | undefined) => (v == null ? '—' : `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(v)} DH`)

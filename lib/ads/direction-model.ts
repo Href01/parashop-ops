@@ -58,6 +58,21 @@ export const TRANSITIONS = {
 } as const
 export const AMBIANCES = { aucune: 'Aucune', etincelles: 'Étincelles', gouttes: 'Gouttes d’eau', bulles: 'Bulles', sable: 'Grains de sable' } as const
 
+/**
+ * Les badges de confiance de la carte de fin. Au Maroc, la cliente hesite a
+ * commander en ligne : lui dire qu'elle paie a la reception, qu'elle recoit
+ * vite et que le produit est authentique leve le dernier frein. Chaque promesse
+ * est deja tenue par la boutique (bandeau du site : authentique, 24-48 h,
+ * paiement a la livraison).
+ */
+export const CONFIANCE = {
+  cod: { fr: 'Paiement à la livraison', darija: 'Khelles mnin twslek', ar: 'الدفع عند الاستلام' },
+  livraison: { fr: 'Livraison 24-48 h', darija: 'Tawsil 24-48h', ar: 'توصيل 24-48 ساعة' },
+  authentique: { fr: 'Produits authentiques', darija: 'Produits originaux', ar: 'منتجات أصلية' },
+  conseil: { fr: 'Conseil gratuit en DM', darija: 'Nsi7a b-lmajjan f DM', ar: 'استشارة مجانية في الرسائل' },
+} as const
+export type CleConfiance = keyof typeof CONFIANCE
+
 export const DemandeDirectionSchema = z.object({
   creatifId: z.number().int().positive().optional(),
   produitIds: z.array(z.number().int().positive()).max(6).optional(),
@@ -125,6 +140,24 @@ export function motMisEnValeurVide(texte: string | null | undefined): string | n
 /** Le temps de lire une conversation DM : ~1 s par message, plus la fiche produit. */
 export const dureeMinDm = (messages: number, fiche: boolean) => Math.ceil((0.8 + messages * 1 + (fiche ? 0.7 : 0)) * 2) / 2
 
+/**
+ * La duree d'une voix off chuchotee (ASMR), estimee avant de la generer :
+ * ~0,45 s par mot, 0,35 s par pause (virgule, point, « … »), 0,3 s de souffle.
+ * Etalonnee sur les quatre voix reelles du Reel #15 (6 s, 7 s, 4 s, 5 s).
+ * Une voix plus longue que son plan deborde sur le suivant.
+ */
+export function dureeVoix(texte: string): number {
+  const t = texte.trim()
+  if (!t) return 0
+  const mots = t.split(/\s+/).filter((m) => /[\p{L}\p{N}]/u.test(m)).length
+  const pauses = (t.match(/[,.;:!?…،؟]+/g) ?? []).length
+  return Math.round((0.3 + mots * 0.45 + pauses * 0.35) * 10) / 10
+}
+/** La voix commence 0,15 s apres l'entree du plan ; 0,3 s de marge suffit a ne pas mordre sur le suivant. */
+export const voixTropLongue = (texte: string, duree: number) => dureeVoix(texte) > duree + 0.3
+/** Combien de mots chuchotes tiennent dans un plan (avec une pause). */
+export const motsVoixMax = (duree: number) => Math.max(2, Math.floor((duree - 0.35) / 0.45))
+
 /** Ce que Claude livre au BOS pour une demande « direction ». */
 export const LivraisonDirection = z.object({
   demandeId: z.number().int().positive(),
@@ -161,6 +194,9 @@ export const LivraisonDirection = z.object({
     choix: z.array(Court).max(3).optional(),
     // Reel : la voix off du plan (ASMR ou non), lue par la synthese vocale d'OpenAI.
     voix: Voix.optional(),
+    // Carte de fin : badges de confiance (2 au plus lisibles) et sticker de prix des produits animes.
+    confiance: z.array(z.enum(['cod', 'livraison', 'authentique', 'conseil'])).max(3).optional(),
+    prix: z.boolean().optional(),
   })).min(1).max(10),
 })
 export type OptionLivree = z.infer<typeof LivraisonDirection>['options'][number]
@@ -198,6 +234,10 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
     if (i === 0 && o.transition && o.transition !== 'coupe') throw new Error(`${nom} : pas de transition d’entrée sur le premier plan.`)
     // Un produit anime ET peint dans le decor apparaitrait deux fois.
     if (n && (o.produitIds === undefined || o.produitIds === null || o.produitIds.length)) throw new Error(`${nom} : les produits sont animés par-dessus : le décor doit être vide (« produitIds »: []).`)
+    if ((o.confiance?.length || o.prix) && o.mouvement !== 'fin') throw new Error(`${nom} : les badges de confiance et le prix vont sur la carte de fin (« fin »).`)
+    for (const [langue, texte] of Object.entries(o.voix ?? {})) {
+      if (typeof texte === 'string' && voixTropLongue(texte, o.duree)) throw new Error(`${nom} : la voix off (${langue}) dure ~${dureeVoix(texte)} s chuchotée pour un plan de ${o.duree} s — elle déborderait sur le plan suivant. ${motsVoixMax(o.duree)} mots au plus, ou allonge le plan.`)
+    }
   } else if (o.animes?.length || o.mouvement || o.transition || o.bulles || o.points || o.choix || o.voix) {
     throw new Error(`${nom} : « animes », « mouvement », « transition », « bulles », « points », « choix » et « voix » ne servent que dans un Reel.`)
   }

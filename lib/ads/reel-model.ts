@@ -29,6 +29,8 @@ export type PlanReel = {
   bulles?: Bulle[]        // dm : la conversation, dans l'ordre
   points?: string[]       // etiquette : 2 ou 3 atouts montres autour du produit
   choix?: string[]        // quiz : 2 ou 3 reponses ; la premiere est celle qui mene au produit
+  confiance?: string[]    // fin : badges de confiance deja traduits (« Paiement à la livraison »…)
+  prix?: string | null    // fin : le sticker de prix (« 997 DH »)
 }
 
 export const IPS = 30
@@ -108,6 +110,8 @@ export type EtatPlan = {
   particules: Particule[]
   etincelles: Particule[]        // autour du flacon, apres le reflet
   flash: number
+  badges: { texte: string; echelle: number }[]            // fin : les badges de confiance, l'un apres l'autre
+  sticker: { texte: string; echelle: number; rotation: number } | null   // fin : le prix, qui tombe en tournant
 }
 
 /** Ou poser n produits : centres, ligne de sol, hauteur. */
@@ -334,9 +338,16 @@ export function etatPlan(plan: PlanReel, t: number, premier: boolean, indice = 0
     return { x: p0.cx + (ox - 0.5) * p0.hauteur * 0.6, y: p0.bas - p0.hauteur * (0.25 + oy * 0.7), r: 0.012 + ph * 0.012, alpha: x > 0 ? Math.max(0, Math.sin(Math.PI * borne(x / 0.7))) : 0, rot: x * 2 }
   }) : []
 
+  const badges = plan.mouvement === 'fin'
+    ? (plan.confiance ?? []).slice(0, 3).map((texte, k) => { const x = t - 0.75 - k * 0.15; return { texte, echelle: x <= 0 ? 0 : Math.min(1.06, ressort(x * 2.6)) } })
+    : []
+  const sticker = plan.mouvement === 'fin' && plan.prix && t > 0.6
+    ? { texte: plan.prix, echelle: Math.min(1.1, ressort((t - 0.6) * 2.4)), rotation: -12 + 14 * (1 - Math.min(1, ressort((t - 0.6) * 2.4))) }
+    : null
+
   return {
     fond, secousse, produits, mots: etatsMots, texteHaut: ZONE.haut + 0.035, chip, cta, dm, points, quiz,
-    particules: particules(plan.ambiance, t, indice + 1), etincelles, flash,
+    particules: particules(plan.ambiance, t, indice + 1), etincelles, flash, badges, sticker,
   }
 }
 
@@ -379,7 +390,7 @@ export function evenementsSonores(plans: PlanReel[]): EvenementSonore[] {
         if (n) ev(dmFiche(plan), 'ding', 0.8)
         break
       }
-      case 'fin': ev(0.45, 'cta'); break
+      case 'fin': ev(0.45, 'cta'); if (plan.prix) ev(0.6, 'pop', 0.8); (plan.confiance ?? []).slice(0, 3).forEach((_, k) => ev(0.75 + k * 0.15, 'tic', 0.8)); break
       default: break
     }
     // La signature : le reflet qui traverse le flacon se fait entendre, doucement.

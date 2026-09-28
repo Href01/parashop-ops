@@ -320,6 +320,8 @@
 .montageLigneTete { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
 .montageLigneTete small { font-weight: 700; color: #4b5750; }
 .montageAudio { height: 32px; max-width: 260px; }
+.montageAccroches { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.montageAccroches small { color: #66716a; font-size: 11px; margin-inline-end: 2px; }
 .montageAlertes { margin: 0; padding: 8px 10px; list-style: none; background: #fff7e8; border: 1px solid #f3d9a8; border-radius: 8px; color: #7a4a00; font-size: 12px; display: grid; gap: 3px; }
 
 @media (max-width: 760px) {

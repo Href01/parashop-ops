@@ -6,7 +6,7 @@ import { economieProduits, verite } from './verite'
 import { conseils, verdicts } from './conseils'
 import { commandesEnRoute, moisEnCours, serie as serieDe } from './series'
 import { imagesDesCreations, optionsDesCreations } from './images'
-import { idees } from './direction-model'
+import { fautesFrancais, idees } from './direction-model'
 
 /**
  * L'AGENT META ADS, COTE BOS : sa strategie, sa file de demandes, sa memoire,
@@ -300,4 +300,69 @@ export async function majCreatif(id: number, statut: 'idee' | 'validee' | 'produ
     `UPDATE "AdsCreative" SET statut = $2, ad_id = coalesce($3, ad_id), maj_le = now() WHERE id = $1 RETURNING id, statut, ad_id`,
     [id, statut, adId && /^\d{5,30}$/.test(adId) ? adId : null])
   return r.rows[0] ?? null
+}
+
+/* ------------------------------------------------------------------ */
+/* LE STUDIO CREATIF (/ads/studio)                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Tout ce que le studio affiche, sans l'analyse du compte (verite, series,
+ * rapports) : les creations et leurs visuels, options, plans ; le catalogue
+ * avec ses prix (pour le sticker de prix d'un Reel) ; les idees de brief ; et
+ * les resultats des pubs deja en ligne, pour apprendre de ce qui marche.
+ */
+export async function ecranStudio() {
+  const s = await strategie()
+  const cfg = s.config
+  const [pubs, produits, demandes, creatifs, catalogue] = await Promise.all([
+    performancePubs(cfg.regles.frequenceMax), economieProduits(60),
+    pool.query(`SELECT * FROM "AdsAgentRequest" WHERE genre = 'direction' ORDER BY demande_le DESC LIMIT 15`),
+    pool.query(`SELECT * FROM "AdsCreative" WHERE statut <> 'ecartee' OR maj_le > now() - interval '30 days' ORDER BY cree_le DESC LIMIT 60`),
+    pool.query(`SELECT id, name AS nom, brand AS marque, category AS categorie, image, price::float AS prix, (coalesce(stock, 0) + coalesce("virtualStock", 0))::int AS stock_vendable,
+                       coalesce("importUnavailable", false) AS import_bloque
+                FROM "Product" WHERE active = true AND coalesce(discontinued, false) = false ORDER BY brand, name`),
+  ])
+  const ids = creatifs.rows.map((c) => c.id)
+  const [images, options] = await Promise.all([imagesDesCreations(ids), optionsDesCreations(ids)])
+  const verd = verdicts(pubs, cfg.regles.depenseMinAvantVerdict)
+  const parAd = new Map(pubs.map((p) => [p.adId, p]))
+  return {
+    strategie: { langues: cfg.langues, ton: cfg.ton, public: cfg.public },
+    creatifs: creatifs.rows.map((c) => {
+      const p = c.ad_id ? parAd.get(c.ad_id) : undefined
+      return {
+        ...c, images: images[c.id] ?? [], options: options[c.id] ?? [],
+        resultat: p ? { depense: p.j30.depense, messages: p.j30.messages, achats: p.j30.achats, coutParResultat: p.j30.coutParResultat, ctr: p.j30.ctr, verdict: verd[p.adId]?.verdict ?? null, statut: p.statut } : null,
+      }
+    }),
+    demandes: demandes.rows,
+    catalogue: catalogue.rows.map((p) => ({ id: p.id, nom: p.nom, marque: p.marque, categorie: p.categorie, image: p.image, prix: Number(p.prix), stockVendable: p.stock_vendable, importBloque: p.import_bloque })),
+    produits,
+    idees: idees({
+      produits, exclus: cfg.produitsExclus, mois: new Date().getMonth(),
+      pubsGagnantes: pubs.filter((x) => verd[x.adId]?.verdict === 'gagnante').map((x) => ({ nom: x.nom, texte: x.texte, raison: verd[x.adId].raison })),
+    }),
+    pubsEnLigne: pubs.filter((p) => p.statut === 'ACTIVE').map((p) => ({ adId: p.adId, nom: p.nom, vignette: p.vignette })),
+  }
+}
+
+/** Les textes de la pub (legende, accroche, titre, bouton) : le francais passe le meme controle d'accents que les images. */
+export async function majTextesCreatif(id: number, patch: Record<string, unknown>) {
+  const champs: [string, string, number][] = [['accroche', 'accroche', 500], ['texteFr', 'texte_fr', 2200], ['texteDarija', 'texte_darija', 2200], ['texteAr', 'texte_ar', 2200], ['titre', 'titre', 120], ['cta', 'cta', 60]]
+  const sets: string[] = [], vals: unknown[] = [id]
+  for (const [cle, colonne, max] of champs) {
+    if (typeof patch[cle] !== 'string') continue
+    const v = String(patch[cle]).trim().slice(0, max)
+    if (['accroche', 'texteFr', 'titre', 'cta'].includes(cle)) {
+      const fautes = fautesFrancais(v)
+      if (fautes.length) throw new Error(`${cle === 'texteFr' ? 'Texte français' : cle} : français sans accents (${fautes.map((f) => `« ${f} »`).join(', ')}).`)
+    }
+    if (cle === 'accroche' && v.length < 5) throw new Error('L’accroche fait au moins 5 caractères.')
+    vals.push(v || null); sets.push(`${colonne} = $${vals.length}`)
+  }
+  if (!sets.length) throw new Error('Rien à enregistrer.')
+  const r = await pool.query(`UPDATE "AdsCreative" SET ${sets.join(', ')}, maj_le = now() WHERE id = $1 RETURNING *`, vals)
+  if (!r.rowCount) throw new Error('Création introuvable.')
+  return r.rows[0]
 }

@@ -1,5 +1,5 @@
 import { getOpsSession } from '@/lib/auth'
-import { PERIODES, creerDemande, ecran, enregistrerStrategie, majAction, majCreatif, rapport, type GenreAds } from '@/lib/ads/agent'
+import { PERIODES, creerDemande, ecran, ecranStudio, majTextesCreatif, enregistrerStrategie, majAction, majCreatif, rapport, type GenreAds } from '@/lib/ads/agent'
 import { synchroniserPubsMeta } from '@/lib/ads/meta-sync'
 import { choisirImage, genererImage, supprimerImage, type Qualite } from '@/lib/ads/images'
 import { detailPub } from '@/lib/ads/series'
@@ -27,6 +27,7 @@ export async function GET(request: Request) {
       const r = await rapport(id)
       return r ? Response.json(r, { headers: PRIVATE_HEADERS }) : Response.json({ error: 'Rapport introuvable' }, { status: 404, headers: PRIVATE_HEADERS })
     }
+    if (url.searchParams.get('vue') === 'studio') return Response.json(await ecranStudio(), { headers: PRIVATE_HEADERS })
     const jours = (PERIODES as readonly number[]).includes(Number(url.searchParams.get('jours'))) ? Number(url.searchParams.get('jours')) : 30
     return Response.json(await ecran(jours), { headers: PRIVATE_HEADERS })
   } catch {
@@ -76,6 +77,7 @@ export async function POST(request: Request) {
     }
     if (body?.direction) return Response.json(await demanderDirection(body.direction, par), { headers: PRIVATE_HEADERS })
     if (body?.option) return Response.json({ option: await modifierPlan(Number(body.option.id), body.option) }, { headers: PRIVATE_HEADERS })
+    if (body?.creatifTextes) return Response.json({ creatif: await majTextesCreatif(Number(body.creatifTextes.id), body.creatifTextes) }, { headers: PRIVATE_HEADERS })
     if (body?.planDuplique) return Response.json(await dupliquerPlan(Number(body.planDuplique)), { headers: PRIVATE_HEADERS })
     if (body?.planSupprime) return Response.json(await supprimerPlan(Number(body.planSupprime)), { headers: PRIVATE_HEADERS })
     if (body?.planDeplace) return Response.json(await deplacerPlan(Number(body.planDeplace.id), body.planDeplace.sens === -1 ? -1 : 1), { headers: PRIVATE_HEADERS })

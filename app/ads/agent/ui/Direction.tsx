@@ -8,7 +8,7 @@ import { urlDetouree } from '@/lib/ads/reel-model'
 import { ApercuCarrousel, CreatifVisuel, telechargerPng, type Visuel } from './Apercu'
 import { LecteurReel } from './Reel'
 import { TableMontage, depuisOption, planDessin, type Brouillon } from './Montage'
-import { quand, type Creatif, type Demande, type Donnees, type Image, type Option } from './types'
+import { quand, type BaseCreative, type Creatif, type Demande, type Image, type Option } from './types'
 import s from '../agent.module.css'
 
 /**
@@ -33,25 +33,26 @@ export async function poster(corps: unknown) {
   return j
 }
 
-const texteDe = (o: Option, l: Langue) => o.texte?.[l] || o.texte?.fr || ''
+export const texteDe = (o: Option, l: Langue) => o.texte?.[l] || o.texte?.fr || ''
 // *mot* : le mot mis en valeur dans un Reel ; a l'ecran et sur les images fixes, sans les etoiles.
-const lisible = (t: string) => t.replace(/\*/g, '')
-const imagesDe = (c: Creatif, o: Option) => c.images.filter((i) => i.option_id === o.id).sort((a, b) => Number(b.choisie) - Number(a.choisie) || b.cree_le.localeCompare(a.cree_le))
-const typeDeSerie = (opts: Option[]): TypeDirection => (opts.some((o) => o.mouvement) ? 'reel' : opts.some((o) => o.carte != null) ? 'carrousel' : 'options')
+export const lisible = (t: string) => t.replace(/\*/g, '')
+export const imagesDe = (c: Creatif, o: Option) => c.images.filter((i) => i.option_id === o.id).sort((a, b) => Number(b.choisie) - Number(a.choisie) || b.cree_le.localeCompare(a.cree_le))
+export const typeDeSerie = (opts: Option[]): TypeDirection => (opts.some((o) => o.mouvement) ? 'reel' : opts.some((o) => o.carte != null) ? 'carrousel' : 'options')
 
 /* ------------------------------------------------------------------ */
 /* LE BRIEF                                                            */
 /* ------------------------------------------------------------------ */
 
-export function BriefDirection({ d, creatif, envoye, erreur }: { d: Donnees; creatif?: Creatif; envoye: (texte: string) => void; erreur: (texte: string) => void }) {
+export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCreative; creatif?: Creatif; idee?: Idee; envoye: (texte: string) => void; erreur: (texte: string) => void }) {
   const depart: TypeDirection = creatif?.format === 'carrousel' ? 'carrousel' : creatif?.format === 'reel' || creatif?.format === 'video' ? 'reel' : 'options'
-  const [type, setType] = useState<TypeDirection>(depart)
-  const [nombre, setNombre] = useState(BORNES[depart].defaut)
-  const [format, setFormat] = useState<FormatImage>(FORMAT_DEFAUT[depart])
-  const [styles, setStyles] = useState<Style[]>([])
-  const [qualite, setQualite] = useState<'medium' | 'high'>('high')
-  const [brief, setBrief] = useState('')
-  const [produits, setProduits] = useState<number[]>([])
+  // Une idee choisie ailleurs (l'accueil du studio) arrive deja appliquee.
+  const [type, setType] = useState<TypeDirection>(idee?.type ?? depart)
+  const [nombre, setNombre] = useState(idee?.nombre ?? BORNES[depart].defaut)
+  const [format, setFormat] = useState<FormatImage>(idee?.format ?? FORMAT_DEFAUT[depart])
+  const [styles, setStyles] = useState<Style[]>(idee?.styles ?? [])
+  const [qualite, setQualite] = useState<'medium' | 'high'>(idee?.qualite ?? 'high')
+  const [brief, setBrief] = useState(idee?.brief ?? '')
+  const [produits, setProduits] = useState<number[]>(!creatif && idee ? idee.produitIds : [])
   const [recherche, setRecherche] = useState('')
   const [envoi, setEnvoi] = useState(false)
   const b = BORNES[type]
@@ -173,7 +174,7 @@ export function DirectionsEnCours({ demandes, creatifId }: { demandes: Demande[]
 /* LES SERIES LIVREES                                                  */
 /* ------------------------------------------------------------------ */
 
-type Actions = {
+export type Actions = {
   generer: (o: Option) => Promise<void>
   choisir: (i: Image) => Promise<void>
   supprimer: (i: Image) => Promise<void>
@@ -181,7 +182,7 @@ type Actions = {
   utiliser?: (i: Image, o: Option) => void
 }
 
-function CarteOption({ c, o, rang, type, langue, genere, a, largeur, noms }: { c: Creatif; o: Option; rang: number; type: TypeDirection; langue: Langue; genere: number | undefined; a: Actions; largeur: number; noms: Map<number, string> }) {
+export function CarteOption({ c, o, rang, type, langue, genere, a, largeur, noms }: { c: Creatif; o: Option; rang: number; type: TypeDirection; langue: Langue; genere: number | undefined; a: Actions; largeur: number; noms: Map<number, string> }) {
   const images = imagesDe(c, o)
   const img = images[0]
   const [prompt, setPrompt] = useState(o.prompt)
@@ -220,29 +221,15 @@ function CarteOption({ c, o, rang, type, langue, genere, a, largeur, noms }: { c
   )
 }
 
-export function SeriesDirection({ c, d, langue, bouton, legende, rafraichir, message, utiliser }: {
-  c: Creatif; d: Donnees; langue: Langue; bouton: string; legende: string
-  rafraichir: () => Promise<void>; message: (ok: boolean, t: string) => void; utiliser: (i: Image, o: Option) => void
-}) {
+/** Les gestes sur les visuels d'une creation (partages par l'agent et le studio). */
+export function useActionsSerie(c: Creatif, rafraichir: () => Promise<void>, message: (ok: boolean, t: string) => void, utiliser?: (i: Image, o: Option) => void) {
   const [generation, setGeneration] = useState<Record<number, number>>({})
-  // La table de montage : les retouches non enregistrees (par plan) et le plan ouvert (par serie).
-  const [brouillons, setBrouillons] = useState<Record<number, Brouillon>>({})
-  const [ouvert, setOuvert] = useState<Record<number, number | null>>({})
-  const setBrouillon = (id: number, b: Brouillon | null) => setBrouillons((x) => { const n = { ...x }; if (b) n[id] = b; else delete n[id]; return n })
   const [, tic] = useState(0)
   useEffect(() => {
     if (!Object.keys(generation).length) return
     const t = setInterval(() => tic((x) => x + 1), 1000)
     return () => clearInterval(t)
   }, [generation])
-  const series = useMemo(() => {
-    const m = new Map<number, Option[]>()
-    for (const o of c.options) m.set(o.serie, [...(m.get(o.serie) ?? []), o])
-    return [...m.entries()].sort((x, y) => y[0] - x[0]).map(([serie, opts]) => ({ serie, opts: opts.sort((x, y) => (x.carte ?? x.id) - (y.carte ?? y.id)) }))
-  }, [c.options])
-  const imageDe = new Map(d.catalogue.map((p) => [p.id, p.image]))
-  const noms = new Map(d.catalogue.map((p) => [p.id, `${p.marque} ${p.nom}`]))
-
   const generer = async (o: Option) => {
     setGeneration((g) => ({ ...g, [o.id]: Date.now() }))
     try { await poster({ image: { optionId: o.id, qualite: o.qualite === 'medium' ? 'medium' : 'high' } }); await rafraichir() }
@@ -263,6 +250,27 @@ export function SeriesDirection({ c, d, langue, bouton, legende, rafraichir, mes
     sauver: async (o, prompt) => { try { await poster({ option: { id: o.id, prompt } }); await rafraichir(); message(true, 'Consigne enregistrée : régénère pour voir le résultat.') } catch (e) { message(false, (e as Error).message) } },
     utiliser,
   }
+  const secondes = (id: number) => (generation[id] ? Math.round((Date.now() - generation[id]) / 1000) : undefined)
+  return { generation, generer, genererManquants, a, secondes }
+}
+
+export function SeriesDirection({ c, d, langue, bouton, legende, rafraichir, message, utiliser }: {
+  c: Creatif; d: BaseCreative; langue: Langue; bouton: string; legende: string
+  rafraichir: () => Promise<void>; message: (ok: boolean, t: string) => void; utiliser: (i: Image, o: Option) => void
+}) {
+  const { generation, generer, genererManquants, a } = useActionsSerie(c, rafraichir, message, utiliser)
+  // La table de montage : les retouches non enregistrees (par plan) et le plan ouvert (par serie).
+  const [brouillons, setBrouillons] = useState<Record<number, Brouillon>>({})
+  const [ouvert, setOuvert] = useState<Record<number, number | null>>({})
+  const setBrouillon = (id: number, b: Brouillon | null) => setBrouillons((x) => { const n = { ...x }; if (b) n[id] = b; else delete n[id]; return n })
+  const series = useMemo(() => {
+    const m = new Map<number, Option[]>()
+    for (const o of c.options) m.set(o.serie, [...(m.get(o.serie) ?? []), o])
+    return [...m.entries()].sort((x, y) => y[0] - x[0]).map(([serie, opts]) => ({ serie, opts: opts.sort((x, y) => (x.carte ?? x.id) - (y.carte ?? y.id)) }))
+  }, [c.options])
+  const imageDe = new Map(d.catalogue.map((p) => [p.id, p.image]))
+  const noms = new Map(d.catalogue.map((p) => [p.id, `${p.marque} ${p.nom}`]))
+
   const supprimerSerie = async (serie: number) => {
     if (!window.confirm('Supprimer cette série ? Les visuels déjà générés restent dans la galerie.')) return
     try { await poster({ serieSupprimee: { creatifId: c.id, serie } }); await rafraichir() } catch (e) { message(false, (e as Error).message) }

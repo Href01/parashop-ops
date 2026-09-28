@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Download, Loader2, Pause, Play, RotateCcw, Volume2, VolumeX } from 'lucide-react'
+import { Bookmark, Camera, Download, Heart, Loader2, MessageCircle, MoreHorizontal, Music2, Pause, Play, RotateCcw, Send, Volume2, VolumeX } from 'lucide-react'
 import { estRtl, type Langue } from '@/lib/ads/creatif-model'
 import { H, IPS, W, douce, dureeTotale, etatPlan, nbImages, planA, transitionA, type EtatPlan, type Particule, type PlanReel } from '@/lib/ads/reel-model'
 import { COULEURS, POLICES, policesPretes } from './polices'
@@ -341,10 +341,57 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
     ctx.shadowColor = 'transparent'; ctx.shadowOffsetY = 0
     ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(bouton, 0, W * 0.003)
     // L'adresse sur une pastille creme : lisible sur un decor sombre comme sur un fond clair.
-    ctx.font = `700 ${W * 0.032}px ${POLICES.titre}`
-    const la = ctx.measureText('shinecosmetics.ma').width + W * 0.05, ha = W * 0.06
-    ctx.fillStyle = 'rgba(247,246,242,.94)'; rondRect(ctx, -la / 2, hb * 0.62, la, ha, ha / 2); ctx.fill()
-    ctx.fillStyle = COULEURS.vert; ctx.fillText('shinecosmetics.ma', 0, hb * 0.62 + ha / 2 + W * 0.002)
+    // Avec des badges de confiance, elle laisse la place (Instagram affiche deja le compte).
+    if (!e.badges.length) {
+      ctx.font = `700 ${W * 0.032}px ${POLICES.titre}`
+      const la = ctx.measureText('shinecosmetics.ma').width + W * 0.05, ha = W * 0.06
+      ctx.fillStyle = 'rgba(247,246,242,.94)'; rondRect(ctx, -la / 2, hb * 0.62, la, ha, ha / 2); ctx.fill()
+      ctx.fillStyle = COULEURS.vert; ctx.fillText('shinecosmetics.ma', 0, hb * 0.62 + ha / 2 + W * 0.002)
+    }
+    ctx.restore()
+  }
+
+  // 8 bis. Les badges de confiance (entre les produits et le bouton) : la cliente marocaine
+  // hesite a commander en ligne, on leve le frein la ou elle decide.
+  if (e.badges.length) {
+    let taille = W * 0.027
+    ctx.font = `700 ${taille}px ${police}`
+    const largeurs = () => e.badges.map((b) => ctx.measureText(`✓ ${b.texte}`).width + W * 0.045)
+    let ls = largeurs()
+    while (ls.reduce((n, l) => n + l, 0) + (ls.length - 1) * W * 0.015 > W * 0.92 && taille > W * 0.018) { taille -= W * 0.001; ctx.font = `700 ${taille}px ${police}`; ls = largeurs() }
+    const hb = taille * 1.9, total = ls.reduce((n, l) => n + l, 0) + (ls.length - 1) * W * 0.015
+    let x = (W - total) / 2
+    const cy = H * 0.684
+    e.badges.forEach((b, k) => {
+      const l = ls[k]
+      if (b.echelle > 0) {
+        ctx.save()
+        ctx.translate(x + l / 2, cy); ctx.scale(b.echelle, b.echelle)
+        ctx.shadowColor = 'rgba(0,0,0,.18)'; ctx.shadowBlur = W * 0.015
+        ctx.fillStyle = 'rgba(247,246,242,.96)'; rondRect(ctx, -l / 2, -hb / 2, l, hb, hb / 2); ctx.fill()
+        ctx.shadowColor = 'transparent'
+        ctx.fillStyle = COULEURS.vert; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+        ctx.fillText(`✓ ${b.texte}`, 0, taille * 0.05)
+        ctx.restore()
+      }
+      x += l + W * 0.015
+    })
+  }
+
+  // 8 ter. Le sticker de prix : une pastille prune qui tombe en tournant, en haut a droite des produits.
+  if (e.sticker && e.sticker.echelle > 0) {
+    const r = W * 0.088
+    ctx.save()
+    ctx.translate(W * 0.8, H * 0.4); ctx.rotate((e.sticker.rotation * Math.PI) / 180); ctx.scale(e.sticker.echelle, e.sticker.echelle)
+    ctx.shadowColor = 'rgba(0,0,0,.25)'; ctx.shadowBlur = W * 0.02; ctx.shadowOffsetY = W * 0.006
+    ctx.fillStyle = COULEURS.prune; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill()
+    ctx.shadowColor = 'transparent'; ctx.shadowOffsetY = 0
+    ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = W * 0.004; ctx.setLineDash([W * 0.008, W * 0.007])
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.84, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([])
+    const [montant, ...unite] = e.sticker.texte.split(' ')
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.font = `800 ${W * (montant.length > 3 ? 0.047 : 0.055)}px ${POLICES.titre}`; ctx.fillText(montant, 0, -r * 0.1)
+    ctx.font = `700 ${W * 0.026}px ${POLICES.titre}`; ctx.fillText(unite.join(' ') || 'DH', 0, r * 0.42)
     ctx.restore()
   }
 
@@ -410,9 +457,31 @@ const debutDe = (plans: PlanDessin[], i: number) => plans.slice(0, i).reduce((n,
 /** Les voix off posees : 0,15 s apres le debut de leur plan. */
 const voixDe = (plans: PlanDessin[]): VoixPlacee[] => plans.flatMap((p, i) => (p.voixUrl ? [{ url: p.voixUrl, debut: debutDe(plans, i) + 0.15 }] : []))
 
-export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, nom, selection, choisirPlan }: {
+/**
+ * L'interface d'Instagram par-dessus le Reel : ce qu'elle cache (le haut, la
+ * colonne d'icones a droite, la legende et le bouton en bas). On voit ainsi,
+ * avant de publier, si un texte ou un flacon passe dessous.
+ */
+function HabillageReel({ bouton, legende }: { bouton: string; legende: string }) {
+  return (
+    <div className={s.igReel} aria-hidden>
+      <div className={s.igHaut}><b>Reels</b><Camera size={16} /></div>
+      <div className={s.igDroite}><span><Heart size={18} /><small>2,4 k</small></span><span><MessageCircle size={18} /><small>86</small></span><span><Send size={18} /></span><span><Bookmark size={18} /></span><span><MoreHorizontal size={18} /></span></div>
+      <div className={s.igBas}>
+        <p className={s.igCompte}><i>S</i><b>shinecosmetics.ma</b><small>Sponsorisé</small></p>
+        <p className={s.igLegende}>{legende.slice(0, 80)}{legende.length > 80 ? '… plus' : ''}</p>
+        <p className={s.igSon}><Music2 size={11} /> Son original · shinecosmetics.ma</p>
+        <span className={s.igBouton}>{bouton} ›</span>
+      </div>
+      <div className={s.igZones}><i style={{ top: '14%' }} /><i style={{ top: '80%' }} /></div>
+    </div>
+  )
+}
+
+export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, nom, selection, choisirPlan, habillage, legende = '' }: {
   plans: PlanDessin[]; langue: Langue; bouton: string; largeur?: number; nom: string
   selection?: number | null; choisirPlan?: (i: number) => void
+  habillage?: boolean; legende?: string
 }) {
   // Le parent refabrique ses plans a chaque rendu : sans cette cle, la lecture redemarrait
   // sans cesse (et l'apercu repeignait un instant proche de 0).
@@ -545,6 +614,7 @@ export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, 
     <div className={s.reel} style={{ width: largeur }}>
       <div className={`${s.telephone} ${s.story}`}>
         <canvas ref={canvas} width={540} height={960} className={s.reelCanvas} aria-label="Aperçu du Reel animé" />
+        {habillage && pret && <HabillageReel bouton={bouton} legende={legende} />}
         {!pret && <div className={s.reelAttente}><Loader2 size={18} className={s.tourne} /> Détourage des produits…</div>}
       </div>
       <div className={s.reelFrise} role="group" aria-label="Plans du Reel">

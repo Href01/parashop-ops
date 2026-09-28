@@ -75,7 +75,7 @@ async function decoder(ctx: BaseAudioContext, url: string): Promise<AudioBuffer 
 
 /**
  * La piste complete : bruitages (si demandes) + voix off posees au debut de leur
- * plan. Les bruitages baissent sous une voix, pour qu'on l'entende.
+ * plan, a la suite l'une de l'autre. Les bruitages baissent sous une voix.
  */
 export async function mixerPiste(plans: PlanReel[], o: { bruitages: boolean; voix: VoixPlacee[] }): Promise<AudioBuffer> {
   const total = dureeTotale(plans)
@@ -88,10 +88,16 @@ export async function mixerPiste(plans: PlanReel[], o: { bruitages: boolean; voi
   if (o.bruitages) evenementsSonores(plans).forEach((e, k) => jouer(ctx, sfx, e, k + 1))
   const voix = ctx.createGain(); voix.gain.value = 1.1; voix.connect(compresseur)
   const buffers = await Promise.all(o.voix.map((v) => decoder(ctx, v.url)))
+  // Deux chuchotements ne se chevauchent jamais : une voix trop longue decale la
+  // suivante (le studio le signale et propose d'allonger le plan).
+  let libre = 0
   buffers.forEach((b, k) => {
     if (!b) return
+    const debut = Math.max(o.voix[k].debut, libre)
+    if (debut >= total) return
     const s = ctx.createBufferSource(); s.buffer = b; s.connect(voix)
-    s.start(o.voix[k].debut, 0, Math.max(0, total - o.voix[k].debut))
+    s.start(debut, 0, total - debut)
+    libre = debut + b.duration + 0.1
   })
   return ctx.startRendering()
 }
