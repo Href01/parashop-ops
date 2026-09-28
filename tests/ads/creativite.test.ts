@@ -319,6 +319,9 @@ test('filmé sans image de départ : seulement un plan sans produit, avec sa con
   assert.throws(() => verifierOption(sans({ produitIds: undefined }), 1, 'reel', [96]), /SANS produit/)
   assert.throws(() => verifierOption(sans({ clipPrompt: 'Hair.' }), 1, 'reel', [96]), /clipPrompt/)
   assert.throws(() => verifierOption(sans({ mouvement: 'revele', animes: [96] }), 1, 'reel', [96]), /SANS produit/)
+  // La carte de fin filmée sans image : les vrais produits sont posés par-dessus, le clip n'en montre aucun.
+  assert.doesNotThrow(() => verifierOption(sans({ mouvement: 'fin', animes: [96], confiance: ['cod'], prix: true }), 4, 'reel', [96]))
+  assert.doesNotThrow(() => verifierRenduVideo([sans({}), sans({ mouvement: 'fin', animes: [96], confiance: ['cod'] })], {}))
   // Sans « sansDepart », un plan sans consigne d'image reste refusé.
   assert.throws(() => verifierOption(sans({ sansDepart: false }), 1, 'reel', [96]), /200 caractères/)
   // En rendu vidéo, il passe sans image de départ.
