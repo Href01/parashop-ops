@@ -1,7 +1,7 @@
 import { contexte, echecDemande, publierRapport, reclamerDemande } from '@/lib/ads/agent'
 import { synchroniserPubsMeta } from '@/lib/ads/meta-sync'
 import { genererImage, lireImage, supprimerImage } from '@/lib/ads/images'
-import { animerPlan, suivreClip } from '@/lib/ads/clips'
+import { animerPlan, poserClipDepuisUrl, suivreClip } from '@/lib/ads/clips'
 import { contexteDirection, enregistrerDirection, modifierPlan, terminerDirection } from '@/lib/ads/direction'
 import { genererVoix, type LangueVoix } from '@/lib/ads/voix'
 import type { FormatImage } from '@/lib/ads/creatif-model'
@@ -55,6 +55,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
       // Le directeur artistique anime l'image de depart d'un plan (meme plafond que le studio), puis suit le clip.
       case 'clip':
         return Response.json({ generation: await animerPlan({ optionId: Number(body?.optionId), modele: body?.modele, duree: Number(body?.duree) || undefined, par: 'agent' }) }, { headers: PRIVATE_HEADERS })
+      // Un clip genere hors du BOS (Higgsfield via le connecteur MCP de Claude) : copie et pose dans le plan.
+      case 'clip-url':
+        return Response.json({ clip: await poserClipDepuisUrl({ optionId: Number(body?.optionId), url: String(body?.url || ''), source: body?.source, par: 'agent' }) }, { headers: PRIVATE_HEADERS })
       case 'clip-suivi':
         return Response.json({ generation: await suivreClip(Number(body?.id)) }, { headers: PRIVATE_HEADERS })
       case 'direction-contexte':

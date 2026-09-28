@@ -195,3 +195,25 @@ export async function clipsDuPlan(optionId: number) {
     return (await pool.query(`SELECT id, modele, duree, statut, usd_estime::float AS usd, erreur, cree_le FROM "AdsClipGeneration" WHERE option_id = $1 ORDER BY cree_le DESC LIMIT 5`, [optionId])).rows
   } catch (e) { if ((e as { code?: string }).code === '42P01') return []; throw e }
 }
+
+/**
+ * Un clip deja genere ailleurs — Higgsfield par le connecteur MCP de Claude (credits de l'abonnement),
+ * ou un autre outil : copie sur Cloudinary, pose dans le plan, et trace dans le journal (sans cout : il
+ * est paye hors du BOS).
+ */
+export async function poserClipDepuisUrl(o: { optionId: number; url: string; par: string | null; source?: string }) {
+  const url = String(o.url || '').trim()
+  if (!/^https:\/\/\S+$/i.test(url) || url.length > 2000) throw new Error('Adresse du clip : une URL https complète.')
+  const opt = (await pool.query(`SELECT id, creatif_id, mouvement, motion FROM "AdsCreativeOption" WHERE id = $1`, [o.optionId])).rows[0]
+  if (!opt) throw new Error('Plan introuvable.')
+  if (!opt.mouvement) throw new Error('Seuls les plans d’un Reel ont un clip.')
+  const { nuage } = identifiants()
+  const clip = url.startsWith(`https://res.cloudinary.com/${nuage}/video/upload/`) ? { url, duree: null } : await copierSurCloudinary(url, `plan-${opt.id}-ext-${Date.now()}`)
+  await pool.query(`UPDATE "AdsCreativeOption" SET motion = jsonb_set(coalesce(motion, '{}'::jsonb), '{clip}', $2::jsonb), maj_le = now() WHERE id = $1`,
+    [opt.id, JSON.stringify({ url: clip.url, duree: clip.duree, debut: 0 })])
+  await pool.query(
+    `INSERT INTO "AdsClipGeneration" (option_id, creatif_id, modele, endpoint, prompt, image_url, duree, statut, video_source, clip_url, demande_par)
+     VALUES ($1, $2, $3, 'externe', $4, '', $5, 'terminee', $6, $7, $8)`,
+    [opt.id, opt.creatif_id, (o.source || 'externe').slice(0, 60), String(opt.motion?.clipPrompt ?? ''), Math.round(clip.duree ?? 0), url, clip.url, o.par])
+  return clip
+}

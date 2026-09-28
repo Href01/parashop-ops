@@ -6,7 +6,7 @@ import { detailPub } from '@/lib/ads/series'
 import { demanderDirection, demanderRetouche, deplacerPlan, dupliquerPlan, modifierPlan, supprimerPlan, supprimerSerie } from '@/lib/ads/direction'
 import { genererVoix, type LangueVoix } from '@/lib/ads/voix'
 import { ajouterLecon, basculerLecon } from '@/lib/ads/apprentissage'
-import { animerPlan, clipsDuPlan, estimerClip, signatureClip, suivreClip } from '@/lib/ads/clips'
+import { animerPlan, clipsDuPlan, estimerClip, poserClipDepuisUrl, signatureClip, suivreClip } from '@/lib/ads/clips'
 import type { CleModeleVideo } from '@/lib/ads/clips-model'
 import type { FormatImage } from '@/lib/ads/creatif-model'
 import { PRIVATE_HEADERS, sameOrigin } from '@/lib/seo/http'
@@ -87,6 +87,7 @@ export async function POST(request: Request) {
     if (body?.clipEstimation) return Response.json(await estimerClip(Number(body.clipEstimation.optionId), body.clipEstimation.modele as CleModeleVideo, Number(body.clipEstimation.duree)), { headers: PRIVATE_HEADERS })
     if (body?.clipIA) return Response.json({ generation: await animerPlan({ optionId: Number(body.clipIA.optionId), modele: body.clipIA.modele as CleModeleVideo, duree: Number(body.clipIA.duree) || undefined, par }) }, { headers: PRIVATE_HEADERS })
     if (body?.clipSuivi) return Response.json({ generation: await suivreClip(Number(body.clipSuivi.id)) }, { headers: PRIVATE_HEADERS })
+    if (body?.clipUrl) return Response.json({ clip: await poserClipDepuisUrl({ optionId: Number(body.clipUrl.optionId), url: String(body.clipUrl.url || ''), source: body.clipUrl.source, par }) }, { headers: PRIVATE_HEADERS })
     if (body?.clipsDuPlan) return Response.json({ generations: await clipsDuPlan(Number(body.clipsDuPlan.optionId)) }, { headers: PRIVATE_HEADERS })
     // Ce que le directeur artistique doit retenir : relu avant chaque direction.
     if (body?.lecon) return Response.json({ lecon: await ajouterLecon(body.lecon, par) }, { headers: PRIVATE_HEADERS })
