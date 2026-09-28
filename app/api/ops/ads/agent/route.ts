@@ -3,7 +3,8 @@ import { PERIODES, creerDemande, ecran, enregistrerStrategie, majAction, majCrea
 import { synchroniserPubsMeta } from '@/lib/ads/meta-sync'
 import { choisirImage, genererImage, supprimerImage, type Qualite } from '@/lib/ads/images'
 import { detailPub } from '@/lib/ads/series'
-import { demanderDirection, modifierOption, supprimerSerie } from '@/lib/ads/direction'
+import { demanderDirection, demanderRetouche, deplacerPlan, dupliquerPlan, modifierPlan, supprimerPlan, supprimerSerie } from '@/lib/ads/direction'
+import { genererVoix, type LangueVoix } from '@/lib/ads/voix'
 import type { FormatImage } from '@/lib/ads/creatif-model'
 import { PRIVATE_HEADERS, sameOrigin } from '@/lib/seo/http'
 
@@ -43,7 +44,10 @@ export async function GET(request: Request) {
  *   { image: { creatifId, format, qualite?, precision? } } → genere un visuel (OpenAI, photo produit en reference)
  *   { image: { optionId, qualite? } }    → genere le visuel d'une option / carte / plan (consigne ecrite par Claude)
  *   { direction: { type, nombre, format, styles, qualite, brief, creatifId? | produitIds? } } → brief au directeur artistique
- *   { option: { id, prompt?, texte?, position? } } / { serieSupprimee: { creatifId, serie } }
+ *   { option: { id, …champs du plan } } → retouche a la main (memes regles que la livraison de Claude)
+ *   { planDuplique: id } / { planSupprime: id } / { planDeplace: { id, sens: -1 | 1 } } / { serieSupprimee: { creatifId, serie } }
+ *   { retouche: { optionId, note } } → « refais ce plan », demande au directeur artistique
+ *   { voix: { optionId, langue } } → la voix off du plan (OpenAI, ASMR)
  *   { imageChoisie: id } / { imageSupprimee: id }
  */
 export async function POST(request: Request) {
@@ -71,7 +75,12 @@ export async function POST(request: Request) {
         : { creatifId: Number(i.creatifId), format: i.format as FormatImage, qualite: i.qualite as Qualite, precision: typeof i.precision === 'string' ? i.precision : undefined, par }) }, { headers: PRIVATE_HEADERS })
     }
     if (body?.direction) return Response.json(await demanderDirection(body.direction, par), { headers: PRIVATE_HEADERS })
-    if (body?.option) return Response.json({ option: await modifierOption(Number(body.option.id), { prompt: body.option.prompt, texte: body.option.texte, position: body.option.position }) }, { headers: PRIVATE_HEADERS })
+    if (body?.option) return Response.json({ option: await modifierPlan(Number(body.option.id), body.option) }, { headers: PRIVATE_HEADERS })
+    if (body?.planDuplique) return Response.json(await dupliquerPlan(Number(body.planDuplique)), { headers: PRIVATE_HEADERS })
+    if (body?.planSupprime) return Response.json(await supprimerPlan(Number(body.planSupprime)), { headers: PRIVATE_HEADERS })
+    if (body?.planDeplace) return Response.json(await deplacerPlan(Number(body.planDeplace.id), body.planDeplace.sens === -1 ? -1 : 1), { headers: PRIVATE_HEADERS })
+    if (body?.retouche) return Response.json(await demanderRetouche({ optionId: Number(body.retouche.optionId), note: String(body.retouche.note || '') }, par), { headers: PRIVATE_HEADERS })
+    if (body?.voix) return Response.json(await genererVoix(Number(body.voix.optionId), body.voix.langue as LangueVoix), { headers: PRIVATE_HEADERS })
     if (body?.serieSupprimee) return Response.json(await supprimerSerie(Number(body.serieSupprimee.creatifId), Number(body.serieSupprimee.serie)), { headers: PRIVATE_HEADERS })
     if (body?.imageChoisie) return Response.json(await choisirImage(Number(body.imageChoisie)), { headers: PRIVATE_HEADERS })
     if (body?.imageSupprimee) return Response.json(await supprimerImage(Number(body.imageSupprimee)), { headers: PRIVATE_HEADERS })

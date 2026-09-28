@@ -34,7 +34,10 @@ export type Option = {
   id: number; creatif_id: number; demande_id: number | null; serie: number; carte: number | null; role: string | null; concept: string; pourquoi: string | null
   prompt: string; texte: { fr?: string; darija?: string; ar?: string }; position: 'haut' | 'bas'; format: 'feed' | 'story' | 'carre'
   produit_ids: number[] | null; animes: number[] | null; mouvement: Mouvement | null; duree: string | number | null
-  motion: { transition?: Transition; ambiance?: Ambiance; bulles?: { de: 'cliente' | 'shine'; texte: Multi }[]; points?: Multi[]; choix?: Multi[] } | null
+  motion: {
+    transition?: Transition; ambiance?: Ambiance; bulles?: { de: 'cliente' | 'shine'; texte: Multi }[]; points?: Multi[]; choix?: Multi[]
+    voix?: Multi | null; voixUrl?: Partial<Record<'fr' | 'darija' | 'ar', { url: string; texte: string }>>
+  } | null
   style: string | null; brief: string | null; qualite: string | null; note: string | null; modele: string | null; cree_le: string
 }
 type Multi = { fr?: string; darija?: string; ar?: string }

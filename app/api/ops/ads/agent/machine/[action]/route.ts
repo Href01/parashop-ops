@@ -1,7 +1,8 @@
 import { contexte, echecDemande, publierRapport, reclamerDemande } from '@/lib/ads/agent'
 import { synchroniserPubsMeta } from '@/lib/ads/meta-sync'
 import { genererImage, lireImage, supprimerImage } from '@/lib/ads/images'
-import { contexteDirection, enregistrerDirection, modifierOption, terminerDirection } from '@/lib/ads/direction'
+import { contexteDirection, enregistrerDirection, modifierPlan, terminerDirection } from '@/lib/ads/direction'
+import { genererVoix, type LangueVoix } from '@/lib/ads/voix'
 import type { FormatImage } from '@/lib/ads/creatif-model'
 import { PRIVATE_HEADERS, cronAuthorized } from '@/lib/seo/http'
 
@@ -23,7 +24,8 @@ export const maxDuration = 300
  *   POST …/machine/demande { direction: true } → reserve la plus ancienne demande « direction »
  *   POST …/machine/direction-contexte { id }   → brief, creation, vrais produits (photo + detouree), pubs qui marchent
  *   POST …/machine/direction                   → livre les options / cartes / plans (valides, puis enregistres)
- *   POST …/machine/option { id, prompt?, note? } → retouche une consigne, note le controle d'un visuel
+ *   POST …/machine/option { id, …champs du plan, note? } → retouche un plan (memes regles que la livraison), note un controle
+ *   POST …/machine/voix { optionId, langue }   → la voix off d'un plan (OpenAI, ASMR)
  *   POST …/machine/image-supprimee { id }      → retire un visuel rate
  *   POST …/machine/fichier { url }             → une image du Cloudinary de Shine, en base64 (si le cloud ne le joint pas)
  *   POST …/machine/termine { id, resultat }    → clot la direction avec son mot de fin
@@ -54,7 +56,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
       case 'direction':
         return Response.json(await enregistrerDirection(body), { headers: PRIVATE_HEADERS })
       case 'option':
-        return Response.json({ option: await modifierOption(Number(body?.id), { prompt: body?.prompt, note: body?.note, texte: body?.texte, position: body?.position }) }, { headers: PRIVATE_HEADERS })
+        return Response.json({ option: await modifierPlan(Number(body?.id), body ?? {}) }, { headers: PRIVATE_HEADERS })
+      case 'voix':
+        return Response.json(await genererVoix(Number(body?.optionId), body?.langue as LangueVoix), { headers: PRIVATE_HEADERS })
       case 'image-supprimee':
         return Response.json(await supprimerImage(Number(body?.id)), { headers: PRIVATE_HEADERS })
       case 'fichier':

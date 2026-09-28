@@ -82,7 +82,8 @@ export function Studio({ c, d, fermer, maj, rafraichir, message }: { c: Creatif;
   const [accroche, setAccroche] = useState(accrocheDe(c, 'fr'))
   const [surimpression, setSurimpression] = useState(true)
   const [position, setPosition] = useState<'haut' | 'bas'>('haut')
-  const [canal, setCanal] = useState<'message' | 'site'>('message')
+  // Le bouton de la pub suit la creation : « Commander sur le site » quand le brief l'a demande.
+  const [canal, setCanal] = useState<'message' | 'site'>(/site|command/i.test(c.cta || '') ? 'site' : 'message')
   const [imageId, setImageId] = useState<number | null>(imageChoisie(c)?.id ?? null)
   const [format, setFormat] = useState<FormatImage>(formatParDefaut(c.format))
   const [qualite, setQualite] = useState<'low' | 'medium' | 'high'>('medium')

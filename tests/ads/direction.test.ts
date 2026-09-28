@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { idees, promptFinal, saison, sujetDemande, validerDemande, verifierLivraison, LivraisonDirection, type ProduitPourIdee } from '../../lib/ads/direction-model'
-import { dureeTotale, etatPlan, mots, nbImages, particules, planA, rebondir, ressort, transitionA, urlDetouree, type PlanReel } from '../../lib/ads/reel-model'
+import { dureeMinDm, fautesFrancais, idees, motMisEnValeurVide, promptFinal, saison, sujetDemande, validerDemande, verifierLivraison, verifierOption, LivraisonDirection, OptionLivreeSchema, type ProduitPourIdee } from '../../lib/ads/direction-model'
+import { disposition, dureeTotale, etatPlan, evenementsSonores, mots, nbImages, particules, planA, rebondir, ressort, transitionA, urlDetouree, type PlanReel } from '../../lib/ads/reel-model'
 
 test('le brief : bornes, format et produits', () => {
   assert.throws(() => validerDemande({ type: 'carrousel', nombre: 12, format: 'carre', produitIds: [1], brief: 'Un carrousel produit' }), /de 3 à 10 cartes/)
@@ -172,4 +172,47 @@ test('le moteur : bulles tapées puis envoyées, doigt du quiz, reflet, transiti
   assert.deepEqual(particules('bulles', 1.3, 2), particules('bulles', 1.3, 2))
   assert.equal(particules('sable', 1, 1).length, 34)
   assert.deepEqual(particules('aucune', 1, 1), [])
+})
+
+test('le français affiché : accents obligatoires, mot mis en valeur porteur de sens', () => {
+  // Les fautes exactes du premier Reel livré.
+  assert.deepEqual(fautesFrancais("Taches *apres* l'ete ?"), ['apres', 'ete'])
+  assert.deepEqual(fautesFrancais('Etape 2 : le *serum*'), ['etape', 'serum'])
+  assert.deepEqual(fautesFrancais('Commande sur le site, paiement a la livraison'), ['a la livraison'])
+  assert.deepEqual(fautesFrancais('Cheveux *secs* après l’été ? Ça marche, elle a la peau sèche.'), [])
+  assert.equal(motMisEnValeurVide("Taches *apres* l'ete ?"), 'apres')
+  assert.equal(motMisEnValeurVide('Cheveux *secs* après l’été ?'), null)
+  assert.equal(dureeMinDm(4, false), 5)
+  assert.equal(dureeMinDm(3, true), 4.5)
+  const o = (x: Record<string, unknown>) => OptionLivreeSchema.parse({ concept: 'Plan', pourquoi: 'Parce que ça arrête le pouce.', prompt: PROMPT, texte: { fr: 'Cheveux *secs* après l’été ?' }, produitIds: [], animes: [49], mouvement: 'rebond', duree: 2, ...x })
+  assert.doesNotThrow(() => verifierOption(o({}), 0, 'reel', [49]))
+  assert.throws(() => verifierOption(o({ texte: { fr: "Taches *apres* l'ete ?" } }), 0, 'reel', [49]), /sans accents/)
+  assert.throws(() => verifierOption(o({ texte: { fr: 'Cheveux secs *après* l’été ?' } }), 0, 'reel', [49]), /mot vide/)
+  assert.throws(() => verifierOption(o({ mouvement: 'dm', duree: 4, animes: [], bulles: [1, 2, 3, 4].map(() => ({ de: 'cliente', texte: { fr: 'Salam' } })) }), 1, 'reel', [49]), /se lisent en 5 s/)
+  assert.throws(() => verifierOption(o({ mouvement: 'rebond', animes: [49, 34, 96, 98] }), 1, 'reel', [49, 34, 96, 98]), /3 produits au plus/)
+  assert.doesNotThrow(() => verifierOption(o({ mouvement: 'fin', duree: 3, animes: [49, 34, 96, 98] }), 3, 'reel', [49, 34, 96, 98]))
+  assert.throws(() => verifierOption(o({ voix: { fr: 'Apres la plage' } }), 0, 'reel', [49]), /sans accents/)
+})
+
+test('le moteur : une routine de 4 produits tient dans un plan, les bruitages suivent l’image', () => {
+  const place = disposition(4, 'fin')
+  assert.equal(place.length, 4)
+  assert.ok(place.every((p) => p.cx > 0.08 && p.cx < 0.92), 'four products stay inside the frame')
+  const plans: PlanReel[] = [
+    { mouvement: 'rebond', duree: 2, produits: 1, texte: 'x' },
+    { mouvement: 'dm', duree: 4.5, produits: 1, texte: 'y', transition: 'vague', bulles: [{ de: 'cliente', texte: 'Salam' }, { de: 'shine', texte: 'Oui !' }, { de: 'cliente', texte: 'Top' }] },
+    { mouvement: 'fin', duree: 3, produits: 4, texte: 'z' },
+  ]
+  const ev = evenementsSonores(plans)
+  // Le choc tombe quand le flacon touche l'etagere (premier contact de la chute).
+  const choc = ev.find((e) => e.son === 'choc')!
+  assert.ok(Math.abs(choc.t - (0.1 + 0.75 * 0.364)) < 0.01)
+  // Le souffle de la vague a l'entree du plan 2 ; puis envoi, ding, envoi, et le ding de la fiche.
+  assert.ok(ev.some((e) => e.son === 'souffle' && e.t === 2))
+  assert.deepEqual(ev.filter((e) => e.t >= 2 && e.t < 6.5 && ['envoi', 'ding'].includes(e.son)).map((e) => e.son), ['envoi', 'ding', 'envoi', 'ding'])
+  // La carte de fin : 4 pops et le carillon du bouton, sans rien apres la fin.
+  assert.equal(ev.filter((e) => e.son === 'pop' && e.t >= 6.5).length, 4)
+  assert.ok(ev.some((e) => e.son === 'cta' && Math.abs(e.t - 6.95) < 0.01))
+  assert.ok(ev.every((e) => e.t < dureeTotale(plans)))
+  assert.deepEqual(ev.map((e) => e.t), [...ev.map((e) => e.t)].sort((a, b) => a - b))
 })

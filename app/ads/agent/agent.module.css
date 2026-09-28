@@ -294,3 +294,34 @@
   .dirApercu { max-width: none; }
   .dirOptions { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; }
 }
+
+/* La table de montage d'un Reel. */
+.montage { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.montagePlan { border: 1px solid #e3e8e3; border-radius: 10px; background: #fff; }
+.montagePlanOuvert { border-color: #9b3070; box-shadow: 0 0 0 1px #9b3070; }
+.montageTete { display: grid; grid-template-columns: 46px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 8px; }
+.montageVignette { border: 0; padding: 0; width: 46px; height: 80px; border-radius: 6px; overflow: hidden; background: linear-gradient(#f7f6f2, #e1f5ee); cursor: pointer; }
+.montageVignette img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.montageResume { border: 0; background: transparent; text-align: start; display: grid; gap: 2px; padding: 0; cursor: pointer; min-width: 0; }
+.montageResume b { font-size: 12.5px; }
+.montageResume span { font-size: 12.5px; color: #3f4d45; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.montageAlerte { color: #a35b00; font-size: 11.5px; }
+.montageOutils { display: flex; gap: 4px; }
+.montageOutils button { width: 30px; height: 30px; border: 1px solid #d6ded7; border-radius: 7px; background: #fff; display: grid; place-items: center; }
+.montageOutils button:disabled { opacity: .4; }
+.montageEditeur { display: grid; gap: 10px; padding: 4px 12px 12px; border-top: 1px solid #eef1ed; }
+.montageMulti { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; flex: 1; min-width: 0; }
+.montageMulti label { display: grid; gap: 2px; }
+.montageMulti small { font-size: 10.5px; font-weight: 700; color: #66716a; }
+.montageGrille { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.montageDuree { display: inline-flex; align-items: center; gap: 8px; border: 1px solid #d6ded7; border-radius: 8px; padding: 3px 6px; background: #fff; justify-content: space-between; }
+.montageDuree button { border: 0; background: #eef2ee; border-radius: 6px; width: 28px; height: 26px; font-weight: 800; }
+.montageLigne { display: grid; gap: 4px; padding: 6px 0; border-bottom: 1px dashed #e6ebe5; }
+.montageLigneTete { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.montageLigneTete small { font-weight: 700; color: #4b5750; }
+.montageAudio { height: 32px; max-width: 260px; }
+.montageAlertes { margin: 0; padding: 8px 10px; list-style: none; background: #fff7e8; border: 1px solid #f3d9a8; border-radius: 8px; color: #7a4a00; font-size: 12px; display: grid; gap: 3px; }
+
+@media (max-width: 760px) {
+  .montageMulti, .montageGrille { grid-template-columns: 1fr; }
+}

@@ -1,10 +1,11 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Download, Loader2, Pause, Play, RotateCcw } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Download, Loader2, Pause, Play, RotateCcw, Volume2, VolumeX } from 'lucide-react'
 import { estRtl, type Langue } from '@/lib/ads/creatif-model'
 import { H, IPS, W, douce, dureeTotale, etatPlan, nbImages, planA, transitionA, type EtatPlan, type Particule, type PlanReel } from '@/lib/ads/reel-model'
 import { COULEURS, POLICES, policesPretes } from './polices'
+import { TAUX, mixerPiste, type VoixPlacee } from './sons'
 import s from './apercu.module.css'
 
 /**
@@ -14,7 +15,7 @@ import s from './apercu.module.css'
  * navigateur : rien ne part sur un serveur).
  */
 
-export type PlanDessin = PlanReel & { image: string | null; detourees: string[]; noms?: string[] }
+export type PlanDessin = PlanReel & { image: string | null; detourees: string[]; noms?: string[]; voixUrl?: string | null }
 type Ressources = Map<string, HTMLImageElement>
 type Ctx = CanvasRenderingContext2D
 
@@ -405,8 +406,19 @@ export function dessiner(ctx: Ctx, plans: PlanDessin[], t: number, res: Ressourc
 }
 
 const urlsDe = (plans: PlanDessin[]) => plans.flatMap((p) => [p.image, ...p.detourees]).filter((u): u is string => Boolean(u))
+const debutDe = (plans: PlanDessin[], i: number) => plans.slice(0, i).reduce((n, p) => n + p.duree, 0)
+/** Les voix off posees : 0,15 s apres le debut de leur plan. */
+const voixDe = (plans: PlanDessin[]): VoixPlacee[] => plans.flatMap((p, i) => (p.voixUrl ? [{ url: p.voixUrl, debut: debutDe(plans, i) + 0.15 }] : []))
 
-export function LecteurReel({ plans, langue, bouton, largeur = 260, nom }: { plans: PlanDessin[]; langue: Langue; bouton: string; largeur?: number; nom: string }) {
+export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, nom, selection, choisirPlan }: {
+  plans: PlanDessin[]; langue: Langue; bouton: string; largeur?: number; nom: string
+  selection?: number | null; choisirPlan?: (i: number) => void
+}) {
+  // Le parent refabrique ses plans a chaque rendu : sans cette cle, la lecture redemarrait
+  // sans cesse (et l'apercu repeignait un instant proche de 0).
+  const cleDessin = JSON.stringify(plansRecus)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const plans = useMemo(() => plansRecus, [cleDessin])
   const canvas = useRef<HTMLCanvasElement>(null)
   const res = useRef<Ressources>(new Map())
   const [pret, setPret] = useState(false)
@@ -414,9 +426,23 @@ export function LecteurReel({ plans, langue, bouton, largeur = 260, nom }: { pla
   const [t, setT] = useState(0)
   const [export_, setExport] = useState<number | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
+  // Le son : coupe par defaut (un navigateur ne joue un son qu'apres un geste), bruitages et voix separables.
+  const [son, setSon] = useState(false)
+  const [bruitages, setBruitages] = useState(true)
+  const [avecVoix, setAvecVoix] = useState(true)
+  const [piste, setPiste] = useState<AudioBuffer | null>(null)
+  const audio = useRef<{ ctx: AudioContext; source: AudioBufferSourceNode | null } | null>(null)
   const total = dureeTotale(plans)
   const cle = urlsDe(plans).join('|')
   const origine = useRef(0)
+  // La boucle d'animation lit ces references : une pause decidee ailleurs (clic sur un plan)
+  // s'applique tout de suite, sans qu'une image deja programmee ecrase la position choisie.
+  const enLecture = useRef(lecture)
+  enLecture.current = lecture
+  const raf = useRef(0)
+  const figer = (x: number) => { enLecture.current = false; cancelAnimationFrame(raf.current); setLecture(false); setT(x) }
+  const voix = avecVoix ? voixDe(plans) : []
+  const cleSon = JSON.stringify([plans.map((p) => [p.mouvement, p.duree, p.produits, p.transition, p.bulles?.length, p.points?.length, p.choix?.length]), bruitages, voix])
 
   useEffect(() => {
     let vivant = true
@@ -426,6 +452,28 @@ export function LecteurReel({ plans, langue, bouton, largeur = 260, nom }: { pla
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cle])
 
+  // La piste se refabrique quand le montage change (un peu apres la derniere retouche).
+  useEffect(() => {
+    let vivant = true
+    const h = setTimeout(() => { void mixerPiste(plans, { bruitages, voix }).then((b) => { if (vivant) setPiste(b) }).catch(() => {}) }, 350)
+    return () => { vivant = false; clearTimeout(h) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cleSon])
+
+  const couperSon = () => { try { audio.current?.source?.stop() } catch { /* deja arretee */ } if (audio.current) audio.current.source = null }
+  const jouerSon = useCallback((depuis: number) => {
+    couperSon()
+    if (!son || !piste) return
+    audio.current ||= { ctx: new AudioContext(), source: null }
+    const { ctx } = audio.current
+    void ctx.resume()
+    const src = ctx.createBufferSource()
+    src.buffer = piste; src.loop = true; src.loopStart = 0; src.loopEnd = Math.min(total, piste.duration)
+    src.connect(ctx.destination); src.start(0, Math.max(0, depuis % total))
+    audio.current.source = src
+  }, [son, piste, total])
+  useEffect(() => () => { couperSon(); void audio.current?.ctx.close() }, [])
+
   const peindre = useCallback((instant: number) => {
     const ctx = canvas.current?.getContext('2d')
     if (ctx && plans.length) dessiner(ctx, plans, instant, res.current, langue, bouton)
@@ -433,25 +481,34 @@ export function LecteurReel({ plans, langue, bouton, largeur = 260, nom }: { pla
 
   useEffect(() => {
     if (!pret) return
-    if (!lecture) { peindre(t); return }
-    let id = 0
+    if (!lecture) { couperSon(); peindre(t); return }
     origine.current = performance.now() - t * 1000
+    jouerSon(t)
     const boucle = (now: number) => {
+      if (!enLecture.current) return
       const instant = ((now - origine.current) / 1000) % total
       setT(instant); peindre(instant)
-      id = requestAnimationFrame(boucle)
+      raf.current = requestAnimationFrame(boucle)
     }
-    id = requestAnimationFrame(boucle)
-    return () => cancelAnimationFrame(id)
+    raf.current = requestAnimationFrame(boucle)
+    return () => { cancelAnimationFrame(raf.current); couperSon() }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pret, lecture, peindre, total])
+  }, [pret, lecture, peindre, total, jouerSon])
+
+  // Choisir un plan dans la table de montage : l'apercu s'y place, en pause.
+  useEffect(() => {
+    if (selection == null || selection < 0 || selection >= plans.length) return
+    const x = debutDe(plans, selection) + Math.min(0.9, plans[selection].duree * 0.4)
+    figer(x); peindre(x)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection])
 
   const exporter = async () => {
     setErreur(null)
     if (typeof VideoEncoder === 'undefined') { setErreur('L’export vidéo demande Chrome ou Edge (sur ordinateur ou Android).'); return }
     setExport(0)
     try {
-      const { Output, Mp4OutputFormat, BufferTarget, CanvasSource, QUALITY_HIGH, canEncodeVideo } = await import('mediabunny')
+      const { Output, Mp4OutputFormat, BufferTarget, CanvasSource, AudioBufferSource, QUALITY_HIGH, canEncodeVideo, canEncodeAudio } = await import('mediabunny')
       if (!(await canEncodeVideo('avc', { width: W, height: H }))) throw new Error('Ce navigateur ne sait pas encoder en H.264.')
       await policesPretes(); await charger(urlsDe(plans), res.current)
       const toile = document.createElement('canvas')
@@ -460,7 +517,13 @@ export function LecteurReel({ plans, langue, bouton, largeur = 260, nom }: { pla
       const sortie = new Output({ format: new Mp4OutputFormat({ fastStart: 'in-memory' }), target: new BufferTarget() })
       const source = new CanvasSource(toile, { codec: 'avc', quality: QUALITY_HIGH })
       sortie.addVideoTrack(source, { frameRate: IPS })
+      // La bande-son : en AAC, le format qu'Instagram attend. Sans AAC, la video part muette (et on le dit).
+      const bande = bruitages || voix.length ? await mixerPiste(plans, { bruitages, voix }) : null
+      const avecSon = bande && (await canEncodeAudio('aac', { numberOfChannels: 2, sampleRate: TAUX }))
+      const sonPiste = avecSon ? new AudioBufferSource({ codec: 'aac', quality: QUALITY_HIGH }) : null
+      if (sonPiste) sortie.addAudioTrack(sonPiste)
       await sortie.start()
+      if (sonPiste && bande) await sonPiste.add(bande)
       const n = nbImages(plans)
       for (let f = 0; f < n; f++) {
         dessiner(ctx, plans, f / IPS, res.current, langue, bouton)
@@ -472,6 +535,7 @@ export function LecteurReel({ plans, langue, bouton, largeur = 260, nom }: { pla
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob); a.download = `${nom}.mp4`; a.click()
       setTimeout(() => URL.revokeObjectURL(a.href), 5000)
+      if (bande && !avecSon) setErreur('Vidéo exportée sans le son : ce navigateur n’encode pas l’AAC.')
     } catch (e) { setErreur(e instanceof Error ? e.message : 'Export impossible') }
     finally { setExport(null) }
   }
@@ -487,17 +551,22 @@ export function LecteurReel({ plans, langue, bouton, largeur = 260, nom }: { pla
         {plans.map((p, i) => {
           const d = debut; debut += p.duree
           const actif = t >= d && t < d + p.duree
-          return <button key={i} type="button" style={{ flex: p.duree }} className={actif ? s.reelPlanActif : undefined} title={`Plan ${i + 1} · ${p.mouvement} · ${p.duree} s`}
-            onClick={() => { setLecture(false); setT(d + 0.6); peindre(d + 0.6) }}><i style={{ width: actif ? `${((t - d) / p.duree) * 100}%` : t >= d + p.duree ? '100%' : 0 }} /></button>
+          return <button key={i} type="button" style={{ flex: p.duree }} className={`${actif ? s.reelPlanActif : ''} ${selection === i ? s.reelPlanChoisi : ''}`} title={`Plan ${i + 1} · ${p.mouvement} · ${p.duree} s`}
+            onClick={() => { if (choisirPlan) choisirPlan(i); else { figer(d + 0.6); peindre(d + 0.6) } }}><i style={{ width: actif ? `${((t - d) / p.duree) * 100}%` : t >= d + p.duree ? '100%' : 0 }} /></button>
         })}
       </div>
       <div className={s.reelBoutons}>
         <button type="button" onClick={() => setLecture((x) => !x)} aria-label={lecture ? 'Pause' : 'Lecture'}>{lecture ? <Pause size={14} /> : <Play size={14} />}</button>
-        <button type="button" onClick={() => { setT(0); origine.current = performance.now(); if (!lecture) peindre(0) }} aria-label="Revenir au début"><RotateCcw size={14} /></button>
+        <button type="button" onClick={() => { setT(0); origine.current = performance.now(); if (lecture) jouerSon(0); else peindre(0) }} aria-label="Revenir au début"><RotateCcw size={14} /></button>
+        <button type="button" onClick={() => setSon((x) => !x)} aria-pressed={son} aria-label={son ? 'Couper le son' : 'Écouter le son'} title={son ? 'Couper le son' : 'Écouter (bruitages et voix off)'}>{son ? <Volume2 size={14} /> : <VolumeX size={14} />}</button>
         <span>{t.toFixed(1)} / {total.toFixed(1)} s</span>
         <button type="button" className={s.reelExport} disabled={export_ != null || !pret} onClick={() => void exporter()}>
           {export_ != null ? <><Loader2 size={13} className={s.tourne} /> {export_} %</> : <><Download size={13} /> MP4</>}
         </button>
+      </div>
+      <div className={s.reelOptionsSon}>
+        <label><input type="checkbox" checked={bruitages} onChange={(e) => setBruitages(e.target.checked)} /> Bruitages</label>
+        <label><input type="checkbox" checked={avecVoix} onChange={(e) => setAvecVoix(e.target.checked)} disabled={!plans.some((p) => p.voixUrl)} /> Voix off{plans.some((p) => p.voixUrl) ? '' : ' (aucune)'}</label>
       </div>
       {erreur && <p className={s.reelErreur}>{erreur}</p>}
     </div>

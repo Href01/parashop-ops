@@ -6,7 +6,8 @@ import { FORMATS_IMAGE, type FormatImage, type Langue } from '@/lib/ads/creatif-
 import { BORNES, INGREDIENTS, MOUVEMENTS, STYLES, type Idee, type Style, type TypeDirection } from '@/lib/ads/direction-model'
 import { urlDetouree } from '@/lib/ads/reel-model'
 import { ApercuCarrousel, CreatifVisuel, telechargerPng, type Visuel } from './Apercu'
-import { LecteurReel, type PlanDessin } from './Reel'
+import { LecteurReel } from './Reel'
+import { TableMontage, depuisOption, planDessin, type Brouillon } from './Montage'
 import { quand, type Creatif, type Demande, type Donnees, type Image, type Option } from './types'
 import s from '../agent.module.css'
 
@@ -224,6 +225,10 @@ export function SeriesDirection({ c, d, langue, bouton, legende, rafraichir, mes
   rafraichir: () => Promise<void>; message: (ok: boolean, t: string) => void; utiliser: (i: Image, o: Option) => void
 }) {
   const [generation, setGeneration] = useState<Record<number, number>>({})
+  // La table de montage : les retouches non enregistrees (par plan) et le plan ouvert (par serie).
+  const [brouillons, setBrouillons] = useState<Record<number, Brouillon>>({})
+  const [ouvert, setOuvert] = useState<Record<number, number | null>>({})
+  const setBrouillon = (id: number, b: Brouillon | null) => setBrouillons((x) => { const n = { ...x }; if (b) n[id] = b; else delete n[id]; return n })
   const [, tic] = useState(0)
   useEffect(() => {
     if (!Object.keys(generation).length) return
@@ -270,15 +275,8 @@ export function SeriesDirection({ c, d, langue, bouton, legende, rafraichir, mes
         const type = typeDeSerie(opts)
         const manquants = opts.filter((o) => !imagesDe(c, o).length).length
         const visuel = (o: Option): Visuel => ({ format: o.format, image: imagesDe(c, o)[0]?.url ?? null, accroche: lisible(texteDe(o, langue)), langue, surimpression: true, position: o.position })
-        const dans = (m: { fr?: string; darija?: string; ar?: string }) => m[langue] || m.fr || ''
-        const plans: PlanDessin[] = opts.map((o) => ({
-          mouvement: o.mouvement ?? 'zoom', duree: Number(o.duree) || 2.5, produits: o.animes?.length ?? 0, texte: texteDe(o, langue),
-          image: imagesDe(c, o)[0]?.url ?? null, detourees: (o.animes ?? []).map((id) => urlDetouree(imageDe.get(id)) ?? ''),
-          noms: (o.animes ?? []).map((id) => noms.get(id) ?? ''),
-          transition: o.motion?.transition, ambiance: o.motion?.ambiance,
-          bulles: (o.motion?.bulles ?? []).map((b) => ({ de: b.de, texte: dans(b.texte) })),
-          points: (o.motion?.points ?? []).map(dans), choix: (o.motion?.choix ?? []).map(dans),
-        }))
+        // L'apercu montre les retouches en cours (brouillons), avant meme qu'elles soient enregistrees.
+        const plans = type === 'reel' ? opts.map((o) => planDessin(c, o, brouillons[o.id] ?? depuisOption(o), langue, d)) : []
         const { Icone, label } = TYPES[type]
         return (
           <section key={serie} className={s.dirSerie}>
@@ -300,10 +298,15 @@ export function SeriesDirection({ c, d, langue, bouton, legende, rafraichir, mes
                 <div className={s.dirApercu}>
                   {type === 'carrousel'
                     ? <ApercuCarrousel cartes={opts.map(visuel)} legende={legende} bouton={bouton} largeur={290} />
-                    : <LecteurReel plans={plans} langue={langue} bouton={bouton} largeur={250} nom={`shine-${c.id}-reel-s${serie}-${langue}`} />}
+                    : <LecteurReel plans={plans} langue={langue} bouton={bouton} largeur={250} nom={`shine-${c.id}-reel-s${serie}-${langue}`}
+                        selection={ouvert[serie] ?? null} choisirPlan={(i) => setOuvert((x) => ({ ...x, [serie]: i }))} />}
                   {type === 'reel' && <p className={`${s.small} ${s.muted}`}>Ajoute un son tendance dans Instagram au moment de publier : les Reels avec son vont plus loin.</p>}
                 </div>
-                <div className={s.dirBande}>{opts.map((o, i) => <CarteOption key={o.id} c={c} o={o} rang={i + 1} type={type} langue={langue} genere={generation[o.id] ? Math.round((Date.now() - generation[o.id]) / 1000) : undefined} a={{ ...a, utiliser: undefined }} largeur={type === 'reel' ? 170 : 210} noms={noms} />)}</div>
+                {type === 'reel'
+                  ? <TableMontage c={c} d={d} opts={opts} langue={langue} brouillons={brouillons} setBrouillon={setBrouillon}
+                      selection={ouvert[serie] ?? null} choisir={(i) => setOuvert((x) => ({ ...x, [serie]: i }))}
+                      poster={poster} rafraichir={rafraichir} message={message} generer={generer} generation={generation} />
+                  : <div className={s.dirBande}>{opts.map((o, i) => <CarteOption key={o.id} c={c} o={o} rang={i + 1} type={type} langue={langue} genere={generation[o.id] ? Math.round((Date.now() - generation[o.id]) / 1000) : undefined} a={{ ...a, utiliser: undefined }} largeur={210} noms={noms} />)}</div>}
               </div>
             )}
           </section>

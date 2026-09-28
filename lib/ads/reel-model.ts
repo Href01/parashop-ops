@@ -118,9 +118,10 @@ export function disposition(n: number, mouvement: Mouvement = 'rebond'): { cx: n
   if (mouvement === 'dm') return [{ cx: 0.215, bas: 0.758, hauteur: 0.11 }]
   const fin = mouvement === 'fin'
   const bas = fin ? 0.66 : 0.78
-  const h = fin ? [0.3, 0.25, 0.21] : [0.4, 0.31, 0.25]
-  const xs = n <= 1 ? [0.5] : n === 2 ? [0.31, 0.69] : [0.2, 0.5, 0.8]
-  return xs.slice(0, Math.max(1, n)).map((cx) => ({ cx, bas, hauteur: h[Math.min(2, Math.max(0, n - 1))] }))
+  // Jusqu'a 4 produits : une routine complete tient dans un seul plan (le premier Reel en perdait un).
+  const h = fin ? [0.3, 0.25, 0.21, 0.18] : [0.4, 0.31, 0.25, 0.21]
+  const xs = n <= 1 ? [0.5] : n === 2 ? [0.31, 0.69] : n === 3 ? [0.2, 0.5, 0.8] : [0.14, 0.38, 0.62, 0.86]
+  return xs.slice(0, Math.max(1, n)).map((cx) => ({ cx, bas, hauteur: h[Math.min(3, Math.max(0, n - 1))] }))
 }
 
 /** Les mots du texte ; *mot* marque le mot mis en valeur (sinon, le dernier). */
@@ -337,6 +338,55 @@ export function etatPlan(plan: PlanReel, t: number, premier: boolean, indice = 0
     fond, secousse, produits, mots: etatsMots, texteHaut: ZONE.haut + 0.035, chip, cta, dm, points, quiz,
     particules: particules(plan.ambiance, t, indice + 1), etincelles, flash,
   }
+}
+
+/* --------------------------- le son --------------------------- */
+
+/**
+ * Les bruitages du Reel, cales sur l'animation : la meme horloge que l'image,
+ * donc le « ding » tombe quand la bulle apparait, le choc quand le flacon touche.
+ * Pas de musique (droits, et le son tendance s'ajoute dans Instagram) : des sons
+ * courts, doux, synthetises par le BOS (ui/sons.ts).
+ */
+export type Son = 'choc' | 'rebond' | 'pop' | 'glisse' | 'souffle' | 'ding' | 'envoi' | 'tic' | 'clic' | 'scintille' | 'montee' | 'cta'
+export type EvenementSonore = { t: number; son: Son; force: number }
+
+export function evenementsSonores(plans: PlanReel[]): EvenementSonore[] {
+  const out: EvenementSonore[] = []
+  let debut = 0
+  for (const [i, plan] of plans.entries()) {
+    const ev = (t: number, son: Son, force = 1) => { if (t >= 0 && t < plan.duree) out.push({ t: Math.round((debut + t) * 1000) / 1000, son, force }) }
+    if (i > 0 && plan.transition && plan.transition !== 'coupe') ev(0, 'souffle')
+    const n = plan.produits
+    for (let k = 0; k < n; k++) {
+      const d = 0.1 + k * 0.14
+      switch (plan.mouvement) {
+        case 'rebond': ev(d + 0.75 * 0.364, 'choc', 1 - k * 0.15); ev(d + 0.75 * 0.727, 'rebond', 0.5); break
+        case 'pop': case 'fin': ev(d + 0.05, 'pop', 0.9 - k * 0.1); break
+        case 'glisse': ev(d + 0.2, 'glisse'); break
+        case 'duo': ev(d + 0.3, 'glisse', 0.8); break
+        default: break
+      }
+    }
+    switch (plan.mouvement) {
+      case 'duo': ev(0.6, 'pop'); break
+      case 'revele': ev(0, 'montee'); break
+      case 'etiquette': ev(0.1, 'pop', 0.6); (plan.points ?? []).slice(0, 3).forEach((_, k) => ev(0.6 + k * 0.38 + 0.2, 'tic')); break
+      case 'quiz': (plan.choix ?? []).slice(0, 3).forEach((_, k) => ev(0.35 + k * 0.22, 'pop', 0.5)); ev(quizTap(plan), 'clic'); if (n) ev(quizTap(plan) + 0.12, 'pop'); break
+      case 'dm': {
+        const { pas } = dmCreneaux(plan)
+        ;(plan.bulles ?? []).forEach((b, k) => ev(0.35 + k * pas + 0.38, b.de === 'cliente' ? 'envoi' : 'ding'))
+        if (n) ev(dmFiche(plan), 'ding', 0.8)
+        break
+      }
+      case 'fin': ev(0.45, 'cta'); break
+      default: break
+    }
+    // La signature : le reflet qui traverse le flacon se fait entendre, doucement.
+    if (n && plan.mouvement !== 'zoom') ev(pose(plan.mouvement, 0, plan), 'scintille', 0.5)
+    debut += plan.duree
+  }
+  return out.sort((a, b) => a.t - b.t)
 }
 
 /** La transition d'entree d'un plan : type et avancement (null hors de la fenetre). */

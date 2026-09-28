@@ -3,7 +3,7 @@ import pool from '@/lib/db'
 import { performancePubs, strategie } from './agent'
 import { verdicts } from './conseils'
 import { reveillerDirecteur } from './declencher'
-import { BORNES, LivraisonDirection, MOUVEMENTS, STYLES, sujetDemande, validerDemande, verifierLivraison, type DemandeDirection, type Style } from './direction-model'
+import { AMBIANCES, BORNES, LivraisonDirection, MOUVEMENTS, OptionLivreeSchema, RetoucheSchema, STYLES, TRANSITIONS, sujetDemande, validerDemande, verifierLivraison, verifierMontage, verifierOption, type DemandeDirection, type Retouche, type Style, type TypeDirection } from './direction-model'
 import { FORMATS_IMAGE } from './creatif-model'
 import { urlDetouree } from './reel-model'
 
@@ -50,7 +50,7 @@ export async function demanderDirection(entree: unknown, par: string | null) {
   return { demande, lancee: await reveillerDirecteur(demande.id) }
 }
 
-type DemandeEnCours = { id: number; genre: string; statut: string; sujet: string; creatif_id: number | null; parametres: DemandeDirection; demande_par: string | null }
+type DemandeEnCours = { id: number; genre: string; statut: string; sujet: string; creatif_id: number | null; parametres: DemandeDirection; retouche: Retouche | null; demande_par: string | null }
 
 async function demandeEnCours(id: number): Promise<DemandeEnCours> {
   const r = await pool.query(`SELECT id, genre, statut, sujet, creatif_id, parametres, demande_par FROM "AdsAgentRequest" WHERE id = $1`, [id])
@@ -58,12 +58,15 @@ async function demandeEnCours(id: number): Promise<DemandeEnCours> {
   if (!x) throw new Error('Demande inconnue.')
   if (x.genre !== 'direction') throw new Error('Ce n’est pas une demande de direction artistique.')
   if (x.statut !== 'en_cours') throw new Error('Cette demande n’est pas en cours : réclame-la d’abord (bos.mjs demande --direction).')
-  return { ...x, parametres: validerDemande(x.parametres) as DemandeDirection }
+  // Une retouche (« refais ce plan ») n'est pas un brief : elle vise une option existante.
+  if (x.parametres?.retouche) return { ...x, parametres: null as unknown as DemandeDirection, retouche: RetoucheSchema.parse(x.parametres.retouche) }
+  return { ...x, parametres: validerDemande(x.parametres) as DemandeDirection, retouche: null }
 }
 
 /** Tout ce dont Claude a besoin pour diriger : le brief, la creation, les vrais produits, ce qui marche deja. */
 export async function contexteDirection(demandeId: number) {
   const dem = await demandeEnCours(demandeId)
+  if (dem.retouche) return contexteRetouche(dem)
   const p = dem.parametres
   const creation = dem.creatif_id
     ? (await pool.query(`SELECT id, angle, format, public, accroche, script, texte_fr, texte_darija, texte_ar, titre, cta, visuel, produit_ids FROM "AdsCreative" WHERE id = $1`, [dem.creatif_id])).rows[0] ?? null
@@ -110,6 +113,7 @@ export async function enregistrerDirection(entree: unknown) {
   if (!p.success) throw new Error(p.error.issues.map((i) => `${i.path.join('.')} : ${i.message}`).join(' · '))
   const l = p.data
   const dem = await demandeEnCours(l.demandeId)
+  if (dem.retouche) throw new Error('Cette demande est une retouche : modifie le plan avec « bos.mjs option <id> », puis « termine ».')
   const d = dem.parametres
   const creationExistante = dem.creatif_id
     ? (await pool.query(`SELECT id, produit_ids FROM "AdsCreative" WHERE id = $1`, [dem.creatif_id])).rows[0]
@@ -140,7 +144,7 @@ export async function enregistrerDirection(entree: unknown) {
           o.concept, o.pourquoi, o.prompt, JSON.stringify(o.texte), o.position, d.format, o.produitIds === undefined ? null : o.produitIds,
           d.type === 'reel' ? o.animes ?? [] : null, d.type === 'reel' ? o.mouvement : null, d.type === 'reel' ? o.duree : null,
           l.style, d.brief || null, d.qualite, l.modele || null,
-          d.type === 'reel' ? JSON.stringify({ transition: o.transition ?? 'coupe', ambiance: o.ambiance ?? 'aucune', bulles: o.bulles ?? [], points: o.points ?? [], choix: o.choix ?? [] }) : null])
+          d.type === 'reel' ? JSON.stringify({ transition: o.transition ?? 'coupe', ambiance: o.ambiance ?? 'aucune', bulles: o.bulles ?? [], points: o.points ?? [], choix: o.choix ?? [], voix: o.voix ?? null }) : null])
       options.push(r.rows[0])
     }
     await client.query('COMMIT')
@@ -159,20 +163,161 @@ export async function terminerDirection(id: number, resultat: string) {
   return { id }
 }
 
-/** Retoucher une option : la consigne, le texte pose, la position (Achraf) ; la note de controle (Claude). */
-export async function modifierOption(id: number, patch: Json) {
-  const r = await pool.query(`SELECT id, prompt, texte, position, note FROM "AdsCreativeOption" WHERE id = $1`, [id])
-  if (!r.rowCount) throw new Error('Option introuvable.')
-  const x = r.rows[0]
-  if (typeof patch.prompt === 'string' && patch.prompt.trim().length < 200) throw new Error('La consigne doit rester complète (200 caractères au moins).')
-  const prompt = typeof patch.prompt === 'string' ? patch.prompt.trim().slice(0, 4000) : x.prompt
-  const t = (patch.texte && typeof patch.texte === 'object' ? patch.texte : {}) as Json
-  const texte = { ...x.texte, ...Object.fromEntries(['fr', 'darija', 'ar'].filter((k) => typeof t[k] === 'string').map((k) => [k, String(t[k]).trim().slice(0, 120)])) }
-  const position = patch.position === 'bas' || patch.position === 'haut' ? patch.position : x.position
-  const note = typeof patch.note === 'string' ? patch.note.trim().slice(0, 1500) || null : x.note
-  const u = await pool.query(`UPDATE "AdsCreativeOption" SET prompt = $2, texte = $3::jsonb, position = $4, note = $5, maj_le = now() WHERE id = $1 RETURNING *`,
-    [id, prompt, JSON.stringify(texte), position, note])
+/* ------------------------------------------------------------------ */
+/* LA TABLE DE MONTAGE : Achraf retouche plan par plan                  */
+/* ------------------------------------------------------------------ */
+
+type LigneOption = Json & { id: number; creatif_id: number; serie: number; carte: number | null; mouvement: string | null; duree: string | number | null; motion: Json | null }
+
+async function serieDe(o: LigneOption) {
+  const serie = (await pool.query(`SELECT * FROM "AdsCreativeOption" WHERE creatif_id = $1 AND serie = $2 ORDER BY carte NULLS FIRST, id`, [o.creatif_id, o.serie])).rows as LigneOption[]
+  const type: TypeDirection = serie.some((x) => x.mouvement) ? 'reel' : serie.some((x) => x.carte != null) ? 'carrousel' : 'options'
+  const produits: number[] = (await pool.query(`SELECT produit_ids FROM "AdsCreative" WHERE id = $1`, [o.creatif_id])).rows[0]?.produit_ids ?? []
+  return { serie, type, produits }
+}
+
+/** Une ligne de la base, remise dans la forme que Claude livre (pour la valider avec les memes regles). */
+function enLivree(x: LigneOption): Json {
+  const m = (x.motion ?? {}) as Json
+  return {
+    role: x.role ?? '', concept: x.concept, pourquoi: x.pourquoi || 'Retouché à la main dans la table de montage.', prompt: x.prompt, texte: x.texte, position: x.position,
+    produitIds: x.produit_ids ?? undefined, animes: x.animes ?? undefined, mouvement: x.mouvement ?? undefined, duree: x.duree == null ? undefined : Number(x.duree),
+    transition: m.transition, ambiance: m.ambiance, bulles: m.bulles, points: m.points, choix: m.choix, voix: m.voix,
+  }
+}
+
+const CHAMPS_PLAN = ['texte', 'position', 'prompt', 'animes', 'mouvement', 'duree', 'transition', 'ambiance', 'bulles', 'points', 'choix', 'voix'] as const
+
+/**
+ * Retoucher un plan (ou une option, une carte) : textes, animation, duree,
+ * transition, ambiance, produits, bulles, atouts, reponses, voix off, consigne.
+ * La meme validation que la livraison de Claude : pas de francais sans accents,
+ * pas de DM illisible, pas de duo a trois produits.
+ */
+export async function modifierPlan(id: number, patch: Json) {
+  const o = (await pool.query(`SELECT * FROM "AdsCreativeOption" WHERE id = $1`, [id])).rows[0] as LigneOption | undefined
+  if (!o) throw new Error('Plan introuvable.')
+  // Une simple note de controle ne revalide pas tout le plan.
+  if (Object.keys(patch).every((k) => k === 'id' || k === 'note')) {
+    const u = await pool.query(`UPDATE "AdsCreativeOption" SET note = $2, maj_le = now() WHERE id = $1 RETURNING *`, [id, typeof patch.note === 'string' ? patch.note.trim().slice(0, 1500) || null : o.note])
+    return u.rows[0]
+  }
+  const { serie, type, produits } = await serieDe(o)
+  const fusion = enLivree(o)
+  for (const k of CHAMPS_PLAN) if (patch[k] !== undefined) fusion[k] = patch[k]
+  const p = OptionLivreeSchema.safeParse(fusion)
+  if (!p.success) throw new Error(p.error.issues.map((i) => `${i.path.join('.')} : ${i.message}`).join(' · '))
+  const plan = p.data
+  const index = Math.max(0, serie.findIndex((x) => x.id === id))
+  verifierOption(plan, index, type, produits)
+  if (type === 'reel') verifierMontage(serie.map((x) => (x.id === id ? plan.duree ?? 0 : Number(x.duree) || 0)))
+  const ancien = (o.motion ?? {}) as Json
+  const motion = type === 'reel'
+    ? { ...ancien, transition: plan.transition ?? 'coupe', ambiance: plan.ambiance ?? 'aucune', bulles: plan.bulles ?? [], points: plan.points ?? [], choix: plan.choix ?? [], voix: plan.voix ?? ancien.voix ?? null }
+    : o.motion
+  const note = typeof patch.note === 'string' ? patch.note.trim().slice(0, 1500) || null : o.note
+  const u = await pool.query(
+    `UPDATE "AdsCreativeOption" SET texte = $2::jsonb, position = $3, prompt = $4, animes = $5, mouvement = $6, duree = $7, motion = $8::jsonb, note = $9, maj_le = now()
+     WHERE id = $1 RETURNING *`,
+    [id, JSON.stringify(plan.texte), plan.position, plan.prompt, type === 'reel' ? plan.animes ?? [] : null, type === 'reel' ? plan.mouvement : null,
+      type === 'reel' ? plan.duree : null, motion == null ? null : JSON.stringify(motion), note])
   return u.rows[0]
+}
+
+/** Renumerote les cartes d'une serie dans l'ordre donne ; le premier plan d'un Reel entre toujours en coupe franche. */
+async function renumeroter(client: { query: typeof pool.query }, ids: number[]) {
+  for (const [k, id] of ids.entries()) {
+    await client.query(`UPDATE "AdsCreativeOption" SET carte = $2,
+      motion = CASE WHEN $2 = 1 AND motion IS NOT NULL THEN jsonb_set(motion, '{transition}', '"coupe"') ELSE motion END, maj_le = now() WHERE id = $1`, [id, k + 1])
+  }
+}
+
+export async function deplacerPlan(id: number, sens: -1 | 1) {
+  const o = (await pool.query(`SELECT * FROM "AdsCreativeOption" WHERE id = $1`, [id])).rows[0] as LigneOption | undefined
+  if (!o) throw new Error('Plan introuvable.')
+  if (o.carte == null) throw new Error('Seuls les cartes et les plans ont un ordre.')
+  const { serie } = await serieDe(o)
+  const ids = serie.map((x) => x.id)
+  const i = ids.indexOf(id), j = i + sens
+  if (j < 0 || j >= ids.length) return { ids }
+  ;[ids[i], ids[j]] = [ids[j], ids[i]]
+  await renumeroter(pool, ids)
+  return { ids }
+}
+
+export async function dupliquerPlan(id: number) {
+  const o = (await pool.query(`SELECT * FROM "AdsCreativeOption" WHERE id = $1`, [id])).rows[0] as LigneOption | undefined
+  if (!o) throw new Error('Plan introuvable.')
+  const { serie, type } = await serieDe(o)
+  if (type === 'carrousel' && serie.length >= 10) throw new Error('Un carrousel a 10 cartes au plus.')
+  if (type === 'reel' && serie.length >= 8) throw new Error('8 plans au plus : au-delà, le Reel perd l’attention.')
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    const copie = (await client.query(
+      `INSERT INTO "AdsCreativeOption" (creatif_id, demande_id, serie, carte, role, concept, pourquoi, prompt, texte, position, format, produit_ids, animes, mouvement, duree, style, brief, qualite, modele, motion)
+       SELECT creatif_id, demande_id, serie, carte, role, concept || ' (copie)', pourquoi, prompt, texte, position, format, produit_ids, animes, mouvement, duree, style, brief, qualite, modele,
+              CASE WHEN motion IS NULL THEN NULL ELSE motion - 'voixUrl' END
+       FROM "AdsCreativeOption" WHERE id = $1 RETURNING id`, [id])).rows[0].id as number
+    if (o.carte != null) {
+      const ids = serie.map((x) => x.id)
+      ids.splice(ids.indexOf(id) + 1, 0, copie)
+      await renumeroter(client, ids)
+    }
+    await client.query('COMMIT')
+    return { id: copie }
+  } catch (e) { await client.query('ROLLBACK'); throw e } finally { client.release() }
+}
+
+export async function supprimerPlan(id: number) {
+  const o = (await pool.query(`SELECT * FROM "AdsCreativeOption" WHERE id = $1`, [id])).rows[0] as LigneOption | undefined
+  if (!o) throw new Error('Plan introuvable.')
+  const { serie, type } = await serieDe(o)
+  if (type !== 'options' && serie.length <= 2) throw new Error('Il faut au moins 2 plans ou cartes : supprime plutôt la série entière.')
+  // Les visuels deja generes restent dans la galerie (option_id passe a NULL) : on ne jette pas une image payee.
+  await pool.query(`DELETE FROM "AdsCreativeOption" WHERE id = $1`, [id])
+  if (o.carte != null) await renumeroter(pool, serie.filter((x) => x.id !== id).map((x) => x.id))
+  return { id }
+}
+
+/** « Refais ce plan » : une demande ciblee au directeur artistique, avec la note d'Achraf. */
+export async function demanderRetouche(entree: unknown, par: string | null) {
+  const p = RetoucheSchema.safeParse(entree)
+  if (!p.success) throw new Error(p.error.issues.map((i) => i.message).join(' · '))
+  const o = (await pool.query(`SELECT id, creatif_id, carte, concept FROM "AdsCreativeOption" WHERE id = $1`, [p.data.optionId])).rows[0]
+  if (!o) throw new Error('Plan introuvable.')
+  const n = await pool.query<{ n: number }>(`SELECT count(*)::int n FROM "AdsAgentRequest" WHERE genre = 'direction' AND statut IN ('en_attente', 'en_cours')`)
+  if (n.rows[0].n >= MAX_EN_ATTENTE) throw new Error(`${MAX_EN_ATTENTE} demandes sont déjà en cours chez le directeur artistique.`)
+  const sujet = `Retouche ${o.carte ? `du plan ${o.carte}` : 'd’une option'} (« ${o.concept} ») — ${p.data.note}`.slice(0, 1500)
+  const r = await pool.query(
+    `INSERT INTO "AdsAgentRequest" (genre, sujet, demande_par, creatif_id, parametres) VALUES ('direction', $1, $2, $3, $4::jsonb)
+     RETURNING id, genre, sujet, statut, demande_le, creatif_id, parametres`,
+    [sujet, par, o.creatif_id, JSON.stringify({ retouche: p.data })])
+  return { demande: r.rows[0], lancee: await reveillerDirecteur(r.rows[0].id) }
+}
+
+/** Le contexte d'une retouche : le plan vise, toute sa serie (pour rester coherent), la creation, les vrais produits. */
+async function contexteRetouche(dem: DemandeEnCours) {
+  const r = dem.retouche!
+  const o = (await pool.query(`SELECT * FROM "AdsCreativeOption" WHERE id = $1`, [r.optionId])).rows[0] as LigneOption | undefined
+  if (!o) throw new Error('Le plan à retoucher n’existe plus.')
+  const { serie, type, produits: produitIds } = await serieDe(o)
+  const [creation, produits] = await Promise.all([
+    pool.query(`SELECT id, angle, format, public, accroche, texte_fr, texte_darija, texte_ar, titre, cta, produit_ids FROM "AdsCreative" WHERE id = $1`, [o.creatif_id]),
+    produitIds.length
+      ? pool.query(`SELECT id, name AS nom, brand AS marque, image, description FROM "Product" WHERE id = ANY($1::int[])`, [produitIds])
+      : Promise.resolve({ rows: [] as Json[] }),
+  ])
+  const visuel = async (id: number) => (await pool.query(`SELECT id, url FROM "AdsCreativeImage" WHERE option_id = $1 ORDER BY choisie DESC, cree_le DESC LIMIT 1`, [id])).rows[0] ?? null
+  return {
+    demande: { id: dem.id, sujet: dem.sujet, retouche: r },
+    consigne: 'RETOUCHE : ne change que ce que la note demande. Modifie le plan avec « bos.mjs option <optionId> patch.json » (memes champs que la livraison : texte, mouvement, duree, animes, transition, ambiance, bulles, points, choix, voix, prompt). Si le decor doit changer, reecris « prompt » puis regenere l’image (« image --option »). Termine par « termine <id> ».',
+    type, planVise: { ...enLivree(o), id: o.id, carte: o.carte, visuel: await visuel(o.id) },
+    serie: await Promise.all(serie.map(async (x) => ({ id: x.id, carte: x.carte, ...enLivree(x), visuel: await visuel(x.id) }))),
+    creation: creation.rows[0] ?? null,
+    produits: (produits.rows as Json[]).map((x) => ({ id: x.id, nom: x.nom, marque: x.marque, photo: photo(x.image as string | null), detouree: urlDetouree(x.image as string | null), description: texteSeul(x.description as string | null).slice(0, 500) })),
+    mouvements: type === 'reel' ? MOUVEMENTS : undefined, transitions: type === 'reel' ? TRANSITIONS : undefined, ambiances: type === 'reel' ? AMBIANCES : undefined,
+  }
 }
 
 export async function supprimerSerie(creatifId: number, serie: number) {

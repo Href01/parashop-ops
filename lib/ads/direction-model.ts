@@ -92,6 +92,38 @@ export function sujetDemande(d: DemandeDirection): string {
 
 const Texte = z.object({ fr: z.string().trim().max(120).default(''), darija: z.string().trim().max(120).default(''), ar: z.string().trim().max(120).default('') })
 const Court = z.object({ fr: z.string().trim().min(1).max(40), darija: z.string().trim().max(40).default(''), ar: z.string().trim().max(40).default('') })
+const Voix = z.object({ fr: z.string().trim().max(180).default(''), darija: z.string().trim().max(180).default(''), ar: z.string().trim().max(180).default('') })
+
+/* ------------------------------------------------------------------ */
+/* LE FRANCAIS QUI S'AFFICHE : accents et mot mis en valeur             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Des mots qui n'existent pas sans leurs accents. Le premier Reel livre
+ * affichait « Taches apres l'ete », « Etape 2 : le serum », « paiement a la
+ * livraison » : la doctrine etait ecrite sans accents et Claude l'a imitee.
+ * Une cliente qui lit ca doute du serieux de la boutique.
+ */
+const SANS_ACCENT = /(?<![\p{L}])(apres|etapes?|serums?|cremes?|cremeuse|tres|deja|legere?s?|eclat|ete|beaute|coreenne?s?|reponses?|repond|memes?|premiere|derniere|deuxieme|troisieme|reparer|reparateurs?|reparatrices?|abimee?s?|secheresse|seches?|hydratee?s?|nourrie?s?|protegee?s?|decouvre[sz]?|ecris|ecrivez|ecrire|ca|voila|a la livraison|a domicile|a partir)(?![\p{L}])/giu
+
+/** Les mots francais ecrits sans leurs accents, pour les refuser avant qu'ils s'affichent. */
+export function fautesFrancais(texte: string | null | undefined): string[] {
+  if (!texte) return []
+  return [...new Set([...texte.replace(/\*/g, '').matchAll(SANS_ACCENT)].map((m) => m[1].toLowerCase()))]
+}
+
+const MOTS_VIDES = new Set(['le', 'la', 'les', "l'", 'un', 'une', 'des', 'du', 'de', "d'", 'et', 'ou', 'à', 'a', 'au', 'aux', 'en', 'pour', 'par', 'sur', 'sous', 'avec', 'sans', 'dans', 'après', 'apres', 'avant', 'puis', 'mais', 'donc', 'ce', 'cette', 'ces', 'son', 'sa', 'ses', 'ton', 'ta', 'tes', 'ma', 'mes', 'votre', 'vos', 'notre', 'nos', 'qui', 'que', 'est', 'sont', 'plus', 'très'])
+
+/** Le mot entre *etoiles* doit porter le sens (probleme, benefice, produit), jamais un mot vide. */
+export function motMisEnValeurVide(texte: string | null | undefined): string | null {
+  const m = /\*([^*]+)\*/.exec(texte || '')
+  if (!m) return null
+  const mot = m[1].trim().toLowerCase().replace(/[.,!?؟:;]+$/, '')
+  return MOTS_VIDES.has(mot) ? m[1] : null
+}
+
+/** Le temps de lire une conversation DM : ~1 s par message, plus la fiche produit. */
+export const dureeMinDm = (messages: number, fiche: boolean) => Math.ceil((0.8 + messages * 1 + (fiche ? 0.7 : 0)) * 2) / 2
 
 /** Ce que Claude livre au BOS pour une demande « direction ». */
 export const LivraisonDirection = z.object({
@@ -119,7 +151,7 @@ export const LivraisonDirection = z.object({
     // Produits PEINTS dans l'image. Absent = tous ceux de la creation ; [] = aucun (decor vide, texture).
     produitIds: z.array(z.number().int().positive()).max(3).nullable().optional(),
     // Reel seulement : les vrais produits detoures, animes par-dessus le decor.
-    animes: z.array(z.number().int().positive()).max(3).optional(),
+    animes: z.array(z.number().int().positive()).max(4).optional(),
     mouvement: z.enum(['rebond', 'pop', 'glisse', 'zoom', 'duo', 'fin', 'revele', 'etiquette', 'quiz', 'dm']).optional(),
     duree: z.number().min(1).max(6).optional(),
     transition: z.enum(['coupe', 'traversee', 'balayage', 'revelation', 'vague']).optional(),
@@ -127,43 +159,71 @@ export const LivraisonDirection = z.object({
     bulles: z.array(z.object({ de: z.enum(['cliente', 'shine']), texte: z.object({ fr: z.string().trim().min(1).max(90), darija: z.string().trim().max(90).default(''), ar: z.string().trim().max(90).default('') }) })).max(5).optional(),
     points: z.array(Court).max(3).optional(),
     choix: z.array(Court).max(3).optional(),
+    // Reel : la voix off du plan (ASMR ou non), lue par la synthese vocale d'OpenAI.
+    voix: Voix.optional(),
   })).min(1).max(10),
 })
+export type OptionLivree = z.infer<typeof LivraisonDirection>['options'][number]
+export const OptionLivreeSchema = LivraisonDirection.shape.options.element
 export type Livraison = z.infer<typeof LivraisonDirection>
+
+/**
+ * Les regles d'UNE option, carte ou plan : ce que Claude livre, et ce qu'Achraf
+ * enregistre depuis la table de montage. `i` est la position (0 = premier plan).
+ */
+export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, produitsCreation: number[]) {
+  const nom = `${type === 'carrousel' ? 'Carte' : type === 'reel' ? 'Plan' : 'Option'} ${i + 1}`
+  const inconnus = [...(o.produitIds ?? []), ...(o.animes ?? [])].filter((id) => !produitsCreation.includes(id))
+  if (inconnus.length) throw new Error(`${nom} : produit(s) ${inconnus.join(', ')} hors de la création (${produitsCreation.join(', ') || 'aucun'}).`)
+  if (!o.texte.fr) throw new Error(`${nom} : le texte à poser en français manque.`)
+  const francais = [o.texte.fr, ...(o.bulles ?? []).map((b) => b.texte.fr), ...(o.points ?? []).map((x) => x.fr), ...(o.choix ?? []).map((x) => x.fr), o.voix?.fr]
+  const fautes = [...new Set(francais.flatMap(fautesFrancais))]
+  if (fautes.length) throw new Error(`${nom} : français sans accents (${fautes.map((f) => `« ${f} »`).join(', ')}) — écris-le avec tous ses accents (é, è, à, ç…).`)
+  const vide = motMisEnValeurVide(o.texte.fr)
+  if (vide) throw new Error(`${nom} : le mot mis en valeur « ${vide} » est un mot vide ; entoure d'étoiles le mot qui porte le sens (le problème, le bénéfice, le produit).`)
+  if (type === 'reel') {
+    if (!o.mouvement || !o.duree) throw new Error(`${nom} : « mouvement » et « duree » sont obligatoires dans un Reel.`)
+    // Des coupes sur le temps : a 120 BPM, un temps dure 0,5 s.
+    if (!Number.isInteger(o.duree * 2)) throw new Error(`${nom} : durée en demi-secondes (1,5 · 2 · 2,5…) pour couper sur le temps.`)
+    const n = o.animes?.length ?? 0
+    if (!['zoom', 'dm'].includes(o.mouvement) && !n) throw new Error(`${nom} : le mouvement « ${o.mouvement} » anime des produits : remplis « animes ».`)
+    if (o.mouvement === 'duo' && n !== 2) throw new Error(`${nom} : « duo » anime exactement deux produits.`)
+    if (['etiquette', 'quiz', 'revele'].includes(o.mouvement) && n !== 1) throw new Error(`${nom} : « ${o.mouvement} » anime un seul produit.`)
+    if (['rebond', 'glisse'].includes(o.mouvement) && n > 3) throw new Error(`${nom} : « ${o.mouvement} » anime 3 produits au plus ; pour 4, utilise « pop » ou « fin ».`)
+    if (o.mouvement === 'dm' && n > 1) throw new Error(`${nom} : une conversation DM envoie un seul produit.`)
+    if (o.mouvement === 'dm' && ((o.bulles?.length ?? 0) < 2)) throw new Error(`${nom} : une conversation DM a 2 à 5 messages (« bulles »).`)
+    if (o.mouvement === 'dm' && o.duree < dureeMinDm(o.bulles!.length, n > 0)) throw new Error(`${nom} : ${o.bulles!.length} messages se lisent en ${dureeMinDm(o.bulles!.length, n > 0)} s au moins (${o.duree} s donnés).`)
+    if (o.mouvement === 'etiquette' && ((o.points?.length ?? 0) < 2)) throw new Error(`${nom} : une étiquette annotée montre 2 ou 3 atouts (« points »).`)
+    if (o.mouvement === 'quiz' && ((o.choix?.length ?? 0) < 2)) throw new Error(`${nom} : un quiz propose 2 ou 3 réponses (« choix »), la première menant au produit.`)
+    if (i === 0 && o.transition && o.transition !== 'coupe') throw new Error(`${nom} : pas de transition d’entrée sur le premier plan.`)
+    // Un produit anime ET peint dans le decor apparaitrait deux fois.
+    if (n && (o.produitIds === undefined || o.produitIds === null || o.produitIds.length)) throw new Error(`${nom} : les produits sont animés par-dessus : le décor doit être vide (« produitIds »: []).`)
+  } else if (o.animes?.length || o.mouvement || o.transition || o.bulles || o.points || o.choix || o.voix) {
+    throw new Error(`${nom} : « animes », « mouvement », « transition », « bulles », « points », « choix » et « voix » ne servent que dans un Reel.`)
+  }
+}
+
+/** Le Reel entier : duree totale, accroche courte. */
+export function verifierMontage(durees: number[]) {
+  const total = durees.reduce((n, d) => n + d, 0)
+  if (total < 6 || total > 25) throw new Error(`Un Reel de ${total} s : vise 8 à 15 s (6 à 25 au plus).`)
+  if ((durees[0] ?? 0) > 2.5) throw new Error('Plan 1 : l’accroche tient en 2,5 s au plus, sinon on a déjà scrollé.')
+}
 
 /** Controle de coherence entre la demande et la livraison (nombre, produits connus, plans de Reel complets). */
 export function verifierLivraison(l: Livraison, d: DemandeDirection, produitsCreation: number[], avecCreation: boolean) {
   const nom = d.type === 'carrousel' ? 'Carte' : d.type === 'reel' ? 'Plan' : 'Option'
   if (l.options.length !== d.nombre) throw new Error(`${d.nombre} ${nom.toLowerCase()}(s) demandé(e)s, ${l.options.length} livré(e)s.`)
   if (!avecCreation && !l.creation) throw new Error('Cette demande ne part d’aucune création : ajoute « creation » (angle, accroche, textes).')
-  for (const [i, o] of l.options.entries()) {
-    const inconnus = [...(o.produitIds ?? []), ...(o.animes ?? [])].filter((id) => !produitsCreation.includes(id))
-    if (inconnus.length) throw new Error(`${nom} ${i + 1} : produit(s) ${inconnus.join(', ')} hors de la création (${produitsCreation.join(', ') || 'aucun'}).`)
-    if (!o.texte.fr) throw new Error(`${nom} ${i + 1} : le texte à poser en français manque.`)
-    if (d.type === 'reel') {
-      if (!o.mouvement || !o.duree) throw new Error(`Plan ${i + 1} : « mouvement » et « duree » sont obligatoires dans un Reel.`)
-      // Des coupes sur le temps : a 120 BPM, un temps dure 0,5 s.
-      if (!Number.isInteger(o.duree * 2)) throw new Error(`Plan ${i + 1} : durée en demi-secondes (1,5 · 2 · 2,5…) pour couper sur le temps.`)
-      if (!['zoom', 'dm'].includes(o.mouvement) && !o.animes?.length) throw new Error(`Plan ${i + 1} : le mouvement « ${o.mouvement} » anime des produits : remplis « animes ».`)
-      if (o.mouvement === 'duo' && o.animes!.length !== 2) throw new Error(`Plan ${i + 1} : « duo » anime exactement deux produits.`)
-      if (['etiquette', 'quiz', 'revele'].includes(o.mouvement) && o.animes!.length !== 1) throw new Error(`Plan ${i + 1} : « ${o.mouvement} » anime un seul produit.`)
-      if (o.mouvement === 'dm' && (o.animes?.length ?? 0) > 1) throw new Error(`Plan ${i + 1} : une conversation DM envoie un seul produit.`)
-      if (o.mouvement === 'dm' && ((o.bulles?.length ?? 0) < 2)) throw new Error(`Plan ${i + 1} : une conversation DM a 2 à 5 messages (« bulles »).`)
-      if (o.mouvement === 'etiquette' && ((o.points?.length ?? 0) < 2)) throw new Error(`Plan ${i + 1} : une étiquette annotée montre 2 ou 3 atouts (« points »).`)
-      if (o.mouvement === 'quiz' && ((o.choix?.length ?? 0) < 2)) throw new Error(`Plan ${i + 1} : un quiz propose 2 ou 3 réponses (« choix »), la première menant au produit.`)
-      if (i === 0 && o.transition && o.transition !== 'coupe') throw new Error('Plan 1 : pas de transition d’entrée sur le premier plan.')
-      // Un produit anime ET peint dans le decor apparaitrait deux fois.
-      if (o.animes?.length && (o.produitIds === undefined || o.produitIds === null || o.produitIds.length)) throw new Error(`Plan ${i + 1} : les produits sont animés par-dessus : le décor doit être vide (« produitIds »: []).`)
-    } else if (o.animes?.length || o.mouvement || o.transition || o.bulles || o.points || o.choix) {
-      throw new Error(`${nom} ${i + 1} : « animes », « mouvement », « transition », « bulles », « points » et « choix » ne servent que dans un Reel.`)
-    }
-  }
-  if (d.type === 'reel') {
-    const total = l.options.reduce((n, o) => n + (o.duree ?? 0), 0)
-    if (total < 6 || total > 20) throw new Error(`Un Reel de ${total} s : vise 8 à 15 s (6 à 20 au plus).`)
-    if ((l.options[0].duree ?? 0) > 2.5) throw new Error('Plan 1 : l’accroche tient en 2,5 s au plus, sinon on a déjà scrollé.')
-  }
+  const fautesCreation = [...new Set([l.creation?.accroche, l.creation?.texteFr, l.creation?.titre, l.creation?.cta].flatMap(fautesFrancais))]
+  if (fautesCreation.length) throw new Error(`creation : français sans accents (${fautesCreation.map((f) => `« ${f} »`).join(', ')}).`)
+  l.options.forEach((o, i) => verifierOption(o, i, d.type, produitsCreation))
+  if (d.type === 'reel') verifierMontage(l.options.map((o) => o.duree ?? 0))
 }
+
+/** « Refais ce plan » : une retouche ciblee, demandee a Claude avec la note d'Achraf. */
+export const RetoucheSchema = z.object({ optionId: z.number().int().positive(), note: z.string().trim().min(5, 'Dis en une phrase ce qu’il faut changer.').max(1000) })
+export type Retouche = z.infer<typeof RetoucheSchema>
 
 /**
  * La consigne envoyee au modele d'image : celle de Claude, PUIS nos
