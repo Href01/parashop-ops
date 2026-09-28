@@ -252,7 +252,7 @@ export async function ecran(jours = 30) {
     derniereSynchro(), repartitions(),
   ])
   const catalogue = await pool.query(
-    `SELECT id, name AS nom, brand AS marque, category AS categorie, image, (coalesce(stock, 0) + coalesce("virtualStock", 0))::int AS stock_vendable,
+    `SELECT id, name AS nom, brand AS marque, category AS categorie, image, price::float AS prix, "origPrice"::float AS prix_avant, (coalesce(stock, 0) + coalesce("virtualStock", 0))::int AS stock_vendable,
             coalesce("importUnavailable", false) AS import_bloque
      FROM "Product" WHERE active = true AND coalesce(discontinued, false) = false ORDER BY brand, name`)
   const manques = manquesStrategie(s.config)
@@ -271,7 +271,7 @@ export async function ecran(jours = 30) {
     }),
     demandes: demandes.rows, rapports: rapports.rows, actions: actions.rows,
     creatifs: creatifs.rows.map((c) => ({ ...c, images: images[c.id] ?? [], options: options[c.id] ?? [] })), synchro, repartitions: reparts,
-    catalogue: await enrichirCatalogue(catalogue.rows.map((p) => ({ id: p.id as number, nom: p.nom, marque: p.marque, categorie: p.categorie, image: p.image, stockVendable: p.stock_vendable, importBloque: p.import_bloque }))),
+    catalogue: await enrichirCatalogue(catalogue.rows.map((p) => ({ id: p.id as number, nom: p.nom, marque: p.marque, categorie: p.categorie, image: p.image, prix: Number(p.prix), ...(Number(p.prix_avant) > Number(p.prix) ? { prixAvant: Number(p.prix_avant) } : {}), stockVendable: p.stock_vendable, importBloque: p.import_bloque }))),
     idees: idees({
       produits, exclus: cfg.produitsExclus, mois: new Date().getMonth(),
       pubsGagnantes: pubs.filter((x) => verd[x.adId]?.verdict === 'gagnante').map((x) => ({ nom: x.nom, texte: x.texte, raison: verd[x.adId].raison })),
@@ -320,7 +320,7 @@ export async function ecranStudio() {
     performancePubs(cfg.regles.frequenceMax), economieProduits(60),
     pool.query(`SELECT * FROM "AdsAgentRequest" WHERE genre = 'direction' ORDER BY demande_le DESC LIMIT 15`),
     pool.query(`SELECT * FROM "AdsCreative" WHERE statut <> 'ecartee' OR maj_le > now() - interval '30 days' ORDER BY cree_le DESC LIMIT 60`),
-    pool.query(`SELECT id, name AS nom, brand AS marque, category AS categorie, image, price::float AS prix, (coalesce(stock, 0) + coalesce("virtualStock", 0))::int AS stock_vendable,
+    pool.query(`SELECT id, name AS nom, brand AS marque, category AS categorie, image, price::float AS prix, "origPrice"::float AS prix_avant, (coalesce(stock, 0) + coalesce("virtualStock", 0))::int AS stock_vendable,
                        coalesce("importUnavailable", false) AS import_bloque
                 FROM "Product" WHERE active = true AND coalesce(discontinued, false) = false ORDER BY brand, name`),
   ])
@@ -338,7 +338,7 @@ export async function ecranStudio() {
       }
     }),
     demandes: demandes.rows,
-    catalogue: await enrichirCatalogue(catalogue.rows.map((p) => ({ id: p.id as number, nom: p.nom, marque: p.marque, categorie: p.categorie, image: p.image, prix: Number(p.prix), stockVendable: p.stock_vendable, importBloque: p.import_bloque }))),
+    catalogue: await enrichirCatalogue(catalogue.rows.map((p) => ({ id: p.id as number, nom: p.nom, marque: p.marque, categorie: p.categorie, image: p.image, prix: Number(p.prix), ...(Number(p.prix_avant) > Number(p.prix) ? { prixAvant: Number(p.prix_avant) } : {}), stockVendable: p.stock_vendable, importBloque: p.import_bloque }))),
     lecons: await lecons(true),
     produits,
     idees: idees({

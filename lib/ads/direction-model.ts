@@ -58,6 +58,22 @@ export const TRANSITIONS = {
   revelation: 'Révélation : le plan s’ouvre en cercle',
   vague: 'Vague : une lame verte ondulée dévoile le plan',
 } as const
+/**
+ * LES FONDS SHINE : des degrades dessines par le BOS aux couleurs de la maison,
+ * sans image a peindre. Achraf : « un beau dégradé vert style shinecosmetics.ma,
+ * mieux que les décors de l'agent, qu'on retrouve partout ». `decor` = le decor
+ * peint par OpenAI d'apres la consigne (le defaut).
+ */
+export const FONDS = {
+  decor: 'Décor peint (consigne d’image)',
+  vert: 'Dégradé vert Shine (la signature)',
+  aurore: 'Aurore : vert Shine → beurre',
+  prune: 'Prune profond',
+  creme: 'Crème lumineux',
+} as const
+export type FondShine = keyof typeof FONDS
+export const fondDessine = (f: string | null | undefined) => Boolean(f && f !== 'decor')
+
 export const AMBIANCES = { aucune: 'Aucune', etincelles: 'Étincelles', gouttes: 'Gouttes d’eau', bulles: 'Bulles', sable: 'Grains de sable' } as const
 
 /**
@@ -117,6 +133,8 @@ export const DemandeDirectionSchema = z.object({
   offre: z.enum(['aucune', 'bienvenue', 'livraison', 'pack']).default('aucune'),
   montrer: z.array(z.enum(['site', 'cod', 'prix', 'pack', 'texture', 'voix'])).max(6).default([]),
   langue: z.enum(['fr', 'darija', 'mix']).optional(),
+  // « shine » : tous les plans sur un fond Shine dessine (degrade), aucun decor peint.
+  fond: z.enum(['libre', 'shine']).default('libre'),
 })
 export type DemandeDirection = z.infer<typeof DemandeDirectionSchema>
 
@@ -227,7 +245,9 @@ export const LivraisonDirection = z.object({
     role: z.string().trim().max(60).default(''),
     concept: z.string().trim().min(2).max(200),
     pourquoi: z.string().trim().min(10, 'pourquoi : en quoi ce visuel devrait convertir (10 caracteres au moins)').max(800),
-    prompt: z.string().trim().min(200, 'prompt : une consigne de photographe complete (200 caracteres au moins)').max(4000),
+    // La consigne d'image : obligatoire (200 caracteres au moins) sauf sur un fond Shine dessine.
+    prompt: z.string().trim().max(4000).default(''),
+    fond: z.enum(['decor', 'vert', 'aurore', 'prune', 'creme']).optional(),
     texte: Texte,
     position: z.enum(['haut', 'bas']).default('haut'),
     // Produits PEINTS dans l'image. Absent = tous ceux de la creation ; [] = aucun (decor vide, texture).
@@ -267,6 +287,8 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
   const inconnus = [...(o.produitIds ?? []), ...(o.animes ?? [])].filter((id) => !produitsCreation.includes(id))
   if (inconnus.length) throw new Error(`${nom} : produit(s) ${inconnus.join(', ')} hors de la création (${produitsCreation.join(', ') || 'aucun'}).`)
   if (!o.texte.fr) throw new Error(`${nom} : le texte à poser en français manque.`)
+  if (!fondDessine(o.fond) && o.prompt.length < 200) throw new Error(`${nom} : prompt : une consigne de photographe complète (200 caractères au moins), ou un fond Shine dessiné (« fond »).`)
+  if (fondDessine(o.fond) && type !== 'reel') throw new Error(`${nom} : les fonds Shine dessinés servent aux Reels ; ici il faut une consigne d'image.`)
   const francais = [o.texte.fr, ...(o.bulles ?? []).map((b) => b.texte.fr), ...(o.points ?? []).map((x) => x.fr), ...(o.choix ?? []).map((x) => x.fr), o.voix?.fr]
   const fautes = [...new Set(francais.flatMap(fautesFrancais))]
   if (fautes.length) throw new Error(`${nom} : français sans accents (${fautes.map((f) => `« ${f} »`).join(', ')}) — écris-le avec tous ses accents (é, è, à, ç…).`)
@@ -369,7 +391,7 @@ export function verifierCouverture(couverture: Livraison['couverture'], brief: s
 }
 
 /** Chaque case « a montrer » du brief se retrouve dans le Reel livre. */
-export function verifierAMontrer(options: OptionLivree[], d: Pick<DemandeDirection, 'montrer' | 'brief' | 'objectif'>, siteDispo: boolean) {
+export function verifierAMontrer(options: OptionLivree[], d: Pick<DemandeDirection, 'montrer' | 'brief' | 'objectif'> & { fond?: DemandeDirection['fond'] }, siteDispo: boolean) {
   const m = new Set(d.montrer ?? [])
   const fin = options.find((o) => o.mouvement === 'fin')
   if (siteDispo && (m.has('site') || VEUT_SITE.test(d.brief ?? '')) && !options.some((o) => o.mouvement === 'site')) throw new Error('Le brief demande les étapes du site : ajoute un plan « site » (les vraies captures, dans un téléphone), pas un texte posé sur un décor.')
@@ -377,6 +399,8 @@ export function verifierAMontrer(options: OptionLivree[], d: Pick<DemandeDirecti
   if (m.has('prix') && !fin?.prix) throw new Error('Le brief demande le prix : « prix: true » sur le plan « fin ».')
   if (m.has('texture') && !options.some((o) => o.mouvement === 'zoom')) throw new Error('Le brief demande la texture en gros plan : un plan « zoom » sur la matière (décor sans produit animé).')
   if (m.has('voix') && options.filter((o) => (o.voix?.fr ?? '').trim()).length < 2) throw new Error('Le brief demande une voix off : au moins deux plans avec « voix ».')
+  const peints = options.map((o, i) => (fondDessine(o.fond) ? 0 : i + 1)).filter(Boolean)
+  if (d.fond === 'shine' && peints.length) throw new Error(`Le brief demande le fond Shine (dégradé) : « fond » vert, aurore, prune ou crème sur chaque plan (plan(s) ${peints.join(', ')} en décor peint).`)
 }
 
 /** Controle de coherence entre la demande et la livraison (nombre, produits connus, plans de Reel complets). */

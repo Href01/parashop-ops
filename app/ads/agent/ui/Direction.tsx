@@ -58,6 +58,7 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
   const [offre, setOffre] = useState<Offre>('aucune')
   const [montrer, setMontrer] = useState<AMontrer[]>(['cod'])
   const [langue, setLangue] = useState<'fr' | 'darija' | 'mix'>('mix')
+  const [fondShine, setFondShine] = useState(false)
   const choisirObjectif = (k: Objectif) => { setObjectif(k); if (k !== 'site') setMontrer((m) => m.filter((x) => x !== 'site')) }
   const basculerMontrer = (k: AMontrer) => setMontrer((m) => (m.includes(k) ? m.filter((x) => x !== k) : [...m, k]))
   const n = (etape: number) => (creatif ? etape - 1 : etape)
@@ -81,7 +82,7 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
   const envoyer = async () => {
     setEnvoi(true)
     try {
-      const j = await poster({ direction: { type, nombre, format, styles, qualite, brief, objectif, offre, montrer, langue, ...(creatif ? { creatifId: creatif.id } : { produitIds: produits }) } })
+      const j = await poster({ direction: { type, nombre, format, styles, qualite, brief, objectif, offre, montrer, langue, fond: type === 'reel' && fondShine ? 'shine' : 'libre', ...(creatif ? { creatifId: creatif.id } : { produitIds: produits }) } })
       envoye(j.lancee
         ? 'Brief envoyé : Claude commence maintenant. Compte 5 à 15 minutes avec les images.'
         : 'Brief envoyé : Claude le prend à son prochain passage (chaque heure, de 8 h à 23 h).')
@@ -155,6 +156,7 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
               <option value="mix">Français + darija</option><option value="fr">Français</option><option value="darija">Darija</option>
             </select></label>
         </div>
+        {type === 'reel' && <label className={s.caseInline}><input type="checkbox" checked={fondShine} onChange={(e) => setFondShine(e.target.checked)} /> Fond Shine : un dégradé vert aux couleurs de la maison sur tous les plans (aucun décor IA)</label>}
         <small className={s.muted}>{type === 'reel' ? 'Chaque case cochée est vérifiée : un Reel qui l’oublie est refusé et refait. ' : ''}Les offres viennent des vraies règles de la boutique (livraison, code de bienvenue) : rien d’inventé.</small>
       </fieldset>
 
@@ -268,7 +270,7 @@ export function useActionsSerie(c: Creatif, rafraichir: () => Promise<void>, mes
   }
   // La carte 1 d'abord : elle donne le decor aux suivantes ; puis le reste en parallele.
   const genererManquants = async (opts: Option[]) => {
-    const manquants = opts.filter((o) => !imagesDe(c, o).length)
+    const manquants = opts.filter((o) => !imagesDe(c, o).length && (!o.motion?.fond || o.motion.fond === 'decor'))
     const premiere = manquants.find((o) => o.carte === 1)
     if (premiere) await generer(premiere)
     await Promise.all(manquants.filter((o) => o !== premiere).map(generer))

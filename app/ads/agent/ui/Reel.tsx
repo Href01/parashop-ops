@@ -101,6 +101,47 @@ function particulesAmbiance(ctx: Ctx, plan: PlanDessin, liste: Particule[]) {
   }
 }
 
+/**
+ * LES FONDS SHINE, dessines : un degrade aux couleurs de la maison, des halos qui
+ * derivent lentement (en temps global : ils continuent d'un plan a l'autre), la
+ * spirale du logo en filigrane, et une flaque de lumiere ou les produits se posent.
+ */
+const FONDS_SHINE: Record<'vert' | 'aurore' | 'prune' | 'creme', { degrade: [number, string][]; halos: [string, number, number, number, number][]; clair: boolean }> = {
+  // [couleur, opacite, x, y, rayon] en fractions ; x et y derivent autour de leur place.
+  vert: { degrade: [[0, '#138764'], [0.42, '#0C6B52'], [1, '#05322A']], halos: [['247,222,146', 0.42, 0.86, 0.16, 0.62], ['159,227,197', 0.26, 0.08, 0.7, 0.66], ['155,48,112', 0.2, 0.98, 0.64, 0.46]], clair: false },
+  aurore: { degrade: [[0, '#0C6B52'], [0.5, '#4E9E7C'], [1, '#F7DE92']], halos: [['255,255,255', 0.26, 0.2, 0.2, 0.55], ['247,222,146', 0.45, 0.8, 0.85, 0.7]], clair: false },
+  prune: { degrade: [[0, '#A93A7B'], [0.5, '#7A2459'], [1, '#3A0F2B']], halos: [['247,222,146', 0.34, 0.85, 0.18, 0.6], ['12,107,82', 0.3, 0.1, 0.78, 0.6]], clair: false },
+  creme: { degrade: [[0, '#FBFAF6'], [1, '#DCEFE6']], halos: [['247,222,146', 0.55, 0.82, 0.3, 0.34], ['155,48,112', 0.12, 0.12, 0.62, 0.3]], clair: true },
+}
+
+function dessinerFondShine(ctx: Ctx, nom: keyof typeof FONDS_SHINE, tg: number) {
+  const f = FONDS_SHINE[nom]
+  const g = ctx.createLinearGradient(0, 0, W * 0.25, H)
+  for (const [p, c] of f.degrade) g.addColorStop(p, c)
+  ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40)
+  f.halos.forEach(([c, a, x, y, r], k) => {
+    const cx = (x + 0.05 * Math.sin(tg * 0.35 + k * 2.1)) * W, cy = (y + 0.03 * Math.cos(tg * 0.28 + k * 1.3)) * H
+    const h = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * W)
+    h.addColorStop(0, `rgba(${c},${a})`); h.addColorStop(1, `rgba(${c},0)`)
+    ctx.fillStyle = h; ctx.fillRect(0, 0, W, H)
+  })
+  // La spirale Shine en filigrane : des cercles qui tournent doucement, en pointilles.
+  ctx.save()
+  ctx.translate(W * 0.5, H * 0.5); ctx.rotate(tg * 0.06)
+  ctx.strokeStyle = f.clair ? 'rgba(12,107,82,.07)' : 'rgba(255,255,255,.07)'; ctx.lineWidth = W * 0.0035
+  for (let k = 0; k < 6; k++) { ctx.setLineDash([W * (0.02 + k * 0.006), W * 0.018]); ctx.beginPath(); ctx.arc(0, 0, W * (0.2 + k * 0.11), k * 0.7, k * 0.7 + Math.PI * 1.7); ctx.stroke() }
+  ctx.setLineDash([]); ctx.restore()
+  // La scene : une flaque de lumiere douce ou les produits atterrissent.
+  const s = ctx.createRadialGradient(W * 0.5, H * 0.74, 0, W * 0.5, H * 0.74, W * 0.62)
+  s.addColorStop(0, f.clair ? 'rgba(255,255,255,.7)' : 'rgba(255,255,255,.16)'); s.addColorStop(1, 'rgba(255,255,255,0)')
+  ctx.save(); ctx.translate(W * 0.5, H * 0.74); ctx.scale(1, 0.32); ctx.translate(-W * 0.5, -H * 0.74)
+  ctx.fillStyle = s; ctx.beginPath(); ctx.arc(W * 0.5, H * 0.74, W * 0.62, 0, Math.PI * 2); ctx.fill(); ctx.restore()
+  // Un vignetage leger : l'oeil va au centre.
+  const v = ctx.createRadialGradient(W / 2, H * 0.45, W * 0.45, W / 2, H * 0.45, H * 0.75)
+  v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, f.clair ? 'rgba(0,0,0,.04)' : 'rgba(0,0,0,.28)')
+  ctx.fillStyle = v; ctx.fillRect(0, 0, W, H)
+}
+
 /** Un plan, a son instant local, dans le repere 1080x1920. */
 function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, res: Ressources, langue: Langue, bouton: string) {
   const k = ctx.canvas.width / W
@@ -110,9 +151,12 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
   const police = rtl ? POLICES.arabe : POLICES.titre
   ctx.setTransform(k, 0, 0, k, e.secousse.dx * W * k, e.secousse.dy * H * k)
 
-  // 1. Le decor (cover), ou le fond clair de la maison s'il n'est pas encore genere.
-  const fond = plan.image ? res.get(plan.image) : undefined
-  if (fond) {
+  // 1. Le fond Shine dessine ; sinon le decor peint (cover), ou le fond clair de la maison s'il n'est pas encore genere.
+  const shine = plan.fond && plan.fond !== 'decor' ? plan.fond : null
+  const fond = !shine && plan.image ? res.get(plan.image) : undefined
+  if (shine) {
+    dessinerFondShine(ctx, shine, plans.slice(0, i).reduce((n, p) => n + p.duree, 0) + local)
+  } else if (fond) {
     const ech = Math.max(W / fond.naturalWidth, H / fond.naturalHeight) * e.fond.echelle
     const w = fond.naturalWidth * ech, h = fond.naturalHeight * ech
     ctx.drawImage(fond, (W - w) / 2 + e.fond.dx * W, (H - h) / 2 + e.fond.dy * H, w, h)
@@ -123,9 +167,9 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
     ctx.fillStyle = 'rgba(247,222,146,.55)'; ctx.beginPath(); ctx.arc(W * 0.82, H * 0.3, W * 0.32, 0, Math.PI * 2); ctx.fill()
     ctx.fillStyle = 'rgba(155,48,112,.12)'; ctx.beginPath(); ctx.arc(W * 0.12, H * 0.62, W * 0.28, 0, Math.PI * 2); ctx.fill()
   }
-  // Sur un decor : un voile en haut, le texte blanc reste lisible. Sur le fond clair : texte brun, sans voile.
-  const clair = !fond
-  if (!clair) {
+  // Sur un decor : un voile en haut, le texte blanc reste lisible. Sur un fond clair : texte brun, sans voile.
+  const clair = shine ? FONDS_SHINE[shine].clair : !fond
+  if (fond) {
     const voile = ctx.createLinearGradient(0, 0, 0, H * 0.46)
     voile.addColorStop(0, 'rgba(12,20,16,.5)'); voile.addColorStop(1, 'rgba(12,20,16,0)')
     ctx.fillStyle = voile; ctx.fillRect(0, 0, W, H * 0.46)
@@ -487,8 +531,17 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
     ctx.beginPath(); ctx.arc(0, 0, r * 0.84, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([])
     const [montant, ...unite] = e.sticker.texte.split(' ')
     ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-    ctx.font = `800 ${W * (montant.length > 3 ? 0.047 : 0.055)}px ${POLICES.titre}`; ctx.fillText(montant, 0, -r * 0.1)
-    ctx.font = `700 ${W * 0.026}px ${POLICES.titre}`; ctx.fillText(unite.join(' ') || 'DH', 0, r * 0.42)
+    // Un ancien prix (un pack : ses produits achetes un par un) : barre, au-dessus du vrai prix.
+    const dy = e.sticker.barre ? r * 0.12 : 0
+    if (e.sticker.barre) {
+      ctx.font = `700 ${W * 0.026}px ${POLICES.titre}`
+      const ancien = e.sticker.barre.split(' ')[0], la = ctx.measureText(ancien).width
+      ctx.globalAlpha = 0.8; ctx.fillText(ancien, 0, -r * 0.46)
+      ctx.strokeStyle = COULEURS.beurre; ctx.lineWidth = W * 0.004
+      ctx.beginPath(); ctx.moveTo(-la / 2 - W * 0.004, -r * 0.42); ctx.lineTo(la / 2 + W * 0.004, -r * 0.5); ctx.stroke(); ctx.globalAlpha = 1
+    }
+    ctx.font = `800 ${W * (montant.length > 3 ? 0.047 : 0.055)}px ${POLICES.titre}`; ctx.fillText(montant, 0, -r * 0.1 + dy)
+    ctx.font = `700 ${W * 0.026}px ${POLICES.titre}`; ctx.fillText(unite.join(' ') || 'DH', 0, r * 0.42 + dy * 0.7)
     ctx.restore()
   }
 

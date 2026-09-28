@@ -129,3 +129,17 @@ test('un plan muet (voix null en base) se retouche sans erreur', () => {
   assert.equal(p.success, true)
   assert.doesNotThrow(() => verifierOption(p.data!, 1, 'reel', [102]))
 })
+
+test('les fonds Shine dessinés : pas de consigne d’image, et exigés par le brief « fond Shine »', () => {
+  const sans = { concept: 'Plan', pourquoi: 'Parce que ça arrête le pouce.', texte: { fr: 'Ta *routine*' }, produitIds: [], animes: [102], mouvement: 'rebond', duree: 2 }
+  // Sans fond dessiné, la consigne d'image reste obligatoire.
+  assert.throws(() => verifierOption(OptionLivreeSchema.parse(sans), 0, 'reel', [102]), /200 caractères/)
+  assert.doesNotThrow(() => verifierOption(OptionLivreeSchema.parse({ ...sans, fond: 'vert' }), 0, 'reel', [102]))
+  // Hors d'un Reel, pas de fond dessiné.
+  assert.throws(() => verifierOption(OptionLivreeSchema.parse({ concept: 'Carte', pourquoi: 'Parce que ça arrête le pouce.', texte: { fr: 'Ta *routine*' }, fond: 'vert' }), 0, 'carrousel', []), /fonds Shine dessinés servent aux Reels/)
+  // Le brief « fond Shine » : chaque plan sur un fond dessiné.
+  const opts = [plan({ mouvement: 'zoom', duree: 2, fond: 'vert' }), plan({ mouvement: 'fin', duree: 3, animes: [102] })]
+  assert.throws(() => verifierAMontrer(opts, { brief: 'Un reel', montrer: [], fond: 'shine' }, false), /plan\(s\) 2 en décor peint/)
+  assert.doesNotThrow(() => verifierAMontrer(opts.map((o) => ({ ...o, fond: 'aurore' as const })), { brief: 'Un reel', montrer: [], fond: 'shine' }, false))
+  assert.equal(validerDemande({ type: 'reel', nombre: 4, format: 'story', produitIds: [111], brief: 'Un reel du pack' }).fond, 'libre')
+})

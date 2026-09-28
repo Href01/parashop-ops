@@ -290,7 +290,7 @@ function Espace({ c, d, fermer, rafraichir, dire }: { c: CreatifStudio; d: Donne
   const imgApercu: Image | undefined = imageSeule.find((i) => i.id === imageApercu) ?? imageSeule.find((i) => i.choisie) ?? imageSeule[0]
   const visuelSimple = (f: FormatImage): Visuel => ({ format: f, image: imgApercu?.url ?? null, accroche: lisible(c.accroche), langue, surimpression: true, position: 'haut' })
   const carte = (o: Option): Visuel => ({ format: o.format, image: imagesDe(c, o)[0]?.url ?? null, accroche: lisible(texteDe(o, langue)), langue, surimpression: true, position: o.position })
-  const manquants = opts.filter((o) => !imagesDe(c, o).length)
+  const manquants = opts.filter((o) => !imagesDe(c, o).length && (!o.motion?.fond || o.motion.fond === 'decor'))
 
   return (
     <>

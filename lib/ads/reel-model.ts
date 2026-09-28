@@ -35,6 +35,8 @@ export type PlanReel = {
   choix?: string[]        // quiz : 2 ou 3 reponses ; la premiere est celle qui mene au produit
   confiance?: string[]    // fin : badges de confiance deja traduits (« Paiement à la livraison »…)
   prix?: string | null    // fin : le sticker de prix (« 997 DH »)
+  prixBarre?: string | null   // fin : l'ancien prix, barre sur le sticker (un pack : la somme de ses produits)
+  fond?: 'decor' | 'vert' | 'aurore' | 'prune' | 'creme'   // un fond Shine dessine a la place du decor peint
 }
 
 export const IPS = 30
@@ -115,7 +117,7 @@ export type EtatPlan = {
   etincelles: Particule[]        // autour du flacon, apres le reflet
   flash: number
   badges: { texte: string; echelle: number }[]            // fin : les badges de confiance, l'un apres l'autre
-  sticker: { texte: string; echelle: number; rotation: number } | null   // fin : le prix, qui tombe en tournant
+  sticker: { texte: string; barre: string | null; echelle: number; rotation: number } | null   // fin : le prix, qui tombe en tournant
   etapes: EtatEtape[]                                     // etapes : le numero et le nom de chaque produit
   site: EtatSite | null                                   // site : le telephone, l'ecran, le doigt
 }
@@ -390,7 +392,7 @@ export function etatPlan(plan: PlanReel, t: number, premier: boolean, indice = 0
     ? (plan.confiance ?? []).slice(0, 3).map((texte, k) => { const x = t - 0.75 - k * 0.15; return { texte, echelle: x <= 0 ? 0 : Math.min(1.06, ressort(x * 2.6)) } })
     : []
   const sticker = plan.mouvement === 'fin' && plan.prix && t > 0.6
-    ? { texte: plan.prix, echelle: Math.min(1.1, ressort((t - 0.6) * 2.4)), rotation: -12 + 14 * (1 - Math.min(1, ressort((t - 0.6) * 2.4))) }
+    ? { texte: plan.prix, barre: plan.prixBarre ?? null, echelle: Math.min(1.1, ressort((t - 0.6) * 2.4)), rotation: -12 + 14 * (1 - Math.min(1, ressort((t - 0.6) * 2.4))) }
     : null
 
   // La routine : le numero et le nom du produit en vedette ; puis un petit numero au-dessus de chacun dans la rangee.

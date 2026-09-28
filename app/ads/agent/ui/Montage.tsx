@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { ArrowDown, ArrowUp, Copy, ImagePlus, Loader2, Mic, Plus, Save, Trash2, Undo2, Wand2, X } from 'lucide-react'
 import type { Langue } from '@/lib/ads/creatif-model'
-import { AMBIANCES, CONFIANCE, ETAPES_SITE, LIBELLES_SITE, MOUVEMENTS, TRANSITIONS, dureeMinDm, dureeMinEtapes, dureeMinSite, dureeVoix, fautesFrancais, motMisEnValeurVide, motsVoixMax, voixTropLongue, type CleConfiance, type EtapeSite, type Mouvement } from '@/lib/ads/direction-model'
+import { AMBIANCES, CONFIANCE, ETAPES_SITE, FONDS, LIBELLES_SITE, MOUVEMENTS, TRANSITIONS, dureeMinDm, dureeMinEtapes, dureeMinSite, dureeVoix, fautesFrancais, motMisEnValeurVide, motsVoixMax, voixTropLongue, type CleConfiance, type EtapeSite, type FondShine, type Mouvement } from '@/lib/ads/direction-model'
 import { urlDetouree, type Ambiance, type Transition } from '@/lib/ads/reel-model'
 import type { PlanDessin } from './Reel'
 import type { BaseCreative, Creatif, Image, Option } from './types'
@@ -23,7 +23,7 @@ export type Brouillon = {
   transition: Transition; ambiance: Ambiance
   bulles: { de: 'cliente' | 'shine'; texte: Multi }[]; points: Multi[]; choix: Multi[]; voix: Multi
   confiance: CleConfiance[]; prix: boolean
-  ecrans: EtapeSite[]
+  ecrans: EtapeSite[]; fond: FondShine
 }
 
 /**
@@ -53,14 +53,25 @@ export function depuisOption(o: Option): Brouillon {
     transition: m.transition ?? 'coupe', ambiance: m.ambiance ?? 'aucune',
     bulles: (m.bulles ?? []).map((b) => ({ de: b.de, texte: multi(b.texte) })), points: (m.points ?? []).map(multi), choix: (m.choix ?? []).map(multi), voix: multi(m.voix),
     confiance: (m.confiance ?? []) as CleConfiance[], prix: Boolean(m.prix),
-    ecrans: (m.ecrans ?? []) as EtapeSite[],
+    ecrans: (m.ecrans ?? []) as EtapeSite[], fond: (m.fond ?? 'decor') as FondShine,
   }
 }
 
-/** Le prix des produits animes, tel qu'il s'affiche sur le sticker (« 997 DH »). */
+/** Le pack dont ces produits animes sont exactement le contenu (le sticker montre alors SON prix). */
+const packDe = (animes: number[], d: BaseCreative) => d.catalogue.find((p) => p.composants?.length && p.composants.length === animes.length && p.composants.every((c) => animes.includes(c)))
+
+/** Le prix des produits animes, tel qu'il s'affiche sur le sticker (« 997 DH ») : le prix du pack s'ils le forment. */
 export const prixAnimes = (animes: number[], d: BaseCreative) => {
-  const total = animes.reduce((n, id) => n + (d.catalogue.find((p) => p.id === id)?.prix ?? 0), 0)
+  const pack = packDe(animes, d)
+  const total = pack?.prix ?? animes.reduce((n, id) => n + (d.catalogue.find((p) => p.id === id)?.prix ?? 0), 0)
   return total > 0 ? `${Math.round(total)} DH` : null
+}
+/** L'ancien prix barre, celui que le site barre aussi : le prix de reference du pack, ou des produits en promo. */
+export const prixBarre = (animes: number[], d: BaseCreative) => {
+  const pack = packDe(animes, d)
+  const liste = pack ? [pack] : animes.map((id) => d.catalogue.find((p) => p.id === id)).filter((p): p is NonNullable<typeof p> => Boolean(p))
+  const prix = liste.reduce((n, p) => n + (p.prix ?? 0), 0), avant = liste.reduce((n, p) => n + (p.prixAvant ?? p.prix ?? 0), 0)
+  return avant > prix && prix > 0 ? `${Math.round(avant)} DH` : null
 }
 
 const imagesDe = (c: Creatif, o: Option): Image[] => c.images.filter((i) => i.option_id === o.id).sort((a, b) => Number(b.choisie) - Number(a.choisie) || b.cree_le.localeCompare(a.cree_le))
@@ -85,6 +96,8 @@ export function planDessin(c: Creatif, o: Option, b: Brouillon, langue: Langue, 
     voixUrl: voixUrl && voixUrl.texte === b.voix[langue].trim() ? voixUrl.url : null,
     confiance: b.mouvement === 'fin' ? b.confiance.map((k) => CONFIANCE[k][langue]) : [],
     prix: b.mouvement === 'fin' && b.prix ? prixAnimes(b.animes, d) : null,
+    prixBarre: b.mouvement === 'fin' && b.prix ? prixBarre(b.animes, d) : null,
+    fond: b.fond,
   }
 }
 
@@ -194,6 +207,10 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
                     <select className={s.select} value={b.transition} disabled={i === 0} onChange={(e) => maj({ transition: e.target.value as Transition })}>
                       {(Object.keys(TRANSITIONS) as Transition[]).map((x) => <option key={x} value={x}>{TRANSITIONS[x]}</option>)}
                     </select></label>
+                  <label className={s.champ}>Fond
+                    <select className={s.select} value={b.fond} onChange={(e) => maj({ fond: e.target.value as FondShine })}>
+                      {(Object.keys(FONDS) as FondShine[]).map((x) => <option key={x} value={x}>{FONDS[x]}</option>)}
+                    </select></label>
                   <label className={s.champ}>Ambiance
                     <select className={s.select} value={b.ambiance} onChange={(e) => maj({ ambiance: e.target.value as Ambiance })}>
                       {(Object.keys(AMBIANCES) as Ambiance[]).map((x) => <option key={x} value={x}>{AMBIANCES[x]}</option>)}
@@ -276,7 +293,7 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
                 {al.length > 0 && <ul className={s.montageAlertes}>{al.map((x) => <li key={x}>⚠ {x}</li>)}</ul>}
                 <div className={s.btns}>
                   <button type="button" className={s.primary} disabled={!modifie || occupe != null} onClick={() => void (async () => {
-                    const j = await action(`e${o.id}`, { option: { id: o.id, texte: b.texte, position: b.position, mouvement: b.mouvement, duree: b.duree, animes: b.animes, transition: b.transition, ambiance: b.ambiance, bulles: b.bulles, points: b.mouvement === 'site' ? b.points.filter((x) => x.fr.trim()).length === b.ecrans.length ? b.points : [] : b.points, choix: b.choix, voix: b.voix, confiance: b.confiance, prix: b.prix, ...(b.mouvement === 'site' ? { ecrans: b.ecrans } : {}) } }, 'Plan enregistré.')
+                    const j = await action(`e${o.id}`, { option: { id: o.id, texte: b.texte, position: b.position, mouvement: b.mouvement, duree: b.duree, animes: b.animes, transition: b.transition, ambiance: b.ambiance, bulles: b.bulles, points: b.mouvement === 'site' ? b.points.filter((x) => x.fr.trim()).length === b.ecrans.length ? b.points : [] : b.points, choix: b.choix, voix: b.voix, confiance: b.confiance, prix: b.prix, ...(b.mouvement === 'site' ? { ecrans: b.ecrans } : {}), fond: b.fond } }, 'Plan enregistré.')
                     if (j) setBrouillon(o.id, null)
                   })()}>{occupe === `e${o.id}` ? <Loader2 size={13} className={s.tourne} /> : <Save size={13} />} Enregistrer</button>
                   {modifie && <button type="button" className={s.ghost} onClick={() => setBrouillon(o.id, null)}><Undo2 size={13} /> Annuler</button>}

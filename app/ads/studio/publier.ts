@@ -26,11 +26,13 @@ export function verifierPublication(c: Creatif, opts: Option[], type: 'reel' | '
   const out: Point[] = []
   const fautes = [...new Set(francais(c, opts).flatMap(fautesFrancais))]
   out.push({ id: 'accents', ok: !fautes.length, bloquant: true, titre: 'Le français a tous ses accents', detail: fautes.length ? `À corriger : ${fautes.map((f) => `« ${f} »`).join(', ')}` : 'Textes à l’écran, bulles, voix et légende.' })
-  const peints = opts.filter((o) => c.images.some((i) => i.option_id === o.id)).length
+  // Un plan sur fond Shine dessine n'a pas de decor a peindre.
+  const aPeindre = opts.filter((o) => !o.motion?.fond || o.motion.fond === 'decor')
+  const peints = aPeindre.filter((o) => c.images.some((i) => i.option_id === o.id)).length
   if (type === 'image') {
     out.push({ id: 'visuel', ok: c.images.some((i) => i.carte == null), bloquant: true, titre: 'Un visuel est prêt', detail: 'Génère un visuel ou lance une direction.' })
   } else {
-    out.push({ id: 'peints', ok: peints === opts.length && opts.length > 0, bloquant: true, titre: type === 'reel' ? 'Tous les décors sont peints' : 'Toutes les cartes ont leur visuel', detail: `${peints}/${opts.length} prêts.` })
+    out.push({ id: 'peints', ok: peints === aPeindre.length && opts.length > 0, bloquant: true, titre: type === 'reel' ? 'Tous les décors sont peints' : 'Toutes les cartes ont leur visuel', detail: aPeindre.length < opts.length ? `${peints}/${aPeindre.length} décors peints · ${opts.length - aPeindre.length} plan(s) sur fond Shine dessiné.` : `${peints}/${opts.length} prêts.` })
   }
   if (type === 'reel') {
     const durees = opts.map((o) => Number(o.duree) || 0)

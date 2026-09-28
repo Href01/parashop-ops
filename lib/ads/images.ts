@@ -92,6 +92,7 @@ export async function genererImage(o: { creatifId?: number; optionId?: number; f
     ? (await pool.query(`SELECT * FROM "AdsCreativeOption" WHERE id = $1`, [o.optionId])).rows[0]
     : null
   if (o.optionId && !opt) throw new Error('Option introuvable.')
+  if (opt?.motion?.fond && opt.motion.fond !== 'decor') throw new Error('Ce plan a un fond Shine dessiné : pas d’image à peindre (le crédit OpenAI est gardé).')
   const creatifId: number = opt ? opt.creatif_id : Number(o.creatifId)
   const format: FormatImage = opt ? opt.format : (o.format as FormatImage)
   if (!FORMATS_IMAGE[format]) throw new Error('Format : feed, story ou carre.')
