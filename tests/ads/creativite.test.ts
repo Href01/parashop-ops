@@ -190,3 +190,15 @@ test('le bonneteau : on entoure, on mélange, on retrouve le produit suivi', asy
   assert.ok(sons.some((x) => x.son === 'ding' && Math.abs(x.t - revele) < 0.01))
   assert.throws(() => verifierOption(plan({ mouvement: 'pop', duree: 2.5, animes: [102, 98], melange: true }), 0, 'reel', [102, 98]), /3 ou 4 produits/)
 })
+
+test('le jeu A/B/C : lettres, étiquettes, appel à commenter', () => {
+  const jeu: PlanReel = { mouvement: 'pop', duree: 3, produits: 3, texte: 'A, B ou C ?', lettres: true, points: ['Taches', 'Pores', 'Rides'], appel: 'Commente ta réponse 👇' }
+  assert.equal(etatPlan(jeu, 0.5, false).appel, null, 'pas avant que les produits soient là')
+  assert.ok(etatPlan(jeu, 1.6, false).appel!.echelle > 0.9)
+  const zoom: PlanReel = { mouvement: 'zoom', duree: 3, produits: 0, texte: 'On te dit *laquelle*', appel: 'Commente ton type de peau 👇' }
+  assert.ok(etatPlan(zoom, 1.5, false).appel)
+  assert.throws(() => verifierOption(plan({ mouvement: 'etiquette', duree: 2.5, animes: [102], points: [{ fr: 'A' }, { fr: 'B' }], appel: 'peau' }), 1, 'reel', [102]), /appel à commenter/)
+  assert.throws(() => verifierOption(plan({ mouvement: 'zoom', duree: 2, lettres: true }), 1, 'reel', []), /lettres A, B, C/)
+  assert.throws(() => verifierOption(plan({ mouvement: 'pop', duree: 3, animes: [102, 107, 100], points: [{ fr: 'Taches' }, { fr: 'Pores' }] }), 1, 'reel', [102, 107, 100]), /une étiquette par produit/)
+  assert.doesNotThrow(() => verifierOption(plan({ mouvement: 'pop', duree: 3, animes: [102, 107, 100], lettres: true, appel: 'reponse', fond: 'nuit', points: [{ fr: 'Taches' }, { fr: 'Pores' }, { fr: 'Rides' }] }), 1, 'reel', [102, 107, 100]))
+})

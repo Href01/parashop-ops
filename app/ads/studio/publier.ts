@@ -22,7 +22,7 @@ const francais = (c: Creatif, opts: Option[]) => [
   ...opts.flatMap((o) => [o.texte?.fr, ...(o.motion?.bulles ?? []).map((b) => b.texte?.fr), ...(o.motion?.points ?? []).map((x) => x.fr), ...(o.motion?.choix ?? []).map((x) => x.fr), o.motion?.voix?.fr]),
 ]
 
-export function verifierPublication(c: Creatif, opts: Option[], type: 'reel' | 'carrousel' | 'options' | 'image', langues: string[]): Point[] {
+export function verifierPublication(c: Creatif, opts: Option[], type: 'reel' | 'carrousel' | 'options' | 'image', langues: string[], packs: Record<number, number[]> = {}): Point[] {
   const out: Point[] = []
   const fautes = [...new Set(francais(c, opts).flatMap(fautesFrancais))]
   out.push({ id: 'accents', ok: !fautes.length, bloquant: true, titre: 'Le français a tous ses accents', detail: fautes.length ? `À corriger : ${fautes.map((f) => `« ${f} »`).join(', ')}` : 'Textes à l’écran, bulles, voix et légende.' })
@@ -41,7 +41,8 @@ export function verifierPublication(c: Creatif, opts: Option[], type: 'reel' | '
     out.push({ id: 'accroche', ok: (durees[0] ?? 9) <= 2.5, bloquant: true, titre: 'L’accroche tient en 2,5 s', detail: `Plan 1 : ${durees[0] ?? '—'} s. Au-delà, on a déjà scrollé.` })
     out.push({ id: 'produit1', ok: Boolean(p1?.animes?.length || p1?.produit_ids?.length), bloquant: false, titre: 'Un produit dès le plan 1', detail: 'Le produit héros se voit dans la première seconde.' })
     out.push({ id: 'duree', ok: total >= 8 && total <= 15, bloquant: false, titre: 'Entre 8 et 15 secondes', detail: `${total} s au total. Plus court, on ne comprend pas ; plus long, on décroche.` })
-    const manquants = c.produit_ids.filter((id) => !fin?.animes?.includes(id))
+    // Un pack est montre si l'un de ses produits l'est (on anime les produits, pas la photo du pack).
+    const manquants = c.produit_ids.filter((id) => !fin?.animes?.includes(id) && !(packs[id] ?? []).some((x) => fin?.animes?.includes(x)))
     out.push({ id: 'fin', ok: Boolean(fin) && (c.produit_ids.length > 4 || !manquants.length), bloquant: false, titre: 'La carte de fin montre toute la routine', detail: fin ? (manquants.length && c.produit_ids.length <= 4 ? `Manque : #${manquants.join(', #')}.` : 'Tous les produits et le bouton.') : 'Ajoute un plan « fin » (produits + bouton).' })
     out.push({ id: 'confiance', ok: Boolean(fin?.motion?.confiance?.includes('cod')), bloquant: false, titre: '« Paiement à la livraison » sur la fin', detail: 'Au Maroc, c’est ce qui lève le dernier frein. Ouvre le plan de fin → « Rassurer la cliente ».' })
     const voix = opts.filter((o) => o.motion?.voix?.fr).length

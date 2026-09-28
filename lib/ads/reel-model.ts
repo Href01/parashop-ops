@@ -40,7 +40,8 @@ export type PlanReel = {
   confiance?: string[]    // fin : badges de confiance deja traduits (« Paiement à la livraison »…)
   prix?: string | null    // fin : le sticker de prix (« 997 DH »)
   prixBarre?: string | null   // fin : l'ancien prix, barre sur le sticker (un pack : la somme de ses produits)
-  fond?: 'decor' | 'vert' | 'aurore' | 'prune' | 'creme'   // un fond Shine dessine a la place du decor peint
+  fond?: 'decor' | 'vert' | 'aurore' | 'prune' | 'creme' | 'nuit'   // un fond Shine dessine a la place du decor peint
+  lettres?: boolean       // A, B, C au-dessus des produits (et a la place des numeros des etapes)
 }
 
 export const IPS = 30
@@ -126,6 +127,7 @@ export type EtatPlan = {
   site: EtatSite | null                                   // site : le telephone, l'ecran, le doigt
   anneau: { cx: number; cy: number; r: number; alpha: number } | null   // bonneteau : le produit a suivre
   sceau: { echelle: number; rotation: number; cx: number } | null      // fin : la spirale Shine, en sceau
+  appel: { texte: string; echelle: number; cy: number } | null           // pop, zoom : « Commente… 👇 », qui bat
 }
 export type EtatEtape = { numero: number; texte: string; cx: number; cy: number; echelle: number; grand: boolean }
 export type EtatSite = {
@@ -459,8 +461,15 @@ export function etatPlan(plan: PlanReel, t: number, premier: boolean, indice = 0
     const vu = t > 0.5 && t < debut ? borne((t - 0.5) / 0.15) * borne((debut - t) / 0.1) : t > revele ? borne((t - revele) / 0.15) : 0
     if (vu > 0) anneau = { cx: p0.cx, cy: p0.bas - p0.hauteur * p0.echelle * 0.5, r: p0.hauteur * p0.echelle * 0.62, alpha: vu * (0.75 + 0.25 * Math.sin(t * 12)) }
   }
-  // Le sceau Shine : la spirale de la marque tombe en tournant sur la carte de fin (a gauche si le prix est a droite).
-  const sceau = plan.mouvement === 'fin' && t > 0.3 ? { echelle: Math.min(1.08, ressort((t - 0.3) * 2.2)), rotation: -40 * (1 - Math.min(1, ressort((t - 0.3) * 2.2))), cx: plan.prix ? 0.17 : 0.83 } : null
+  // Le sceau Shine : la spirale de la marque tombe en tournant a gauche du bouton (a droite, les boutons d'Instagram ;
+  // au-dessus des produits, les etiquettes et le prix).
+  const sceau = plan.mouvement === 'fin' && t > 0.3 ? { echelle: Math.min(1.08, ressort((t - 0.3) * 2.2)), rotation: -40 * (1 - Math.min(1, ressort((t - 0.3) * 2.2))), cx: 0.15 } : null
+
+  // L'appel a commenter (hors quiz) : quand les produits (ou le texte) sont la, il bat doucement.
+  const tAppel = plan.mouvement === 'pop' ? 0.1 + plan.produits * 0.14 + 0.45 : 0.7
+  const appel = plan.appel && plan.mouvement !== 'quiz' && t > tAppel
+    ? { texte: plan.appel, cy: plan.mouvement === 'zoom' ? 0.55 : 0.35, echelle: Math.min(1.06, ressort((t - tAppel) * 2.6)) * (1 + 0.04 * Math.sin(2 * Math.PI * 1.6 * Math.max(0, t - tAppel - 0.4))) }
+    : null
 
   // La routine : le numero et le nom du produit en vedette ; puis un petit numero au-dessus de chacun dans la rangee.
   const etapes: EtatEtape[] = []
@@ -503,7 +512,7 @@ export function etatPlan(plan: PlanReel, t: number, premier: boolean, indice = 0
 
   return {
     fond, secousse, produits, mots: etatsMots, texteHaut: ZONE.haut + 0.035, chip, cta, dm, points, quiz,
-    particules: particules(plan.ambiance, t, indice + 1), etincelles, flash, badges, sticker, etapes, site, anneau, sceau,
+    particules: particules(plan.ambiance, t, indice + 1), etincelles, flash, badges, sticker, etapes, site, anneau, sceau, appel,
   }
 }
 

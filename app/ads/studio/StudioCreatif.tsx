@@ -281,7 +281,8 @@ function Espace({ c, d, fermer, rafraichir, dire }: { c: CreatifStudio; d: Donne
   const setBrouillon = (id: number, b: Brouillon | null) => setBrouillons((x) => { const n = { ...x }; if (b) n[id] = b; else delete n[id]; return n })
   const plans = type === 'reel' ? opts.map((o) => planDessin(c, o, brouillons[o.id] ?? depuisOption(o), langue, d)) : []
   const produits = c.produit_ids.map((id) => d.catalogue.find((p) => p.id === id)).filter((p): p is NonNullable<typeof p> => Boolean(p))
-  const points = verifierPublication(c, opts, type, d.strategie.langues)
+  const packs = Object.fromEntries(d.catalogue.filter((p) => p.composants?.length).map((p) => [p.id, p.composants!]))
+  const points = verifierPublication(c, opts, type, d.strategie.langues, packs)
   const aCorriger = points.filter((p) => !p.ok && p.bloquant).length
   const majStatut = async (statut: string, adId?: string | null) => {
     try { await poster({ creatif: { id: c.id, statut, adId: adId ?? undefined } }); await rafraichir(); dire(true, `Création : ${STATUTS_CREATIF[statut]?.replace(/s$/, '')}.`) } catch (e) { dire(false, (e as Error).message) }

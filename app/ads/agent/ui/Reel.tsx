@@ -106,11 +106,13 @@ function particulesAmbiance(ctx: Ctx, plan: PlanDessin, liste: Particule[]) {
  * derivent lentement (en temps global : ils continuent d'un plan a l'autre), la
  * spirale du logo en filigrane, et une flaque de lumiere ou les produits se posent.
  */
-const FONDS_SHINE: Record<'vert' | 'aurore' | 'prune' | 'creme', { degrade: [number, string][]; halos: [string, number, number, number, number][]; clair: boolean }> = {
+const FONDS_SHINE: Record<'vert' | 'aurore' | 'prune' | 'creme' | 'nuit', { degrade: [number, string][]; halos: [string, number, number, number, number][]; clair: boolean }> = {
   // [couleur, opacite, x, y, rayon] en fractions ; x et y derivent autour de leur place.
   vert: { degrade: [[0, '#138764'], [0.42, '#0C6B52'], [1, '#05322A']], halos: [['247,222,146', 0.42, 0.86, 0.16, 0.62], ['159,227,197', 0.26, 0.08, 0.7, 0.66], ['155,48,112', 0.2, 0.98, 0.64, 0.46]], clair: false },
   aurore: { degrade: [[0, '#0C6B52'], [0.5, '#4E9E7C'], [1, '#F7DE92']], halos: [['255,255,255', 0.26, 0.2, 0.2, 0.55], ['247,222,146', 0.45, 0.8, 0.85, 0.7]], clair: false },
   prune: { degrade: [[0, '#A93A7B'], [0.5, '#7A2459'], [1, '#3A0F2B']], halos: [['247,222,146', 0.34, 0.85, 0.18, 0.6], ['12,107,82', 0.3, 0.1, 0.78, 0.6]], clair: false },
+  // La nuit : un vert presque noir, une lueur verte au centre, a peine de beurre — l'accroche dramatique.
+  nuit: { degrade: [[0, '#0F2B22'], [0.55, '#06160F'], [1, '#020805']], halos: [['12,107,82', 0.42, 0.5, 0.42, 0.75], ['247,222,146', 0.1, 0.85, 0.12, 0.4]], clair: false },
   creme: { degrade: [[0, '#FBFAF6'], [1, '#DCEFE6']], halos: [['247,222,146', 0.55, 0.82, 0.3, 0.34], ['155,48,112', 0.12, 0.12, 0.62, 0.3]], clair: true },
 }
 
@@ -365,8 +367,27 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
     ctx.restore()
   }
 
-  // 3 ter. Les marques, au-dessus de chaque produit de la carte de fin (COSRX, Anua…).
-  if (plan.mouvement === 'fin' && plan.marques?.length) {
+  // 3 ter. Au-dessus des produits : la lettre du jeu (A, B, C) et son etiquette (« Taches »), ou la marque sur la fin.
+  const LETTRES = 'ABCD'
+  if (plan.lettres && ['pop', 'rebond', 'glisse', 'fin'].includes(plan.mouvement)) {
+    ctx.save()
+    e.produits.forEach((p, j) => {
+      if (p.opacite <= 0.2) return
+      const texte = (plan.mouvement === 'fin' ? plan.marques?.[j]?.toUpperCase() : plan.points?.[j]) || ''
+      ctx.font = `800 ${W * 0.034}px ${police}`
+      const r = W * 0.03, hp = r * 2 + W * 0.014, tw = texte ? ctx.measureText(texte).width + W * 0.03 : 0, l = hp + tw
+      const y = (p.bas - p.hauteur * p.echelle) * H - hp * 0.85
+      ctx.globalAlpha = Math.min(1, p.opacite * p.echelle)
+      ctx.shadowColor = 'rgba(0,0,0,.25)'; ctx.shadowBlur = W * 0.015
+      ctx.fillStyle = COULEURS.creme; rondRect(ctx, p.cx * W - l / 2, y - hp / 2, l, hp, hp / 2); ctx.fill()
+      ctx.shadowColor = 'transparent'
+      ctx.fillStyle = COULEURS.prune; ctx.beginPath(); ctx.arc(p.cx * W - l / 2 + hp / 2, y, r, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `800 ${W * 0.036}px ${POLICES.titre}`
+      ctx.fillText(LETTRES[j] ?? '', p.cx * W - l / 2 + hp / 2, y + W * 0.002)
+      if (texte) { ctx.fillStyle = COULEURS.brun; ctx.textAlign = 'left'; ctx.font = `800 ${W * (plan.mouvement === 'fin' ? 0.024 : 0.034)}px ${plan.mouvement === 'fin' ? POLICES.titre : police}`; ctx.fillText(texte, p.cx * W - l / 2 + hp + W * 0.006, y + W * 0.003) }
+    })
+    ctx.restore()
+  } else if (plan.mouvement === 'fin' && plan.marques?.length) {
     ctx.save()
     ctx.font = `800 ${W * 0.024}px ${POLICES.titre}`
     e.produits.forEach((p, j) => {
@@ -394,7 +415,7 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
       ctx.shadowColor = 'transparent'
       ctx.fillStyle = COULEURS.prune; ctx.beginPath(); ctx.arc(-l / 2 + hp / 2, 0, r, 0, Math.PI * 2); ctx.fill()
       ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `800 ${W * 0.04}px ${POLICES.titre}`
-      ctx.fillText(String(et.numero), -l / 2 + hp / 2, W * 0.002)
+      ctx.fillText(plan.lettres ? 'ABCD'[et.numero - 1] ?? '' : String(et.numero), -l / 2 + hp / 2, W * 0.002)
       ctx.fillStyle = COULEURS.brun; ctx.textAlign = 'left'; ctx.font = `800 ${W * 0.046}px ${police}`
       ctx.fillText(et.texte, -l / 2 + hp + W * 0.012, W * 0.003)
     } else {
@@ -402,7 +423,7 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
       ctx.fillStyle = COULEURS.prune; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill()
       ctx.shadowColor = 'transparent'
       ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `800 ${W * 0.032}px ${POLICES.titre}`
-      ctx.fillText(String(et.numero), 0, W * 0.002)
+      ctx.fillText(plan.lettres ? 'ABCD'[et.numero - 1] ?? '' : String(et.numero), 0, W * 0.002)
     }
     ctx.restore()
   }
@@ -539,12 +560,25 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
     ctx.restore()
   }
 
+  // 8 quinquies. L'appel a commenter (pop, zoom) : une pastille beurre qui bat.
+  if (e.appel && e.appel.echelle > 0) {
+    ctx.save()
+    ctx.font = `800 ${W * 0.044}px ${police}`
+    const lw = ctx.measureText(e.appel.texte).width + W * 0.1, lh = W * 0.105
+    ctx.translate(W / 2, e.appel.cy * H); ctx.scale(e.appel.echelle, e.appel.echelle)
+    ctx.shadowColor = 'rgba(0,0,0,.3)'; ctx.shadowBlur = W * 0.03
+    ctx.fillStyle = COULEURS.beurre; rondRect(ctx, -lw / 2, -lh / 2, lw, lh, lh / 2); ctx.fill()
+    ctx.shadowColor = 'transparent'; ctx.fillStyle = COULEURS.brun; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.fillText(e.appel.texte, 0, W * 0.003)
+    ctx.restore()
+  }
+
   // 8 quater. Le sceau Shine : la spirale de la marque dans le carre vert du logo, qui tombe en tournant.
   const spirale = res.get(SPIRALE)
   if (e.sceau && e.sceau.echelle > 0 && spirale) {
-    const c = W * 0.13
+    const c = W * 0.115
     ctx.save()
-    ctx.translate(e.sceau.cx * W, H * 0.345); ctx.rotate((e.sceau.rotation * Math.PI) / 180); ctx.scale(e.sceau.echelle, e.sceau.echelle)
+    ctx.translate(e.sceau.cx * W, (e.cta?.cy ?? 0.735) * H); ctx.rotate((e.sceau.rotation * Math.PI) / 180); ctx.scale(e.sceau.echelle, e.sceau.echelle)
     ctx.shadowColor = 'rgba(0,0,0,.28)'; ctx.shadowBlur = W * 0.025; ctx.shadowOffsetY = W * 0.006
     ctx.fillStyle = COULEURS.vert; rondRect(ctx, -c / 2, -c / 2, c, c, c * 0.24); ctx.fill()
     ctx.shadowColor = 'transparent'; ctx.shadowOffsetY = 0

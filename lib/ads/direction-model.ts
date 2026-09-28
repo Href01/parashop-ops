@@ -70,6 +70,7 @@ export const FONDS = {
   aurore: 'Aurore : vert Shine → beurre',
   prune: 'Prune profond',
   creme: 'Crème lumineux',
+  nuit: 'Nuit : vert presque noir (accroche dramatique)',
 } as const
 export type FondShine = keyof typeof FONDS
 export const fondDessine = (f: string | null | undefined) => Boolean(f && f !== 'decor')
@@ -92,6 +93,12 @@ export const CONFIANCE = {
 export type CleConfiance = keyof typeof CONFIANCE
 /** L'appel du quiz ouvert : on repond en commentaire (ce qui pousse le Reel). */
 export const APPEL_COMMENTAIRE = { fr: 'Commente ta réponse 👇', darija: 'Kteb jawabek f commentaire 👇', ar: 'اكتبي إجابتك في التعليقات 👇' } as const
+/** Les appels a commenter : la reponse du jeu, ou son type de peau (on conseille en retour — la vente se fait en DM). */
+export const APPELS = {
+  reponse: APPEL_COMMENTAIRE,
+  peau: { fr: 'Commente ton type de peau 👇', darija: 'Kteb no3 dyal bachrtek 👇', ar: 'اكتبي نوع بشرتك في التعليقات 👇' },
+} as const
+export type CleAppel = keyof typeof APPELS
 
 /**
  * CE QUE LA PUB DOIT OBTENIR. Shine vend sur le site (paiement a la livraison)
@@ -249,7 +256,11 @@ export const LivraisonDirection = z.object({
     pourquoi: z.string().trim().min(10, 'pourquoi : en quoi ce visuel devrait convertir (10 caracteres au moins)').max(800),
     // La consigne d'image : obligatoire (200 caracteres au moins) sauf sur un fond Shine dessine.
     prompt: z.string().trim().max(4000).default(''),
-    fond: z.enum(['decor', 'vert', 'aurore', 'prune', 'creme']).optional(),
+    fond: z.enum(['decor', 'vert', 'aurore', 'prune', 'creme', 'nuit']).optional(),
+    // Des lettres A, B, C au-dessus des produits (le jeu « lequel tu prends ? »), et sur les etapes a la place des numeros.
+    lettres: z.boolean().optional(),
+    // L'appel a commenter : « Commente ta réponse 👇 » ou « Commente ton type de peau 👇 » (quiz ouvert, pop, zoom).
+    appel: z.enum(['reponse', 'peau']).optional(),
     texte: Texte,
     position: z.enum(['haut', 'bas']).default('haut'),
     // Produits PEINTS dans l'image. Absent = tous ceux de la creation ; [] = aucun (decor vide, texture).
@@ -313,7 +324,7 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
     if (o.mouvement === 'dm' && ((o.bulles?.length ?? 0) < 2)) throw new Error(`${nom} : une conversation DM a 2 à 5 messages (« bulles »).`)
     if (o.mouvement === 'dm' && o.duree < dureeMinDm(o.bulles!.length, n > 0)) throw new Error(`${nom} : ${o.bulles!.length} messages se lisent en ${dureeMinDm(o.bulles!.length, n > 0)} s au moins (${o.duree} s donnés).`)
     if (o.mouvement === 'etiquette' && ((o.points?.length ?? 0) < 2)) throw new Error(`${nom} : une étiquette annotée montre 2 ou 3 atouts (« points »).`)
-    if (!['etapes', 'site'].includes(o.mouvement) && (o.points?.length ?? 0) > 3) throw new Error(`${nom} : 3 atouts au plus (« points »).`)
+    if (!['etapes', 'site', 'pop'].includes(o.mouvement) && (o.points?.length ?? 0) > 3) throw new Error(`${nom} : 3 atouts au plus (« points »).`)
     if (o.mouvement === 'etapes') {
       if (n < 2) throw new Error(`${nom} : « etapes » montre la routine, 2 à 4 produits dans l'ordre d'application.`)
       if ((o.points?.length ?? 0) !== n) throw new Error(`${nom} : « etapes » nomme chaque produit — ${n} produit(s), donc ${n} nom(s) courts dans « points » (« Nettoyant », « Sérum »…), dans le même ordre.`)
@@ -328,6 +339,9 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
       if (o.duree < dureeMinSite(e.length)) throw new Error(`${nom} : ${e.length} écrans se suivent en ${dureeMinSite(e.length)} s au moins (${o.duree} s donnés).`)
     } else if (o.ecrans) throw new Error(`${nom} : « ecrans » ne sert que dans un plan « site ».`)
     if (o.ouvert && o.mouvement !== 'quiz') throw new Error(`${nom} : « ouvert » ne sert qu'à un quiz.`)
+    if (o.appel && !['quiz', 'pop', 'zoom'].includes(o.mouvement)) throw new Error(`${nom} : l'appel à commenter va sur un quiz, un « pop » ou un « zoom ».`)
+    if (o.lettres && !['pop', 'rebond', 'glisse', 'fin', 'etapes'].includes(o.mouvement)) throw new Error(`${nom} : les lettres A, B, C vont sur un « pop », « rebond », « glisse », « fin » ou « etapes ».`)
+    if (o.mouvement === 'pop' && o.points?.length && o.points.length !== n) throw new Error(`${nom} : une étiquette par produit dans « points » (${n}), dans le même ordre.`)
     if (o.melange && (o.mouvement !== 'pop' || n < 3)) throw new Error(`${nom} : le bonneteau (« melange ») est un « pop » de 3 ou 4 produits.`)
     if (o.melange && o.duree < 2) throw new Error(`${nom} : le bonneteau se joue en 2 s au moins (entourer, mélanger, retrouver).`)
     if (o.mouvement === 'quiz' && ((o.choix?.length ?? 0) < 2)) throw new Error(`${nom} : un quiz propose 2 ou 3 réponses (« choix »), la première menant au produit.`)
