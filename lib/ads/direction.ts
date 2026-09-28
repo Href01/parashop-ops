@@ -3,7 +3,8 @@ import pool from '@/lib/db'
 import { performancePubs, strategie } from './agent'
 import { verdicts } from './conseils'
 import { reveillerDirecteur } from './declencher'
-import { AMBIANCES, BORNES, LivraisonDirection, MOUVEMENTS, OptionLivreeSchema, RetoucheSchema, STYLES, TRANSITIONS, sujetDemande, validerDemande, verifierLivraison, verifierMontage, verifierOption, type DemandeDirection, type Retouche, type Style, type TypeDirection } from './direction-model'
+import { AMBIANCES, A_MONTRER, BORNES, ETAPES_SITE, OBJECTIFS, OFFRES, LIBELLES_SITE, LivraisonDirection, MOUVEMENTS, OptionLivreeSchema, RetoucheSchema, STYLES, TRANSITIONS, VEUT_SITE, consignesBrief, sujetDemande, validerDemande, verifierLivraison, verifierMontage, verifierOption, type DemandeDirection, type OptionLivree, type Retouche, type Style, type TypeDirection } from './direction-model'
+import { capturesSite, charpentesRecentes, lecons, packsDe, reglesBoutique, type CapturesProduit } from './apprentissage'
 import { FORMATS_IMAGE } from './creatif-model'
 import { urlDetouree } from './reel-model'
 
@@ -63,6 +64,22 @@ async function demandeEnCours(id: number): Promise<DemandeEnCours> {
   return { ...x, parametres: validerDemande(x.parametres) as DemandeDirection, retouche: null }
 }
 
+/** Les produits qu'un Reel peut animer : ceux de la creation, et les produits de ses packs. */
+async function produitsAnimables(produitIds: number[]) {
+  const packs = await packsDe(produitIds)
+  return { packs, ids: [...new Set([...produitIds, ...Object.values(packs).flat()])] }
+}
+
+/** Un plan « site » ne montre que des ecrans vraiment captures (scripts/ads/captures-site.mjs). */
+function verifierCaptures(options: Pick<OptionLivree, 'mouvement' | 'animes' | 'ecrans'>[], captures: Record<number, CapturesProduit>) {
+  options.forEach((o, i) => {
+    if (o.mouvement !== 'site') return
+    const id = o.animes?.[0] ?? 0
+    const manque = (o.ecrans ?? []).filter((e) => !captures[id]?.[e])
+    if (manque.length) throw new Error(`Plan ${i + 1} : pas de capture du site pour le produit #${id} (${manque.join(', ')}). Les captures existent pour : ${Object.keys(captures).map((k) => `#${k}`).join(', ') || 'aucun produit'}.`)
+  })
+}
+
 /** Tout ce dont Claude a besoin pour diriger : le brief, la creation, les vrais produits, ce qui marche deja. */
 export async function contexteDirection(demandeId: number) {
   const dem = await demandeEnCours(demandeId)
@@ -72,10 +89,11 @@ export async function contexteDirection(demandeId: number) {
     ? (await pool.query(`SELECT id, angle, format, public, accroche, script, texte_fr, texte_darija, texte_ar, titre, cta, visuel, produit_ids FROM "AdsCreative" WHERE id = $1`, [dem.creatif_id])).rows[0] ?? null
     : null
   const produitIds: number[] = creation ? creation.produit_ids : p.produitIds ?? []
-  const [produits, s, pubs, passees] = await Promise.all([
-    produitIds.length
+  const { packs, ids: animables } = await produitsAnimables(produitIds)
+  const [produits, s, pubs, passees, captures, charpentes, retours, boutique] = await Promise.all([
+    animables.length
       ? pool.query(`SELECT id, name AS nom, brand AS marque, category AS categorie, price AS prix, image, description, benefits,
-                           (coalesce(stock, 0) + coalesce("virtualStock", 0)) AS stock_vendable FROM "Product" WHERE id = ANY($1::int[])`, [produitIds])
+                           (coalesce(stock, 0) + coalesce("virtualStock", 0)) AS stock_vendable FROM "Product" WHERE id = ANY($1::int[])`, [animables])
       : Promise.resolve({ rows: [] as Json[] }),
     strategie(),
     performancePubs(),
@@ -83,17 +101,40 @@ export async function contexteDirection(demandeId: number) {
       ? pool.query(`SELECT o.serie, o.carte, o.concept, o.prompt, o.note, (SELECT url FROM "AdsCreativeImage" i WHERE i.option_id = o.id ORDER BY i.choisie DESC, i.cree_le DESC LIMIT 1) AS visuel
                     FROM "AdsCreativeOption" o WHERE o.creatif_id = $1 ORDER BY o.serie DESC, o.carte NULLS FIRST, o.id LIMIT 20`, [dem.creatif_id])
       : Promise.resolve({ rows: [] as Json[] }),
+    capturesSite(animables),
+    charpentesRecentes(5),
+    lecons(),
+    reglesBoutique(),
   ])
+  const composantDe = new Map(Object.entries(packs).flatMap(([pack, comps]) => comps.map((c) => [c, Number(pack)] as const)))
   const v = verdicts(pubs, s.config.regles.depenseMinAvantVerdict)
   const qui = pubs.filter((x) => v[x.adId]?.verdict === 'gagnante').slice(0, 5)
   return {
-    demande: { id: dem.id, sujet: dem.sujet, ...p, stylesSouhaites: p.styles.map((x: string) => STYLES[x as Style]).filter(Boolean) },
+    demande: {
+      id: dem.id, sujet: dem.sujet, ...p, stylesSouhaites: p.styles.map((x: string) => STYLES[x as Style]).filter(Boolean),
+      // Ce que la pub doit obtenir, l'offre, ce qui DOIT se voir (le BOS le verifie a la livraison).
+      objectifDetail: p.objectif ? OBJECTIFS[p.objectif] : null, offreDetail: OFFRES[p.offre], aMontrer: p.montrer.map((k) => A_MONTRER[k]),
+    },
+    // Les vraies regles du site : n'annonce que ces chiffres (livraison, code de bienvenue, paiement).
+    boutique,
     formats: Object.fromEntries(Object.entries(FORMATS_IMAGE).map(([k, f]) => [k, { taille: f.taille, label: f.label }])),
     bornes: BORNES[p.type],
     mouvements: p.type === 'reel' ? MOUVEMENTS : undefined,
     creation,
+    // Les retours d'Achraf : ils priment sur la doctrine et sur tes habitudes.
+    leconsAchraf: retours.map((x) => x.texte),
+    // Le brief, consigne par consigne : chacune doit etre tenue (« couverture » dans la livraison).
+    consignes: consignesBrief(p.brief),
+    // Les charpentes des derniers Reels : n'en reprends aucune, et ne les ouvre pas pareil.
+    reelsRecents: charpentes.map((x) => ({ creation: x.creatifId, suite: x.suite.join(' → '), accroche: x.accroche })),
+    // Les vraies captures du tunnel d'achat, par produit (plan « site » : animes = [ce produit]).
+    captures: Object.fromEntries(Object.entries(captures).map(([id, c]) => [id, ETAPES_SITE.filter((e) => c[e]).map((e) => ({ ecran: e, bouton: c[e]!.bouton, libelleParDefaut: LIBELLES_SITE[e], image: c[e]!.url }))])),
+    siteDemande: VEUT_SITE.test(p.brief ?? ''),
+    packs: Object.fromEntries(Object.entries(packs).map(([pack, comps]) => [pack, { produits: comps, regle: `Anime ces ${comps.length} produits eux-mêmes (pas la photo du pack) et montre-les TOUS dans un plan « etapes », « pop » ou « fin ».` }])),
     produits: (produits.rows as Json[]).map((x) => ({
       id: x.id, nom: x.nom, marque: x.marque, categorie: x.categorie, prix: Number(x.prix), stockVendable: Number(x.stock_vendable),
+      ...(packs[x.id as number] ? { pack: packs[x.id as number] } : {}),
+      ...(composantDe.has(x.id as number) ? { dansLePack: composantDe.get(x.id as number) } : {}),
       photo: photo(x.image as string | null),
       // Ce que le Reel anime : la meme photo, detouree par Cloudinary (fond transparent).
       detouree: urlDetouree(x.image as string | null),
@@ -119,7 +160,12 @@ export async function enregistrerDirection(entree: unknown) {
     ? (await pool.query(`SELECT id, produit_ids FROM "AdsCreative" WHERE id = $1`, [dem.creatif_id])).rows[0]
     : null
   const produitsCreation: number[] = creationExistante ? creationExistante.produit_ids : d.produitIds ?? []
-  verifierLivraison(l, d, produitsCreation, Boolean(creationExistante))
+  const { packs, ids: animables } = await produitsAnimables(produitsCreation)
+  const [captures, charpentes] = await Promise.all([capturesSite(animables), charpentesRecentes(5)])
+  verifierLivraison(l, d, animables, Boolean(creationExistante), {
+    packs, recents: charpentes.map((x) => x.suite), siteDispo: Object.values(captures).some((c) => Object.keys(c).length >= 2),
+  })
+  verifierCaptures(l.options, captures)
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -134,6 +180,7 @@ export async function enregistrerDirection(entree: unknown) {
       creatifId = ins.rows[0].id
       await client.query(`UPDATE "AdsAgentRequest" SET creatif_id = $2 WHERE id = $1`, [dem.id, creatifId])
     }
+    if (l.couverture?.length) await client.query(`UPDATE "AdsAgentRequest" SET couverture = $2::jsonb WHERE id = $1`, [dem.id, JSON.stringify(l.couverture)])
     const serie = (await client.query(`SELECT coalesce(max(serie), 0) + 1 AS n FROM "AdsCreativeOption" WHERE creatif_id = $1`, [creatifId])).rows[0].n as number
     const options = []
     for (const [i, o] of l.options.entries()) {
@@ -144,7 +191,7 @@ export async function enregistrerDirection(entree: unknown) {
           o.concept, o.pourquoi, o.prompt, JSON.stringify(o.texte), o.position, d.format, o.produitIds === undefined ? null : o.produitIds,
           d.type === 'reel' ? o.animes ?? [] : null, d.type === 'reel' ? o.mouvement : null, d.type === 'reel' ? o.duree : null,
           l.style, d.brief || null, d.qualite, l.modele || null,
-          d.type === 'reel' ? JSON.stringify({ transition: o.transition ?? 'coupe', ambiance: o.ambiance ?? 'aucune', bulles: o.bulles ?? [], points: o.points ?? [], choix: o.choix ?? [], voix: o.voix ?? null, confiance: o.confiance ?? [], prix: o.prix ?? false }) : null])
+          d.type === 'reel' ? JSON.stringify({ transition: o.transition ?? 'coupe', ambiance: o.ambiance ?? 'aucune', bulles: o.bulles ?? [], points: o.points ?? [], choix: o.choix ?? [], voix: o.voix ?? null, confiance: o.confiance ?? [], prix: o.prix ?? false, ...(o.ecrans ? { ecrans: o.ecrans } : {}) }) : null])
       options.push(r.rows[0])
     }
     await client.query('COMMIT')
@@ -172,7 +219,9 @@ type LigneOption = Json & { id: number; creatif_id: number; serie: number; carte
 async function serieDe(o: LigneOption) {
   const serie = (await pool.query(`SELECT * FROM "AdsCreativeOption" WHERE creatif_id = $1 AND serie = $2 ORDER BY carte NULLS FIRST, id`, [o.creatif_id, o.serie])).rows as LigneOption[]
   const type: TypeDirection = serie.some((x) => x.mouvement) ? 'reel' : serie.some((x) => x.carte != null) ? 'carrousel' : 'options'
-  const produits: number[] = (await pool.query(`SELECT produit_ids FROM "AdsCreative" WHERE id = $1`, [o.creatif_id])).rows[0]?.produit_ids ?? []
+  const creation: number[] = (await pool.query(`SELECT produit_ids FROM "AdsCreative" WHERE id = $1`, [o.creatif_id])).rows[0]?.produit_ids ?? []
+  // Un Reel d'un pack anime aussi les produits du pack.
+  const { ids: produits } = await produitsAnimables(creation)
   return { serie, type, produits }
 }
 
@@ -182,12 +231,12 @@ function enLivree(x: LigneOption): Json {
   return {
     role: x.role ?? '', concept: x.concept, pourquoi: x.pourquoi || 'Retouché à la main dans la table de montage.', prompt: x.prompt, texte: x.texte, position: x.position,
     produitIds: x.produit_ids ?? undefined, animes: x.animes ?? undefined, mouvement: x.mouvement ?? undefined, duree: x.duree == null ? undefined : Number(x.duree),
-    transition: m.transition, ambiance: m.ambiance, bulles: m.bulles, points: m.points, choix: m.choix, voix: m.voix,
-    confiance: m.confiance ?? undefined, prix: m.prix ?? undefined,
+    transition: m.transition, ambiance: m.ambiance, bulles: m.bulles, points: m.points, choix: m.choix, voix: m.voix ?? undefined,
+    confiance: m.confiance ?? undefined, prix: m.prix ?? undefined, ecrans: m.ecrans ?? undefined,
   }
 }
 
-const CHAMPS_PLAN = ['texte', 'position', 'prompt', 'animes', 'mouvement', 'duree', 'transition', 'ambiance', 'bulles', 'points', 'choix', 'voix', 'confiance', 'prix'] as const
+const CHAMPS_PLAN = ['texte', 'position', 'prompt', 'animes', 'mouvement', 'duree', 'transition', 'ambiance', 'bulles', 'points', 'choix', 'voix', 'confiance', 'prix', 'ecrans'] as const
 
 /**
  * Retoucher un plan (ou une option, une carte) : textes, animation, duree,
@@ -211,10 +260,11 @@ export async function modifierPlan(id: number, patch: Json) {
   const plan = p.data
   const index = Math.max(0, serie.findIndex((x) => x.id === id))
   verifierOption(plan, index, type, produits)
+  if (plan.mouvement === 'site') verifierCaptures([plan], await capturesSite(plan.animes))
   if (type === 'reel') verifierMontage(serie.map((x) => (x.id === id ? plan.duree ?? 0 : Number(x.duree) || 0)))
   const ancien = (o.motion ?? {}) as Json
   const motion = type === 'reel'
-    ? { ...ancien, transition: plan.transition ?? 'coupe', ambiance: plan.ambiance ?? 'aucune', bulles: plan.bulles ?? [], points: plan.points ?? [], choix: plan.choix ?? [], voix: plan.voix ?? ancien.voix ?? null, confiance: plan.confiance ?? [], prix: plan.prix ?? false }
+    ? { ...ancien, transition: plan.transition ?? 'coupe', ambiance: plan.ambiance ?? 'aucune', bulles: plan.bulles ?? [], points: plan.points ?? [], choix: plan.choix ?? [], voix: plan.voix ?? ancien.voix ?? null, confiance: plan.confiance ?? [], prix: plan.prix ?? false, ecrans: plan.mouvement === 'site' ? plan.ecrans ?? [] : undefined }
     : o.motion
   const note = typeof patch.note === 'string' ? patch.note.trim().slice(0, 1500) || null : o.note
   const u = await pool.query(

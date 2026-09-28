@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Check, Clapperboard, Download, GalleryHorizontal, ImagePlus, Images, Loader2, Sparkles, Trash2, Wand2 } from 'lucide-react'
 import { FORMATS_IMAGE, type FormatImage, type Langue } from '@/lib/ads/creatif-model'
-import { BORNES, INGREDIENTS, MOUVEMENTS, STYLES, type Idee, type Style, type TypeDirection } from '@/lib/ads/direction-model'
+import { A_MONTRER, BORNES, INGREDIENTS, MOUVEMENTS, OBJECTIFS, OFFRES, STYLES, type AMontrer, type Idee, type Objectif, type Offre, type Style, type TypeDirection } from '@/lib/ads/direction-model'
 import { urlDetouree } from '@/lib/ads/reel-model'
 import { ApercuCarrousel, CreatifVisuel, telechargerPng, type Visuel } from './Apercu'
 import { LecteurReel } from './Reel'
@@ -53,6 +53,14 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
   const [qualite, setQualite] = useState<'medium' | 'high'>(idee?.qualite ?? 'high')
   const [brief, setBrief] = useState(idee?.brief ?? '')
   const [produits, setProduits] = useState<number[]>(!creatif && idee ? idee.produitIds : [])
+  // Ce que la pub doit obtenir : Shine vend sur le site ET en DM, ce ne sont pas les memes pubs.
+  const [objectif, setObjectif] = useState<Objectif>(creatif && /message|dm/i.test(creatif.cta || '') ? 'dm' : 'site')
+  const [offre, setOffre] = useState<Offre>('aucune')
+  const [montrer, setMontrer] = useState<AMontrer[]>(['cod'])
+  const [langue, setLangue] = useState<'fr' | 'darija' | 'mix'>('mix')
+  const choisirObjectif = (k: Objectif) => { setObjectif(k); if (k !== 'site') setMontrer((m) => m.filter((x) => x !== 'site')) }
+  const basculerMontrer = (k: AMontrer) => setMontrer((m) => (m.includes(k) ? m.filter((x) => x !== k) : [...m, k]))
+  const n = (etape: number) => (creatif ? etape - 1 : etape)
   const [recherche, setRecherche] = useState('')
   const [envoi, setEnvoi] = useState(false)
   const b = BORNES[type]
@@ -73,7 +81,7 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
   const envoyer = async () => {
     setEnvoi(true)
     try {
-      const j = await poster({ direction: { type, nombre, format, styles, qualite, brief, ...(creatif ? { creatifId: creatif.id } : { produitIds: produits }) } })
+      const j = await poster({ direction: { type, nombre, format, styles, qualite, brief, objectif, offre, montrer, langue, ...(creatif ? { creatifId: creatif.id } : { produitIds: produits }) } })
       envoye(j.lancee
         ? 'Brief envoyé : Claude commence maintenant. Compte 5 à 15 minutes avec les images.'
         : 'Brief envoyé : Claude le prend à son prochain passage (chaque heure, de 8 h à 23 h).')
@@ -82,9 +90,9 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
 
   return (
     <div className={s.dirBrief}>
-      <p className={s.aide}><Wand2 size={13} /> <b>Claude</b> écrit les consignes d’image en directeur artistique, regarde tes vraies photos produit, puis fait peindre les images par OpenAI et contrôle chaque résultat.</p>
+      <p className={s.aide}><Wand2 size={13} /> <b>Claude</b> dirige (idée, plans, textes, consignes d’image) à partir de tes vrais produits et de tes retours ; OpenAI peint les décors ; le BOS vérifie que tout ce que tu coches est bien dans la pub.</p>
 
-      {d.idees.length > 0 && <fieldset className={s.reglage}><legend><Sparkles size={13} /> Idées prêtes, tirées de tes chiffres</legend>
+      {d.idees.length > 0 && !creatif && <fieldset className={s.reglage}><legend><Sparkles size={13} /> Idées prêtes, tirées de tes chiffres (un clic remplit le brief)</legend>
         <div className={s.dirIdees}>{d.idees.map((i) => (
           <button key={i.id} type="button" className={s.dirIdee} onClick={() => appliquer(i)}>
             <span className={s.carteTop}><span className={s.chip}>{TYPES[i.type].label}</span><span className={s.chip}>{COURT[i.format]}</span></span>
@@ -93,7 +101,26 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
         </div>
       </fieldset>}
 
-      <fieldset className={s.reglage}><legend>Ce que tu veux</legend>
+      {!creatif && <fieldset className={s.reglage}><legend><span className={s.etapeNum}>1</span> Quoi vendre ({produits.length}/6)</legend>
+        {produits.length > 0 && <div className={s.dirChips}>{produits.map((id) => <button key={id} type="button" className={`${s.chip} ${s.chipVert}`} onClick={() => basculer(id)}>{nomProduit.get(id) || `#${id}`} ×</button>)}</div>}
+        <input className={s.champTexte} value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Chercher un produit, un pack ou une marque…" />
+        <div className={s.dirProduits}>{trouves.map((p) => (
+          <label key={p.id} className={s.dirProduit}>
+            <input type="checkbox" checked={produits.includes(p.id)} onChange={() => basculer(p.id)} />
+            {p.image ? <img src={p.image.replace('/upload/', '/upload/c_limit,w_80,h_80,f_auto/')} alt="" /> : <span />}
+            <span><b>{p.marque}</b> {p.nom}{p.composants ? <small className={s.muted}> · pack de {p.composants.length}</small> : null}</span>
+            {(p.importBloque || p.stockVendable <= 0) && <span className={`${s.chip} ${s.chipOrange}`}>{p.importBloque ? 'bloqué' : 'rupture'}</span>}
+          </label>))}
+        </div>
+      </fieldset>}
+
+      <fieldset className={s.reglage}><legend><span className={s.etapeNum}>{n(2)}</span> Pour obtenir quoi ?</legend>
+        <div className={s.dirTypes}>{(Object.keys(OBJECTIFS) as Objectif[]).map((k) => (
+          <button key={k} type="button" aria-pressed={objectif === k} onClick={() => choisirObjectif(k)}><b>{OBJECTIFS[k].label}</b><small>{OBJECTIFS[k].aide}</small></button>))}
+        </div>
+      </fieldset>
+
+      <fieldset className={s.reglage}><legend><span className={s.etapeNum}>{n(3)}</span> Le format</legend>
         <div className={s.dirTypes}>{(Object.keys(TYPES) as TypeDirection[]).map((t) => {
           const { label, aide, Icone } = TYPES[t]
           return <button key={t} type="button" aria-pressed={type === t} onClick={() => changerType(t)}><Icone size={16} /><b>{label}</b><small>{aide}</small></button>
@@ -114,31 +141,34 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
         </div>
       </fieldset>
 
-      {!creatif && <fieldset className={s.reglage}><legend>Produits ({produits.length}/6)</legend>
-        {produits.length > 0 && <div className={s.dirChips}>{produits.map((id) => <button key={id} type="button" className={`${s.chip} ${s.chipVert}`} onClick={() => basculer(id)}>{nomProduit.get(id) || `#${id}`} ×</button>)}</div>}
-        <input className={s.champTexte} value={recherche} onChange={(e) => setRecherche(e.target.value)} placeholder="Chercher un produit ou une marque…" />
-        <div className={s.dirProduits}>{trouves.map((p) => (
-          <label key={p.id} className={s.dirProduit}>
-            <input type="checkbox" checked={produits.includes(p.id)} onChange={() => basculer(p.id)} />
-            {p.image ? <img src={p.image.replace('/upload/', '/upload/c_limit,w_80,h_80,f_auto/')} alt="" /> : <span />}
-            <span><b>{p.marque}</b> {p.nom}</span>
-            {(p.importBloque || p.stockVendable <= 0) && <span className={`${s.chip} ${s.chipOrange}`}>{p.importBloque ? 'bloqué' : 'rupture'}</span>}
-          </label>))}
+      <fieldset className={s.reglage}><legend><span className={s.etapeNum}>{n(4)}</span> Ce qui doit se voir</legend>
+        <div className={s.dirChips}>{(Object.keys(A_MONTRER) as AMontrer[]).map((k) => (
+          <button key={k} type="button" className={s.filtre} aria-pressed={montrer.includes(k)} disabled={k === 'site' && type !== 'reel'} onClick={() => basculerMontrer(k)}>{montrer.includes(k) ? '✓ ' : ''}{A_MONTRER[k]}</button>))}
         </div>
-      </fieldset>}
-
-      <fieldset className={s.reglage}><legend>Style (facultatif)</legend>
-        <div className={s.dirChips}>{(Object.keys(STYLES) as Style[]).map((k) => (
-          <button key={k} type="button" className={s.filtre} aria-pressed={styles.includes(k)} onClick={() => setStyles((x) => (x.includes(k) ? x.filter((y) => y !== k) : x.length >= 4 ? x : [...x, k]))}>{STYLES[k]}</button>))}
+        <div className={s.genererLigne}>
+          <label className={s.champ}>Offre à mettre en avant
+            <select className={s.select} value={offre} onChange={(e) => setOffre(e.target.value as Offre)}>
+              {(Object.keys(OFFRES) as Offre[]).map((k) => <option key={k} value={k}>{OFFRES[k]}</option>)}
+            </select></label>
+          <label className={s.champ}>Langue du texte
+            <select className={s.select} value={langue} onChange={(e) => setLangue(e.target.value as 'fr' | 'darija' | 'mix')}>
+              <option value="mix">Français + darija</option><option value="fr">Français</option><option value="darija">Darija</option>
+            </select></label>
         </div>
+        <small className={s.muted}>{type === 'reel' ? 'Chaque case cochée est vérifiée : un Reel qui l’oublie est refusé et refait. ' : ''}Les offres viennent des vraies règles de la boutique (livraison, code de bienvenue) : rien d’inventé.</small>
       </fieldset>
 
-      <fieldset className={s.reglage}><legend>Ton brief : ce que tu veux voir, exactement</legend>
+      <fieldset className={s.reglage}><legend><span className={s.etapeNum}>{n(5)}</span> Ton idée, en toutes lettres</legend>
         <textarea rows={5} className={s.champTexte} value={brief} onChange={(e) => setBrief(e.target.value)} maxLength={2000}
           placeholder={type === 'reel' ? 'Ex. : Reel de 10 s pour Sun And More. Plan 1 : « Cheveux secs après la plage ? ». Plan 2 : le flacon tombe sur une serviette au bord de la piscine. Plan 3 : la texture. Fin : écris-nous en DM.' : 'Ex. : le flacon sur une étagère en zellige, lumière du matin, des mains qui l’appliquent sur des cheveux bouclés.'} />
         <div className={s.dirIngredients}>{INGREDIENTS.map((g) => (
           <div key={g.groupe}><small>{g.groupe}</small>{g.items.map((x) => <button key={x} type="button" className={s.filtre} onClick={() => ajouter(x)}>+ {x}</button>)}</div>))}
         </div>
+        <div><small className={s.muted}>Ambiance du décor (facultatif) :</small>
+          <div className={s.dirChips}>{(Object.keys(STYLES) as Style[]).map((k) => (
+            <button key={k} type="button" className={s.filtre} aria-pressed={styles.includes(k)} onClick={() => setStyles((x) => (x.includes(k) ? x.filter((y) => y !== k) : x.length >= 4 ? x : [...x, k]))}>{STYLES[k]}</button>))}
+          </div></div>
+        <small className={s.muted}>Une consigne par ligne : chacune doit être tenue par un plan (tu verras lequel dans l’onglet Brief).</small>
       </fieldset>
 
       <div className={s.btns}>

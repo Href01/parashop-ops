@@ -47,6 +47,8 @@ export const MOUVEMENTS = {
   dm: 'Conversation DM animée : la cliente demande, Shine répond et envoie le produit',
   zoom: 'Zoom lent sur le décor (texture, geste, ambiance ; le produit peut être dans l’image)',
   fin: 'Carte de fin : les produits + le bouton vert qui pulse',
+  etapes: 'La routine numérotée : chaque produit entre à son tour, en grand, avec son numéro et son nom, puis rejoint la rangée',
+  site: 'Les vraies étapes du site : les captures de shinecosmetics.ma dans un téléphone, un doigt touche le bon bouton',
 } as const
 export type Mouvement = keyof typeof MOUVEMENTS
 export const TRANSITIONS = {
@@ -73,6 +75,35 @@ export const CONFIANCE = {
 } as const
 export type CleConfiance = keyof typeof CONFIANCE
 
+/**
+ * CE QUE LA PUB DOIT OBTENIR. Shine vend sur le site (paiement a la livraison)
+ * ET en DM : ce ne sont pas les memes pubs (bouton, fin, etapes du site).
+ */
+export const OBJECTIFS = {
+  site: { label: 'Commandes sur le site', aide: 'Bouton « Commander », les vraies étapes du site, le prix.' },
+  dm: { label: 'Messages (DM)', aide: 'Bouton « Envoyer un message » : la cliente demande conseil, la vente se fait en DM.' },
+  portee: { label: 'Faire connaître (portée)', aide: 'Accroche forte, à partager et enregistrer ; pas de vente forcée.' },
+} as const
+export type Objectif = keyof typeof OBJECTIFS
+/** L'offre a mettre en avant : seulement une offre qui existe VRAIMENT dans la boutique (contexte « boutique »). */
+export const OFFRES = {
+  aucune: 'Pas d’offre',
+  bienvenue: 'Le code de bienvenue (1re commande)',
+  livraison: 'La livraison offerte (dès le seuil)',
+  pack: 'Le pack : moins cher que les produits séparés',
+} as const
+export type Offre = keyof typeof OFFRES
+/** Ce qui DOIT se voir dans le Reel : le BOS verifie chaque case a la livraison. */
+export const A_MONTRER = {
+  site: 'Les vraies étapes du site',
+  cod: 'Paiement à la livraison',
+  prix: 'Le prix',
+  pack: 'Chaque produit du pack',
+  texture: 'La texture en gros plan',
+  voix: 'Une voix off chuchotée',
+} as const
+export type AMontrer = keyof typeof A_MONTRER
+
 export const DemandeDirectionSchema = z.object({
   creatifId: z.number().int().positive().optional(),
   produitIds: z.array(z.number().int().positive()).max(6).optional(),
@@ -82,6 +113,10 @@ export const DemandeDirectionSchema = z.object({
   styles: z.array(z.string()).max(4).default([]),
   qualite: z.enum(['medium', 'high']).default('high'),
   brief: z.string().trim().max(2000).default(''),
+  objectif: z.enum(['site', 'dm', 'portee']).optional(),
+  offre: z.enum(['aucune', 'bienvenue', 'livraison', 'pack']).default('aucune'),
+  montrer: z.array(z.enum(['site', 'cod', 'prix', 'pack', 'texture', 'voix'])).max(6).default([]),
+  langue: z.enum(['fr', 'darija', 'mix']).optional(),
 })
 export type DemandeDirection = z.infer<typeof DemandeDirectionSchema>
 
@@ -107,6 +142,15 @@ export function sujetDemande(d: DemandeDirection): string {
 
 const Texte = z.object({ fr: z.string().trim().max(120).default(''), darija: z.string().trim().max(120).default(''), ar: z.string().trim().max(120).default('') })
 const Court = z.object({ fr: z.string().trim().min(1).max(40), darija: z.string().trim().max(40).default(''), ar: z.string().trim().max(40).default('') })
+/** Les ecrans du tunnel d'achat, dans l'ordre ou la cliente les voit (captures reelles, AdsSiteCapture). */
+export const ETAPES_SITE = ['produit', 'panier', 'livraison'] as const
+export type EtapeSite = (typeof ETAPES_SITE)[number]
+/** Le libelle par defaut de chaque ecran, tel qu'on le dit a la cliente. */
+export const LIBELLES_SITE: Record<EtapeSite, { fr: string; darija: string; ar: string }> = {
+  produit: { fr: 'Ajoute au panier', darija: 'Zidi l panier', ar: 'أضيفي إلى السلة' },
+  panier: { fr: 'Ton panier', darija: 'Panier dyalek', ar: 'سلتك' },
+  livraison: { fr: 'Paie à la livraison', darija: 'Khelles mnin twslek', ar: 'ادفعي عند الاستلام' },
+}
 const Voix = z.object({ fr: z.string().trim().max(180).default(''), darija: z.string().trim().max(180).default(''), ar: z.string().trim().max(180).default('') })
 
 /* ------------------------------------------------------------------ */
@@ -136,6 +180,11 @@ export function motMisEnValeurVide(texte: string | null | undefined): string | n
   const mot = m[1].trim().toLowerCase().replace(/[.,!?؟:;]+$/, '')
   return MOTS_VIDES.has(mot) ? m[1] : null
 }
+
+/** La routine numerotee : ~0,9 s par produit (entree, numero, nom), plus la rangee finale. */
+export const dureeMinEtapes = (n: number) => Math.ceil((0.6 + n * 0.9) * 2) / 2
+/** Le tunnel : ~1,3 s par ecran (glisse, le doigt vise, touche). */
+export const dureeMinSite = (n: number) => Math.ceil((0.3 + n * 1.3) * 2) / 2
 
 /** Le temps de lire une conversation DM : ~1 s par message, plus la fiche produit. */
 export const dureeMinDm = (messages: number, fiche: boolean) => Math.ceil((0.8 + messages * 1 + (fiche ? 0.7 : 0)) * 2) / 2
@@ -185,19 +234,25 @@ export const LivraisonDirection = z.object({
     produitIds: z.array(z.number().int().positive()).max(3).nullable().optional(),
     // Reel seulement : les vrais produits detoures, animes par-dessus le decor.
     animes: z.array(z.number().int().positive()).max(4).optional(),
-    mouvement: z.enum(['rebond', 'pop', 'glisse', 'zoom', 'duo', 'fin', 'revele', 'etiquette', 'quiz', 'dm']).optional(),
+    mouvement: z.enum(['rebond', 'pop', 'glisse', 'zoom', 'duo', 'fin', 'revele', 'etiquette', 'quiz', 'dm', 'etapes', 'site']).optional(),
     duree: z.number().min(1).max(6).optional(),
     transition: z.enum(['coupe', 'traversee', 'balayage', 'revelation', 'vague']).optional(),
     ambiance: z.enum(['aucune', 'etincelles', 'gouttes', 'bulles', 'sable']).optional(),
     bulles: z.array(z.object({ de: z.enum(['cliente', 'shine']), texte: z.object({ fr: z.string().trim().min(1).max(90), darija: z.string().trim().max(90).default(''), ar: z.string().trim().max(90).default('') }) })).max(5).optional(),
-    points: z.array(Court).max(3).optional(),
+    // etiquette : 2 ou 3 atouts ; etapes : le nom court de chaque produit, dans l'ordre ; site : le libelle de chaque ecran.
+    points: z.array(Court).max(4).optional(),
+    // site : les ecrans montres, dans l'ordre du tunnel (les captures viennent du BOS, jamais d'une URL ecrite).
+    ecrans: z.array(z.enum(ETAPES_SITE)).min(2).max(3).optional(),
     choix: z.array(Court).max(3).optional(),
     // Reel : la voix off du plan (ASMR ou non), lue par la synthese vocale d'OpenAI.
-    voix: Voix.optional(),
+    // null = pas de voix (ce que la base garde pour un plan muet) : un patch qui la renvoie ne doit pas echouer.
+    voix: Voix.nullable().optional(),
     // Carte de fin : badges de confiance (2 au plus lisibles) et sticker de prix des produits animes.
     confiance: z.array(z.enum(['cod', 'livraison', 'authentique', 'conseil'])).max(3).optional(),
     prix: z.boolean().optional(),
   })).min(1).max(10),
+  // Chaque consigne du brief, et le ou les plans qui la tiennent ([] = tenue partout, ex. « ne parle pas de l'été »).
+  couverture: z.array(z.object({ consigne: z.string().trim().min(2).max(300), plans: z.array(z.number().int().min(1).max(10)).max(10) })).max(15).optional(),
 })
 export type OptionLivree = z.infer<typeof LivraisonDirection>['options'][number]
 export const OptionLivreeSchema = LivraisonDirection.shape.options.element
@@ -230,6 +285,20 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
     if (o.mouvement === 'dm' && ((o.bulles?.length ?? 0) < 2)) throw new Error(`${nom} : une conversation DM a 2 à 5 messages (« bulles »).`)
     if (o.mouvement === 'dm' && o.duree < dureeMinDm(o.bulles!.length, n > 0)) throw new Error(`${nom} : ${o.bulles!.length} messages se lisent en ${dureeMinDm(o.bulles!.length, n > 0)} s au moins (${o.duree} s donnés).`)
     if (o.mouvement === 'etiquette' && ((o.points?.length ?? 0) < 2)) throw new Error(`${nom} : une étiquette annotée montre 2 ou 3 atouts (« points »).`)
+    if (!['etapes', 'site'].includes(o.mouvement) && (o.points?.length ?? 0) > 3) throw new Error(`${nom} : 3 atouts au plus (« points »).`)
+    if (o.mouvement === 'etapes') {
+      if (n < 2) throw new Error(`${nom} : « etapes » montre la routine, 2 à 4 produits dans l'ordre d'application.`)
+      if ((o.points?.length ?? 0) !== n) throw new Error(`${nom} : « etapes » nomme chaque produit — ${n} produit(s), donc ${n} nom(s) courts dans « points » (« Nettoyant », « Sérum »…), dans le même ordre.`)
+      if (o.duree < dureeMinEtapes(n)) throw new Error(`${nom} : ${n} étapes se lisent en ${dureeMinEtapes(n)} s au moins (${o.duree} s donnés).`)
+    }
+    if (o.mouvement === 'site') {
+      const e = o.ecrans ?? []
+      if (n !== 1) throw new Error(`${nom} : « site » montre le tunnel d'UN produit (celui qu'on achète) : un seul id dans « animes ».`)
+      if (e.length < 2) throw new Error(`${nom} : « site » montre 2 ou 3 écrans du vrai site (« ecrans » : produit, panier, livraison).`)
+      if (new Set(e).size !== e.length || e.some((x, k) => k > 0 && ETAPES_SITE.indexOf(x) < ETAPES_SITE.indexOf(e[k - 1]))) throw new Error(`${nom} : les écrans suivent l'ordre du site, sans doublon (produit → panier → livraison).`)
+      if (o.points?.length && o.points.length !== e.length) throw new Error(`${nom} : un libellé par écran dans « points » (${e.length}), ou aucun pour les libellés par défaut.`)
+      if (o.duree < dureeMinSite(e.length)) throw new Error(`${nom} : ${e.length} écrans se suivent en ${dureeMinSite(e.length)} s au moins (${o.duree} s donnés).`)
+    } else if (o.ecrans) throw new Error(`${nom} : « ecrans » ne sert que dans un plan « site ».`)
     if (o.mouvement === 'quiz' && ((o.choix?.length ?? 0) < 2)) throw new Error(`${nom} : un quiz propose 2 ou 3 réponses (« choix »), la première menant au produit.`)
     if (i === 0 && o.transition && o.transition !== 'coupe') throw new Error(`${nom} : pas de transition d’entrée sur le premier plan.`)
     // Un produit anime ET peint dans le decor apparaitrait deux fois.
@@ -238,8 +307,8 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
     for (const [langue, texte] of Object.entries(o.voix ?? {})) {
       if (typeof texte === 'string' && voixTropLongue(texte, o.duree)) throw new Error(`${nom} : la voix off (${langue}) dure ~${dureeVoix(texte)} s chuchotée pour un plan de ${o.duree} s — elle déborderait sur le plan suivant. ${motsVoixMax(o.duree)} mots au plus, ou allonge le plan.`)
     }
-  } else if (o.animes?.length || o.mouvement || o.transition || o.bulles || o.points || o.choix || o.voix) {
-    throw new Error(`${nom} : « animes », « mouvement », « transition », « bulles », « points », « choix » et « voix » ne servent que dans un Reel.`)
+  } else if (o.animes?.length || o.mouvement || o.transition || o.bulles || o.points || o.choix || o.voix || o.ecrans) {
+    throw new Error(`${nom} : « animes », « mouvement », « transition », « bulles », « points », « choix », « voix » et « ecrans » ne servent que dans un Reel.`)
   }
 }
 
@@ -250,15 +319,81 @@ export function verifierMontage(durees: number[]) {
   if ((durees[0] ?? 0) > 2.5) throw new Error('Plan 1 : l’accroche tient en 2,5 s au plus, sinon on a déjà scrollé.')
 }
 
+/** Les packs de la creation et leurs produits : { idDuPack: [composants] }. */
+export type Packs = Record<number, number[]>
+
+/**
+ * Un pack se montre produit par produit. Le Reel #15 animait la photo du pack
+ * (une seule image) et son etiquette ne citait que 3 des 4 soins.
+ */
+export function verifierPack(options: OptionLivree[], packs: Packs) {
+  for (const [cle, comps] of Object.entries(packs)) {
+    const id = Number(cle)
+    if (!comps.length || comps.length > 4) continue
+    const i = options.findIndex((o) => o.mouvement !== 'site' && o.animes?.includes(id))
+    if (i >= 0) throw new Error(`Plan ${i + 1} : le pack #${id} a ${comps.length} produits — anime-les eux-mêmes (${comps.map((c) => `#${c}`).join(', ')}), pas la photo du pack.`)
+    if (!options.some((o) => comps.every((c) => o.animes?.includes(c)))) throw new Error(`Le pack #${id} contient ${comps.length} produits : un plan (« etapes », « pop » ou « fin ») doit les montrer tous les ${comps.length}, aucun oublié.`)
+  }
+}
+
+/** Ce que le brief d'Achraf demande en toutes lettres. */
+export const VEUT_SITE = /\bsite\b|website|\bweb\b|panier|checkout|tunnel|[ée]tapes? d.?achat|buying steps|comment commander|commander en ligne/i
+const VEUT_DM = /\b(dm|dms|chat|inbox|whatsapp)\b|message|conversation/i
+
+/**
+ * Pas deux fois la meme charpente. Trois Reels de suite ont ete « chute → etiquette
+ * → DM → fin » : le brief changeait, pas le Reel. `recents` : les suites de
+ * mouvements des derniers Reels, le plus recent d'abord.
+ */
+export function verifierVariete(suite: string[], recents: string[][], brief: string) {
+  const cle = suite.join(' → ')
+  if (recents.some((r) => r.join(' → ') === cle)) throw new Error(`Même charpente qu'un Reel récent (${cle}) : invente une autre suite de plans, à partir du brief.`)
+  const derniers = recents.slice(0, 2)
+  if (derniers.length === 2 && derniers.every((r) => r[0] === suite[0])) throw new Error(`Les deux derniers Reels s'ouvraient déjà par « ${suite[0]} » : ouvre autrement.`)
+  if (suite.includes('dm') && !VEUT_DM.test(brief) && recents.slice(0, 3).some((r) => r.includes('dm'))) throw new Error('Pas de conversation DM : le brief ne la demande pas, et un Reel récent en avait déjà une.')
+}
+
+/** Les consignes d'un brief : une par ligne ou par puce. */
+export function consignesBrief(brief: string | null | undefined): string[] {
+  return String(brief ?? '').split(/\n|•/).map((x) => x.replace(/^[\s\-–*·]+/, '').trim()).filter((x) => x.length >= 4)
+}
+
+/** Chaque consigne du brief est tenue par un plan, ou respectee partout ([]). */
+export function verifierCouverture(couverture: Livraison['couverture'], brief: string | null | undefined, n: number) {
+  const consignes = consignesBrief(brief)
+  if (consignes.length < 2) return
+  if (!couverture?.length) throw new Error(`« couverture » manque : pour chacune des ${consignes.length} consignes du brief, dis quel(s) plan(s) la tiennent ([] si elle est respectée partout).`)
+  if (couverture.length < consignes.length) throw new Error(`« couverture » : ${couverture.length} consigne(s) sur ${consignes.length} — chaque ligne du brief doit être tenue : ${consignes.map((c) => `« ${c.slice(0, 50)} »`).join(', ')}.`)
+  const hors = couverture.flatMap((c) => c.plans).filter((p) => p > n)
+  if (hors.length) throw new Error(`« couverture » : plan(s) ${hors.join(', ')} inexistant(s) (1 à ${n}).`)
+}
+
+/** Chaque case « a montrer » du brief se retrouve dans le Reel livre. */
+export function verifierAMontrer(options: OptionLivree[], d: Pick<DemandeDirection, 'montrer' | 'brief' | 'objectif'>, siteDispo: boolean) {
+  const m = new Set(d.montrer ?? [])
+  const fin = options.find((o) => o.mouvement === 'fin')
+  if (siteDispo && (m.has('site') || VEUT_SITE.test(d.brief ?? '')) && !options.some((o) => o.mouvement === 'site')) throw new Error('Le brief demande les étapes du site : ajoute un plan « site » (les vraies captures, dans un téléphone), pas un texte posé sur un décor.')
+  if (m.has('cod') && !fin?.confiance?.includes('cod')) throw new Error('Le brief demande « paiement à la livraison » : mets le badge « cod » sur le plan « fin ».')
+  if (m.has('prix') && !fin?.prix) throw new Error('Le brief demande le prix : « prix: true » sur le plan « fin ».')
+  if (m.has('texture') && !options.some((o) => o.mouvement === 'zoom')) throw new Error('Le brief demande la texture en gros plan : un plan « zoom » sur la matière (décor sans produit animé).')
+  if (m.has('voix') && options.filter((o) => (o.voix?.fr ?? '').trim()).length < 2) throw new Error('Le brief demande une voix off : au moins deux plans avec « voix ».')
+}
+
 /** Controle de coherence entre la demande et la livraison (nombre, produits connus, plans de Reel complets). */
-export function verifierLivraison(l: Livraison, d: DemandeDirection, produitsCreation: number[], avecCreation: boolean) {
+export function verifierLivraison(l: Livraison, d: DemandeDirection, produitsCreation: number[], avecCreation: boolean, contexte: { packs?: Packs; recents?: string[][]; siteDispo?: boolean } = {}) {
   const nom = d.type === 'carrousel' ? 'Carte' : d.type === 'reel' ? 'Plan' : 'Option'
   if (l.options.length !== d.nombre) throw new Error(`${d.nombre} ${nom.toLowerCase()}(s) demandé(e)s, ${l.options.length} livré(e)s.`)
   if (!avecCreation && !l.creation) throw new Error('Cette demande ne part d’aucune création : ajoute « creation » (angle, accroche, textes).')
   const fautesCreation = [...new Set([l.creation?.accroche, l.creation?.texteFr, l.creation?.titre, l.creation?.cta].flatMap(fautesFrancais))]
   if (fautesCreation.length) throw new Error(`creation : français sans accents (${fautesCreation.map((f) => `« ${f} »`).join(', ')}).`)
   l.options.forEach((o, i) => verifierOption(o, i, d.type, produitsCreation))
-  if (d.type === 'reel') verifierMontage(l.options.map((o) => o.duree ?? 0))
+  if (d.type === 'reel') {
+    verifierMontage(l.options.map((o) => o.duree ?? 0))
+    verifierPack(l.options, contexte.packs ?? {})
+    verifierVariete(l.options.map((o) => o.mouvement ?? ''), contexte.recents ?? [], d.brief ?? '')
+    verifierAMontrer(l.options, d, Boolean(contexte.siteDispo))
+  }
+  verifierCouverture(l.couverture, d.brief, l.options.length)
 }
 
 /** « Refais ce plan » : une retouche ciblee, demandee a Claude avec la note d'Achraf. */

@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { ArrowDown, ArrowUp, Copy, ImagePlus, Loader2, Mic, Plus, Save, Trash2, Undo2, Wand2, X } from 'lucide-react'
 import type { Langue } from '@/lib/ads/creatif-model'
-import { AMBIANCES, CONFIANCE, MOUVEMENTS, TRANSITIONS, dureeMinDm, dureeVoix, fautesFrancais, motMisEnValeurVide, motsVoixMax, voixTropLongue, type CleConfiance, type Mouvement } from '@/lib/ads/direction-model'
+import { AMBIANCES, CONFIANCE, ETAPES_SITE, LIBELLES_SITE, MOUVEMENTS, TRANSITIONS, dureeMinDm, dureeMinEtapes, dureeMinSite, dureeVoix, fautesFrancais, motMisEnValeurVide, motsVoixMax, voixTropLongue, type CleConfiance, type EtapeSite, type Mouvement } from '@/lib/ads/direction-model'
 import { urlDetouree, type Ambiance, type Transition } from '@/lib/ads/reel-model'
 import type { PlanDessin } from './Reel'
 import type { BaseCreative, Creatif, Image, Option } from './types'
@@ -23,6 +23,7 @@ export type Brouillon = {
   transition: Transition; ambiance: Ambiance
   bulles: { de: 'cliente' | 'shine'; texte: Multi }[]; points: Multi[]; choix: Multi[]; voix: Multi
   confiance: CleConfiance[]; prix: boolean
+  ecrans: EtapeSite[]
 }
 
 /**
@@ -31,13 +32,15 @@ export type Brouillon = {
  * pour toi ? » fait commenter ; le geste et le secret font rester.
  */
 const ACCROCHES: { nom: string; texte: Multi }[] = [
-  { nom: 'Style DM', texte: { fr: '*Salam*, vous avez un soin pour… ?', darija: '*Salam*, 3andkom chi 7aja l… ?', ar: '*السلام*، عندكم علاج لـ…؟' } },
-  { nom: 'Le problème', texte: { fr: 'Cheveux *…* après l’été ?', darija: 'Cha3rek *…* mn b3d sif ?', ar: 'شعرك *…* بعد الصيف؟' } },
+  { nom: 'POV', texte: { fr: 'POV : ta peau *…*', darija: 'POV : bachrtek *…*', ar: 'تخيّلي: بشرتك *…*' } },
+  { nom: 'Personne ne dit', texte: { fr: 'Personne ne te dit *ça* sur…', darija: 'Hta wa7ed ma galha lik *had chi*…', ar: 'لا أحد يخبرك *بهذا* عن…' } },
+  { nom: 'Le problème', texte: { fr: '*…* qui résistent à tout ?', darija: '*…* li ma bghawch yamchiw ?', ar: '*…* لا تختفي؟' } },
   { nom: 'Le choix', texte: { fr: '*Lequel* pour toi ?', darija: '*Achmen* wa7ed lik ?', ar: '*أيهما* لكِ؟' } },
   { nom: 'Le geste', texte: { fr: 'Avant de sortir : *1 geste*', darija: '9bel matkhrji : *geste wa7d*', ar: 'قبل الخروج: *خطوة واحدة*' } },
   { nom: 'Le secret', texte: { fr: 'Le *secret* des peaux coréennes', darija: '*Sir* dyal lbachra lcoréenne', ar: '*سر* البشرة الكورية' } },
   { nom: 'La routine', texte: { fr: '*3 étapes*, 5 minutes', darija: '*3 steps*, 5 d9aye9', ar: '*3 خطوات*، 5 دقائق' } },
   { nom: 'Stop à…', texte: { fr: 'Stop aux *frisottis*', darija: 'Safi m3a *nfoukh*', ar: 'وداعاً *للتجعد*' } },
+  { nom: 'Style DM', texte: { fr: '*Salam*, vous avez un soin pour… ?', darija: '*Salam*, 3andkom chi 7aja l… ?', ar: '*السلام*، عندكم علاج لـ…؟' } },
 ]
 const LANGUES: [Langue, string][] = [['fr', 'FR'], ['darija', 'Darija'], ['ar', 'عربي']]
 const vide = (): Multi => ({ fr: '', darija: '', ar: '' })
@@ -50,6 +53,7 @@ export function depuisOption(o: Option): Brouillon {
     transition: m.transition ?? 'coupe', ambiance: m.ambiance ?? 'aucune',
     bulles: (m.bulles ?? []).map((b) => ({ de: b.de, texte: multi(b.texte) })), points: (m.points ?? []).map(multi), choix: (m.choix ?? []).map(multi), voix: multi(m.voix),
     confiance: (m.confiance ?? []) as CleConfiance[], prix: Boolean(m.prix),
+    ecrans: (m.ecrans ?? []) as EtapeSite[],
   }
 }
 
@@ -67,11 +71,16 @@ export function planDessin(c: Creatif, o: Option, b: Brouillon, langue: Langue, 
   const nom = new Map(d.catalogue.map((p) => [p.id, `${p.marque} ${p.nom}`]))
   const dans = (x: Multi) => x[langue] || x.fr
   const voixUrl = o.motion?.voixUrl?.[langue]
+  // Le site : les captures du produit, a jour (catalogue), dans l'ordre choisi ; un libelle par ecran.
+  const captures = b.mouvement === 'site' ? d.catalogue.find((p) => p.id === b.animes[0])?.captures : undefined
+  const vus = b.mouvement === 'site' ? b.ecrans.filter((e) => captures?.[e]) : []
   return {
     mouvement: b.mouvement, duree: b.duree, produits: b.animes.length, texte: dans(b.texte),
     image: imagesDe(c, o)[0]?.url ?? null, detourees: b.animes.map((id) => urlDetouree(img.get(id)) ?? ''), noms: b.animes.map((id) => nom.get(id) ?? ''),
     transition: b.transition, ambiance: b.ambiance,
-    bulles: b.bulles.map((x) => ({ de: x.de, texte: dans(x.texte) })), points: b.points.map(dans), choix: b.choix.map(dans),
+    bulles: b.bulles.map((x) => ({ de: x.de, texte: dans(x.texte) })), choix: b.choix.map(dans),
+    points: b.mouvement === 'site' ? vus.map((e) => { const k = b.ecrans.indexOf(e); return b.points[k] && (b.points[k][langue] || b.points[k].fr) ? dans(b.points[k]) : LIBELLES_SITE[e][langue] }) : b.points.map(dans),
+    ecrans: vus.map((e) => ({ cible: captures![e]!.cible })), captures: vus.map((e) => captures![e]!.url),
     // Une voix dont le texte a change depuis sa generation n'est plus jouee : elle ne dirait pas la meme chose.
     voixUrl: voixUrl && voixUrl.texte === b.voix[langue].trim() ? voixUrl.url : null,
     confiance: b.mouvement === 'fin' ? b.confiance.map((k) => CONFIANCE[k][langue]) : [],
@@ -88,6 +97,11 @@ function alertes(b: Brouillon, i: number): string[] {
   const mv = motMisEnValeurVide(b.texte.fr)
   if (mv) out.push(`« ${mv} » est un mot vide : mets en valeur le mot qui porte le sens.`)
   if (b.mouvement === 'dm' && b.duree < dureeMinDm(b.bulles.length, b.animes.length > 0)) out.push(`${b.bulles.length} messages se lisent en ${dureeMinDm(b.bulles.length, b.animes.length > 0)} s au moins.`)
+  if (b.mouvement === 'etapes' && b.animes.length >= 2 && b.duree < dureeMinEtapes(b.animes.length)) out.push(`${b.animes.length} étapes se lisent en ${dureeMinEtapes(b.animes.length)} s au moins.`)
+  if (b.mouvement === 'etapes' && b.points.filter((x) => x.fr.trim()).length !== b.animes.length) out.push('Donne un nom court à chaque produit de la routine.')
+  if (b.mouvement === 'site' && b.animes.length !== 1) out.push('« site » montre le tunnel d’un seul produit.')
+  if (b.mouvement === 'site' && b.ecrans.length < 2) out.push('Choisis 2 ou 3 écrans du site.')
+  if (b.mouvement === 'site' && b.ecrans.length >= 2 && b.duree < dureeMinSite(b.ecrans.length)) out.push(`${b.ecrans.length} écrans se suivent en ${dureeMinSite(b.ecrans.length)} s au moins.`)
   for (const l of ['fr', 'darija', 'ar'] as const) {
     if (voixTropLongue(b.voix[l], b.duree)) out.push(`Voix off (${l}) : ~${dureeVoix(b.voix[l])} s chuchotée pour ${b.duree} s de plan — ${motsVoixMax(b.duree)} mots au plus.`)
   }
@@ -96,6 +110,7 @@ function alertes(b: Brouillon, i: number): string[] {
   const n = b.animes.length
   if (b.mouvement === 'duo' && n !== 2) out.push('« duo » anime exactement 2 produits.')
   if (['etiquette', 'quiz', 'revele'].includes(b.mouvement) && n !== 1) out.push(`« ${b.mouvement} » anime 1 produit.`)
+  if (b.mouvement === 'etapes' && n < 2) out.push('« etapes » montre 2 à 4 produits, dans l’ordre d’application.')
   if (!['zoom', 'dm'].includes(b.mouvement) && !n) out.push('Choisis au moins un produit à animer.')
   return out
 }
@@ -123,6 +138,8 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
   const [occupe, setOccupe] = useState<string | null>(null)
   const [noteClaude, setNoteClaude] = useState('')
   const nom = new Map(d.catalogue.map((p) => [p.id, `${p.marque} ${p.nom}`]))
+  // Les produits d'un pack s'animent un par un : ils s'ajoutent au choix.
+  const choixProduits = [...new Set([...c.produit_ids, ...c.produit_ids.flatMap((id) => d.catalogue.find((p) => p.id === id)?.composants ?? [])])]
   const action = async (cle: string, corps: unknown, ok: string) => {
     setOccupe(cle)
     try { const j = await poster(corps); await rafraichir(); message(true, typeof ok === 'string' ? ok : ''); return j } catch (e) { message(false, e instanceof Error ? e.message : 'Échec'); return null } finally { setOccupe(null) }
@@ -182,8 +199,8 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
                       {(Object.keys(AMBIANCES) as Ambiance[]).map((x) => <option key={x} value={x}>{AMBIANCES[x]}</option>)}
                     </select></label>
                 </div>
-                {b.mouvement !== 'zoom' && <fieldset className={s.reglage}><legend>Produits animés ({b.animes.length}{b.mouvement === 'pop' || b.mouvement === 'fin' ? '/4' : ''})</legend>
-                  <div className={s.dirChips}>{c.produit_ids.map((id) => (
+                {b.mouvement !== 'zoom' && <fieldset className={s.reglage}><legend>{b.mouvement === 'site' ? 'Le produit dont on montre l’achat' : `Produits animés (${b.animes.length}${['pop', 'fin', 'etapes'].includes(b.mouvement) ? '/4' : ''})`}{b.mouvement === 'etapes' ? ' — dans l’ordre d’application' : ''}</legend>
+                  <div className={s.dirChips}>{choixProduits.map((id) => (
                     <button key={id} type="button" className={s.filtre} aria-pressed={b.animes.includes(id)}
                       onClick={() => maj({ animes: b.animes.includes(id) ? b.animes.filter((x) => x !== id) : b.animes.length >= 4 ? b.animes : [...b.animes, id] })}>{nom.get(id) || `#${id}`}</button>))}
                   </div></fieldset>}
@@ -198,6 +215,29 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
                     </div>))}
                   {b.bulles.length < 5 && <button type="button" className={s.ghost} onClick={() => maj({ bulles: [...b.bulles, { de: b.bulles.at(-1)?.de === 'cliente' ? 'shine' : 'cliente', texte: vide() }] })}><Plus size={12} /> Message</button>}
                 </fieldset>}
+                {b.mouvement === 'etapes' && <fieldset className={s.reglage}><legend>Le nom de chaque étape (court)</legend>
+                  {b.animes.map((id, k) => (
+                    <div key={id} className={s.montageLigne}>
+                      <div className={s.montageLigneTete}><small>Étape {k + 1} · {nom.get(id) || `#${id}`}</small></div>
+                      <ChampsMulti valeur={b.points[k] ?? vide()} max={40} placeholder="Nettoyant" changer={(v) => maj({ points: b.animes.map((_, j) => (j === k ? v : b.points[j] ?? vide())) })} />
+                    </div>))}
+                </fieldset>}
+                {b.mouvement === 'site' && (() => {
+                  const cap = d.catalogue.find((p) => p.id === b.animes[0])?.captures
+                  return <fieldset className={s.reglage}><legend>Les écrans du vrai site</legend>
+                    {!cap && <small className={s.montageAlerte}>⚠ Pas encore de capture du site pour ce produit.</small>}
+                    <div className={s.dirChips}>{ETAPES_SITE.map((e) => (
+                      <button key={e} type="button" className={s.filtre} aria-pressed={b.ecrans.includes(e)} disabled={!cap?.[e]}
+                        onClick={() => maj({ ecrans: ETAPES_SITE.filter((x) => (x === e ? !b.ecrans.includes(e) : b.ecrans.includes(x))), points: [] })}>{b.ecrans.includes(e) ? '✓ ' : ''}{e === 'produit' ? 'Fiche produit' : e === 'panier' ? 'Panier' : 'Livraison'}</button>))}
+                    </div>
+                    {b.ecrans.map((e, k) => (
+                      <div key={e} className={s.montageLigne}>
+                        <div className={s.montageLigneTete}><small>Écran {k + 1} · le doigt touche « {cap?.[e]?.bouton ?? '…'} »</small></div>
+                        <ChampsMulti valeur={b.points[k] ?? vide()} max={40} placeholder={LIBELLES_SITE[e].fr} changer={(v) => maj({ points: b.ecrans.map((_, j) => (j === k ? v : b.points[j] ?? vide())) })} />
+                      </div>))}
+                    {cap && <small className={s.muted}>Captures du {new Date(Object.values(cap)[0]!.captureLe).toLocaleDateString('fr-FR')} : le vrai site, sans rien remplir ni commander.</small>}
+                  </fieldset>
+                })()}
                 {b.mouvement === 'etiquette' && <fieldset className={s.reglage}><legend>Atouts reliés au flacon (2 ou 3)</legend>
                   {b.points.map((x, k) => (
                     <div key={k} className={s.montageLigne}>
@@ -236,7 +276,7 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
                 {al.length > 0 && <ul className={s.montageAlertes}>{al.map((x) => <li key={x}>⚠ {x}</li>)}</ul>}
                 <div className={s.btns}>
                   <button type="button" className={s.primary} disabled={!modifie || occupe != null} onClick={() => void (async () => {
-                    const j = await action(`e${o.id}`, { option: { id: o.id, texte: b.texte, position: b.position, mouvement: b.mouvement, duree: b.duree, animes: b.animes, transition: b.transition, ambiance: b.ambiance, bulles: b.bulles, points: b.points, choix: b.choix, voix: b.voix, confiance: b.confiance, prix: b.prix } }, 'Plan enregistré.')
+                    const j = await action(`e${o.id}`, { option: { id: o.id, texte: b.texte, position: b.position, mouvement: b.mouvement, duree: b.duree, animes: b.animes, transition: b.transition, ambiance: b.ambiance, bulles: b.bulles, points: b.mouvement === 'site' ? b.points.filter((x) => x.fr.trim()).length === b.ecrans.length ? b.points : [] : b.points, choix: b.choix, voix: b.voix, confiance: b.confiance, prix: b.prix, ...(b.mouvement === 'site' ? { ecrans: b.ecrans } : {}) } }, 'Plan enregistré.')
                     if (j) setBrouillon(o.id, null)
                   })()}>{occupe === `e${o.id}` ? <Loader2 size={13} className={s.tourne} /> : <Save size={13} />} Enregistrer</button>
                   {modifie && <button type="button" className={s.ghost} onClick={() => setBrouillon(o.id, null)}><Undo2 size={13} /> Annuler</button>}

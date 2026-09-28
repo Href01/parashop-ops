@@ -130,3 +130,30 @@
   .apercu { padding: 12px 4px; }
   .inspecteurCorps { padding: 10px 12px 16px; }
 }
+
+/* Onglets numerotes : l'ordre de travail (brief → plans → textes → son → publier). */
+.ongletNum { display: inline-grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; background: #eef2ee; color: #3f4d45; font-size: 10.5px; font-weight: 800; margin-inline-end: 5px; }
+.onglets button[aria-selected='true'] .ongletNum { background: #175f50; color: #fff; }
+.etapesTitre { align-self: center; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; color: #63776b; margin-inline-end: 2px; }
+
+/* Brief : ce qui a ete demande, et quel plan tient chaque consigne. */
+.briefResume { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; font-size: 12.5px; }
+.briefResume dt { color: #66716a; font-weight: 650; }
+.briefResume dd { margin: 0; }
+.couverture { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.couverture li { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; border: 1px solid; border-radius: 8px; padding: 7px 10px; font-size: 12.5px; }
+.couverture small { flex: none; font-weight: 700; font-size: 11px; }
+
+/* Ce que le directeur artistique a appris. */
+.lecons { display: grid; gap: 8px; width: 100%; border-top: 1px dashed #d6ded7; padding-top: 12px; margin-top: 4px; }
+.lecons h3 { margin: 0; }
+.lecons p { margin: 0; }
+.leconAjout { display: flex; gap: 8px; align-items: flex-start; }
+.leconAjout textarea { flex: 1; }
+.leconListe { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.leconListe li { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; background: #f7f9f6; border-radius: 8px; padding: 7px 10px; font-size: 12.5px; }
+.leconListe li button { flex: none; }
+.leconInactive { opacity: .5; text-decoration: line-through; }
+@media (max-width: 760px) {
+  .leconAjout { flex-direction: column; align-items: stretch; }
+}

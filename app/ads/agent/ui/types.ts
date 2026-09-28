@@ -37,14 +37,24 @@ export type Option = {
   motion: {
     transition?: Transition; ambiance?: Ambiance; bulles?: { de: 'cliente' | 'shine'; texte: Multi }[]; points?: Multi[]; choix?: Multi[]
     voix?: Multi | null; voixUrl?: Partial<Record<'fr' | 'darija' | 'ar', { url: string; texte: string; duree?: number | null }>>
-    confiance?: string[]; prix?: boolean
+    confiance?: string[]; prix?: boolean; ecrans?: ('produit' | 'panier' | 'livraison')[]
   } | null
   style: string | null; brief: string | null; qualite: string | null; note: string | null; modele: string | null; cree_le: string
 }
 type Multi = { fr?: string; darija?: string; ar?: string }
-export type ProduitCatalogue = { id: number; nom: string; marque: string; categorie: string; image: string | null; stockVendable: number; importBloque: boolean; prix?: number }
-export type ParametresDirection = { type: TypeDirection; nombre: number; format: 'feed' | 'story' | 'carre'; styles: string[]; qualite: 'medium' | 'high'; brief: string; creatifId?: number; produitIds?: number[] }
-export type Demande = { id: number; genre: string; sujet: string; statut: string; demande_le: string; termine_le: string | null; erreur: string | null; rapport_id: number | null; creatif_id?: number | null; parametres?: ParametresDirection | null; resultat?: string | null }
+export type CaptureSite = { url: string; cible: { x: number; y: number; w: number; h: number }; bouton: string | null; prix: number | null; captureLe: string }
+export type ProduitCatalogue = {
+  id: number; nom: string; marque: string; categorie: string; image: string | null; stockVendable: number; importBloque: boolean; prix?: number
+  composants?: number[]                                                              // un pack : ses produits, dans l'ordre
+  captures?: Partial<Record<'produit' | 'panier' | 'livraison', CaptureSite>>        // les vraies captures du tunnel d'achat
+}
+export type ParametresDirection = {
+  type: TypeDirection; nombre: number; format: 'feed' | 'story' | 'carre'; styles: string[]; qualite: 'medium' | 'high'; brief: string; creatifId?: number; produitIds?: number[]
+  objectif?: 'site' | 'dm' | 'portee'; offre?: 'aucune' | 'bienvenue' | 'livraison' | 'pack'; montrer?: string[]; langue?: 'fr' | 'darija' | 'mix'
+  retouche?: { optionId: number; note: string }
+}
+export type Demande = { id: number; genre: string; sujet: string; statut: string; demande_le: string; termine_le: string | null; erreur: string | null; rapport_id: number | null; creatif_id?: number | null; parametres?: ParametresDirection | null; resultat?: string | null
+  couverture?: { consigne: string; plans: number[] }[] | null }
 export type Rapport = { id: number; source: string; titre: string; cree_le: string; modele: string | null; en_bref: string }
 export type Jour = { jour: string; depense: number; messages: number; achats: number; clics: number; livrees: number; ca: number; marge: number }
 export type Repartition = { dimension: string; valeur: string; depense: number; impressions: number; clics_lien: number; achats: number; messages: number }
@@ -85,3 +95,6 @@ export const TYPES_ACTION: Record<string, { label: string; ton: 'vert' | 'orange
   lancer: { label: 'Lancer', ton: 'vert' }, corriger_suivi: { label: 'Corriger le suivi', ton: 'orange' }, offre: { label: 'Offre', ton: 'bleu' }, autre: { label: 'Autre', ton: 'gris' },
 }
 export const STATUTS_CREATIF: Record<string, string> = { idee: 'Idées', validee: 'Validées', produite: 'Produites', en_ligne: 'En ligne', ecartee: 'Écartées' }
+
+/** Ce que le directeur artistique doit retenir (les retours d'Achraf). */
+export type Lecon = { id: number; texte: string; creatif_id: number | null; par: string | null; active: boolean; cree_le: string }

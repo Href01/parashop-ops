@@ -4,12 +4,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Check, CheckCircle2, Circle, Clapperboard, Copy, Download, GalleryHorizontal, ImagePlus, Images, Link2, Loader2, Mic, Plus, Search, Sparkles, Wand2, X } from 'lucide-react'
 import BosShell from '@/components/BosShell'
 import { BOUTONS, FORMATS_IMAGE, formatParDefaut, type FormatImage, type Langue } from '@/lib/ads/creatif-model'
-import { fautesFrancais, motsVoixMax, type Idee } from '@/lib/ads/direction-model'
+import { A_MONTRER, OBJECTIFS, OFFRES, consignesBrief, fautesFrancais, motsVoixMax, type AMontrer, type Idee } from '@/lib/ads/direction-model'
 import { ApercuCarrousel, ApercuFeed, ApercuStory, telechargerPng, type Visuel } from '../agent/ui/Apercu'
 import { LecteurReel } from '../agent/ui/Reel'
 import { TableMontage, depuisOption, planDessin, type Brouillon } from '../agent/ui/Montage'
 import { BriefDirection, CarteOption, DirectionsEnCours, imagesDe, lisible, poster, texteDe, typeDeSerie, useActionsSerie } from '../agent/ui/Direction'
-import { STATUTS_CREATIF, dh1, quand, type BaseCreative, type Creatif, type Image, type Option } from '../agent/ui/types'
+import { STATUTS_CREATIF, dh1, quand, type BaseCreative, type Creatif, type Demande, type Image, type Lecon, type Option } from '../agent/ui/types'
 import { dureeVoixPlan, hashtags, verifierPublication } from './publier'
 import a from '../agent/agent.module.css'
 import s from './studio.module.css'
@@ -28,9 +28,10 @@ type Donnees = BaseCreative & {
   strategie: { langues: string[]; ton: string; public: string }
   creatifs: CreatifStudio[]
   pubsEnLigne: { adId: string; nom: string | null; vignette: string | null }[]
+  lecons: Lecon[]
 }
 type TypeCrea = 'reel' | 'carrousel' | 'options' | 'image'
-type OngletInspecteur = 'plans' | 'textes' | 'son' | 'publier'
+type OngletInspecteur = 'brief' | 'plans' | 'textes' | 'son' | 'publier'
 
 const ETAPES = ['idee', 'validee', 'produite', 'en_ligne'] as const
 const LANGUES: [Langue, string][] = [['fr', 'Français'], ['darija', 'Darija'], ['ar', 'العربية']]
@@ -54,7 +55,9 @@ export default function StudioCreatif() {
   const [d, setD] = useState<Donnees | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
   const [message, setMessage] = useState<{ ok: boolean; texte: string } | null>(null)
-  const [choisi, setChoisi] = useState<number | null>(null)
+  // La creation ouverte se retient dans l'adresse (?c=12) : un lien ou un retour arriere y revient.
+  // Rien ne s'affiche avant la lecture des donnees : l'etat lu ici ne change pas le premier rendu.
+  const [choisi, setChoisi] = useState<number | null>(() => (typeof window === 'undefined' ? null : Number(new URLSearchParams(window.location.search).get('c')) || null))
   const [filtre, setFiltre] = useState<'tous' | TypeCrea>('tous')
   const [etape, setEtape] = useState<'actives' | (typeof ETAPES)[number] | 'ecartee'>('actives')
   const [recherche, setRecherche] = useState('')
@@ -70,8 +73,6 @@ export default function StudioCreatif() {
     } catch (e) { setErreur(e instanceof Error ? e.message : 'Lecture impossible') }
   }, [])
   useEffect(() => { void charger() }, [charger])
-  // La creation ouverte se retient dans l'adresse (?c=12) : un lien ou un retour arriere y revient.
-  useEffect(() => { const c = Number(new URLSearchParams(window.location.search).get('c')); if (c) setChoisi(c) }, [])
   const ouvrir = (id: number | null) => {
     setChoisi(id)
     const u = new URL(window.location.href)
@@ -129,7 +130,7 @@ export default function StudioCreatif() {
                         <span className={s.itemVignette}>{img ? <img src={img} alt="" /> : <Icone size={18} />}</span>
                         <span className={s.itemTexte}>
                           <b>{lisible(c.accroche)}</b>
-                          <small><Icone size={11} /> {NOMS[t]} · {STATUTS_CREATIF[c.statut]?.replace(/s$/, '')}{c.options.length ? ` · ${c.options.length} ${t === 'reel' ? 'plans' : t === 'carrousel' ? 'cartes' : 'options'}` : ''}</small>
+                          <small><Icone size={11} /> {NOMS[t]} · {STATUTS_CREATIF[c.statut]?.replace(/s$/, '')}{c.options.length ? ` · ${seriesDe(c)[0].opts.length} ${t === 'reel' ? 'plans' : t === 'carrousel' ? 'cartes' : 'options'}` : ''}</small>
                           {c.resultat && <small className={s.itemResultat}>{c.resultat.messages} DM · {dh1(c.resultat.coutParResultat)} / résultat{c.resultat.verdict === 'gagnante' ? ' · gagnante' : ''}</small>}
                         </span>
                       </button>
@@ -141,7 +142,7 @@ export default function StudioCreatif() {
 
             {creation
               ? <Espace key={creation.id} c={creation} d={d} fermer={() => ouvrir(null)} rafraichir={charger} dire={dire} />
-              : <Accueil d={d} lancer={(i) => setNouveauBrief(i ?? true)} />}
+              : <Accueil d={d} lancer={(i) => setNouveauBrief(i ?? true)} rafraichir={charger} dire={dire} />}
           </div>
         )}
 
@@ -162,7 +163,7 @@ export default function StudioCreatif() {
 }
 
 /** L'accueil du studio, sans creation ouverte : par ou commencer. */
-function Accueil({ d, lancer }: { d: Donnees; lancer: (i?: Idee) => void }) {
+function Accueil({ d, lancer, rafraichir, dire }: { d: Donnees; lancer: (i?: Idee) => void; rafraichir: () => Promise<void>; dire: (ok: boolean, t: string) => void }) {
   return (
     <main className={s.accueil}>
       <h2>Créer une pub qui vend au Maroc</h2>
@@ -179,7 +180,84 @@ function Accueil({ d, lancer }: { d: Donnees; lancer: (i?: Idee) => void }) {
           <button key={i.id} type="button" className={s.idee} onClick={() => lancer(i)}><b>{i.titre}</b><small>{i.pourquoi}</small></button>))}
         </div>
       </>}
+      <Lecons d={d} rafraichir={rafraichir} dire={dire} />
+      <h3>Les vraies étapes du site <small className={a.muted}>— ce que le plan « site » peut montrer</small></h3>
+      {(() => {
+        const avec = d.catalogue.filter((p) => p.captures && Object.keys(p.captures).length >= 2)
+        return avec.length
+          ? <p className={a.small}>Captures prêtes pour {avec.length} produit(s) : {avec.slice(0, 12).map((p) => p.nom).join(' · ')}{avec.length > 12 ? '…' : ''}. Elles montrent le vrai site (fiche, panier, livraison), sans rien remplir ni commander.</p>
+          : <p className={`${a.notice} ${a.warn}`} style={{ marginTop: 0 }}>Pas encore de capture du site : le plan « site » n’est pas disponible.</p>
+      })()}
     </main>
+  )
+}
+
+/** Ce que le directeur artistique doit retenir : relu avant CHAQUE direction, prioritaire sur ses habitudes. */
+function Lecons({ d, rafraichir, dire, creatifId }: { d: Donnees; rafraichir: () => Promise<void>; dire: (ok: boolean, t: string) => void; creatifId?: number }) {
+  const [texte, setTexte] = useState('')
+  const [occupe, setOccupe] = useState(false)
+  const liste = d.lecons.filter((l) => (creatifId ? l.creatif_id === creatifId : true))
+  const envoyer = async () => {
+    setOccupe(true)
+    try { await poster({ lecon: { texte, creatifId } }); setTexte(''); await rafraichir(); dire(true, 'Retenu : le directeur artistique le relira avant chaque nouvelle pub.') }
+    catch (e) { dire(false, (e as Error).message) } finally { setOccupe(false) }
+  }
+  const basculer = async (l: Lecon) => { try { await poster({ leconActive: { id: l.id, active: !l.active } }); await rafraichir() } catch (e) { dire(false, (e as Error).message) } }
+  return (
+    <div className={s.lecons}>
+      <h3>{creatifId ? 'Ton avis au directeur artistique' : 'Ce que le directeur artistique a appris'}</h3>
+      <p className={`${a.small} ${a.muted}`}>{creatifId ? 'Ce qui ne va pas (ou ce qu’il faut refaire) : il le relit avant chaque nouvelle pub, pas seulement celle-ci.' : 'Tes retours, relus avant chaque direction ; ils priment sur ses habitudes. Désactive ceux qui ne valent plus.'}</p>
+      <div className={s.leconAjout}>
+        <textarea rows={2} className={a.champTexte} maxLength={600} value={texte} onChange={(e) => setTexte(e.target.value)} placeholder="Ex. : pas toujours le même style ; un pack de 4 produits se montre en entier ; les étapes du site = les vraies captures." />
+        <button type="button" className={a.primary} disabled={occupe || texte.trim().length < 5} onClick={() => void envoyer()}>{occupe ? <Loader2 size={13} className={a.tourne} /> : <Check size={13} />} Retenir</button>
+      </div>
+      {liste.length > 0 && <ul className={s.leconListe}>{liste.map((l) => (
+        <li key={l.id} className={l.active ? '' : s.leconInactive}>
+          <span>{l.texte}<small className={a.muted}> · {quand(l.cree_le)}{l.creatif_id && !creatifId ? ` · création #${l.creatif_id}` : ''}</small></span>
+          <button type="button" className={a.lienBouton} onClick={() => void basculer(l)}>{l.active ? 'Ne plus appliquer' : 'Réappliquer'}</button>
+        </li>))}</ul>}
+    </div>
+  )
+}
+
+/** Le brief d'une direction : ce qu'Achraf a demande, et quel plan tient chaque consigne. */
+function OngletBrief({ c, d, opts, rafraichir, dire }: { c: CreatifStudio; d: Donnees; opts: Option[]; rafraichir: () => Promise<void>; dire: (ok: boolean, t: string) => void }) {
+  const [nouvelle, setNouvelle] = useState(!opts.length)
+  const demandes = d.demandes.filter((x) => x.creatif_id === c.id && !x.parametres?.retouche) as Demande[]
+  const dem = demandes.find((x) => x.id === opts[0]?.demande_id) ?? demandes[0]
+  const p = dem?.parametres
+  const consignes = consignesBrief(p?.brief)
+  const couv = dem?.couverture ?? []
+  return (
+    <div className={s.bloc}>
+      <div className={a.btns} style={{ marginTop: 0 }}>
+        <button type="button" className={nouvelle ? a.ghost : a.primary} onClick={() => setNouvelle((x) => !x)}><Wand2 size={13} /> {nouvelle ? 'Fermer le brief' : 'Nouvelle direction pour cette création'}</button>
+      </div>
+      {nouvelle && <BriefDirection d={d} creatif={c} envoye={(texte) => { setNouvelle(false); dire(true, texte); void rafraichir() }} erreur={(texte) => dire(false, texte)} />}
+      {p && <>
+        <h3>Ce que tu as demandé <small className={a.muted}>· {quand(dem.demande_le)}</small></h3>
+        <dl className={s.briefResume}>
+          <dt>Objectif</dt><dd>{p.objectif ? OBJECTIFS[p.objectif].label : '—'}</dd>
+          <dt>Offre</dt><dd>{OFFRES[p.offre ?? 'aucune']}</dd>
+          <dt>À montrer</dt><dd>{p.montrer?.length ? p.montrer.map((k) => A_MONTRER[k as AMontrer] ?? k).join(' · ') : '—'}</dd>
+          <dt>Format</dt><dd>{p.type === 'reel' ? `Reel, ${p.nombre} plans` : p.type === 'carrousel' ? `Carrousel, ${p.nombre} cartes` : `${p.nombre} options`}</dd>
+        </dl>
+        {consignes.length > 0 && <>
+          <h3>Ton brief, consigne par consigne</h3>
+          <ul className={s.couverture}>{consignes.map((cons, k) => {
+            const tenue = couv[k]
+            return (
+              <li key={k} className={tenue ? s.ok : s.attention}>
+                <span>{cons}</span>
+                <small>{tenue ? (tenue.plans.length ? tenue.plans.map((n) => `plan ${n}`).join(', ') : 'partout') : 'pas indiqué par Claude'}</small>
+              </li>)
+          })}</ul>
+        </>}
+        {dem.resultat && <p className={`${a.small} ${a.muted}`}><b>Le mot de Claude :</b> {dem.resultat}</p>}
+      </>}
+      {!p && !nouvelle && <p className={`${a.small} ${a.muted}`}>Cette création ne vient pas d’un brief au directeur artistique.</p>}
+      <Lecons d={d} rafraichir={rafraichir} dire={dire} creatifId={c.id} />
+    </div>
   )
 }
 
@@ -193,10 +271,9 @@ function Espace({ c, d, fermer, rafraichir, dire }: { c: CreatifStudio; d: Donne
   const [langue, setLangue] = useState<Langue>('fr')
   const [canal, setCanal] = useState<'message' | 'site'>(/site|command/i.test(c.cta || '') ? 'site' : 'message')
   const [habillage, setHabillage] = useState(true)
-  const [onglet, setOnglet] = useState<'plans' | 'textes' | 'son' | 'publier'>('plans')
+  const [onglet, setOnglet] = useState<OngletInspecteur>(opts.length ? 'plans' : 'brief')
   const [brouillons, setBrouillons] = useState<Record<number, Brouillon>>({})
   const [ouvert, setOuvert] = useState<number | null>(null)
-  const [direction, setDirection] = useState(false)
   const [imageApercu, setImageApercu] = useState<number | null>(null)
   const { generation, generer, genererManquants, a: actions, secondes } = useActionsSerie(c, rafraichir, dire, (img, o) => { setImageApercu(img.id); void o })
   const bouton = BOUTONS[canal][langue]
@@ -226,7 +303,8 @@ function Espace({ c, d, fermer, rafraichir, dire }: { c: CreatifStudio; d: Donne
           </div>
           <button type="button" className={a.ghost} onClick={fermer} aria-label="Fermer la création"><X size={14} /></button>
         </header>
-        <ol className={s.etapes} aria-label="Étape de la création">
+        <ol className={s.etapes} aria-label="Statut de la création">
+          <li className={s.etapesTitre}>Statut</li>
           {ETAPES.map((e, k) => {
             const faite = ETAPES.indexOf(c.statut as (typeof ETAPES)[number]) >= k
             return <li key={e}><button type="button" className={faite ? s.etapeFaite : ''} aria-current={c.statut === e ? 'step' : undefined} onClick={() => void majStatut(e)}>{faite ? <CheckCircle2 size={14} /> : <Circle size={14} />} {STATUTS_CREATIF[e].replace(/s$/, '')}</button></li>
@@ -252,17 +330,17 @@ function Espace({ c, d, fermer, rafraichir, dire }: { c: CreatifStudio; d: Donne
 
       <section className={s.inspecteur} aria-label="Inspecteur">
         <div className={s.onglets} role="tablist">
-          {([['plans', type === 'reel' ? 'Plans' : type === 'carrousel' ? 'Cartes' : 'Visuels'], ['textes', 'Textes'], ...(type === 'reel' ? [['son', 'Son']] : []), ['publier', `Publier${aCorriger ? ` (${aCorriger})` : ''}`]] as [OngletInspecteur, string][]).map(([k, nom]) => (
-            <button key={k} type="button" role="tab" aria-selected={onglet === k} onClick={() => setOnglet(k)}>{nom}</button>))}
+          {([['brief', 'Brief'], ['plans', type === 'reel' ? 'Plans' : type === 'carrousel' ? 'Cartes' : 'Visuels'], ['textes', 'Textes'], ...(type === 'reel' ? [['son', 'Son']] : []), ['publier', `Publier${aCorriger ? ` (${aCorriger})` : ''}`]] as [OngletInspecteur, string][]).map(([k, nom], i) => (
+            <button key={k} type="button" role="tab" aria-selected={onglet === k} onClick={() => setOnglet(k)}><span className={s.ongletNum}>{i + 1}</span>{nom}</button>))}
         </div>
         <div className={s.inspecteurCorps}>
           <DirectionsEnCours demandes={d.demandes} creatifId={c.id} />
+          {onglet === 'brief' && <OngletBrief c={c} d={d} opts={opts} rafraichir={rafraichir} dire={dire} />}
           {onglet === 'plans' && <>
-            <div className={a.btns} style={{ marginTop: 0 }}>
-              <button type="button" className={direction ? a.ghost : a.primary} onClick={() => setDirection((x) => !x)}><Wand2 size={13} /> {direction ? 'Fermer le brief' : 'Nouvelle direction'}</button>
-              {manquants.length > 0 && <button type="button" className={a.ghost} disabled={Object.keys(generation).length > 0} onClick={() => void genererManquants(opts)}><ImagePlus size={13} /> Peindre {manquants.length === opts.length ? 'tout' : `les ${manquants.length} manquant(s)`}</button>}
-            </div>
-            {direction && <BriefDirection d={d} creatif={c} envoye={(texte) => { setDirection(false); dire(true, texte); void rafraichir() }} erreur={(texte) => dire(false, texte)} />}
+            {!opts.length && <p className={`${a.small} ${a.muted}`}>Pas encore de plans : onglet 1 · Brief pour lancer une direction.</p>}
+            {manquants.length > 0 && <div className={a.btns} style={{ marginTop: 0 }}>
+              <button type="button" className={a.primary} disabled={Object.keys(generation).length > 0} onClick={() => void genererManquants(opts)}><ImagePlus size={13} /> Peindre {manquants.length === opts.length ? 'tous les décors' : `les ${manquants.length} décor(s) manquant(s)`}</button>
+            </div>}
             {type === 'reel' && <TableMontage c={c} d={d} opts={opts} langue={langue} brouillons={brouillons} setBrouillon={setBrouillon} selection={ouvert} choisir={setOuvert} poster={poster} rafraichir={rafraichir} message={dire} generer={generer} generation={generation} />}
             {(type === 'carrousel' || type === 'options') && <div className={s.cartes}>{opts.map((o, i) => <CarteOption key={o.id} c={c} o={o} rang={i + 1} type={type} langue={langue} genere={secondes(o.id)} a={actions} largeur={300} noms={new Map(d.catalogue.map((p) => [p.id, `${p.marque} ${p.nom}`]))} />)}</div>}
             {type === 'image' && <VisuelRapide c={c} rafraichir={rafraichir} dire={dire} choisir={setImageApercu} />}

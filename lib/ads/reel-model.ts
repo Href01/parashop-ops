@@ -5,7 +5,8 @@
  * reconnaissent) : un decor genere, les VRAIS produits detoures poses dessus et
  * animes comme en motion design. Claude compose chaque Reel avec ce vocabulaire :
  *   - des plans : chute qui rebondit, pop, glisse, duo « lequel pour toi ? »,
- *     revelation premium, etiquette annotee, quiz, conversation DM, zoom, fin ;
+ *     revelation premium, etiquette annotee, quiz, conversation DM, zoom, fin,
+ *     routine numerotee (etapes), et les vraies captures du site dans un telephone ;
  *   - des transitions : coupe, traversee (zoom a travers), balayage (whip pan),
  *     revelation (cercle), vague (lame de couleur) ;
  *   - une signature Shine : le reflet de lumiere qui balaie chaque flacon quand
@@ -19,7 +20,9 @@
  * l'interface d'Instagram ; rien d'important n'y va.
  */
 
-export type Mouvement = 'rebond' | 'pop' | 'glisse' | 'zoom' | 'duo' | 'fin' | 'revele' | 'etiquette' | 'quiz' | 'dm'
+export type Mouvement = 'rebond' | 'pop' | 'glisse' | 'zoom' | 'duo' | 'fin' | 'revele' | 'etiquette' | 'quiz' | 'dm' | 'etapes' | 'site'
+/** Le bouton touche dans une capture du site, en fractions de la capture. */
+export type Cible = { x: number; y: number; w: number; h: number }
 export type Transition = 'coupe' | 'traversee' | 'balayage' | 'revelation' | 'vague'
 export type Ambiance = 'aucune' | 'etincelles' | 'gouttes' | 'bulles' | 'sable'
 export type Bulle = { de: 'cliente' | 'shine'; texte: string }
@@ -27,7 +30,8 @@ export type PlanReel = {
   mouvement: Mouvement; duree: number; produits: number; texte: string
   transition?: Transition; ambiance?: Ambiance
   bulles?: Bulle[]        // dm : la conversation, dans l'ordre
-  points?: string[]       // etiquette : 2 ou 3 atouts montres autour du produit
+  points?: string[]       // etiquette : 2 ou 3 atouts ; etapes : le nom de chaque produit ; site : le libelle de chaque ecran
+  ecrans?: { cible: Cible }[]   // site : les captures, dans l'ordre, et le bouton que le doigt touche
   choix?: string[]        // quiz : 2 ou 3 reponses ; la premiere est celle qui mene au produit
   confiance?: string[]    // fin : badges de confiance deja traduits (« Paiement à la livraison »…)
   prix?: string | null    // fin : le sticker de prix (« 997 DH »)
@@ -112,10 +116,40 @@ export type EtatPlan = {
   flash: number
   badges: { texte: string; echelle: number }[]            // fin : les badges de confiance, l'un apres l'autre
   sticker: { texte: string; echelle: number; rotation: number } | null   // fin : le prix, qui tombe en tournant
+  etapes: EtatEtape[]                                     // etapes : le numero et le nom de chaque produit
+  site: EtatSite | null                                   // site : le telephone, l'ecran, le doigt
+}
+export type EtatEtape = { numero: number; texte: string; cx: number; cy: number; echelle: number; grand: boolean }
+export type EtatSite = {
+  telephone: number                                       // entree du telephone (0..1, ressort)
+  ecran: number; precedent: number | null; glisse: number // l'ecran montre, celui qui sort, l'avancee du glissement (0..1)
+  doigt: { x: number; y: number; appui: number } | null   // en fractions de la capture
+  onde: { x: number; y: number; r: number; alpha: number } | null
+  etiquette: { numero: number; texte: string; echelle: number }
+}
+
+/** La routine numerotee : le produit en vedette, puis la rangee ou chacun se range. */
+export const ETAPES_VEDETTE = { cx: 0.5, bas: 0.56, hauteur: 0.32 }
+export function etapesCreneaux(plan: PlanReel) {
+  const n = Math.max(1, plan.produits)
+  const pas = Math.max(0.6, (plan.duree - 0.75) / n)
+  return { n, pas, debut: (k: number) => 0.15 + k * pas }
+}
+/** Le tunnel : un creneau par ecran ; le doigt touche aux trois quarts. */
+export function siteCreneaux(plan: PlanReel) {
+  const m = Math.max(1, plan.ecrans?.length ?? 0)
+  const pas = Math.max(0.9, (plan.duree - 0.3) / m)
+  const debut = (j: number) => 0.2 + j * pas
+  return { m, pas, debut, touche: (j: number) => debut(j) + Math.max(0.75, pas * 0.72) }
 }
 
 /** Ou poser n produits : centres, ligne de sol, hauteur. */
 export function disposition(n: number, mouvement: Mouvement = 'rebond'): { cx: number; bas: number; hauteur: number }[] {
+  // La rangee de la routine : petite, sous le produit en vedette, au-dessus de l'interface d'Instagram.
+  if (mouvement === 'etapes') {
+    const xs = n <= 2 ? [0.36, 0.64] : n === 3 ? [0.26, 0.5, 0.74] : [0.2, 0.4, 0.6, 0.8]
+    return xs.slice(0, Math.max(1, n)).map((cx) => ({ cx, bas: 0.79, hauteur: 0.12 }))
+  }
   if (mouvement === 'etiquette' || mouvement === 'revele') return [{ cx: 0.5, bas: 0.76, hauteur: mouvement === 'etiquette' ? 0.44 : 0.46 }]
   if (mouvement === 'quiz') return [{ cx: 0.5, bas: 0.78, hauteur: 0.24 }]
   // Dans la fiche produit envoyee en DM (a gauche de la carte, sous les bulles).
@@ -149,6 +183,7 @@ function pose(mouvement: Mouvement, i: number, plan: PlanReel): number {
     case 'etiquette': return 0.45
     case 'quiz': return quizTap(plan) + 0.55
     case 'dm': return dmFiche(plan) + 0.4
+    case 'etapes': return etapesCreneaux(plan).debut(i) + 0.35
     default: return 0
   }
 }
@@ -214,6 +249,19 @@ function produitA(plan: PlanReel, p: { cx: number; bas: number; hauteur: number 
       const s = ressort(y * 2.4)
       return { ...e, echelle: Math.max(0, s), opacite: borne(y / 0.08), ombre: 0 }
     }
+    case 'etapes': {
+      // Chacun son tour : il surgit en vedette, se montre, puis file rejoindre la rangee.
+      const { pas, debut } = etapesCreneaux(plan)
+      const y = t - debut(i)
+      if (y < 0) return { ...e, opacite: 0, ombre: 0 }
+      const v = ETAPES_VEDETTE
+      const range = borne((y - (pas - 0.28)) / 0.28)
+      const s = ressort(y * 2.4)
+      if (range <= 0) return { ...e, cx: v.cx, bas: v.bas, sol: v.bas, hauteur: v.hauteur, echelle: Math.max(0, s), rotation: -8 * (1 - Math.min(1, s)), opacite: borne(y / 0.08), ombre: borne(s) }
+      const d = douce(range)
+      const bas = v.bas + (p.bas - v.bas) * d
+      return { ...e, cx: v.cx + (p.cx - v.cx) * d, bas, sol: bas, hauteur: v.hauteur + (p.hauteur - v.hauteur) * d, ombre: 1 }
+    }
     default:
       return e
   }
@@ -255,7 +303,7 @@ export function particules(ambiance: Ambiance | undefined, t: number, graineN: n
 export function etatPlan(plan: PlanReel, t: number, premier: boolean, indice = 0): EtatPlan {
   const u = plan.duree ? borne(t / plan.duree) : 0
   const place = disposition(plan.produits, plan.mouvement)
-  const anime = plan.mouvement !== 'zoom'
+  const anime = plan.mouvement !== 'zoom' && plan.mouvement !== 'site'
   const zoomLent = plan.mouvement === 'zoom' ? 0.14 * douce(u) : plan.mouvement === 'revele' ? 0.07 * douce(u) : 0.035 * u
   const fond = { echelle: 1 + 0.07 * (1 - douce(t / 0.35)) + zoomLent, dx: plan.mouvement === 'zoom' ? -0.025 * douce(u) : 0, dy: 0 }
   const flash = premier || (plan.transition && plan.transition !== 'coupe') ? 0 : Math.max(0, 1 - t / 0.12) * 0.35
@@ -345,9 +393,48 @@ export function etatPlan(plan: PlanReel, t: number, premier: boolean, indice = 0
     ? { texte: plan.prix, echelle: Math.min(1.1, ressort((t - 0.6) * 2.4)), rotation: -12 + 14 * (1 - Math.min(1, ressort((t - 0.6) * 2.4))) }
     : null
 
+  // La routine : le numero et le nom du produit en vedette ; puis un petit numero au-dessus de chacun dans la rangee.
+  const etapes: EtatEtape[] = []
+  if (plan.mouvement === 'etapes') {
+    const { pas, debut } = etapesCreneaux(plan)
+    produits.forEach((pr, k) => {
+      const y = t - debut(k)
+      if (y < 0.12) return
+      const vedette = y < pas - 0.28
+      etapes.push(vedette
+        ? { numero: k + 1, texte: plan.points?.[k] ?? '', cx: 0.5, cy: ETAPES_VEDETTE.bas + 0.04, echelle: Math.min(1.06, ressort((y - 0.12) * 2.6)), grand: true }
+        : { numero: k + 1, texte: '', cx: pr.cx, cy: pr.bas - pr.hauteur - 0.018, echelle: Math.min(1.06, ressort((y - pas + 0.1) * 3)), grand: false })
+    })
+  }
+
+  // Le site : le telephone arrive, chaque ecran glisse, le doigt vise le bouton et touche.
+  let site: EtatSite | null = null
+  if (plan.mouvement === 'site' && plan.ecrans?.length) {
+    const { m, debut, touche } = siteCreneaux(plan)
+    let j = 0
+    for (let q = 1; q < m; q++) if (t >= debut(q)) j = q
+    const glisse = j > 0 ? douce((t - debut(j)) / 0.32) : 1
+    const c = plan.ecrans[j].cible
+    const vise = { x: c.x + c.w / 2, y: c.y + c.h / 2 }
+    const tp = touche(j)
+    const depart = t - (debut(j) + 0.3)
+    const approche = sortie(depart / 0.45)
+    const doigt = depart > 0 && t < tp + 0.35
+      ? { x: 0.82 + (vise.x - 0.82) * approche, y: 1.08 + (vise.y - 1.08) * approche, appui: borne(1 - Math.abs(t - tp) / 0.12) }
+      : null
+    const o = t - tp
+    site = {
+      telephone: Math.min(1.04, ressort(t * 2.2)),
+      ecran: j, precedent: j > 0 && glisse < 1 ? j - 1 : null, glisse,
+      doigt,
+      onde: o > 0 && o < 0.45 ? { x: vise.x, y: vise.y, r: 0.04 + 0.16 * sortie(o / 0.45), alpha: 1 - o / 0.45 } : null,
+      etiquette: { numero: j + 1, texte: plan.points?.[j] ?? '', echelle: Math.min(1.06, ressort((t - debut(j) - 0.08) * 2.8)) },
+    }
+  }
+
   return {
     fond, secousse, produits, mots: etatsMots, texteHaut: ZONE.haut + 0.035, chip, cta, dm, points, quiz,
-    particules: particules(plan.ambiance, t, indice + 1), etincelles, flash, badges, sticker,
+    particules: particules(plan.ambiance, t, indice + 1), etincelles, flash, badges, sticker, etapes, site,
   }
 }
 
@@ -391,10 +478,21 @@ export function evenementsSonores(plans: PlanReel[]): EvenementSonore[] {
         break
       }
       case 'fin': ev(0.45, 'cta'); if (plan.prix) ev(0.6, 'pop', 0.8); (plan.confiance ?? []).slice(0, 3).forEach((_, k) => ev(0.75 + k * 0.15, 'tic', 0.8)); break
+      case 'etapes': {
+        const { debut } = etapesCreneaux(plan)
+        for (let k = 0; k < n; k++) { ev(debut(k) + 0.05, 'pop', 0.9); ev(debut(k) + 0.2, 'tic', 0.7) }
+        break
+      }
+      case 'site': {
+        const { m, debut, touche } = siteCreneaux(plan)
+        for (let j = 0; j < m; j++) { if (j) ev(debut(j), 'glisse', 0.6); ev(touche(j), 'clic') }
+        ev(touche(m - 1) + 0.12, 'ding', 0.8)
+        break
+      }
       default: break
     }
     // La signature : le reflet qui traverse le flacon se fait entendre, doucement.
-    if (n && plan.mouvement !== 'zoom') ev(pose(plan.mouvement, 0, plan), 'scintille', 0.5)
+    if (n && plan.mouvement !== 'zoom' && plan.mouvement !== 'site') ev(pose(plan.mouvement, 0, plan), 'scintille', 0.5)
     debut += plan.duree
   }
   return out.sort((a, b) => a.t - b.t)

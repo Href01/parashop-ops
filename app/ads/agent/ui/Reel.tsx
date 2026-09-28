@@ -15,7 +15,7 @@ import s from './apercu.module.css'
  * navigateur : rien ne part sur un serveur).
  */
 
-export type PlanDessin = PlanReel & { image: string | null; detourees: string[]; noms?: string[]; voixUrl?: string | null }
+export type PlanDessin = PlanReel & { image: string | null; detourees: string[]; noms?: string[]; voixUrl?: string | null; captures?: string[] }
 type Ressources = Map<string, HTMLImageElement>
 type Ctx = CanvasRenderingContext2D
 
@@ -197,6 +197,58 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
     ctx.restore()
   }
 
+  // 2 bis. Le site : un telephone, les VRAIES captures du tunnel d'achat, le doigt qui touche le bon bouton.
+  // La camera avance vers le bouton avant que le doigt le touche : on lit « Ajouter au panier ».
+  const tel = { cx: W / 2, haut: H * 0.285, h: H * 0.5, w: H * 0.5 * (390 / 844), bord: W * 0.018 }
+  if (e.site) {
+    const st = e.site
+    ctx.save()
+    ctx.translate(tel.cx, tel.haut + tel.h / 2); ctx.scale(st.telephone, st.telephone); ctx.translate(-tel.cx, -(tel.haut + tel.h / 2))
+    ctx.shadowColor = 'rgba(0,0,0,.4)'; ctx.shadowBlur = W * 0.05; ctx.shadowOffsetY = W * 0.016
+    ctx.fillStyle = '#131718'; rondRect(ctx, tel.cx - tel.w / 2 - tel.bord, tel.haut - tel.bord, tel.w + 2 * tel.bord, tel.h + 2 * tel.bord, W * 0.062); ctx.fill()
+    ctx.shadowColor = 'transparent'; ctx.shadowOffsetY = 0
+    ctx.save()
+    rondRect(ctx, tel.cx - tel.w / 2, tel.haut, tel.w, tel.h, W * 0.046); ctx.clip()
+    ctx.fillStyle = '#fff'; ctx.fillRect(tel.cx - tel.w / 2, tel.haut, tel.w, tel.h)
+    const ecran = (j: number, dx: number, zoom: number) => {
+      const u = plan.captures?.[j], img = u ? res.get(u) : undefined
+      const c = plan.ecrans?.[j]?.cible
+      if (!img || !c) return
+      // Zoom vers la hauteur du bouton, centre en largeur : le prix, a gauche, reste visible.
+      const vx = 0.5, vy = c.y + c.h / 2
+      const x0 = tel.cx - tel.w / 2 + dx + vx * tel.w * (1 - zoom), y0 = tel.haut + vy * tel.h * (1 - zoom)
+      ctx.drawImage(img, x0, y0, tel.w * zoom, tel.h * zoom)
+    }
+    const zoomDe = (j: number, fin: boolean) => {
+      if (fin) return 1.15
+      const c = plan.ecrans?.[j]?.cible
+      return c ? 1 + 0.15 * douce((local - 0.2 - j * ((plan.duree - 0.3) / Math.max(1, plan.ecrans!.length)) - 0.3) / 0.6) : 1
+    }
+    const z = zoomDe(st.ecran, false)
+    if (st.precedent != null) ecran(st.precedent, -tel.w * st.glisse, zoomDe(st.precedent, true))
+    ecran(st.ecran, st.precedent != null ? tel.w * (1 - st.glisse) : 0, z)
+    const cible = plan.ecrans?.[st.ecran]?.cible
+    const X = (x: number) => tel.cx - tel.w / 2 + (0.5 + (x - 0.5) * z) * tel.w
+    const Y = (y: number) => { const vy = cible ? cible.y + cible.h / 2 : 0.5; return tel.haut + (vy + (y - vy) * z) * tel.h }
+    if (st.onde) {
+      ctx.strokeStyle = `rgba(155,48,112,${0.85 * st.onde.alpha})`; ctx.lineWidth = W * 0.007
+      ctx.beginPath(); ctx.arc(X(st.onde.x), Y(st.onde.y), st.onde.r * tel.w, 0, Math.PI * 2); ctx.stroke()
+    }
+    ctx.restore()
+    // L'ilot du telephone, par-dessus l'ecran.
+    ctx.fillStyle = '#131718'; rondRect(ctx, tel.cx - tel.w * 0.14, tel.haut + tel.h * 0.012, tel.w * 0.28, tel.h * 0.026, tel.h * 0.013); ctx.fill()
+    // Le doigt : il entre par le bas et appuie.
+    if (st.doigt) {
+      const d = st.doigt
+      ctx.fillStyle = 'rgba(255,255,255,.6)'; ctx.strokeStyle = 'rgba(255,255,255,.98)'; ctx.lineWidth = W * 0.005
+      ctx.shadowColor = 'rgba(0,0,0,.35)'; ctx.shadowBlur = W * 0.02
+      ctx.beginPath(); ctx.arc(X(d.x), Y(d.y), W * (0.036 - 0.009 * d.appui), 0, Math.PI * 2); ctx.fill(); ctx.stroke()
+      ctx.shadowColor = 'transparent'
+      if (d.appui > 0) { ctx.globalAlpha = d.appui; ctx.beginPath(); ctx.arc(X(d.x), Y(d.y), W * (0.05 + 0.05 * (1 - d.appui)), 0, Math.PI * 2); ctx.stroke(); ctx.globalAlpha = 1 }
+    }
+    ctx.restore()
+  }
+
   // 3. Les vrais produits, detoures : trainee, ombre au sol, flacon (ecrase au contact), reflet.
   e.produits.forEach((p, j) => {
     const img = plan.detourees[j] ? res.get(plan.detourees[j]) : undefined
@@ -246,6 +298,32 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
       ctx.fillStyle = COULEURS.creme; rondRect(ctx, x, y, tw, th, th / 2); ctx.fill()
       ctx.shadowColor = 'transparent'; ctx.fillStyle = COULEURS.brun; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
       ctx.fillText(pt.texte, x + tw / 2, y + th / 2 + W * 0.002)
+    }
+    ctx.restore()
+  }
+
+  // 4 bis. La routine numerotee : le numero et le nom du produit en vedette, puis un numero sur chacun dans la rangee.
+  for (const et of e.etapes) {
+    if (et.echelle <= 0) continue
+    ctx.save()
+    ctx.translate(et.cx * W, et.cy * H); ctx.scale(et.echelle, et.echelle)
+    ctx.shadowColor = 'rgba(0,0,0,.22)'; ctx.shadowBlur = W * 0.02
+    if (et.grand) {
+      ctx.font = `800 ${W * 0.046}px ${police}`
+      const r = W * 0.034, tw = ctx.measureText(et.texte).width, hp = r * 2 + W * 0.02, l = hp + tw + W * 0.05
+      ctx.fillStyle = COULEURS.creme; rondRect(ctx, -l / 2, -hp / 2, l, hp, hp / 2); ctx.fill()
+      ctx.shadowColor = 'transparent'
+      ctx.fillStyle = COULEURS.prune; ctx.beginPath(); ctx.arc(-l / 2 + hp / 2, 0, r, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `800 ${W * 0.04}px ${POLICES.titre}`
+      ctx.fillText(String(et.numero), -l / 2 + hp / 2, W * 0.002)
+      ctx.fillStyle = COULEURS.brun; ctx.textAlign = 'left'; ctx.font = `800 ${W * 0.046}px ${police}`
+      ctx.fillText(et.texte, -l / 2 + hp + W * 0.012, W * 0.003)
+    } else {
+      const r = W * 0.028
+      ctx.fillStyle = COULEURS.prune; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill()
+      ctx.shadowColor = 'transparent'
+      ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `800 ${W * 0.032}px ${POLICES.titre}`
+      ctx.fillText(String(et.numero), 0, W * 0.002)
     }
     ctx.restore()
   }
@@ -328,6 +406,25 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
       x += rtl ? -(l + espace) : l + espace
     }
   })
+
+  // 7 bis. L'etape du site : une pastille au-dessus du telephone (sur son bord si le titre prend deux lignes).
+  if (e.site && e.site.etiquette.texte && e.site.etiquette.echelle > 0) {
+    const et = e.site.etiquette
+    ctx.font = `800 ${W * 0.042}px ${police}`
+    const r = W * 0.03, tw = ctx.measureText(et.texte).width, hp = r * 2 + W * 0.018, l = hp + tw + W * 0.045
+    const cy = lignes.length > 1 ? tel.haut + hp * 0.7 : tel.haut - tel.bord - hp / 2 - W * 0.014
+    ctx.save()
+    ctx.translate(W / 2, cy); ctx.scale(et.echelle, et.echelle)
+    ctx.shadowColor = 'rgba(0,0,0,.25)'; ctx.shadowBlur = W * 0.02
+    ctx.fillStyle = COULEURS.creme; rondRect(ctx, -l / 2, -hp / 2, l, hp, hp / 2); ctx.fill()
+    ctx.shadowColor = 'transparent'
+    ctx.fillStyle = COULEURS.prune; ctx.beginPath(); ctx.arc(-l / 2 + hp / 2, 0, r, 0, Math.PI * 2); ctx.fill()
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `800 ${W * 0.036}px ${POLICES.titre}`
+    ctx.fillText(String(et.numero), -l / 2 + hp / 2, W * 0.002)
+    ctx.fillStyle = COULEURS.brun; ctx.textAlign = 'left'; ctx.font = `800 ${W * 0.042}px ${police}`
+    ctx.fillText(et.texte, -l / 2 + hp + W * 0.01, W * 0.003)
+    ctx.restore()
+  }
 
   // 8. Carte de fin : le bouton vert qui pulse, et l'adresse.
   if (e.cta && e.cta.echelle > 0) {
@@ -452,7 +549,7 @@ export function dessiner(ctx: Ctx, plans: PlanDessin[], t: number, res: Ressourc
   }
 }
 
-const urlsDe = (plans: PlanDessin[]) => plans.flatMap((p) => [p.image, ...p.detourees]).filter((u): u is string => Boolean(u))
+const urlsDe = (plans: PlanDessin[]) => plans.flatMap((p) => [p.image, ...p.detourees, ...(p.captures ?? [])]).filter((u): u is string => Boolean(u))
 const debutDe = (plans: PlanDessin[], i: number) => plans.slice(0, i).reduce((n, p) => n + p.duree, 0)
 /** Les voix off posees : 0,15 s apres le debut de leur plan. */
 const voixDe = (plans: PlanDessin[]): VoixPlacee[] => plans.flatMap((p, i) => (p.voixUrl ? [{ url: p.voixUrl, debut: debutDe(plans, i) + 0.15 }] : []))
@@ -507,7 +604,8 @@ export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, 
   // La boucle d'animation lit ces references : une pause decidee ailleurs (clic sur un plan)
   // s'applique tout de suite, sans qu'une image deja programmee ecrase la position choisie.
   const enLecture = useRef(lecture)
-  enLecture.current = lecture
+  // Declare avant la boucle de lecture : les effets s'executent dans cet ordre.
+  useEffect(() => { enLecture.current = lecture }, [lecture])
   const raf = useRef(0)
   const figer = (x: number) => { enLecture.current = false; cancelAnimationFrame(raf.current); setLecture(false); setT(x) }
   const voix = avecVoix ? voixDe(plans) : []
