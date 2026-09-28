@@ -202,3 +202,28 @@ test('le jeu A/B/C : lettres, étiquettes, appel à commenter', () => {
   assert.throws(() => verifierOption(plan({ mouvement: 'pop', duree: 3, animes: [102, 107, 100], points: [{ fr: 'Taches' }, { fr: 'Pores' }] }), 1, 'reel', [102, 107, 100]), /une étiquette par produit/)
   assert.doesNotThrow(() => verifierOption(plan({ mouvement: 'pop', duree: 3, animes: [102, 107, 100], lettres: true, appel: 'reponse', fond: 'nuit', points: [{ fr: 'Taches' }, { fr: 'Pores' }, { fr: 'Rides' }] }), 1, 'reel', [102, 107, 100]))
 })
+
+test('montrer : schémas animés, post-it, vrai avis', async () => {
+  const { postitArrache } = await import('../../lib/ads/reel-model')
+  // Le schéma : son temps et ses étiquettes arrivent au moteur.
+  const z: PlanReel = { mouvement: 'zoom', duree: 3.5, produits: 0, texte: 'Au Maroc, le *soleil* tape', illustration: 'taches', points: ['UV toute l’année', 'Trop de mélanine'] }
+  const e = etatPlan(z, 1.2, false)
+  assert.equal(e.illustration!.type, 'taches')
+  assert.deepEqual(e.illustration!.labels, ['UV toute l’année', 'Trop de mélanine'])
+  assert.ok(Math.abs(e.illustration!.p - 1.2 / 3.5) < 0.001)
+  // Le post-it : il cache, tremble, puis s'arrache et disparaît.
+  const r: PlanReel = { mouvement: 'revele', duree: 2.5, produits: 1, texte: 'Ce que personne ne te dit', cache: true }
+  const t0 = postitArrache(r)
+  assert.ok(etatPlan(r, t0 - 0.3, true).postit!.opacite > 0.5)
+  assert.equal(etatPlan(r, t0 + 0.5, true).postit, null)
+  assert.ok(evenementsSonores([r]).some((x) => x.son === 'glisse' && Math.abs(x.t - t0) < 0.01))
+  // L'avis : les étoiles s'allument une à une.
+  const a: PlanReel = { mouvement: 'zoom', duree: 3, produits: 0, texte: 'Ce qu’elles en *disent*', avis: { texte: 'Très bon produit', note: 5 } }
+  assert.equal(etatPlan(a, 0.5, false).avis!.etoiles, 1)
+  assert.equal(etatPlan(a, 2, false).avis!.etoiles, 5)
+  // Les règles : un schéma sur un zoom, un avis sur un zoom, pas les deux, un post-it sur un produit.
+  assert.throws(() => verifierOption(plan({ mouvement: 'rebond', duree: 2, animes: [102], illustration: 'taches' }), 0, 'reel', [102]), /« zoom »/)
+  assert.throws(() => verifierOption(plan({ mouvement: 'zoom', duree: 3, illustration: 'taches', avisId: 23 }), 1, 'reel', []), /pas les deux/)
+  assert.throws(() => verifierOption(plan({ mouvement: 'zoom', duree: 3, cache: true }), 1, 'reel', []), /post-it/)
+  assert.doesNotThrow(() => verifierOption(plan({ mouvement: 'zoom', duree: 3, illustration: 'barriere', fond: 'vert', points: [{ fr: 'Pigment' }, { fr: 'Niacinamide + TXA' }] }), 1, 'reel', []))
+})

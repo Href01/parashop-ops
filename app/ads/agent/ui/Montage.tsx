@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { ArrowDown, ArrowUp, Copy, ImagePlus, Loader2, Mic, Plus, Save, Trash2, Undo2, Wand2, X } from 'lucide-react'
 import type { Langue } from '@/lib/ads/creatif-model'
 import { AMBIANCES, APPELS, CONFIANCE, ETAPES_SITE, FONDS, LIBELLES_SITE, MOUVEMENTS, TRANSITIONS, dureeMinDm, dureeMinEtapes, dureeMinSite, dureeVoix, fautesFrancais, motMisEnValeurVide, motsVoixMax, voixTropLongue, type CleAppel, type CleConfiance, type EtapeSite, type FondShine, type Mouvement } from '@/lib/ads/direction-model'
-import { urlDetouree, type Ambiance, type Transition } from '@/lib/ads/reel-model'
+import { ILLUSTRATIONS, urlDetouree, type Ambiance, type Illustration, type Transition } from '@/lib/ads/reel-model'
 import type { PlanDessin } from './Reel'
 import type { BaseCreative, Creatif, Image, Option } from './types'
 import s from '../agent.module.css'
@@ -24,6 +24,13 @@ export type Brouillon = {
   bulles: { de: 'cliente' | 'shine'; texte: Multi }[]; points: Multi[]; choix: Multi[]; voix: Multi
   confiance: CleConfiance[]; prix: boolean
   ecrans: EtapeSite[]; fond: FondShine; ouvert: boolean; melange: boolean; lettres: boolean; appel: CleAppel | null
+  illustration: Illustration | null; cache: boolean
+}
+/** Ce que montre chaque schema : le probleme ou la reponse. */
+const SCHEMAS: Record<Illustration, string> = {
+  taches: 'Le soleil fait monter les taches (problème)', citron: 'Citron + soleil : les taches foncent (idée reçue)',
+  barriere: 'Le pigment freiné par les actifs (réponse)', bouclier: 'Le bouclier SPF renvoie les rayons (réponse)',
+  'cheveu-abime': 'Le cheveu ouvert par l’été (problème)', 'cheveu-repare': 'La fibre gainée et protégée (réponse)',
 }
 
 /**
@@ -54,6 +61,7 @@ export function depuisOption(o: Option): Brouillon {
     bulles: (m.bulles ?? []).map((b) => ({ de: b.de, texte: multi(b.texte) })), points: (m.points ?? []).map(multi), choix: (m.choix ?? []).map(multi), voix: multi(m.voix),
     confiance: (m.confiance ?? []) as CleConfiance[], prix: Boolean(m.prix),
     ecrans: (m.ecrans ?? []) as EtapeSite[], fond: (m.fond ?? 'decor') as FondShine, ouvert: Boolean(m.ouvert), melange: Boolean(m.melange), lettres: Boolean(m.lettres), appel: (m.appel ?? null) as CleAppel | null,
+    illustration: (m.illustration ?? null) as Illustration | null, cache: Boolean(m.cache),
   }
 }
 
@@ -100,6 +108,8 @@ export function planDessin(c: Creatif, o: Option, b: Brouillon, langue: Langue, 
     fond: b.fond,
     ouvert: b.mouvement === 'quiz' && b.ouvert, melange: b.mouvement === 'pop' && b.melange,
     marques: b.animes.map((id) => d.catalogue.find((p) => p.id === id)?.marque ?? ''), lettres: b.lettres,
+    illustration: b.mouvement === 'zoom' ? b.illustration : null, cache: b.cache && ['revele', 'pop', 'rebond'].includes(b.mouvement),
+    avis: b.mouvement === 'zoom' && o.motion?.avis ? { texte: o.motion.avis.texte, note: o.motion.avis.note } : null,
     // Le quiz ouvert appelle toujours a commenter sa reponse ; ailleurs, l'appel choisi.
     appel: b.mouvement === 'quiz' && b.ouvert ? APPELS[b.appel ?? 'reponse'][langue] : b.appel && ['pop', 'zoom'].includes(b.mouvement) ? APPELS[b.appel][langue] : null,
   }
@@ -236,6 +246,18 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
                     </div>))}
                   {b.bulles.length < 5 && <button type="button" className={s.ghost} onClick={() => maj({ bulles: [...b.bulles, { de: b.bulles.at(-1)?.de === 'cliente' ? 'shine' : 'cliente', texte: vide() }] })}><Plus size={12} /> Message</button>}
                 </fieldset>}
+                {b.mouvement === 'zoom' && <label className={s.champ}>Schéma animé (montre le problème ou la réponse)
+                  <select className={s.select} value={b.illustration ?? ''} onChange={(e) => maj({ illustration: (e.target.value || null) as Illustration | null })}>
+                    <option value="">Aucun (texte seul)</option>
+                    {ILLUSTRATIONS.map((x) => <option key={x} value={x}>{SCHEMAS[x]}</option>)}
+                  </select>
+                  <small>Ses étiquettes : les « atouts » ci-dessous (1 à 3 mots chacune).</small></label>}
+                {b.mouvement === 'zoom' && b.illustration && <fieldset className={s.reglage}><legend>Étiquettes du schéma</legend>
+                  {[0, 1, 2].slice(0, b.illustration === 'cheveu-abime' ? 3 : b.illustration === 'bouclier' || b.illustration === 'citron' ? 1 : 2).map((k) => (
+                    <ChampsMulti key={k} valeur={b.points[k] ?? vide()} max={40} placeholder={k ? 'Mélanine' : 'Soleil'} changer={(v) => maj({ points: [0, 1, 2].map((j) => (j === k ? v : b.points[j] ?? vide())).filter((x, j) => j <= k || x.fr) })} />))}
+                </fieldset>}
+                {b.mouvement === 'zoom' && o.motion?.avis && <p className={s.small}>★ Avis réel affiché : « {o.motion.avis.texte} » ({o.motion.avis.note}/5)</p>}
+                {['revele', 'pop', 'rebond'].includes(b.mouvement) && b.animes.length > 0 && <label className={s.caseInline}><input type="checkbox" checked={b.cache} onChange={(e) => maj({ cache: e.target.checked })} /> Post-it « ? » : le produit est caché puis révélé (masquage)</label>}
                 {['pop', 'rebond', 'glisse', 'fin', 'etapes'].includes(b.mouvement) && <label className={s.caseInline}><input type="checkbox" checked={b.lettres} onChange={(e) => maj({ lettres: e.target.checked })} /> Lettres A, B, C sur les produits (le jeu « lequel tu prends ? »)</label>}
                 {['quiz', 'pop', 'zoom'].includes(b.mouvement) && <label className={s.champ}>Appel à commenter
                   <select className={s.select} value={b.appel ?? ''} onChange={(e) => maj({ appel: (e.target.value || null) as CleAppel | null })}>
@@ -311,7 +333,7 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
                 {al.length > 0 && <ul className={s.montageAlertes}>{al.map((x) => <li key={x}>⚠ {x}</li>)}</ul>}
                 <div className={s.btns}>
                   <button type="button" className={s.primary} disabled={!modifie || occupe != null} onClick={() => void (async () => {
-                    const j = await action(`e${o.id}`, { option: { id: o.id, texte: b.texte, position: b.position, mouvement: b.mouvement, duree: b.duree, animes: b.animes, transition: b.transition, ambiance: b.ambiance, bulles: b.bulles, points: b.mouvement === 'site' ? b.points.filter((x) => x.fr.trim()).length === b.ecrans.length ? b.points : [] : b.points, choix: b.choix, voix: b.voix, confiance: b.confiance, prix: b.prix, ...(b.mouvement === 'site' ? { ecrans: b.ecrans } : {}), fond: b.fond, ...(b.mouvement === 'quiz' ? { ouvert: b.ouvert } : {}), ...(b.mouvement === 'pop' ? { melange: b.melange } : {}), lettres: b.lettres, ...(b.appel ? { appel: b.appel } : {}) } }, 'Plan enregistré.')
+                    const j = await action(`e${o.id}`, { option: { id: o.id, texte: b.texte, position: b.position, mouvement: b.mouvement, duree: b.duree, animes: b.animes, transition: b.transition, ambiance: b.ambiance, bulles: b.bulles, points: b.mouvement === 'site' ? b.points.filter((x) => x.fr.trim()).length === b.ecrans.length ? b.points : [] : b.points, choix: b.choix, voix: b.voix, confiance: b.confiance, prix: b.prix, ...(b.mouvement === 'site' ? { ecrans: b.ecrans } : {}), fond: b.fond, ...(b.mouvement === 'quiz' ? { ouvert: b.ouvert } : {}), ...(b.mouvement === 'pop' ? { melange: b.melange } : {}), lettres: b.lettres, ...(b.appel ? { appel: b.appel } : {}), ...(b.mouvement === 'zoom' ? { illustration: b.illustration ?? undefined } : {}), cache: b.cache } }, 'Plan enregistré.')
                     if (j) setBrouillon(o.id, null)
                   })()}>{occupe === `e${o.id}` ? <Loader2 size={13} className={s.tourne} /> : <Save size={13} />} Enregistrer</button>
                   {modifie && <button type="button" className={s.ghost} onClick={() => setBrouillon(o.id, null)}><Undo2 size={13} /> Annuler</button>}

@@ -38,6 +38,7 @@ export type Option = {
     transition?: Transition; ambiance?: Ambiance; bulles?: { de: 'cliente' | 'shine'; texte: Multi }[]; points?: Multi[]; choix?: Multi[]
     voix?: Multi | null; voixUrl?: Partial<Record<'fr' | 'darija' | 'ar', { url: string; texte: string; duree?: number | null }>>
     confiance?: string[]; prix?: boolean; ecrans?: ('produit' | 'panier' | 'livraison')[]; fond?: 'decor' | 'vert' | 'aurore' | 'prune' | 'creme' | 'nuit'; ouvert?: boolean; melange?: boolean; lettres?: boolean; appel?: 'reponse' | 'peau' | null
+    illustration?: 'taches' | 'citron' | 'barriere' | 'bouclier' | 'cheveu-abime' | 'cheveu-repare' | null; cache?: boolean; avis?: { id: number; texte: string; note: number } | null
   } | null
   style: string | null; brief: string | null; qualite: string | null; note: string | null; modele: string | null; cree_le: string
 }

@@ -21,6 +21,15 @@
  */
 
 export type Mouvement = 'rebond' | 'pop' | 'glisse' | 'zoom' | 'duo' | 'fin' | 'revele' | 'etiquette' | 'quiz' | 'dm' | 'etapes' | 'site'
+/**
+ * Les schemas animes : ils montrent ce que le texte dit. Le probleme (le soleil qui
+ * fait monter les taches, le citron qui les fonce, le cheveu que l'ete ouvre) et la
+ * reponse (le pigment freine, le bouclier SPF, la fibre gainee). Des dessins, jamais
+ * une photo avant/apres (Meta les refuse, et une promesse de resultat n'est pas tenable).
+ */
+export const ILLUSTRATIONS = ['taches', 'citron', 'barriere', 'bouclier', 'cheveu-abime', 'cheveu-repare'] as const
+export type Illustration = (typeof ILLUSTRATIONS)[number]
+
 /** Le bouton touche dans une capture du site, en fractions de la capture. */
 export type Cible = { x: number; y: number; w: number; h: number }
 export type Transition = 'coupe' | 'traversee' | 'balayage' | 'revelation' | 'vague'
@@ -36,6 +45,9 @@ export type PlanReel = {
   ouvert?: boolean        // quiz ouvert : pas de doigt ni de reponse, « Commente ta réponse » ; la reponse vient plus loin
   melange?: boolean       // pop : le bonneteau — le premier produit est entoure, tout le monde echange de place, on le retrouve
   marques?: string[]      // la marque de chaque produit anime (etapes : dans l'etiquette ; fin : au-dessus du produit)
+  illustration?: Illustration | null   // zoom : un schema anime qui MONTRE le probleme ou la reponse (pas un avant/apres)
+  cache?: boolean         // revele, pop, rebond : le produit est cache sous un post-it « ? » qui s'arrache (le masquage)
+  avis?: { texte: string; note: number } | null   // zoom : un VRAI avis client (resolu par le BOS depuis la table des avis)
   appel?: string | null   // quiz ouvert : l'appel a commenter, deja traduit
   confiance?: string[]    // fin : badges de confiance deja traduits (« Paiement à la livraison »…)
   prix?: string | null    // fin : le sticker de prix (« 997 DH »)
@@ -128,6 +140,9 @@ export type EtatPlan = {
   anneau: { cx: number; cy: number; r: number; alpha: number } | null   // bonneteau : le produit a suivre
   sceau: { echelle: number; rotation: number; cx: number } | null      // fin : la spirale Shine, en sceau
   appel: { texte: string; echelle: number; cy: number } | null           // pop, zoom : « Commente… 👇 », qui bat
+  illustration: { type: Illustration; t: number; p: number; labels: string[] } | null   // le schema, a son instant
+  postit: { rotation: number; dx: number; dy: number; opacite: number; cx: number; cy: number; taille: number } | null
+  avis: { texte: string; note: number; etoiles: number; echelle: number } | null
 }
 export type EtatEtape = { numero: number; texte: string; cx: number; cy: number; echelle: number; grand: boolean }
 export type EtatSite = {
@@ -190,6 +205,9 @@ export function mots(texte: string): { texte: string; accent: boolean }[] {
     return { texte: m.replace(/\*/g, ''), accent }
   })
 }
+
+/** Le post-it s'arrache aux deux tiers du plan (1,6 s au plus tard) : le temps de se demander ce qu'il cache. */
+export const postitArrache = (plan: PlanReel) => Math.min(1.6, plan.duree * 0.62)
 
 /** Le bonneteau : des echanges de places (paires d'emplacements), un toutes les 0,26 s. */
 // L'ordre fait finir le produit suivi au centre (place 1 ou 2) apres 2 a 6 echanges : jamais sous les boutons d'Instagram.
@@ -465,6 +483,30 @@ export function etatPlan(plan: PlanReel, t: number, premier: boolean, indice = 0
   // au-dessus des produits, les etiquettes et le prix).
   const sceau = plan.mouvement === 'fin' && t > 0.3 ? { echelle: Math.min(1.08, ressort((t - 0.3) * 2.2)), rotation: -40 * (1 - Math.min(1, ressort((t - 0.3) * 2.2))), cx: 0.15 } : null
 
+  // Le schema anime d'un plan « zoom » : son temps et son avancement ; le dessin est dans ui/illustrations.ts.
+  const illustration = plan.mouvement === 'zoom' && plan.illustration
+    ? { type: plan.illustration, t, p: plan.duree ? borne(t / plan.duree) : 0, labels: plan.points ?? [] }
+    : null
+
+  // Le masquage : un post-it « ? » couvre le produit, tremble, puis s'arrache (le cerveau veut voir ce qu'il cache).
+  let postit: EtatPlan['postit'] = null
+  if (plan.cache && produits[0] && ['revele', 'pop', 'rebond'].includes(plan.mouvement)) {
+    const arrache = postitArrache(plan)
+    const x = borne((t - arrache) / 0.4)
+    const p0 = produits[0]
+    // Il suit le produit (qui monte ou tombe) et le couvre en entier : on ne devine rien avant l'arrachage.
+    if (x < 1) postit = {
+      cx: p0.cx, cy: p0.bas - p0.hauteur * p0.echelle * 0.5, taille: Math.min(0.29, p0.hauteur * p0.echelle * 0.74),
+      rotation: t < arrache ? -4 + 3 * Math.sin(t * 9) : -4 - 38 * sortie(x),
+      dx: 0.36 * sortie(x), dy: -0.22 * sortie(x) + (t < arrache ? 0.004 * Math.sin(t * 13) : 0), opacite: (1 - x) * Math.min(1, p0.opacite * 1.4 + 0.3),
+    }
+  }
+
+  // Un vrai avis : la carte monte, les etoiles s'allument l'une apres l'autre.
+  const avis = plan.mouvement === 'zoom' && plan.avis && t > 0.2
+    ? { texte: plan.avis.texte, note: plan.avis.note, echelle: Math.min(1.04, ressort((t - 0.2) * 2.4)), etoiles: Math.min(plan.avis.note, Math.max(0, Math.floor((t - 0.45) / 0.12) + 1)) }
+    : null
+
   // L'appel a commenter (hors quiz) : quand les produits (ou le texte) sont la, il bat doucement.
   const tAppel = plan.mouvement === 'pop' ? 0.1 + plan.produits * 0.14 + 0.45 : 0.7
   const appel = plan.appel && plan.mouvement !== 'quiz' && t > tAppel
@@ -512,7 +554,7 @@ export function etatPlan(plan: PlanReel, t: number, premier: boolean, indice = 0
 
   return {
     fond, secousse, produits, mots: etatsMots, texteHaut: ZONE.haut + 0.035, chip, cta, dm, points, quiz,
-    particules: particules(plan.ambiance, t, indice + 1), etincelles, flash, badges, sticker, etapes, site, anneau, sceau, appel,
+    particules: particules(plan.ambiance, t, indice + 1), etincelles, flash, badges, sticker, etapes, site, anneau, sceau, appel, illustration, postit, avis,
   }
 }
 
@@ -560,6 +602,17 @@ export function evenementsSonores(plans: PlanReel[]): EvenementSonore[] {
         break
       }
       case 'fin': ev(0.45, 'cta'); if (plan.prix) ev(0.6, 'pop', 0.8); (plan.confiance ?? []).slice(0, 3).forEach((_, k) => ev(0.75 + k * 0.15, 'tic', 0.8)); break
+      case 'zoom': {
+        const ill = plan.illustration
+        if (ill === 'taches') for (let k = 0; k < 7; k++) ev(0.45 + k * 0.3, 'tic', 0.5)
+        if (ill === 'citron') { ev(0.35, 'glisse', 0.7); ev(Math.min(plan.duree - 0.2, 2.1), 'clic') }
+        if (ill === 'barriere') ev(0.95, 'montee', 0.7)
+        if (ill === 'bouclier') { ev(0.55, 'montee', 0.6); for (let k = 0; k < 3; k++) ev(1.1 + k * 0.45, 'ding', 0.4) }
+        if (ill === 'cheveu-abime') ev(0.8, 'choc', 0.5)
+        if (ill === 'cheveu-repare') ev(0.45, 'scintille', 0.8)
+        if (plan.avis) for (let k = 0; k < plan.avis.note; k++) ev(0.45 + k * 0.12, 'tic', 0.7)
+        break
+      }
       case 'pop': {
         if (!plan.melange || n < 3) break
         const { debut, pas, n: m, revele } = melangeCreneaux(plan)
@@ -580,6 +633,7 @@ export function evenementsSonores(plans: PlanReel[]): EvenementSonore[] {
       }
       default: break
     }
+    if (plan.cache && n && ['revele', 'pop', 'rebond'].includes(plan.mouvement)) { ev(postitArrache(plan), 'glisse', 0.9); ev(postitArrache(plan) + 0.12, 'pop', 0.7) }
     // La signature : le reflet qui traverse le flacon se fait entendre, doucement.
     if (n && plan.mouvement !== 'zoom' && plan.mouvement !== 'site' && !(plan.mouvement === 'quiz' && plan.ouvert)) ev(pose(plan.mouvement, 0, plan), 'scintille', 0.5)
     debut += plan.duree

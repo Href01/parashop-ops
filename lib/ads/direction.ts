@@ -70,6 +70,22 @@ async function produitsAnimables(produitIds: number[]) {
   return { packs, ids: [...new Set([...produitIds, ...Object.values(packs).flat()])] }
 }
 
+/** Les vrais avis (approuves, avec un commentaire) des produits qu'une creation peut montrer. */
+async function avisReels(produits: number[]) {
+  if (!produits.length) return []
+  const r = await pool.query(
+    `SELECT r.id, r."productId" AS produit, r.rating AS note, trim(r.comment) AS texte FROM "Review" r
+     WHERE r.approved AND r."productId" = ANY($1::int[]) AND length(trim(coalesce(r.comment, ''))) >= 4 ORDER BY r.rating DESC, r."createdAt" DESC LIMIT 20`, [produits])
+  return r.rows as { id: number; produit: number; note: number; texte: string }[]
+}
+/** L'avis d'un plan : recopie tel quel de la table des avis (le directeur artistique ne l'ecrit pas). */
+async function resoudreAvis(avisId: number | undefined, produits: number[]) {
+  if (!avisId) return undefined
+  const a = (await avisReels(produits)).find((x) => x.id === avisId)
+  if (!a) throw new Error(`Avis #${avisId} introuvable parmi les avis approuvés de ces produits : prends un id de « avisReels ».`)
+  return { id: a.id, texte: a.texte, note: a.note }
+}
+
 /** Un plan « site » ne montre que des ecrans vraiment captures (scripts/ads/captures-site.mjs). */
 function verifierCaptures(options: Pick<OptionLivree, 'mouvement' | 'animes' | 'ecrans'>[], captures: Record<number, CapturesProduit>) {
   options.forEach((o, i) => {
@@ -90,7 +106,7 @@ export async function contexteDirection(demandeId: number) {
     : null
   const produitIds: number[] = creation ? creation.produit_ids : p.produitIds ?? []
   const { packs, ids: animables } = await produitsAnimables(produitIds)
-  const [produits, s, pubs, passees, captures, charpentes, retours, boutique] = await Promise.all([
+  const [produits, s, pubs, passees, captures, charpentes, retours, boutique, avis] = await Promise.all([
     animables.length
       ? pool.query(`SELECT id, name AS nom, brand AS marque, category AS categorie, price AS prix, image, description, benefits,
                            (coalesce(stock, 0) + coalesce("virtualStock", 0)) AS stock_vendable FROM "Product" WHERE id = ANY($1::int[])`, [animables])
@@ -105,6 +121,7 @@ export async function contexteDirection(demandeId: number) {
     charpentesRecentes(5),
     lecons(),
     reglesBoutique(),
+    avisReels(animables),
   ])
   const composantDe = new Map(Object.entries(packs).flatMap(([pack, comps]) => comps.map((c) => [c, Number(pack)] as const)))
   const v = verdicts(pubs, s.config.regles.depenseMinAvantVerdict)
@@ -117,6 +134,8 @@ export async function contexteDirection(demandeId: number) {
     },
     // Les vraies regles du site : n'annonce que ces chiffres (livraison, code de bienvenue, paiement).
     boutique,
+    // Les VRAIS avis des produits (plan « zoom » + « avisId ») : le BOS recopie le texte exact, tu n'ecris pas de citation.
+    avisReels: avis,
     formats: Object.fromEntries(Object.entries(FORMATS_IMAGE).map(([k, f]) => [k, { taille: f.taille, label: f.label }])),
     bornes: BORNES[p.type],
     mouvements: p.type === 'reel' ? MOUVEMENTS : undefined,
@@ -180,6 +199,8 @@ export async function enregistrerDirection(entree: unknown) {
     packs, recents: charpentes.map((x) => x.suite), siteDispo: Object.values(captures).some((c) => Object.keys(c).length >= 2),
   })
   verifierCaptures(l.options, captures)
+  const avisDe = new Map<number, { id: number; texte: string; note: number }>()
+  for (const o of l.options) if (o.avisId) avisDe.set(o.avisId, (await resoudreAvis(o.avisId, animables))!)
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
@@ -205,7 +226,7 @@ export async function enregistrerDirection(entree: unknown) {
           o.concept, o.pourquoi, o.prompt, JSON.stringify(o.texte), o.position, d.format, o.produitIds === undefined ? null : o.produitIds,
           d.type === 'reel' ? o.animes ?? [] : null, d.type === 'reel' ? o.mouvement : null, d.type === 'reel' ? o.duree : null,
           l.style, d.brief || null, d.qualite, l.modele || null,
-          d.type === 'reel' ? JSON.stringify({ transition: o.transition ?? 'coupe', ambiance: o.ambiance ?? 'aucune', bulles: o.bulles ?? [], points: o.points ?? [], choix: o.choix ?? [], voix: o.voix ?? null, confiance: o.confiance ?? [], prix: o.prix ?? false, ...(o.ecrans ? { ecrans: o.ecrans } : {}), ...(o.fond ? { fond: o.fond } : {}), ...(o.ouvert ? { ouvert: true } : {}), ...(o.melange ? { melange: true } : {}), ...(o.lettres ? { lettres: true } : {}), ...(o.appel ? { appel: o.appel } : {}) }) : null])
+          d.type === 'reel' ? JSON.stringify({ transition: o.transition ?? 'coupe', ambiance: o.ambiance ?? 'aucune', bulles: o.bulles ?? [], points: o.points ?? [], choix: o.choix ?? [], voix: o.voix ?? null, confiance: o.confiance ?? [], prix: o.prix ?? false, ...(o.ecrans ? { ecrans: o.ecrans } : {}), ...(o.fond ? { fond: o.fond } : {}), ...(o.ouvert ? { ouvert: true } : {}), ...(o.melange ? { melange: true } : {}), ...(o.lettres ? { lettres: true } : {}), ...(o.appel ? { appel: o.appel } : {}), ...(o.illustration ? { illustration: o.illustration } : {}), ...(o.cache ? { cache: true } : {}), ...(o.avisId ? { avis: avisDe.get(o.avisId) } : {}) }) : null])
       options.push(r.rows[0])
     }
     await client.query('COMMIT')
@@ -247,10 +268,11 @@ function enLivree(x: LigneOption): Json {
     produitIds: x.produit_ids ?? undefined, animes: x.animes ?? undefined, mouvement: x.mouvement ?? undefined, duree: x.duree == null ? undefined : Number(x.duree),
     transition: m.transition, ambiance: m.ambiance, bulles: m.bulles, points: m.points, choix: m.choix, voix: m.voix ?? undefined,
     confiance: m.confiance ?? undefined, prix: m.prix ?? undefined, ecrans: m.ecrans ?? undefined, fond: m.fond ?? undefined, ouvert: m.ouvert ?? undefined, melange: m.melange ?? undefined, lettres: m.lettres ?? undefined, appel: m.appel ?? undefined,
+    illustration: m.illustration ?? undefined, cache: m.cache ?? undefined, avisId: (m.avis as { id?: number } | undefined)?.id ?? undefined,
   }
 }
 
-const CHAMPS_PLAN = ['texte', 'position', 'prompt', 'animes', 'mouvement', 'duree', 'transition', 'ambiance', 'bulles', 'points', 'choix', 'voix', 'confiance', 'prix', 'ecrans', 'fond', 'ouvert', 'melange', 'lettres', 'appel'] as const
+const CHAMPS_PLAN = ['texte', 'position', 'prompt', 'animes', 'mouvement', 'duree', 'transition', 'ambiance', 'bulles', 'points', 'choix', 'voix', 'confiance', 'prix', 'ecrans', 'fond', 'ouvert', 'melange', 'lettres', 'appel', 'illustration', 'cache', 'avisId'] as const
 
 /**
  * Retoucher un plan (ou une option, une carte) : textes, animation, duree,
@@ -275,10 +297,11 @@ export async function modifierPlan(id: number, patch: Json) {
   const index = Math.max(0, serie.findIndex((x) => x.id === id))
   verifierOption(plan, index, type, produits)
   if (plan.mouvement === 'site') verifierCaptures([plan], await capturesSite(plan.animes))
+  const avisPlan = await resoudreAvis(plan.avisId, produits)
   if (type === 'reel') verifierMontage(serie.map((x) => (x.id === id ? plan.duree ?? 0 : Number(x.duree) || 0)))
   const ancien = (o.motion ?? {}) as Json
   const motion = type === 'reel'
-    ? { ...ancien, transition: plan.transition ?? 'coupe', ambiance: plan.ambiance ?? 'aucune', bulles: plan.bulles ?? [], points: plan.points ?? [], choix: plan.choix ?? [], voix: plan.voix ?? ancien.voix ?? null, confiance: plan.confiance ?? [], prix: plan.prix ?? false, ecrans: plan.mouvement === 'site' ? plan.ecrans ?? [] : undefined, fond: plan.fond ?? 'decor', ouvert: plan.mouvement === 'quiz' ? plan.ouvert ?? false : undefined, melange: plan.mouvement === 'pop' ? plan.melange ?? false : undefined, lettres: plan.lettres ?? false, appel: plan.appel ?? null }
+    ? { ...ancien, transition: plan.transition ?? 'coupe', ambiance: plan.ambiance ?? 'aucune', bulles: plan.bulles ?? [], points: plan.points ?? [], choix: plan.choix ?? [], voix: plan.voix ?? ancien.voix ?? null, confiance: plan.confiance ?? [], prix: plan.prix ?? false, ecrans: plan.mouvement === 'site' ? plan.ecrans ?? [] : undefined, fond: plan.fond ?? 'decor', ouvert: plan.mouvement === 'quiz' ? plan.ouvert ?? false : undefined, melange: plan.mouvement === 'pop' ? plan.melange ?? false : undefined, lettres: plan.lettres ?? false, appel: plan.appel ?? null, illustration: plan.mouvement === 'zoom' ? plan.illustration ?? null : null, cache: plan.cache ?? false, avis: avisPlan ?? null }
     : o.motion
   const note = typeof patch.note === 'string' ? patch.note.trim().slice(0, 1500) || null : o.note
   const u = await pool.query(

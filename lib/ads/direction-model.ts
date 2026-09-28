@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { FormatImage } from './creatif-model'
+import { ILLUSTRATIONS } from './reel-model'
 
 /**
  * LE DIRECTEUR ARTISTIQUE — la partie pure (testee seule).
@@ -287,6 +288,12 @@ export const LivraisonDirection = z.object({
     ouvert: z.boolean().optional(),
     // Pop : le bonneteau — le premier produit de « animes » est entoure, tout le monde echange de place, on le retrouve.
     melange: z.boolean().optional(),
+    // Zoom : un schema anime qui MONTRE (taches, citron, barriere, bouclier, cheveu-abime, cheveu-repare) ; etiquettes dans « points ».
+    illustration: z.enum(ILLUSTRATIONS).optional(),
+    // Revele, pop, rebond : le produit cache sous un post-it « ? » qui s'arrache.
+    cache: z.boolean().optional(),
+    // Zoom : un VRAI avis (son id dans « avisReels » du contexte) ; le BOS en recopie le texte exact.
+    avisId: z.number().int().positive().optional(),
   })).min(1).max(10),
   // Chaque consigne du brief, et le ou les plans qui la tiennent ([] = tenue partout, ex. « ne parle pas de l'été »).
   couverture: z.array(z.object({ consigne: z.string().trim().min(2).max(300), plans: z.array(z.number().int().min(1).max(10)).max(10) })).max(15).optional(),
@@ -339,6 +346,10 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
       if (o.duree < dureeMinSite(e.length)) throw new Error(`${nom} : ${e.length} écrans se suivent en ${dureeMinSite(e.length)} s au moins (${o.duree} s donnés).`)
     } else if (o.ecrans) throw new Error(`${nom} : « ecrans » ne sert que dans un plan « site ».`)
     if (o.ouvert && o.mouvement !== 'quiz') throw new Error(`${nom} : « ouvert » ne sert qu'à un quiz.`)
+    if (o.illustration && o.mouvement !== 'zoom') throw new Error(`${nom} : un schéma (« illustration ») se dessine sur un plan « zoom ».`)
+    if (o.avisId && o.mouvement !== 'zoom') throw new Error(`${nom} : un avis client se montre sur un plan « zoom ».`)
+    if (o.avisId && o.illustration) throw new Error(`${nom} : un schéma OU un avis par plan, pas les deux.`)
+    if (o.cache && (!['revele', 'pop', 'rebond'].includes(o.mouvement) || n < 1)) throw new Error(`${nom} : le post-it (« cache ») couvre un produit d'un « revele », « pop » ou « rebond ».`)
     if (o.appel && !['quiz', 'pop', 'zoom'].includes(o.mouvement)) throw new Error(`${nom} : l'appel à commenter va sur un quiz, un « pop » ou un « zoom ».`)
     if (o.lettres && !['pop', 'rebond', 'glisse', 'fin', 'etapes'].includes(o.mouvement)) throw new Error(`${nom} : les lettres A, B, C vont sur un « pop », « rebond », « glisse », « fin » ou « etapes ».`)
     if (o.mouvement === 'pop' && o.points?.length && o.points.length !== n) throw new Error(`${nom} : une étiquette par produit dans « points » (${n}), dans le même ordre.`)

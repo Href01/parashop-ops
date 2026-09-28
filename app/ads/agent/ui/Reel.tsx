@@ -6,6 +6,7 @@ import { estRtl, type Langue } from '@/lib/ads/creatif-model'
 import { H, IPS, W, douce, dureeTotale, etatPlan, nbImages, planA, transitionA, type EtatPlan, type Particule, type PlanReel } from '@/lib/ads/reel-model'
 import { COULEURS, POLICES, policesPretes } from './polices'
 import { TAUX, mixerPiste, type VoixPlacee } from './sons'
+import { dessinerAvis, dessinerIllustration, dessinerPostIt } from './illustrations'
 import s from './apercu.module.css'
 
 /**
@@ -36,6 +37,7 @@ async function charger(urls: string[], res: Ressources) {
 }
 
 const OU: Record<Langue, string> = { fr: 'ou', darija: 'wla', ar: 'أو' }
+const AVIS_SOURCE: Record<Langue, string> = { fr: 'Cliente Shine · avis vérifié', darija: 'Cliente Shine · avis vérifié', ar: 'زبونة Shine · رأي موثّق' }
 const REPOND: Record<Langue, string> = { fr: 'Répond en quelques minutes', darija: 'Kanjawbo f d9aye9', ar: 'نرد خلال دقائق' }
 const LIVRAISON: Record<Langue, string> = { fr: 'Livraison 24-48 h · paiement à la livraison', darija: 'Tawsil 24-48h · khelles mnin twsel', ar: 'توصيل 24-48 ساعة · الدفع عند الاستلام' }
 
@@ -194,6 +196,10 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
     ctx.fillStyle = voile; ctx.fillRect(0, 0, W, H * 0.46)
   }
   particulesAmbiance(ctx, plan, e.particules)
+
+  // 1 bis. Le schema anime (zoom) : il montre le probleme ou la reponse ; et un vrai avis client.
+  if (e.illustration) dessinerIllustration(ctx, e.illustration.type, e.illustration.t, plan.duree, e.illustration.labels, police)
+  if (e.avis) dessinerAvis(ctx, e.avis, police, AVIS_SOURCE[langue])
 
   // 2. La conversation DM : la carte, l'en-tete, les bulles, la fiche produit.
   if (e.dm) {
@@ -364,6 +370,9 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
     }
     ctx.restore()
   }
+
+  // 3 bis 0. Le masquage : le post-it « ? » par-dessus le produit, jusqu'a ce qu'il s'arrache.
+  if (e.postit) dessinerPostIt(ctx, e.postit)
 
   // 3 bis. Le bonneteau : l'anneau beurre autour du produit a suivre.
   if (e.anneau) {
