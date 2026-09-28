@@ -19,14 +19,20 @@ export type PlanDessin = PlanReel & { image: string | null; detourees: string[];
 type Ressources = Map<string, HTMLImageElement>
 type Ctx = CanvasRenderingContext2D
 
+/**
+ * Charge les images du Reel. Un detourage que Cloudinary calcule pour la premiere
+ * fois repond « pas encore pret » (HTTP 423) quelques secondes : on reessaie au lieu
+ * de laisser le produit absent pour toute la session.
+ */
 async function charger(urls: string[], res: Ressources) {
-  await Promise.all(urls.filter((u) => u && !res.has(u)).map((u) => new Promise<void>((ok) => {
+  const une = (u: string, essai: number): Promise<void> => new Promise<void>((ok) => {
     const img = new Image()
     img.crossOrigin = 'anonymous'
     img.onload = () => { res.set(u, img); ok() }
-    img.onerror = () => ok()
-    img.src = u
-  })))
+    img.onerror = () => { if (essai >= 4) ok(); else setTimeout(() => void une(u, essai + 1).then(ok), 1500 * (essai + 1)) }
+    img.src = essai ? `${u}${u.includes('?') ? '&' : '?'}r=${essai}` : u
+  })
+  await Promise.all(urls.filter((u) => u && !res.has(u)).map((u) => une(u, 0)))
 }
 
 const OU: Record<Langue, string> = { fr: 'ou', darija: 'wla', ar: 'أو' }
@@ -164,7 +170,8 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
   ctx.setTransform(k, 0, 0, k, e.secousse.dx * W * k, e.secousse.dy * H * k)
 
   // 1. Le fond Shine dessine ; sinon le decor peint (cover), ou le fond clair de la maison s'il n'est pas encore genere.
-  const shine = plan.fond && plan.fond !== 'decor' ? plan.fond : null
+  // Un fond inconnu (une creation plus recente que ce code) retombe sur le vert Shine au lieu de tout arreter.
+  const shine = plan.fond && plan.fond !== 'decor' ? (plan.fond in FONDS_SHINE ? plan.fond : 'vert') : null
   const fond = !shine && plan.image ? res.get(plan.image) : undefined
   if (shine) {
     dessinerFondShine(ctx, shine, plans.slice(0, i).reduce((n, p) => n + p.duree, 0) + local, res)
@@ -788,9 +795,15 @@ export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, 
   }, [son, piste, total])
   useEffect(() => () => { couperSon(); void audio.current?.ctx.close() }, [])
 
+  // Une image qui echoue ne doit pas figer le lecteur : on le dit une fois, la lecture continue.
+  const [erreurRendu, setErreurRendu] = useState<string | null>(null)
   const peindre = useCallback((instant: number) => {
     const ctx = canvas.current?.getContext('2d')
-    if (ctx && plans.length) dessiner(ctx, plans, instant, res.current, langue, bouton)
+    if (!ctx || !plans.length) return
+    try { dessiner(ctx, plans, instant, res.current, langue, bouton) } catch (e) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0)
+      setErreurRendu((x) => { if (!x) console.error('[reel] image impossible à dessiner', e); return x ?? (e instanceof Error ? e.message : String(e)) })
+    }
   }, [plans, langue, bouton])
 
   useEffect(() => {
@@ -862,6 +875,7 @@ export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, 
         {habillage && pret && <HabillageReel bouton={bouton} legende={legende} />}
         {!pret && <div className={s.reelAttente}><Loader2 size={18} className={s.tourne} /> Détourage des produits…</div>}
       </div>
+      {erreurRendu && <p className={s.reelErreur} role="alert">Une image du Reel n’a pas pu être dessinée ({erreurRendu}). Recharge la page (Ctrl + Maj + R) : le Studio a peut-être été mis à jour depuis son ouverture.</p>}
       <div className={s.reelFrise} role="group" aria-label="Plans du Reel">
         {plans.map((p, i) => {
           const d = debut; debut += p.duree
