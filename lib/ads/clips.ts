@@ -1,7 +1,7 @@
 import 'server-only'
 import { createHash } from 'node:crypto'
 import pool from '@/lib/db'
-import { MODELES_VIDEO, MODELE_DEFAUT, TERMINAUX, corpsVideo, dureeConseillee, dureeVideo, statutDepuis, verifierBudget, type CleModeleVideo, type StatutClip } from './clips-model'
+import { MODELES_VIDEO, MODELE_DEFAUT, TERMINAUX, corpsVideo, dureeConseillee, dureeVideo, prixEstimation, statutDepuis, verifierBudget, type CleModeleVideo, type StatutClip } from './clips-model'
 
 /**
  * LES CLIPS VIDEO DES REELS : des images reelles (tournees au telephone, ou generees
@@ -125,7 +125,7 @@ export async function estimerClip(optionId: number, modele: CleModeleVideo, dure
   const p = await preparerAnimation(optionId, modele, duree)
   if (simulation() && !cleHiggsfield()) return { usd: 0.37, credits: null, simulation: true }
   const e = await appelHF(`estimate/${p.endpoint}`, p.corps)
-  return { usd: Number(e.usd), credits: e.credits ?? null, simulation: false }
+  return { usd: prixEstimation(e, p.corps), credits: e.credits ?? null, simulation: false }
 }
 
 /** Lance l'animation d'un plan : budget verifie, une seule generation a la fois par plan. */
@@ -136,7 +136,7 @@ export async function animerPlan(o: { optionId: number; modele?: CleModeleVideo;
   const enCours = await pool.query(`SELECT id FROM "AdsClipGeneration" WHERE option_id = $1 AND statut IN ('soumise', 'en_cours', 'televersement')`, [o.optionId])
   if (enCours.rowCount) throw new Error('Un clip est déjà en cours pour ce plan : attends qu’il arrive.')
   const sim = simulation() && !cleHiggsfield()
-  const estimation = sim ? 0.37 : Number((await appelHF(`estimate/${p.endpoint}`, p.corps)).usd)
+  const estimation = sim ? 0.37 : prixEstimation(await appelHF(`estimate/${p.endpoint}`, p.corps), p.corps)
   verifierBudget({ estimation, depenseJour: await depenseJour(), plafondJour: PLAFOND_JOUR(), plafondClip: PLAFOND_CLIP() })
   // Pas de nouvel envoi automatique apres un delai ambigu : Higgsfield n'a pas de cle d'idempotence.
   const envoi = sim ? { request_id: `sim-${Date.now()}`, status_url: 'simulation' } : await appelHF(p.endpoint, p.corps)

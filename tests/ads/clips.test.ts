@@ -49,3 +49,12 @@ test('les appels qui poussent l’algorithme : partage et enregistrement', () =>
     assert.equal(OptionLivreeSchema.safeParse({ concept: 'Plan', pourquoi: 'Parce que ça arrête le pouce.', texte: { fr: 'Ta *peau*' }, appel }).success, true)
   }
 })
+
+test('le prix : chiffré, ou tiré du texte de Seedance', async () => {
+  const { prixEstimation } = await import('../../lib/ads/clips-model')
+  assert.equal(prixEstimation({ type: 'estimate', credits: '4.928', usd: '0.308' }, { duration: 4 }), 0.308)
+  const seedance = { type: 'description', pricing_description: 'For 16:9 video without video input, your request costs roughly $0.2056 per second of generated video at 480p, $0.4622 at 720p, and $1.1372 at 1080p. Each 1,000 video tokens costs $0.0214 at 480p or 720p.' }
+  assert.equal(prixEstimation(seedance, { duration: 4, resolution: '720p' }), 1.849)
+  assert.equal(prixEstimation(seedance, { duration: 5, resolution: '480p' }), 1.028)
+  assert.ok(Number.isNaN(prixEstimation({ type: 'description', pricing_description: 'Ask sales.' }, { duration: 4, resolution: '720p' })))
+})

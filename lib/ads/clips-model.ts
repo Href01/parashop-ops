@@ -17,17 +17,17 @@ type Parametres = { prompt: string; image: string; duree: number }
 export const MODELES_VIDEO: Record<CleModeleVideo, { nom: string; aide: string; endpoint: string; min: number; max: number; corps: (p: Parametres) => Record<string, unknown> }> = {
   // 1080p et sans son (le Reel a sa bande-son) : le meilleur rendu pour une matiere en macro.
   'kling-3-turbo': {
-    nom: 'Kling 3.0 Turbo · 1080p', aide: 'Net et rapide : textures, gouttes, lumière.',
+    nom: 'Kling 3.0 Turbo · 1080p', aide: 'Le plus net : textures, gouttes, lumière (~0,08 $/s).',
     endpoint: 'kling-video/v3.0-turbo/image-to-video', min: 3, max: 15,
     corps: (p) => ({ prompt: p.prompt, image_url: p.image, duration: p.duree, resolution: '1080p' }),
   },
   'seedance-2-5': {
-    nom: 'Seedance 2.5 · 720p', aide: 'Mouvements fluides : mains, gestes, application.',
+    nom: 'Seedance 2.5 · 720p', aide: 'Gestes fluides, mais ~6 fois plus cher (~0,46 $/s).',
     endpoint: 'bytedance/seedance-2.5/image-to-video', min: 4, max: 30,
     corps: (p) => ({ prompt: p.prompt, image_url: p.image, duration: p.duree, resolution: '720p', generate_audio: false }),
   },
   'kling-3-std': {
-    nom: 'Kling 3.0 Standard', aide: 'Plus de contrôle (CFG) ; sans son.',
+    nom: 'Kling 3.0 Standard', aide: 'Le moins cher (~0,05 $/s), 720p.',
     endpoint: 'kling-video/v3.0/std/image-to-video', min: 3, max: 15,
     corps: (p) => ({ prompt: p.prompt, image_url: p.image, duration: p.duree, sound: 'off' }),
   },
@@ -57,6 +57,21 @@ export function consigneMouvement(prompt: string) {
     'Keep any product bottle, jar or tube exactly as in the first frame: same shape, colours and label, never morphing, never rewriting or blurring its text; if the product moves, it moves as a rigid object.',
     'Photorealistic, real skin texture with visible pores, natural light. No added text, captions, logos, watermarks or subtitles. No face morphing, no extra fingers.',
   ].join('\n')
+}
+
+/**
+ * Le prix d'une estimation Higgsfield. La plupart des modeles rendent `{ usd }` (remise deja deduite) ;
+ * Seedance rend un texte (« $0.4622 at 720p » par seconde, avant remise) : on en tire le tarif de la
+ * resolution demandee, multiplie par la duree — une estimation prudente (haute). NaN si illisible.
+ */
+export function prixEstimation(e: Record<string, unknown>, corps: Record<string, unknown>): number {
+  if (e.usd != null && Number.isFinite(Number(e.usd))) return Number(e.usd)
+  const texte = typeof e.pricing_description === 'string' ? e.pricing_description : ''
+  const resolution = String(corps.resolution ?? '720p')
+  // « $0.4622 at 720p » : le premier prix suivi de la resolution, sans traverser un autre prix.
+  const m = new RegExp('[$]([0-9.]+)[^$]*?at ' + resolution).exec(texte)
+  const duree = Number(corps.duration)
+  return m && duree > 0 ? Math.round(Number(m[1]) * duree * 1000) / 1000 : Number.NaN
 }
 
 /** Les etats de Higgsfield, dans les mots du BOS. */
