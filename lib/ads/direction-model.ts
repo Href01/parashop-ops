@@ -33,7 +33,7 @@ export const BORNES: Record<TypeDirection, { min: number; max: number; defaut: n
   // Un carrousel Instagram : toutes les cartes au meme format, 1:1 ou 4:5.
   carrousel: { min: 3, max: 10, defaut: 5, formats: ['carre', 'feed'] },
   // Un Reel anime : 3 a 6 plans verticaux, 8 a 15 secondes.
-  reel: { min: 3, max: 6, defaut: 4, formats: ['story'] },
+  reel: { min: 3, max: 7, defaut: 4, formats: ['story'] },
 }
 
 /** Le vocabulaire des Reels animes (dessines par le BOS, lib/ads/reel-model.ts). */
@@ -130,6 +130,93 @@ export const A_MONTRER = {
 } as const
 export type AMontrer = keyof typeof A_MONTRER
 
+/**
+ * LES RECETTES : des Reels qui ont plu a Achraf (#23, #24) ou qui suivent un mecanisme
+ * psychologique prouve, figes en charpente. Choisir une recette, c'est choisir le
+ * mecanisme ; le directeur artistique ecrit les textes et choisit les schemas, et le BOS
+ * verifie qu'il a suivi la charpente plan par plan.
+ * `montre` : ce qu'un plan « zoom » doit MONTRER — le probleme, l'idee recue, la reponse, un vrai avis.
+ */
+export type PlanRecette = {
+  mouvement: string; duree: number; role: string
+  montre?: 'probleme' | 'mythe' | 'reponse' | 'avis'
+  cache?: boolean; lettres?: boolean; melange?: boolean; appel?: 'reponse' | 'peau'
+}
+export const RECETTES = {
+  secret: {
+    nom: 'Ce que personne ne te dit', exemple: 'Reel #23',
+    mecanisme: 'Le savoir caché (curiosité) et le produit masqué, puis l’idée reçue démontée (peur de mal faire) et le mécanisme montré (preuve). Elle reste pour avoir la réponse.',
+    pour: 'Vente', ideal: 'Un soin qui répond à un problème de peau visible (taches, teint terne).',
+    plans: [
+      { mouvement: 'revele', duree: 2.5, role: 'Accroche : le produit caché sous un post-it « ? »', cache: true },
+      { mouvement: 'zoom', duree: 3.5, role: 'Le problème, montré', montre: 'probleme' },
+      { mouvement: 'zoom', duree: 3, role: 'L’idée reçue démontée', montre: 'mythe' },
+      { mouvement: 'zoom', duree: 4, role: 'La réponse, montrée (le mécanisme)', montre: 'reponse' },
+      { mouvement: 'zoom', duree: 3, role: 'La protection, montrée', montre: 'reponse' },
+      { mouvement: 'etapes', duree: 4.5, role: 'La routine : chaque produit et sa solution' },
+      { mouvement: 'fin', duree: 3.5, role: 'L’offre réelle' },
+    ] as PlanRecette[],
+  },
+  reconnais: {
+    nom: 'Tu te reconnais ?', exemple: 'Reel #24',
+    mecanisme: 'Elle se reconnaît dans la première seconde (le problème montré), le soin est dévoilé, la réponse se voit, puis une vraie cliente le confirme (preuve sociale).',
+    pour: 'Vente', ideal: 'Un soin cheveux, ou tout produit qui a de vrais avis.',
+    plans: [
+      { mouvement: 'zoom', duree: 2.5, role: 'Accroche : le problème, montré', montre: 'probleme' },
+      { mouvement: 'revele', duree: 3, role: 'Le soin caché, puis dévoilé', cache: true },
+      { mouvement: 'zoom', duree: 3.5, role: 'La réponse, montrée', montre: 'reponse' },
+      { mouvement: 'etiquette', duree: 3, role: 'Ce qu’il fait (2 ou 3 atouts)' },
+      { mouvement: 'zoom', duree: 3.5, role: 'Un vrai avis client', montre: 'avis' },
+      { mouvement: 'fin', duree: 3.5, role: 'L’offre réelle' },
+    ] as PlanRecette[],
+  },
+  piege: {
+    nom: 'Le piège A, B ou C', exemple: 'Reels #21 et #22',
+    mecanisme: 'Un jeu sans réponse (on commente pour deviner), puis le retournement « ça dépend de ta peau » : les commentaires poussent la portée, le conseil ouvre la vente.',
+    pour: 'Portée et vente', ideal: 'Trois routines pour trois problèmes différents.',
+    plans: [
+      { mouvement: 'pop', duree: 2, role: 'Accroche : trois produits, « tu prends lequel ? »', lettres: true },
+      { mouvement: 'pop', duree: 3, role: 'Le jeu, sans réponse', lettres: true, appel: 'reponse' },
+      { mouvement: 'etapes', duree: 4, role: 'Le retournement : la bonne réponse selon la peau', lettres: true },
+      { mouvement: 'site', duree: 3.5, role: 'Le vrai site' },
+      { mouvement: 'fin', duree: 3.5, role: 'L’offre réelle' },
+    ] as PlanRecette[],
+  },
+  bonneteau: {
+    nom: 'Où est le … ?', exemple: 'Reel #20',
+    mecanisme: 'Suivre un produit des yeux pendant qu’il se mélange (rétention), puis le problème montré et la solution produit par produit.',
+    pour: 'Portée et vente', ideal: 'Une routine de 3 ou 4 produits avec un produit héros.',
+    plans: [
+      { mouvement: 'pop', duree: 2.5, role: 'Accroche : le bonneteau', melange: true },
+      { mouvement: 'zoom', duree: 2.5, role: 'Le problème, montré', montre: 'probleme' },
+      { mouvement: 'etapes', duree: 4.5, role: 'La solution : chaque produit et son rôle' },
+      { mouvement: 'etiquette', duree: 2.5, role: 'La preuve : les actifs du héros' },
+      { mouvement: 'site', duree: 3.5, role: 'Le vrai site' },
+      { mouvement: 'fin', duree: 3, role: 'L’offre réelle' },
+    ] as PlanRecette[],
+  },
+} as const
+export type CleRecette = keyof typeof RECETTES
+/** Les schemas qui montrent chaque role. */
+const SCHEMAS_POUR = { probleme: ['taches', 'cheveu-abime'], mythe: ['citron'], reponse: ['barriere', 'bouclier', 'cheveu-repare'] } as const
+
+/** Le Reel suit la recette plan par plan (le mouvement, et ce que le plan doit montrer). */
+export function verifierRecette(options: OptionLivree[], cle: CleRecette, avisDispo = true) {
+  const r = RECETTES[cle]
+  if (options.length !== r.plans.length) throw new Error(`La recette « ${r.nom} » a ${r.plans.length} plans (${options.length} livrés).`)
+  r.plans.forEach((p, i) => {
+    const o = options[i], nom = `Plan ${i + 1} (${p.role})`
+    if (o.mouvement !== p.mouvement) throw new Error(`${nom} : la recette « ${r.nom} » demande un « ${p.mouvement} » ici (« ${o.mouvement} » livré).`)
+    // Sans aucun avis ecrit pour ces produits, le plan de preuve reste un « zoom » (l'authenticite, la fiche) : on n'invente pas d'avis.
+    if (p.montre === 'avis' && avisDispo && !o.avisId) throw new Error(`${nom} : un vrai avis (« avisId » pris dans « avisReels »).`)
+    if (p.montre && p.montre !== 'avis' && !(SCHEMAS_POUR[p.montre] as readonly string[]).includes(o.illustration ?? '')) throw new Error(`${nom} : un schéma qui montre ${p.montre === 'probleme' ? 'le problème' : p.montre === 'mythe' ? 'l’idée reçue' : 'la réponse'} (« illustration » : ${SCHEMAS_POUR[p.montre].join(' ou ')}).`)
+    if (p.cache && !o.cache) throw new Error(`${nom} : le produit caché sous le post-it (« cache »: true).`)
+    if (p.lettres && !o.lettres) throw new Error(`${nom} : les lettres A, B, C (« lettres »: true).`)
+    if (p.melange && !o.melange) throw new Error(`${nom} : le bonneteau (« melange »: true).`)
+    if (p.appel && !o.appel) throw new Error(`${nom} : l’appel à commenter (« appel »).`)
+  })
+}
+
 export const DemandeDirectionSchema = z.object({
   creatifId: z.number().int().positive().optional(),
   produitIds: z.array(z.number().int().positive()).max(6).optional(),
@@ -145,6 +232,8 @@ export const DemandeDirectionSchema = z.object({
   langue: z.enum(['fr', 'darija', 'mix']).optional(),
   // « shine » : tous les plans sur un fond Shine dessine (degrade), aucun decor peint.
   fond: z.enum(['libre', 'shine']).default('libre'),
+  // Une recette choisie : la charpente est imposee (et la regle « pas deux fois la meme charpente » ne s'applique pas).
+  recette: z.enum(['secret', 'reconnais', 'piege', 'bonneteau']).optional(),
 })
 export type DemandeDirection = z.infer<typeof DemandeDirectionSchema>
 
@@ -153,6 +242,8 @@ export function validerDemande(entree: unknown): DemandeDirection {
   const p = DemandeDirectionSchema.safeParse(entree)
   if (!p.success) throw new Error(p.error.issues.map((i) => `${i.path.join('.') || 'demande'} : ${i.message}`).join(' · '))
   const d = p.data
+  // Une recette fixe le type et le nombre de plans.
+  if (d.recette) { d.type = 'reel'; d.format = 'story'; d.nombre = RECETTES[d.recette].plans.length }
   const b = BORNES[d.type]
   if (d.nombre < b.min || d.nombre > b.max) throw new Error(d.type === 'carrousel' ? `Un carrousel a de ${b.min} à ${b.max} cartes.` : d.type === 'reel' ? `Un Reel a de ${b.min} à ${b.max} plans.` : `De ${b.min} à ${b.max} options.`)
   if (!b.formats.includes(d.format)) throw new Error(d.type === 'reel' ? 'Un Reel est vertical (9:16).' : 'Un carrousel Instagram est carré (1:1) ou vertical (4:5) : pas de format Story.')
@@ -438,7 +529,7 @@ export function verifierAMontrer(options: OptionLivree[], d: Pick<DemandeDirecti
 }
 
 /** Controle de coherence entre la demande et la livraison (nombre, produits connus, plans de Reel complets). */
-export function verifierLivraison(l: Livraison, d: DemandeDirection, produitsCreation: number[], avecCreation: boolean, contexte: { packs?: Packs; recents?: string[][]; siteDispo?: boolean } = {}) {
+export function verifierLivraison(l: Livraison, d: DemandeDirection, produitsCreation: number[], avecCreation: boolean, contexte: { packs?: Packs; recents?: string[][]; siteDispo?: boolean; avisDispo?: boolean } = {}) {
   const nom = d.type === 'carrousel' ? 'Carte' : d.type === 'reel' ? 'Plan' : 'Option'
   if (l.options.length !== d.nombre) throw new Error(`${d.nombre} ${nom.toLowerCase()}(s) demandé(e)s, ${l.options.length} livré(e)s.`)
   if (!avecCreation && !l.creation) throw new Error('Cette demande ne part d’aucune création : ajoute « creation » (angle, accroche, textes).')
@@ -448,7 +539,8 @@ export function verifierLivraison(l: Livraison, d: DemandeDirection, produitsCre
   if (d.type === 'reel') {
     verifierMontage(l.options.map((o) => o.duree ?? 0))
     verifierPack(l.options, contexte.packs ?? {})
-    verifierVariete(l.options.map((o) => o.mouvement ?? ''), contexte.recents ?? [], d.brief ?? '')
+    if (d.recette) verifierRecette(l.options, d.recette, contexte.avisDispo ?? true)
+    else verifierVariete(l.options.map((o) => o.mouvement ?? ''), contexte.recents ?? [], d.brief ?? '')
     verifierAMontrer(l.options, d, Boolean(contexte.siteDispo))
   }
   verifierCouverture(l.couverture, d.brief, l.options.length)
@@ -490,6 +582,8 @@ export type Idee = {
   id: string; titre: string; pourquoi: string
   type: TypeDirection; nombre: number; format: FormatImage; styles: Style[]; qualite: 'medium' | 'high'
   produitIds: number[]; brief: string
+  // Une proposition faite pour Shine : la recette, l'objectif, ce qui doit se voir, le fond.
+  recette?: CleRecette; objectif?: 'site' | 'dm' | 'portee'; offre?: 'aucune' | 'bienvenue' | 'livraison' | 'pack'; montrer?: ('site' | 'cod' | 'prix' | 'pack' | 'texture' | 'voix')[]; fondShine?: boolean
 }
 
 /** La saison du Maroc qui parle aux cheveux et a la peau, mois par mois (0 = janvier). */

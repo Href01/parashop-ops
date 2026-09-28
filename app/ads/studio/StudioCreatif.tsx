@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Check, CheckCircle2, Circle, Clapperboard, Copy, Download, GalleryHorizontal, ImagePlus, Images, Link2, Loader2, Mic, Plus, Search, Sparkles, Wand2, X } from 'lucide-react'
 import BosShell from '@/components/BosShell'
 import { BOUTONS, FORMATS_IMAGE, formatParDefaut, type FormatImage, type Langue } from '@/lib/ads/creatif-model'
-import { A_MONTRER, OBJECTIFS, OFFRES, consignesBrief, fautesFrancais, motsVoixMax, type AMontrer, type Idee } from '@/lib/ads/direction-model'
+import { A_MONTRER, OBJECTIFS, OFFRES, RECETTES, consignesBrief, fautesFrancais, motsVoixMax, type AMontrer, type Idee } from '@/lib/ads/direction-model'
 import { ApercuCarrousel, ApercuFeed, ApercuStory, telechargerPng, type Visuel } from '../agent/ui/Apercu'
 import { LecteurReel } from '../agent/ui/Reel'
 import { TableMontage, depuisOption, planDessin, type Brouillon } from '../agent/ui/Montage'
@@ -237,6 +237,7 @@ function OngletBrief({ c, d, opts, rafraichir, dire }: { c: CreatifStudio; d: Do
       {p && <>
         <h3>Ce que tu as demandé <small className={a.muted}>· {quand(dem.demande_le)}</small></h3>
         <dl className={s.briefResume}>
+          <dt>Style</dt><dd>{p.recette ? `${RECETTES[p.recette].nom} (recette)` : 'Libre'}</dd>
           <dt>Objectif</dt><dd>{p.objectif ? OBJECTIFS[p.objectif].label : '—'}</dd>
           <dt>Offre</dt><dd>{OFFRES[p.offre ?? 'aucune']}</dd>
           <dt>À montrer</dt><dd>{p.montrer?.length ? p.montrer.map((k) => A_MONTRER[k as AMontrer] ?? k).join(' · ') : '—'}</dd>

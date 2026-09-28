@@ -3,7 +3,7 @@ import pool from '@/lib/db'
 import { performancePubs, strategie } from './agent'
 import { verdicts } from './conseils'
 import { reveillerDirecteur } from './declencher'
-import { AMBIANCES, A_MONTRER, BORNES, ETAPES_SITE, FONDS, OBJECTIFS, OFFRES, LIBELLES_SITE, LivraisonDirection, MOUVEMENTS, OptionLivreeSchema, RetoucheSchema, STYLES, TRANSITIONS, VEUT_SITE, consignesBrief, sujetDemande, validerDemande, verifierLivraison, verifierMontage, verifierOption, type DemandeDirection, type OptionLivree, type Retouche, type Style, type TypeDirection } from './direction-model'
+import { AMBIANCES, A_MONTRER, BORNES, ETAPES_SITE, FONDS, OBJECTIFS, OFFRES, RECETTES, LIBELLES_SITE, LivraisonDirection, MOUVEMENTS, OptionLivreeSchema, RetoucheSchema, STYLES, TRANSITIONS, VEUT_SITE, consignesBrief, sujetDemande, validerDemande, verifierLivraison, verifierMontage, verifierOption, type DemandeDirection, type OptionLivree, type Retouche, type Style, type TypeDirection } from './direction-model'
 import { capturesSite, charpentesRecentes, lecons, packsDe, reglesBoutique, type CapturesProduit } from './apprentissage'
 import { FORMATS_IMAGE } from './creatif-model'
 import { urlDetouree } from './reel-model'
@@ -131,6 +131,8 @@ export async function contexteDirection(demandeId: number) {
       id: dem.id, sujet: dem.sujet, ...p, stylesSouhaites: p.styles.map((x: string) => STYLES[x as Style]).filter(Boolean),
       // Ce que la pub doit obtenir, l'offre, ce qui DOIT se voir (le BOS le verifie a la livraison).
       objectifDetail: p.objectif ? OBJECTIFS[p.objectif] : null, offreDetail: OFFRES[p.offre], aMontrer: p.montrer.map((k) => A_MONTRER[k]),
+      // La recette choisie par Achraf : suis sa charpente plan par plan (le BOS la verifie) ; tu ecris les textes et choisis les schemas.
+      recetteDetail: p.recette ? RECETTES[p.recette] : null,
     },
     // Les vraies regles du site : n'annonce que ces chiffres (livraison, code de bienvenue, paiement).
     boutique,
@@ -197,6 +199,7 @@ export async function enregistrerDirection(entree: unknown) {
   const [captures, charpentes] = await Promise.all([capturesSite(animables), charpentesRecentes(5)])
   verifierLivraison(l, d, animables, Boolean(creationExistante), {
     packs, recents: charpentes.map((x) => x.suite), siteDispo: Object.values(captures).some((c) => Object.keys(c).length >= 2),
+    avisDispo: (await avisReels(animables)).length > 0,
   })
   verifierCaptures(l.options, captures)
   const avisDe = new Map<number, { id: number; texte: string; note: number }>()

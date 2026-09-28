@@ -144,7 +144,7 @@ export type EtatPlan = {
   postit: { rotation: number; dx: number; dy: number; opacite: number; cx: number; cy: number; taille: number } | null
   avis: { texte: string; note: number; etoiles: number; echelle: number } | null
 }
-export type EtatEtape = { numero: number; texte: string; cx: number; cy: number; echelle: number; grand: boolean }
+export type EtatEtape = { numero: number; texte: string; cx: number; cy: number; echelle: number; grand: boolean; vers?: { cx: number; cy: number } }
 export type EtatSite = {
   telephone: number                                       // entree du telephone (0..1, ressort)
   ecran: number; precedent: number | null; glisse: number // l'ecran montre, celui qui sort, l'avancee du glissement (0..1)
@@ -154,11 +154,15 @@ export type EtatSite = {
 }
 
 /** La routine numerotee : le produit en vedette, puis la rangee ou chacun se range. */
-export const ETAPES_VEDETTE = { cx: 0.5, bas: 0.61, hauteur: 0.36 }
+/** La routine : l'etiquette de la solution du produit en cours, au-dessus de la rangee (les produits restent grands). */
+export const ETAPES_ETIQUETTE = 0.385
 export function etapesCreneaux(plan: PlanReel) {
   const n = Math.max(1, plan.produits)
   const pas = Math.max(0.6, (plan.duree - 0.75) / n)
-  return { n, pas, debut: (k: number) => 0.15 + k * pas }
+  const debut = (k: number) => 0.15 + k * pas
+  // Le produit presente a l'instant t (null avant le premier et pendant la rangee finale).
+  const actif = (t: number): number | null => { const k = Math.floor((t - 0.15) / pas); return k >= 0 && k < n ? k : null }
+  return { n, pas, debut, actif }
 }
 /** Le tunnel : un creneau par ecran ; le doigt touche aux trois quarts. */
 export function siteCreneaux(plan: PlanReel) {
@@ -170,10 +174,12 @@ export function siteCreneaux(plan: PlanReel) {
 
 /** Ou poser n produits : centres, ligne de sol, hauteur. */
 export function disposition(n: number, mouvement: Mouvement = 'rebond'): { cx: number; bas: number; hauteur: number }[] {
-  // La rangee de la routine : petite, sous le produit en vedette, au-dessus de l'interface d'Instagram.
+  // La routine : les produits GRANDS, chacun a sa place, du debut a la fin (Achraf : « laisser les produits
+  // big avec bon placement »). Celui qu'on presente grandit, les autres s'effacent un peu.
   if (mouvement === 'etapes') {
-    const xs = n <= 2 ? [0.36, 0.64] : n === 3 ? [0.26, 0.5, 0.74] : [0.2, 0.4, 0.6, 0.8]
-    return xs.slice(0, Math.max(1, n)).map((cx) => ({ cx, bas: 0.8, hauteur: 0.12 }))
+    const xs = n <= 2 ? [0.3, 0.7] : n === 3 ? [0.19, 0.5, 0.81] : [0.15, 0.383, 0.617, 0.85]
+    const h = n <= 2 ? 0.34 : n === 3 ? 0.29 : 0.25
+    return xs.slice(0, Math.max(1, n)).map((cx) => ({ cx, bas: 0.76, hauteur: h }))
   }
   if (mouvement === 'etiquette' || mouvement === 'revele') return [{ cx: 0.5, bas: 0.76, hauteur: mouvement === 'etiquette' ? 0.44 : 0.46 }]
   if (mouvement === 'quiz') return [{ cx: 0.5, bas: 0.78, hauteur: 0.24 }]
@@ -322,17 +328,16 @@ function produitA(plan: PlanReel, p: { cx: number; bas: number; hauteur: number 
       return { ...e, echelle: Math.max(0, s), opacite: borne(y / 0.08), ombre: 0 }
     }
     case 'etapes': {
-      // Chacun son tour : il surgit en vedette, se montre, puis file rejoindre la rangee.
-      const { pas, debut } = etapesCreneaux(plan)
+      // Chacun son tour : il surgit a SA place, grand ; tant qu'on le presente, il grandit encore et les autres
+      // s'effacent un peu ; a la fin, les quatre ensemble, pleins.
+      const { pas, debut, actif } = etapesCreneaux(plan)
       const y = t - debut(i)
       if (y < 0) return { ...e, opacite: 0, ombre: 0 }
-      const v = ETAPES_VEDETTE
-      const range = borne((y - (pas - 0.28)) / 0.28)
       const s = ressort(y * 2.4)
-      if (range <= 0) return { ...e, cx: v.cx, bas: v.bas, sol: v.bas, hauteur: v.hauteur, echelle: Math.max(0, s), rotation: -8 * (1 - Math.min(1, s)), opacite: borne(y / 0.08), ombre: borne(s) }
-      const d = douce(range)
-      const bas = v.bas + (p.bas - v.bas) * d
-      return { ...e, cx: v.cx + (p.cx - v.cx) * d, bas, sol: bas, hauteur: v.hauteur + (p.hauteur - v.hauteur) * d, ombre: 1 }
+      const a = actif(t)
+      const mise = a === i ? 1 + 0.13 * Math.min(1, ressort((t - debut(i)) * 2)) : 1
+      const efface = a != null && a !== i ? 0.5 : 1
+      return { ...e, echelle: Math.max(0, s) * mise, rotation: -8 * (1 - Math.min(1, s)), opacite: borne(y / 0.08) * efface, ombre: borne(s) }
     }
     default:
       return e
@@ -516,15 +521,19 @@ export function etatPlan(plan: PlanReel, t: number, premier: boolean, indice = 0
   // La routine : le numero et le nom du produit en vedette ; puis un petit numero au-dessus de chacun dans la rangee.
   const etapes: EtatEtape[] = []
   if (plan.mouvement === 'etapes') {
-    const { pas, debut } = etapesCreneaux(plan)
+    const { debut, actif } = etapesCreneaux(plan)
+    const a = actif(t)
     produits.forEach((pr, k) => {
       const y = t - debut(k)
       if (y < 0.12) return
-      const vedette = y < pas - 0.28
-      etapes.push(vedette
-        ? { numero: k + 1, texte: [plan.points?.[k], plan.marques?.[k]].filter(Boolean).join(' · '), cx: 0.5, cy: ETAPES_VEDETTE.bas + 0.032, echelle: Math.min(1.06, ressort((y - 0.12) * 2.6)), grand: true }
-        : { numero: k + 1, texte: '', cx: pr.cx, cy: pr.bas - pr.hauteur + 0.014, echelle: Math.min(1.06, ressort((y - pas + 0.1) * 3)), grand: false })
+      // Le numero, au-dessus de chaque produit deja la.
+      etapes.push({ numero: k + 1, texte: '', cx: pr.cx, cy: pr.bas - pr.hauteur * pr.echelle - 0.022, echelle: Math.min(1.06, ressort((y - 0.12) * 3)), grand: false })
     })
+    // La solution du produit presente : une grande etiquette, reliee a lui par un trait.
+    if (a != null && produits[a]) {
+      const pr = produits[a], y = t - debut(a)
+      etapes.push({ numero: a + 1, texte: [plan.points?.[a], plan.marques?.[a]].filter(Boolean).join(' · '), cx: 0.5, cy: ETAPES_ETIQUETTE, echelle: Math.min(1.06, ressort((y - 0.1) * 2.8)), grand: true, vers: { cx: pr.cx, cy: pr.bas - pr.hauteur * pr.echelle - 0.045 } })
+    }
   }
 
   // Le site : le telephone arrive, chaque ecran glisse, le doigt vise le bouton et touche.

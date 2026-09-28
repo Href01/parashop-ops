@@ -52,7 +52,7 @@ export type ProduitCatalogue = {
 }
 export type ParametresDirection = {
   type: TypeDirection; nombre: number; format: 'feed' | 'story' | 'carre'; styles: string[]; qualite: 'medium' | 'high'; brief: string; creatifId?: number; produitIds?: number[]
-  objectif?: 'site' | 'dm' | 'portee'; offre?: 'aucune' | 'bienvenue' | 'livraison' | 'pack'; montrer?: string[]; langue?: 'fr' | 'darija' | 'mix'; fond?: 'libre' | 'shine'
+  objectif?: 'site' | 'dm' | 'portee'; offre?: 'aucune' | 'bienvenue' | 'livraison' | 'pack'; montrer?: string[]; langue?: 'fr' | 'darija' | 'mix'; fond?: 'libre' | 'shine'; recette?: 'secret' | 'reconnais' | 'piege' | 'bonneteau'
   retouche?: { optionId: number; note: string }
 }
 export type Demande = { id: number; genre: string; sujet: string; statut: string; demande_le: string; termine_le: string | null; erreur: string | null; rapport_id: number | null; creatif_id?: number | null; parametres?: ParametresDirection | null; resultat?: string | null

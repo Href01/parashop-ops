@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, Check, Clapperboard, Download, GalleryHorizontal, ImagePlus, Images, Loader2, Sparkles, Trash2, Wand2 } from 'lucide-react'
 import { FORMATS_IMAGE, type FormatImage, type Langue } from '@/lib/ads/creatif-model'
-import { A_MONTRER, BORNES, INGREDIENTS, MOUVEMENTS, OBJECTIFS, OFFRES, STYLES, type AMontrer, type Idee, type Objectif, type Offre, type Style, type TypeDirection } from '@/lib/ads/direction-model'
+import { A_MONTRER, BORNES, INGREDIENTS, MOUVEMENTS, OBJECTIFS, OFFRES, RECETTES, STYLES, type CleRecette, type AMontrer, type Idee, type Objectif, type Offre, type Style, type TypeDirection } from '@/lib/ads/direction-model'
 import { urlDetouree } from '@/lib/ads/reel-model'
 import { ApercuCarrousel, CreatifVisuel, telechargerPng, type Visuel } from './Apercu'
 import { LecteurReel } from './Reel'
@@ -58,7 +58,13 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
   const [offre, setOffre] = useState<Offre>('aucune')
   const [montrer, setMontrer] = useState<AMontrer[]>(['cod'])
   const [langue, setLangue] = useState<'fr' | 'darija' | 'mix'>('mix')
-  const [fondShine, setFondShine] = useState(false)
+  const [fondShine, setFondShine] = useState(Boolean(idee?.fondShine))
+  // Le style : une recette prouvee (sa charpente est imposee) ou « libre » (le directeur artistique invente).
+  const [recette, setRecette] = useState<CleRecette | null>(idee?.recette ?? null)
+  const choisirRecette = (r: CleRecette | null) => {
+    setRecette(r)
+    if (r) { setType('reel'); setNombre(RECETTES[r].plans.length); setFormat('story'); setFondShine(true) }
+  }
   const choisirObjectif = (k: Objectif) => { setObjectif(k); if (k !== 'site') setMontrer((m) => m.filter((x) => x !== 'site')) }
   const basculerMontrer = (k: AMontrer) => setMontrer((m) => (m.includes(k) ? m.filter((x) => x !== k) : [...m, k]))
   const n = (etape: number) => (creatif ? etape - 1 : etape)
@@ -70,6 +76,11 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
   const appliquer = (i: Idee) => {
     setType(i.type); setNombre(i.nombre); setFormat(i.format); setStyles(i.styles); setQualite(i.qualite); setBrief(i.brief)
     if (!creatif) setProduits(i.produitIds)
+    setRecette(i.recette ?? null)
+    if (i.objectif) setObjectif(i.objectif)
+    if (i.offre) setOffre(i.offre)
+    if (i.montrer) setMontrer(i.montrer)
+    if (i.fondShine != null) setFondShine(i.fondShine)
   }
   const ajouter = (x: string) => setBrief((t) => (t.trim() ? `${t.trim()}\n• ${x}` : `• ${x}`))
   const basculer = (id: number) => setProduits((p) => (p.includes(id) ? p.filter((x) => x !== id) : p.length >= 6 ? p : [...p, id]))
@@ -82,7 +93,7 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
   const envoyer = async () => {
     setEnvoi(true)
     try {
-      const j = await poster({ direction: { type, nombre, format, styles, qualite, brief, objectif, offre, montrer, langue, fond: type === 'reel' && fondShine ? 'shine' : 'libre', ...(creatif ? { creatifId: creatif.id } : { produitIds: produits }) } })
+      const j = await poster({ direction: { type, nombre, format, styles, qualite, brief, objectif, offre, montrer, langue, fond: type === 'reel' && fondShine ? 'shine' : 'libre', ...(recette ? { recette } : {}), ...(creatif ? { creatifId: creatif.id } : { produitIds: produits }) } })
       envoye(j.lancee
         ? 'Brief envoyé : Claude commence maintenant. Compte 5 à 15 minutes avec les images.'
         : 'Brief envoyé : Claude le prend à son prochain passage (chaque heure, de 8 h à 23 h).')
@@ -96,7 +107,7 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
       {d.idees.length > 0 && !creatif && <fieldset className={s.reglage}><legend><Sparkles size={13} /> Idées prêtes, tirées de tes chiffres (un clic remplit le brief)</legend>
         <div className={s.dirIdees}>{d.idees.map((i) => (
           <button key={i.id} type="button" className={s.dirIdee} onClick={() => appliquer(i)}>
-            <span className={s.carteTop}><span className={s.chip}>{TYPES[i.type].label}</span><span className={s.chip}>{COURT[i.format]}</span></span>
+            <span className={s.carteTop}>{i.recette ? <span className={`${s.chip} ${s.chipVert}`}>Recette · {RECETTES[i.recette].nom}</span> : <><span className={s.chip}>{TYPES[i.type].label}</span><span className={s.chip}>{COURT[i.format]}</span></>}</span>
             <b>{i.titre}</b><small>{i.pourquoi}</small>
           </button>))}
         </div>
@@ -121,7 +132,27 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
         </div>
       </fieldset>
 
-      <fieldset className={s.reglage}><legend><span className={s.etapeNum}>{n(3)}</span> Le format</legend>
+      <fieldset className={s.reglage}><legend><span className={s.etapeNum}>{n(3)}</span> Le style (le mécanisme qui fait regarder et acheter)</legend>
+        <div className={s.dirRecettes}>
+          {(Object.keys(RECETTES) as CleRecette[]).map((k) => {
+            const r = RECETTES[k]
+            return (
+              <button key={k} type="button" className={s.dirRecette} aria-pressed={recette === k} onClick={() => choisirRecette(recette === k ? null : k)}>
+                <span className={s.carteTop}><b>{r.nom}</b><span className={s.chip}>{r.pour}</span><small className={s.muted}>{r.exemple}</small></span>
+                <small>{r.mecanisme}</small>
+                <small className={s.muted}>Idéal : {r.ideal}</small>
+                <ol>{r.plans.map((pl, j) => <li key={j}>{pl.role}</li>)}</ol>
+                <small className={s.muted}>{r.plans.length} plans · ~{Math.round(r.plans.reduce((x, pl) => x + pl.duree, 0))} s</small>
+              </button>)
+          })}
+          <button type="button" className={s.dirRecette} aria-pressed={recette === null} onClick={() => choisirRecette(null)}>
+            <span className={s.carteTop}><b>Libre</b></span>
+            <small>Le directeur artistique invente la charpente à partir de ton idée (sans jamais reprendre celle d’un Reel récent).</small>
+          </button>
+        </div>
+      </fieldset>
+
+      {!recette && <fieldset className={s.reglage}><legend><span className={s.etapeNum}>{n(3)}</span> Le format</legend>
         <div className={s.dirTypes}>{(Object.keys(TYPES) as TypeDirection[]).map((t) => {
           const { label, aide, Icone } = TYPES[t]
           return <button key={t} type="button" aria-pressed={type === t} onClick={() => changerType(t)}><Icone size={16} /><b>{label}</b><small>{aide}</small></button>
@@ -140,7 +171,7 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
               <option value="high">Haute (la pub)</option><option value="medium">Standard (pour tester)</option>
             </select></label>
         </div>
-      </fieldset>
+      </fieldset>}
 
       <fieldset className={s.reglage}><legend><span className={s.etapeNum}>{n(4)}</span> Ce qui doit se voir</legend>
         <div className={s.dirChips}>{(Object.keys(A_MONTRER) as AMontrer[]).map((k) => (

@@ -87,12 +87,19 @@ test('les plans « etapes » et « site » : leurs règles', () => {
 
 test('le moteur : la routine numérotée et le téléphone du site', () => {
   const etapes: PlanReel = { mouvement: 'etapes', duree: 4.5, produits: 4, texte: '4 gestes', points: ['Nettoyant', 'Sérum', 'Crème', 'SPF'] }
-  // Au début : le premier en vedette, avec son numéro et son nom.
+  // Au début : le premier surgit à SA place, grand, mis en avant ; sa solution en grande étiquette reliée à lui.
   const e1 = etatPlan(etapes, 0.6, false)
-  assert.equal(e1.produits[0].cx, 0.5)
-  assert.ok(e1.produits[0].hauteur > 0.25, 'en grand')
+  const rang = disposition(4, 'etapes')
+  assert.equal(e1.produits[0].cx, rang[0].cx)
+  assert.ok(e1.produits[0].hauteur >= 0.25 && e1.produits[0].echelle > 1.05, 'grand et mis en avant')
   assert.equal(e1.produits[1].opacite, 0)
-  assert.deepEqual(e1.etapes.map((x) => [x.numero, x.texte, x.grand]), [[1, 'Nettoyant', true]])
+  const grande = e1.etapes.find((x) => x.grand)!
+  assert.equal(grande.texte, 'Nettoyant')
+  assert.ok(Math.abs(grande.vers!.cx - rang[0].cx) < 0.01, 'le trait va au produit présenté')
+  // Pendant le deuxième : le premier reste grand mais s'efface un peu.
+  const e2 = etatPlan(etapes, 1.6, false)
+  assert.ok(e2.produits[0].opacite < 0.6 && e2.produits[0].hauteur >= 0.25)
+  assert.equal(e2.etapes.find((x) => x.grand)!.texte, 'Sérum')
   // À la fin : les quatre rangés, chacun avec son numéro, tous dans le cadre.
   const fin = etatPlan(etapes, 4.4, false)
   const rangee = disposition(4, 'etapes')
@@ -226,4 +233,24 @@ test('montrer : schémas animés, post-it, vrai avis', async () => {
   assert.throws(() => verifierOption(plan({ mouvement: 'zoom', duree: 3, illustration: 'taches', avisId: 23 }), 1, 'reel', []), /pas les deux/)
   assert.throws(() => verifierOption(plan({ mouvement: 'zoom', duree: 3, cache: true }), 1, 'reel', []), /post-it/)
   assert.doesNotThrow(() => verifierOption(plan({ mouvement: 'zoom', duree: 3, illustration: 'barriere', fond: 'vert', points: [{ fr: 'Pigment' }, { fr: 'Niacinamide + TXA' }] }), 1, 'reel', []))
+})
+
+test('les recettes : la charpente imposée, vérifiée plan par plan', async () => {
+  const { RECETTES, verifierRecette } = await import('../../lib/ads/direction-model')
+  const d = validerDemande({ type: 'options', nombre: 2, format: 'feed', produitIds: [111], brief: 'Un Reel sur les taches', recette: 'secret' })
+  assert.equal(d.type, 'reel'); assert.equal(d.nombre, RECETTES.secret.plans.length); assert.equal(d.format, 'story')
+  const Z = (o: Record<string, unknown>) => plan({ mouvement: 'zoom', duree: 3, fond: 'vert', ...o })
+  const bon = [
+    plan({ mouvement: 'revele', duree: 2.5, animes: [102], cache: true }),
+    Z({ illustration: 'taches' }), Z({ illustration: 'citron' }), Z({ illustration: 'barriere' }), Z({ illustration: 'bouclier' }),
+    plan({ mouvement: 'etapes', duree: 4.5, animes: [98, 102, 103, 96], points: NOMS }),
+    plan({ mouvement: 'fin', duree: 3.5, animes: [98, 102, 103, 96] }),
+  ]
+  assert.doesNotThrow(() => verifierRecette(bon, 'secret'))
+  assert.throws(() => verifierRecette(bon.map((o, i) => (i === 0 ? { ...o, cache: false } : o)), 'secret'), /post-it/)
+  assert.throws(() => verifierRecette(bon.map((o, i) => (i === 2 ? { ...o, illustration: 'barriere' as const } : o)), 'secret'), /l’idée reçue/)
+  assert.throws(() => verifierRecette(bon.slice(0, 6), 'secret'), /7 plans/)
+  // Une recette choisie n'est pas refusée parce qu'un Reel récent a la même charpente (c'est voulu).
+  const recents = [bon.map((o) => o.mouvement ?? '')]
+  assert.throws(() => verifierVariete(bon.map((o) => o.mouvement ?? ''), recents, 'Un reel'), /Même charpente/)
 })

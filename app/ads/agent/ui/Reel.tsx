@@ -421,6 +421,14 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
   // 4 bis. La routine numerotee : le numero et le nom du produit en vedette, puis un numero sur chacun dans la rangee.
   for (const et of e.etapes) {
     if (et.echelle <= 0) continue
+    if (et.grand && et.vers) {
+      ctx.save()
+      ctx.globalAlpha = Math.min(1, et.echelle)
+      ctx.strokeStyle = 'rgba(247,246,242,.85)'; ctx.lineWidth = W * 0.004; ctx.setLineDash([W * 0.012, W * 0.01])
+      ctx.beginPath(); ctx.moveTo(et.cx * W, et.cy * H + W * 0.045); ctx.lineTo(et.vers.cx * W, et.vers.cy * H); ctx.stroke(); ctx.setLineDash([])
+      ctx.fillStyle = COULEURS.beurre; ctx.beginPath(); ctx.arc(et.vers.cx * W, et.vers.cy * H, W * 0.009, 0, Math.PI * 2); ctx.fill()
+      ctx.restore()
+    }
     ctx.save()
     ctx.translate(et.cx * W, et.cy * H); ctx.scale(et.echelle, et.echelle)
     ctx.shadowColor = 'rgba(0,0,0,.22)'; ctx.shadowBlur = W * 0.02
