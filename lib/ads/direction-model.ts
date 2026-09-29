@@ -242,8 +242,47 @@ export const DemandeDirectionSchema = z.object({
   rendu: z.enum(['motion', 'video']).default('motion'),
   // Discuter avant de creer : le directeur artistique propose d'abord (concept, plans, modeles, questions).
   alignement: z.boolean().default(true),
+  // En video : le storyboard d'abord (images de depart + l'accroche filmee), le reste seulement apres le OK d'Achraf.
+  storyboard: z.boolean().default(true),
 })
 export type DemandeDirection = z.infer<typeof DemandeDirectionSchema>
+
+/**
+ * LA DISCUSSION PAR PALIERS. Chaque palier se valide avant que l'argent parte :
+ * « idee » (le texte, gratuit) → « storyboard » (en video : les images de depart et la
+ * seule accroche filmee) → la creation complete. Une piece jointe (image, video, lien)
+ * peut accompagner chaque message, dans les deux sens.
+ */
+export type Piece = { type: 'image' | 'video' | 'lien'; url: string }
+export type Palier = 'idee' | 'storyboard'
+export type Message = { auteur: 'agent' | 'achraf'; texte: string; le: string; valide?: boolean; palier?: Palier; pieces?: Piece[]; par?: string | null }
+
+/** Les pieces jointes acceptees : les images et videos du Cloudinary de Shine, et des liens https (8 au plus). */
+export function piecesValides(entree: unknown, nuage: string): Piece[] {
+  if (entree == null) return []
+  if (!Array.isArray(entree)) throw new Error('Pièces jointes : une liste.')
+  if (entree.length > 8) throw new Error('8 pièces jointes au plus par message.')
+  return entree.map((x) => {
+    const url = String((x as { url?: unknown } | null)?.url ?? x ?? '').trim()
+    if (!/^https:\/\/\S+$/.test(url) || url.length > 800) throw new Error(`Pièce jointe : une adresse https complète (« ${url.slice(0, 60)} »).`)
+    const type: Piece['type'] = url.startsWith(`https://res.cloudinary.com/${nuage}/image/upload/`) ? 'image' : url.startsWith(`https://res.cloudinary.com/${nuage}/video/upload/`) ? 'video' : 'lien'
+    return { type, url }
+  })
+}
+
+/**
+ * Ou en est une direction : ce qu'Achraf a valide, et ce que le directeur artistique doit
+ * faire maintenant — « proposer » (l'idee), « storyboard » (livrer, peindre, filmer l'accroche
+ * seulement, puis soumettre), « creer » (tout est valide : creer ou filmer le reste, terminer).
+ */
+export function etapeDirection(d: { alignement?: boolean; rendu?: string; storyboard?: boolean }, echanges: Message[]) {
+  const valides = new Set(echanges.filter((m) => m.auteur === 'achraf' && m.valide).map((m) => m.palier ?? 'idee'))
+  const avecStoryboard = d.rendu === 'video' && d.alignement === true && d.storyboard !== false
+  const idee = d.alignement !== true || valides.has('idee')
+  const storyboard = avecStoryboard ? valides.has('storyboard') : null
+  const etape: 'proposer' | 'storyboard' | 'creer' = !idee ? 'proposer' : storyboard === false ? 'storyboard' : 'creer'
+  return { idee, storyboard, etape }
+}
 
 /** Valide un brief et le rend coherent (bornes, format, styles connus). */
 export function validerDemande(entree: unknown): DemandeDirection {

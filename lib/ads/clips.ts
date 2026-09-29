@@ -1,6 +1,7 @@
 import 'server-only'
 import { createHash } from 'node:crypto'
 import pool from '@/lib/db'
+import { etapeDirection, type Message } from './direction-model'
 
 /**
  * LES CLIPS VIDEO DES REELS : des images reelles (tournees au telephone, ou generees
@@ -23,12 +24,24 @@ function identifiants() {
 
 /** De quoi envoyer UN clip depuis le navigateur. */
 export function signatureClip() {
+  return signatureEnvoi(DOSSIER, 'video')
+}
+
+/** Un envoi direct du navigateur vers Cloudinary, signe par le BOS (la limite de 4,5 Mo de Vercel ne s'applique pas). */
+function signatureEnvoi(folder: string, type: 'image' | 'video') {
   const { nuage, cle, secret } = identifiants()
   const timestamp = String(Math.floor(Date.now() / 1000))
-  const params = { folder: DOSSIER, timestamp }
+  const params = { folder, timestamp }
   const signature = createHash('sha1').update(Object.entries(params).sort(([a], [b]) => a.localeCompare(b)).map(([k, v]) => `${k}=${v}`).join('&') + secret).digest('hex')
-  return { url: `https://api.cloudinary.com/v1_1/${nuage}/video/upload`, apiKey: cle, timestamp, folder: DOSSIER, signature }
+  return { url: `https://api.cloudinary.com/v1_1/${nuage}/${type}/upload`, apiKey: cle, timestamp, folder, signature }
 }
+
+/** Les pieces jointes de la discussion (photos, videos d'Achraf) : dans shine-ads/echanges. */
+export function signaturePiece(type: unknown) {
+  return signatureEnvoi('shine-ads/echanges', type === 'video' ? 'video' : 'image')
+}
+
+export const nuageShine = () => identifiants().nuage
 
 /** Un clip de plan : une video du Cloudinary de Shine, rien d'autre. */
 export function verifierClip(url: string | null | undefined) {
@@ -65,9 +78,18 @@ export const nomModele = (x: unknown) => String(x ?? '').toLowerCase().replace(/
 export async function poserClipDepuisUrl(o: { optionId: number; url: string; par: string | null; source?: string; modele?: string; credits?: unknown }) {
   const url = String(o.url || '').trim()
   if (!/^https:\/\/\S+$/i.test(url) || url.length > 2000) throw new Error('Adresse du clip : une URL https complète.')
-  const opt = (await pool.query(`SELECT id, creatif_id, mouvement, motion FROM "AdsCreativeOption" WHERE id = $1`, [o.optionId])).rows[0]
+  const opt = (await pool.query(`SELECT id, creatif_id, demande_id, carte, mouvement, motion FROM "AdsCreativeOption" WHERE id = $1`, [o.optionId])).rows[0]
   if (!opt) throw new Error('Plan introuvable.')
   if (!opt.mouvement) throw new Error('Seuls les plans d’un Reel ont un clip.')
+  // Le directeur artistique ne filme que ce qu'Achraf a valide : avant le storyboard, seulement l'accroche (plan 1).
+  if (o.par === 'agent' && opt.demande_id) {
+    const dem = (await pool.query(`SELECT parametres, echanges FROM "AdsAgentRequest" WHERE id = $1`, [opt.demande_id])).rows[0]
+    if (dem) {
+      const { etape } = etapeDirection(dem.parametres ?? {}, (dem.echanges ?? []) as Message[])
+      if (etape === 'proposer') throw new Error('Achraf n’a pas encore validé l’idée : aucun clip avant sa validation.')
+      if (etape === 'storyboard' && opt.carte !== 1) throw new Error('Storyboard pas encore validé : seul le plan 1 (l’accroche) se filme avant. Soumets le storyboard (« proposer --palier=storyboard ») et attends le OK d’Achraf.')
+    }
+  }
   const { nuage } = identifiants()
   const clip = url.startsWith(`https://res.cloudinary.com/${nuage}/video/upload/`) ? { url, duree: null } : await copierSurCloudinary(url, `plan-${opt.id}-ext-${Date.now()}`)
   await pool.query(`UPDATE "AdsCreativeOption" SET motion = jsonb_set(coalesce(motion, '{}'::jsonb), '{clip}', $2::jsonb), maj_le = now() WHERE id = $1`,

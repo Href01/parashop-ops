@@ -53,12 +53,12 @@ export type ProduitCatalogue = {
 }
 export type ParametresDirection = {
   type: TypeDirection; nombre: number; format: 'feed' | 'story' | 'carre'; styles: string[]; qualite: 'medium' | 'high'; brief: string; creatifId?: number; produitIds?: number[]
-  objectif?: 'site' | 'dm' | 'portee'; offre?: 'aucune' | 'bienvenue' | 'livraison' | 'pack'; montrer?: string[]; langue?: 'fr' | 'darija' | 'mix'; fond?: 'libre' | 'shine'; recette?: 'secret' | 'reconnais' | 'piege' | 'bonneteau'; rendu?: 'motion' | 'video'; alignement?: boolean
+  objectif?: 'site' | 'dm' | 'portee'; offre?: 'aucune' | 'bienvenue' | 'livraison' | 'pack'; montrer?: string[]; langue?: 'fr' | 'darija' | 'mix'; fond?: 'libre' | 'shine'; recette?: 'secret' | 'reconnais' | 'piege' | 'bonneteau'; rendu?: 'motion' | 'video'; alignement?: boolean; storyboard?: boolean
   retouche?: { optionId: number; note: string }
 }
 export type Demande = { id: number; genre: string; sujet: string; statut: string; demande_le: string; termine_le: string | null; erreur: string | null; rapport_id: number | null; creatif_id?: number | null; parametres?: ParametresDirection | null; resultat?: string | null
   couverture?: { consigne: string; plans: number[] }[] | null
-  echanges?: { auteur: 'agent' | 'achraf'; texte: string; le: string; valide?: boolean }[]; valide_le?: string | null }
+  echanges?: { auteur: 'agent' | 'achraf'; texte: string; le: string; valide?: boolean; palier?: 'idee' | 'storyboard'; pieces?: { type: 'image' | 'video' | 'lien'; url: string }[] }[]; valide_le?: string | null }
 export type Rapport = { id: number; source: string; titre: string; cree_le: string; modele: string | null; en_bref: string }
 export type Jour = { jour: string; depense: number; messages: number; achats: number; clics: number; livrees: number; ca: number; marge: number }
 export type Repartition = { dimension: string; valeur: string; depense: number; impressions: number; clics_lien: number; achats: number; messages: number }

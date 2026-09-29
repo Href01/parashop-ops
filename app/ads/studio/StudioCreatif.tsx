@@ -245,7 +245,8 @@ function OngletBrief({ c, d, opts, rafraichir, dire }: { c: CreatifStudio; d: Do
           {p.type === 'reel' && <><dt>Rendu</dt><dd>{p.rendu === 'video' ? 'Vidéo Higgsfield (chaque plan filmé)' : 'Motion Shine (animé par le BOS)'}</dd></>}
         </dl>
         {(dem.echanges?.length ?? 0) > 0 && <details className={s.briefDiscussion}><summary>La discussion avant la création ({dem.echanges!.length} message{dem.echanges!.length > 1 ? 's' : ''})</summary>
-          {dem.echanges!.map((m, i) => <p key={i} className={a.small}><b>{m.auteur === 'agent' ? 'Directeur artistique' : 'Toi'}</b> <span className={a.muted}>· {quand(m.le)}</span><br /><span style={{ whiteSpace: 'pre-wrap' }}>{avecGras(m.texte)}</span></p>)}
+          {dem.echanges!.map((m, i) => <p key={i} className={a.small}><b>{m.auteur === 'agent' ? (m.palier === 'storyboard' ? 'Directeur artistique · storyboard' : 'Directeur artistique') : 'Toi'}</b> <span className={a.muted}>· {quand(m.le)}</span><br /><span style={{ whiteSpace: 'pre-wrap' }}>{avecGras(m.texte)}</span>
+            {m.pieces?.length ? <><br />{m.pieces.map((x, k) => <a key={k} href={x.url} target="_blank" rel="noreferrer">{x.type === 'image' ? '🖼 image' : x.type === 'video' ? '🎬 vidéo' : '🔗 lien'} {k + 1}</a>).reduce<React.ReactNode[]>((acc, el, k) => (k ? [...acc, ' · ', el] : [el]), [])}</> : null}</p>)}
         </details>}
         {consignes.length > 0 && <>
           <h3>Ton brief, consigne par consigne</h3>

@@ -60,7 +60,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
         return Response.json({ clip: await poserClipDepuisUrl({ optionId: Number(body?.optionId), url: String(body?.url || ''), source: body?.source, modele: body?.modele, credits: body?.credits, par: 'agent' }) }, { headers: PRIVATE_HEADERS })
       // Avant de creer : la proposition (ou la reponse) a Achraf ; la demande attend sa validation.
       case 'proposer':
-        return Response.json(await proposerDirection(Number(body?.id), String(body?.texte || '')), { headers: PRIVATE_HEADERS })
+        return Response.json(await proposerDirection(Number(body?.id), String(body?.texte || ''), body?.palier, body?.pieces), { headers: PRIVATE_HEADERS })
       case 'direction-contexte':
         return Response.json(await contexteDirection(Number(body?.id)), { headers: PRIVATE_HEADERS })
       case 'direction':

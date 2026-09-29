@@ -3,9 +3,9 @@ import pool from '@/lib/db'
 import { performancePubs, strategie } from './agent'
 import { verdicts } from './conseils'
 import { reveillerDirecteur } from './declencher'
-import { AMBIANCES, A_MONTRER, BORNES, ETAPES_SITE, FONDS, OBJECTIFS, OFFRES, RECETTES, LIBELLES_SITE, LivraisonDirection, MOUVEMENTS, OptionLivreeSchema, RetoucheSchema, STYLES, TRANSITIONS, VEUT_SITE, consignesBrief, sujetDemande, validerDemande, verifierLivraison, verifierMontage, verifierOption, type DemandeDirection, type OptionLivree, type Retouche, type Style, type TypeDirection } from './direction-model'
+import { AMBIANCES, A_MONTRER, BORNES, etapeDirection, piecesValides, type Message, type Palier, ETAPES_SITE, FONDS, OBJECTIFS, OFFRES, RECETTES, LIBELLES_SITE, LivraisonDirection, MOUVEMENTS, OptionLivreeSchema, RetoucheSchema, STYLES, TRANSITIONS, VEUT_SITE, consignesBrief, sujetDemande, validerDemande, verifierLivraison, verifierMontage, verifierOption, type DemandeDirection, type OptionLivree, type Retouche, type Style, type TypeDirection } from './direction-model'
 import { capturesSite, charpentesRecentes, lecons, packsDe, reglesBoutique, type CapturesProduit } from './apprentissage'
-import { verifierClip } from './clips'
+import { nuageShine, verifierClip } from './clips'
 import { FORMATS_IMAGE } from './creatif-model'
 import { urlDetouree } from './reel-model'
 
@@ -142,8 +142,15 @@ export async function contexteDirection(demandeId: number) {
       renduDetail: p.rendu === 'video'
         ? 'VIDEO : chaque plan est filmé par Higgsfield (connecteur) à partir de son image de départ — peinte par le BOS avec le vrai produit (« image »), ou faite par un modèle d’image Higgsfield et posée (« image-url ») ; un plan sans produit peut être filmé sans image (« sansDepart »). Le BOS garde le montage, le texte (sauf texteVideo), la carte de fin et le son (sauf clipSon).'
         : 'MOTION : l’animation Shine — le BOS anime les vrais produits détourés sur des fonds (Shine dessinés ou décors peints).',
-      // La discussion avec Achraf : lis-la en entier ; sa derniere reponse prime.
+      // La discussion avec Achraf : lis-la en entier ; sa derniere reponse prime (et ses pieces jointes : regarde-les).
       discussion: dem.echanges ?? [], valide: Boolean(dem.valide_le),
+      // Ou tu en es : « proposer » (l'idee), « storyboard » (livrer, peindre, filmer le plan 1 seulement, soumettre), « creer ».
+      ...etapeDirection(p, dem.echanges as Message[]),
+      // Les plans deja livres pour cette demande (deuxieme passage : ne relivre pas, travaille sur ces ids).
+      plans: (await pool.query(`SELECT o.id, o.carte, o.mouvement, o.duree, o.concept, o.texte->>'fr' AS texte, o.motion->>'clipPrompt' AS "clipPrompt",
+                                       o.motion->'clip'->>'url' AS clip, (o.motion->>'sansDepart')::boolean AS "sansDepart",
+                                       (SELECT url FROM "AdsCreativeImage" i WHERE i.option_id = o.id ORDER BY i.choisie DESC, i.cree_le DESC LIMIT 1) AS image
+                                FROM "AdsCreativeOption" o WHERE o.demande_id = $1 ORDER BY o.carte NULLS FIRST, o.id`, [dem.id])).rows,
     },
     // Les vraies regles du site : n'annonce que ces chiffres (livraison, code de bienvenue, paiement).
     boutique,
@@ -202,7 +209,9 @@ export async function enregistrerDirection(entree: unknown) {
   const demandeId = Number((entree as { demandeId?: unknown } | null)?.demandeId)
   if (Number.isInteger(demandeId) && demandeId > 0) {
     const avant = await demandeEnCours(demandeId)
-    if (!avant.retouche && avant.parametres.alignement && !avant.valide_le) throw new Error('Achraf veut discuter avant la création : propose d’abord (« bos.mjs proposer <id> <proposition.md> ») et attends sa validation.')
+    if (!avant.retouche && etapeDirection(avant.parametres, avant.echanges as Message[]).etape === 'proposer') throw new Error('Achraf veut discuter avant la création : propose d’abord (« bos.mjs proposer <id> <proposition.md> ») et attends sa validation.')
+    const deja = await pool.query(`SELECT count(*)::int n FROM "AdsCreativeOption" WHERE demande_id = $1`, [demandeId])
+    if (deja.rows[0].n) throw new Error(`Cette demande est déjà livrée (${deja.rows[0].n} plans : « demande.plans » du contexte). Ne relivre pas : modifie un plan avec « bos.mjs option <id> patch.json », peins, filme.`)
   }
   const p = LivraisonDirection.safeParse(entree)
   if (!p.success) throw new Error(p.error.issues.map((i) => `${i.path.join('.')} : ${i.message}`).join(' · '))
@@ -210,7 +219,7 @@ export async function enregistrerDirection(entree: unknown) {
   const dem = await demandeEnCours(l.demandeId)
   if (dem.retouche) throw new Error('Cette demande est une retouche : modifie le plan avec « bos.mjs option <id> », puis « termine ».')
   const d = dem.parametres
-  if (d.alignement && !dem.valide_le) throw new Error('Achraf veut discuter avant la création : propose d’abord (« bos.mjs proposer <id> <proposition.md> ») et attends sa validation.')
+  if (etapeDirection(d, dem.echanges as Message[]).etape === 'proposer') throw new Error('Achraf veut discuter avant la création : propose d’abord (« bos.mjs proposer <id> <proposition.md> ») et attends sa validation.')
   const creationExistante = dem.creatif_id
     ? (await pool.query(`SELECT id, produit_ids FROM "AdsCreative" WHERE id = $1`, [dem.creatif_id])).rows[0]
     : null
@@ -267,14 +276,21 @@ export async function enregistrerDirection(entree: unknown) {
 /* ------------------------------------------------------------------ */
 
 const message = (auteur: 'agent' | 'achraf', texte: string, extra: Json = {}) => JSON.stringify([{ auteur, texte: texte.trim().slice(0, 6000), le: new Date().toISOString(), ...extra }])
+const pieces = (x: unknown) => { const p = piecesValides(x, nuageShine()); return p.length ? { pieces: p } : {} }
 
 /** Le directeur artistique propose (ou repond) : la demande attend Achraf. */
-export async function proposerDirection(id: number, texte: string) {
+export async function proposerDirection(id: number, texte: string, palier: unknown = 'idee', jointes: unknown = []) {
   const dem = await demandeEnCours(id)
   if (dem.retouche) throw new Error('Une retouche ne se discute pas : applique-la.')
   if (texte.trim().length < 80) throw new Error('Une proposition dit l’idée, l’accroche, les plans et tes questions (80 caractères au moins).')
-  await pool.query(`UPDATE "AdsAgentRequest" SET statut = 'a_valider', echanges = coalesce(echanges, '[]'::jsonb) || $2::jsonb WHERE id = $1`, [id, message('agent', texte)])
-  return { id, statut: 'a_valider' }
+  const p: Palier = palier === 'storyboard' ? 'storyboard' : 'idee'
+  if (p === 'storyboard') {
+    if (etapeDirection(dem.parametres, dem.echanges as Message[]).etape !== 'storyboard') throw new Error('Le storyboard vient après la validation de l’idée, et seulement pour un Reel en vidéo avec l’option storyboard.')
+    const n = await pool.query(`SELECT count(*)::int n FROM "AdsCreativeOption" WHERE demande_id = $1`, [id])
+    if (!n.rows[0].n) throw new Error('Livre d’abord les plans et leurs images de départ : le storyboard, c’est ce qu’Achraf regarde dans le Studio.')
+  }
+  await pool.query(`UPDATE "AdsAgentRequest" SET statut = 'a_valider', echanges = coalesce(echanges, '[]'::jsonb) || $2::jsonb WHERE id = $1`, [id, message('agent', texte, { palier: p, ...pieces(jointes) })])
+  return { id, statut: 'a_valider', palier: p }
 }
 
 async function demandeAValider(id: number) {
@@ -285,18 +301,22 @@ async function demandeAValider(id: number) {
 }
 
 /** Achraf repond : le directeur artistique reprend la discussion (tout de suite si le declencheur est branche). */
-export async function repondreDirection(id: number, texte: string, par: string | null) {
+export async function repondreDirection(id: number, texte: string, par: string | null, jointes: unknown = []) {
   if (texte.trim().length < 2) throw new Error('Écris ta réponse.')
   await demandeAValider(id)
-  await pool.query(`UPDATE "AdsAgentRequest" SET statut = 'en_attente', echanges = coalesce(echanges, '[]'::jsonb) || $2::jsonb WHERE id = $1`, [id, message('achraf', texte, { par })])
+  await pool.query(`UPDATE "AdsAgentRequest" SET statut = 'en_attente', echanges = coalesce(echanges, '[]'::jsonb) || $2::jsonb WHERE id = $1`, [id, message('achraf', texte, { par, ...pieces(jointes) })])
   return { id, lancee: await reveillerDirecteur(id) }
 }
 
 /** Achraf valide (avec une derniere note, s'il veut) : la creation part. */
-export async function validerDirection(id: number, texte: string, par: string | null) {
+export async function validerDirection(id: number, texte: string, par: string | null, jointes: unknown = []) {
   await demandeAValider(id)
-  const note = texte.trim() ? `✓ Validé. ${texte.trim()}` : '✓ Validé : lance la création.'
-  await pool.query(`UPDATE "AdsAgentRequest" SET statut = 'en_attente', valide_le = now(), echanges = coalesce(echanges, '[]'::jsonb) || $2::jsonb WHERE id = $1`, [id, message('achraf', note, { par, valide: true })])
+  // Ce qu'Achraf valide : le palier de la derniere proposition (l'idee, ou le storyboard).
+  const dern = (await pool.query(`SELECT e->>'palier' AS palier FROM "AdsAgentRequest", jsonb_array_elements(echanges) e WHERE id = $1 AND e->>'auteur' = 'agent'`, [id])).rows.at(-1)
+  const palier: Palier = dern?.palier === 'storyboard' ? 'storyboard' : 'idee'
+  const suite = palier === 'storyboard' ? 'filme le reste.' : 'lance la création.'
+  const note = texte.trim() ? `✓ Validé${palier === 'storyboard' ? ' (storyboard)' : ''}. ${texte.trim()}` : `✓ Validé${palier === 'storyboard' ? ' (storyboard)' : ''} : ${suite}`
+  await pool.query(`UPDATE "AdsAgentRequest" SET statut = 'en_attente', valide_le = now(), echanges = coalesce(echanges, '[]'::jsonb) || $2::jsonb WHERE id = $1`, [id, message('achraf', note, { par, valide: true, palier, ...pieces(jointes) })])
   return { id, lancee: await reveillerDirecteur(id) }
 }
 
@@ -309,7 +329,12 @@ export async function abandonnerDirection(id: number) {
 }
 
 export async function terminerDirection(id: number, resultat: string) {
-  await demandeEnCours(id)
+  const dem = await demandeEnCours(id)
+  if (!dem.retouche) {
+    const { etape } = etapeDirection(dem.parametres, dem.echanges as Message[])
+    if (etape === 'proposer') throw new Error('Rien n’est validé : propose d’abord (« proposer »), ou « echec » si c’est impossible.')
+    if (etape === 'storyboard') throw new Error('Le storyboard n’est pas encore validé : soumets-le (« proposer <id> <storyboard.md> --palier=storyboard ») au lieu de terminer.')
+  }
   await pool.query(`UPDATE "AdsAgentRequest" SET statut = 'termine', termine_le = now(), resultat = left($2, 3000) WHERE id = $1`, [id, resultat.trim() || 'Direction livrée.'])
   return { id }
 }

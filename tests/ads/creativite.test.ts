@@ -337,3 +337,34 @@ test('une image faite ailleurs doit être au format du plan', async () => {
   assert.ok(formatProche(1024, 1280, 'feed'))
   assert.equal(formatProche(0, 0, 'feed'), false)
 })
+
+test('les paliers : l’idée, le storyboard (en vidéo), puis la création', async () => {
+  const { etapeDirection } = await import('../../lib/ads/direction-model')
+  const video = { alignement: true, rendu: 'video', storyboard: true }
+  const ok = (palier?: 'idee' | 'storyboard') => ({ auteur: 'achraf' as const, texte: '✓ Validé', le: '', valide: true, ...(palier ? { palier } : {}) })
+  const prop = (palier: 'idee' | 'storyboard') => ({ auteur: 'agent' as const, texte: 'Proposition', le: '', palier })
+  assert.deepEqual(etapeDirection(video, []), { idee: false, storyboard: false, etape: 'proposer' })
+  assert.equal(etapeDirection(video, [prop('idee'), { auteur: 'achraf', texte: 'Change le plan 2', le: '' }]).etape, 'proposer', 'une réponse n’est pas une validation')
+  assert.equal(etapeDirection(video, [prop('idee'), ok('idee')]).etape, 'storyboard')
+  // Une validation d'avant les paliers (sans « palier ») vaut pour l'idée.
+  assert.equal(etapeDirection(video, [prop('idee'), ok()]).etape, 'storyboard')
+  assert.deepEqual(etapeDirection(video, [prop('idee'), ok('idee'), prop('storyboard'), ok('storyboard')]), { idee: true, storyboard: true, etape: 'creer' })
+  // Sans storyboard demandé, en motion, ou sans discussion : pas de deuxième palier.
+  assert.equal(etapeDirection({ ...video, storyboard: false }, [ok('idee')]).etape, 'creer')
+  assert.equal(etapeDirection({ alignement: true, rendu: 'motion', storyboard: true }, [ok('idee')]).storyboard, null)
+  assert.equal(etapeDirection({ alignement: false, rendu: 'video' }, []).etape, 'creer')
+})
+
+test('les pièces jointes : images et vidéos de Shine, liens https', async () => {
+  const { piecesValides } = await import('../../lib/ads/direction-model')
+  const p = piecesValides([
+    { url: 'https://res.cloudinary.com/shine/image/upload/v1/shine-ads/echanges/gel.jpg' },
+    'https://res.cloudinary.com/shine/video/upload/v1/shine-ads/echanges/clip.mp4',
+    { url: 'https://www.tiktok.com/@cosrx/video/123' },
+    { url: 'https://res.cloudinary.com/autre/image/upload/x.jpg' },
+  ], 'shine')
+  assert.deepEqual(p.map((x) => x.type), ['image', 'video', 'lien', 'lien'])
+  assert.deepEqual(piecesValides(undefined, 'shine'), [])
+  assert.throws(() => piecesValides([{ url: 'http://exemple.com' }], 'shine'), /https/)
+  assert.throws(() => piecesValides(Array(9).fill('https://a.b/c'), 'shine'), /8 pièces/)
+})

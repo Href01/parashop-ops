@@ -6,7 +6,7 @@ import { detailPub } from '@/lib/ads/series'
 import { abandonnerDirection, demanderDirection, demanderRetouche, repondreDirection, validerDirection, deplacerPlan, dupliquerPlan, modifierPlan, supprimerPlan, supprimerSerie } from '@/lib/ads/direction'
 import { genererVoix, type LangueVoix } from '@/lib/ads/voix'
 import { ajouterLecon, basculerLecon } from '@/lib/ads/apprentissage'
-import { poserClipDepuisUrl, signatureClip } from '@/lib/ads/clips'
+import { poserClipDepuisUrl, signatureClip, signaturePiece } from '@/lib/ads/clips'
 import type { FormatImage } from '@/lib/ads/creatif-model'
 import { PRIVATE_HEADERS, sameOrigin } from '@/lib/seo/http'
 
@@ -82,9 +82,11 @@ export async function POST(request: Request) {
     if (body?.option) return Response.json({ option: await modifierPlan(Number(body.option.id), body.option) }, { headers: PRIVATE_HEADERS })
     // Un clip video : le navigateur l'envoie a Cloudinary avec cette signature (dossier impose).
     // La discussion avant la creation : repondre, ou valider (la creation part).
-    if (body?.directionReponse) return Response.json(await repondreDirection(Number(body.directionReponse.id), String(body.directionReponse.texte || ''), par), { headers: PRIVATE_HEADERS })
+    if (body?.directionReponse) return Response.json(await repondreDirection(Number(body.directionReponse.id), String(body.directionReponse.texte || ''), par, body.directionReponse.pieces), { headers: PRIVATE_HEADERS })
     if (body?.directionAbandonnee) return Response.json(await abandonnerDirection(Number(body.directionAbandonnee)), { headers: PRIVATE_HEADERS })
-    if (body?.directionValidee) return Response.json(await validerDirection(Number(body.directionValidee.id), String(body.directionValidee.texte || ''), par), { headers: PRIVATE_HEADERS })
+    if (body?.directionValidee) return Response.json(await validerDirection(Number(body.directionValidee.id), String(body.directionValidee.texte || ''), par, body.directionValidee.pieces), { headers: PRIVATE_HEADERS })
+    // Une photo ou une video jointe a la discussion : envoyee du navigateur a Cloudinary, signee ici.
+    if (body?.pieceSignature) return Response.json(signaturePiece(body.pieceSignature), { headers: PRIVATE_HEADERS })
     if (body?.clipSignature) return Response.json(signatureClip(), { headers: PRIVATE_HEADERS })
     // Un clip genere hors du BOS (Higgsfield via le connecteur de Claude) : copie et pose dans le plan.
     if (body?.clipUrl) return Response.json({ clip: await poserClipDepuisUrl({ optionId: Number(body.clipUrl.optionId), url: String(body.clipUrl.url || ''), source: body.clipUrl.source, par }) }, { headers: PRIVATE_HEADERS })

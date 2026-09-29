@@ -376,6 +376,20 @@
 .dirMsgTexte { white-space: pre-wrap; font-size: 13px; line-height: 1.5; color: #1f2a24; overflow-wrap: anywhere; }
 .dirReponse { display: grid; gap: 8px; position: sticky; bottom: -60px; background: #fff; padding: 10px 0 8px; border-top: 1px solid #e6ebe5; }
 
+/* Les paliers de la discussion, et les pieces jointes. */
+.dirPaliers { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; font-size: 11.5px; font-weight: 700; }
+.dirPaliers li { border: 1px solid #dfe6e1; border-radius: 999px; padding: 3px 10px; color: #8a948e; background: #fff; }
+.dirPaliers li[data-etat='fait'] { color: #175f50; border-color: #b9dcc9; background: #e9f5ef; }
+.dirPaliers li[data-etat='fait']::after { content: ' ✓'; }
+.dirPaliers li[data-etat='encours'] { color: #fff; background: #175f50; border-color: #175f50; }
+.dirPieces { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.dirPieces img, .dirPieces video { display: block; width: 120px; height: 160px; object-fit: cover; border-radius: 8px; border: 1px solid #e1e6e0; background: #eef2ee; }
+.dirLien { display: inline-flex; gap: 4px; align-items: center; font-size: 12px; border: 1px solid #dfe6e1; border-radius: 999px; padding: 3px 10px; background: #fff; max-width: 100%; overflow-wrap: anywhere; }
+.dirPieceJointe { position: relative; display: inline-grid; place-items: center; width: 64px; height: 84px; border-radius: 8px; border: 1px solid #dfe6e1; background: #f4f7f3; font-size: 11px; gap: 2px; }
+.dirPieceJointe img, .dirPieceJointe video { width: 64px; height: 84px; object-fit: cover; border-radius: 8px; }
+.dirPieceJointe button { position: absolute; top: 2px; right: 2px; border: 0; border-radius: 50%; width: 18px; height: 18px; display: grid; place-items: center; background: rgba(0, 0, 0, .6); color: #fff; padding: 0; cursor: pointer; }
+.dirMsgTexte a { color: #0c6b52; text-decoration: underline; overflow-wrap: anywhere; }
+
 @media (max-width: 760px) {
   .montageMulti, .montageGrille { grid-template-columns: 1fr; }
   .dirDeroule, .dirRendus { grid-template-columns: 1fr; }

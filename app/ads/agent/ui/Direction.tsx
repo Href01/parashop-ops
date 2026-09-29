@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { AlertTriangle, Check, Clapperboard, Download, Film, GalleryHorizontal, ImagePlus, Images, Loader2, MessageCircle, Send, Sparkles, Trash2, Wand2, X } from 'lucide-react'
+import { AlertTriangle, Check, Clapperboard, Download, ExternalLink, Film, GalleryHorizontal, ImagePlus, Images, Loader2, MessageCircle, Paperclip, Send, Sparkles, Trash2, Wand2, X } from 'lucide-react'
 import { FORMATS_IMAGE, type FormatImage, type Langue } from '@/lib/ads/creatif-model'
-import { A_MONTRER, BORNES, INGREDIENTS, MOUVEMENTS, OBJECTIFS, OFFRES, RECETTES, STYLES, type CleRecette, type AMontrer, type Idee, type Objectif, type Offre, type Style, type TypeDirection } from '@/lib/ads/direction-model'
+import { A_MONTRER, BORNES, INGREDIENTS, MOUVEMENTS, OBJECTIFS, OFFRES, RECETTES, STYLES, etapeDirection, type Message, type CleRecette, type AMontrer, type Idee, type Objectif, type Offre, type Style, type TypeDirection } from '@/lib/ads/direction-model'
 import { urlDetouree } from '@/lib/ads/reel-model'
 import { ApercuCarrousel, CreatifVisuel, telechargerPng, type Visuel } from './Apercu'
 import { LecteurReel } from './Reel'
@@ -90,6 +90,8 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
   const [rendu, setRendu] = useState<Rendu>('motion')
   // Discuter avant de creer : le directeur artistique propose d'abord, Achraf valide.
   const [alignement, setAlignement] = useState(true)
+  // En video : le storyboard (images + accroche filmee) avant de depenser le reste des credits.
+  const [storyboard, setStoryboard] = useState(true)
   const video = type === 'reel' && rendu === 'video'
   const choisirRecette = (r: CleRecette | null) => {
     setRecette(r)
@@ -142,7 +144,7 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
     setEnvoi(true)
     try {
       const j = await poster({ direction: {
-        type, nombre, format, styles, qualite, brief, objectif, offre, montrer, langue, rendu: type === 'reel' ? rendu : 'motion', alignement,
+        type, nombre, format, styles, qualite, brief, objectif, offre, montrer, langue, rendu: type === 'reel' ? rendu : 'motion', alignement, storyboard,
         fond: type === 'reel' && !video && fondShine ? 'shine' : 'libre', ...(recette && !video ? { recette } : {}), ...(creatif ? { creatifId: creatif.id } : { produitIds: produits }),
       } })
       envoye(alignement
@@ -285,6 +287,8 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
       <fieldset className={s.reglage}><legend>{num()} Avant de créer</legend>
         <label className={s.caseInline}><input type="checkbox" checked={alignement} onChange={(e) => setAlignement(e.target.checked)} /> <b>Discuter d’abord avec le directeur artistique</b></label>
         <Effet>{alignement ? `Il te propose l’idée, l’accroche et chaque plan${video ? ' (avec les modèles vidéo et le coût en crédits)' : ''}, avec ses questions. Rien n’est créé avant ton « Valider ».` : 'Il crée directement à partir du brief : plus rapide, mais tu découvres l’idée à l’arrivée.'}</Effet>
+        {video && alignement && <label className={s.caseInline}><input type="checkbox" checked={storyboard} onChange={(e) => setStoryboard(e.target.checked)} /> <b>Storyboard avant de filmer</b></label>}
+        {video && alignement && <Effet>{storyboard ? 'Après ton OK sur l’idée, il fait toutes les images de départ et ne filme que l’accroche (≈ 20 à 40 crédits). Tu regardes le tout dans le Studio ; le reste n’est filmé qu’après ton second OK.' : 'Après ton OK sur l’idée, il filme tous les plans d’un coup.'}</Effet>}
       </fieldset>
 
       <section className={s.dirRecap} aria-label="Ce que tu vas recevoir">
@@ -293,7 +297,7 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
           <li>{livrable}.</li>
           <li>{OBJECTIFS[objectif].label} : {EFFET_OBJECTIF[objectif]}</li>
           {verifie.length > 0 && <li>Vérifié avant livraison : {verifie.join(' · ')}.</li>}
-          <li>{alignement ? 'D’abord sa proposition (≈ 5 min) à valider, puis la création' : 'La création directement'} : {delai}.</li>
+          <li>{alignement ? (video && storyboard ? 'Sa proposition (≈ 5 min), puis le storyboard (images + accroche filmée, ≈ 20 à 40 crédits), chacun à valider, puis la vidéo' : 'D’abord sa proposition (≈ 5 min) à valider, puis la création') : 'La création directement'} : {delai}.</li>
         </ul>
         <div className={s.btns}>
           <button type="button" className={s.primary} disabled={envoi || Boolean(manque)} onClick={() => void envoyer()}>
@@ -320,7 +324,8 @@ export function DirectionsEnCours({ demandes, creatifId, rafraichir, dire }: { d
     && (ENCOURS.includes(x.statut) || (x.statut === 'erreur' && Date.now() - new Date(x.termine_le || x.demande_le).getTime() < 864e5)))
   if (!liste.length) return null
   const courante = liste.find((x) => x.id === ouverte)
-  const titre = (x: Demande) => x.statut === 'a_valider' ? 'Sa proposition t’attend'
+  const derniere = (x: Demande) => [...(x.echanges ?? [])].reverse().find((m) => m.auteur === 'agent')
+  const titre = (x: Demande) => x.statut === 'a_valider' ? (derniere(x)?.palier === 'storyboard' ? 'Le storyboard t’attend' : 'Sa proposition t’attend')
     : x.statut === 'en_attente' ? (x.valide_le ? 'Validé : la création va partir' : x.echanges?.length ? 'Il relit ta réponse' : x.parametres?.alignement ? 'Il prépare sa proposition' : 'En attente du directeur artistique')
       : x.statut === 'en_cours' ? (x.valide_le || !x.parametres?.alignement ? 'Claude crée la pub' : 'Il prépare sa proposition') : 'Direction impossible'
   return (
@@ -332,6 +337,7 @@ export function DirectionsEnCours({ demandes, creatifId, rafraichir, dire }: { d
         {(x.statut === 'a_valider' || (x.echanges?.length ?? 0) > 0) && x.statut !== 'erreur' && (
           <div className={s.btns}>
             <button type="button" className={x.statut === 'a_valider' ? s.primary : s.ghost} onClick={() => setOuverte(x.id)}><MessageCircle size={13} /> {x.statut === 'a_valider' ? 'Lire et répondre' : 'Voir la discussion'}</button>
+            {x.creatif_id && x.statut === 'a_valider' && derniere(x)?.palier === 'storyboard' && <a className={s.ghost} href={`/ads/studio?c=${x.creatif_id}`}><ExternalLink size={13} /> Voir le storyboard</a>}
           </div>)}
       </div>))}
       {/* Au-dessus de tout (la bibliotheque du studio a son propre empilement : le bandeau du BOS couvrait le titre). */}
@@ -340,24 +346,70 @@ export function DirectionsEnCours({ demandes, creatifId, rafraichir, dire }: { d
   )
 }
 
-/** La discussion avant la creation : la proposition du directeur artistique, les reponses d'Achraf, la validation. */
+/** Un message : le **gras** du directeur artistique, et les liens cliquables. */
+const avecLiens = (texte: string) => texte.split(/(https:\/\/[^\s)»"]+)/g).map((x, i) => (i % 2 ? <a key={i} href={x} target="_blank" rel="noreferrer">{x.length > 60 ? `${x.slice(0, 57)}…` : x}</a> : <span key={i}>{avecGras(x)}</span>))
+type PieceJointe = { type: 'image' | 'video' | 'lien'; url: string }
+const miniature = (url: string) => url.replace('/image/upload/', '/image/upload/c_limit,w_320,h_320,f_auto/')
+
+function Pieces({ pieces }: { pieces?: PieceJointe[] }) {
+  if (!pieces?.length) return null
+  return (
+    <div className={s.dirPieces}>{pieces.map((p, i) => p.type === 'image'
+      ? <a key={i} href={p.url} target="_blank" rel="noreferrer"><img src={miniature(p.url)} alt="Pièce jointe" /></a>
+      : p.type === 'video'
+        ? <video key={i} src={p.url} controls muted playsInline preload="metadata" />
+        : <a key={i} className={s.dirLien} href={p.url} target="_blank" rel="noreferrer"><ExternalLink size={12} /> {p.url.replace(/^https:\/\/(www\.)?/, '').slice(0, 48)}</a>)}
+    </div>
+  )
+}
+
+/** La discussion avant la creation : la proposition du directeur artistique, les reponses d'Achraf, les paliers, les pieces jointes. */
 function Discussion({ x, fermer, rafraichir, dire }: { x: Demande; fermer: () => void; rafraichir?: () => Promise<void> | void; dire?: (ok: boolean, t: string) => void }) {
   const [texte, setTexte] = useState('')
+  const [jointes, setJointes] = useState<PieceJointe[]>([])
+  const [envoiPiece, setEnvoiPiece] = useState<number | null>(null)
   const [envoi, setEnvoi] = useState<null | 'reponse' | 'valide' | 'abandon'>(null)
   const peutRepondre = x.statut === 'a_valider'
+  const p = x.parametres
+  const derniere = [...(x.echanges ?? [])].reverse().find((m) => m.auteur === 'agent')
+  const surStoryboard = derniere?.palier === 'storyboard'
+  const etat = etapeDirection(p ?? {}, (x.echanges ?? []) as Message[])
+  // Les photos et videos partent du navigateur vers Cloudinary (signees par le BOS), puis vont dans le message.
+  const joindre = async (fichiers: FileList | null) => {
+    for (const f of Array.from(fichiers ?? []).slice(0, 8 - jointes.length)) {
+      const video = f.type.startsWith('video/')
+      if (f.size > (video ? 95 : 15) * 1048576) { dire?.(false, `${f.name} : trop lourd (${video ? '95' : '15'} Mo au plus).`); continue }
+      setEnvoiPiece(0)
+      try {
+        const sig = (await poster({ pieceSignature: video ? 'video' : 'image' })) as { url: string; apiKey: string; timestamp: string; folder: string; signature: string }
+        const fd = new FormData()
+        fd.append('file', f); fd.append('api_key', sig.apiKey); fd.append('timestamp', sig.timestamp); fd.append('folder', sig.folder); fd.append('signature', sig.signature)
+        const r = await new Promise<{ secure_url?: string; error?: { message?: string } }>((ok, ko) => {
+          const q = new XMLHttpRequest()
+          q.open('POST', sig.url)
+          q.upload.onprogress = (e) => { if (e.lengthComputable) setEnvoiPiece(Math.round((e.loaded / e.total) * 100)) }
+          q.onload = () => { try { ok(JSON.parse(q.responseText)) } catch { ko(new Error('Réponse de Cloudinary illisible.')) } }
+          q.onerror = () => ko(new Error('Envoi interrompu (réseau).'))
+          q.send(fd)
+        })
+        if (!r.secure_url) throw new Error(`Cloudinary : ${r.error?.message ?? 'envoi refusé'}`)
+        setJointes((j) => [...j, { type: video ? 'video' : 'image', url: r.secure_url! }])
+      } catch (e) { dire?.(false, e instanceof Error ? e.message : 'Envoi impossible') } finally { setEnvoiPiece(null) }
+    }
+  }
   const agir = async (quoi: 'reponse' | 'valide' | 'abandon') => {
-    if (quoi === 'abandon' && !window.confirm('Abandonner ce brief ? Rien n’a encore été créé.')) return
+    if (quoi === 'abandon' && !window.confirm(x.creatif_id ? 'Abandonner ce brief ? Ce qui est déjà créé reste dans la bibliothèque.' : 'Abandonner ce brief ? Rien n’a encore été créé.')) return
     setEnvoi(quoi)
     try {
-      const j = await poster(quoi === 'reponse' ? { directionReponse: { id: x.id, texte } } : quoi === 'valide' ? { directionValidee: { id: x.id, texte } } : { directionAbandonnee: x.id })
-      dire?.(true, quoi === 'reponse' ? (j.lancee ? 'Réponse envoyée : il ajuste sa proposition (≈ 5 min).' : 'Réponse envoyée : il la lit à son prochain passage.')
-        : quoi === 'valide' ? (j.lancee ? 'Validé : la création commence maintenant.' : 'Validé : il crée à son prochain passage.') : 'Brief abandonné.')
-      setTexte('')
+      const corps = { id: x.id, texte, pieces: jointes }
+      const j = await poster(quoi === 'reponse' ? { directionReponse: corps } : quoi === 'valide' ? { directionValidee: corps } : { directionAbandonnee: x.id })
+      dire?.(true, quoi === 'reponse' ? (j.lancee ? 'Réponse envoyée : il ajuste (≈ 5 min).' : 'Réponse envoyée : il la lit à son prochain passage.')
+        : quoi === 'valide' ? (surStoryboard ? (j.lancee ? 'Storyboard validé : il filme le reste maintenant.' : 'Storyboard validé : il filme le reste à son prochain passage.') : (j.lancee ? 'Validé : il commence maintenant.' : 'Validé : il commence à son prochain passage.')) : 'Brief abandonné.')
+      setTexte(''); setJointes([])
       fermer()
       await rafraichir?.()
     } catch (e) { dire?.(false, e instanceof Error ? e.message : 'Échec') } finally { setEnvoi(null) }
   }
-  const p = x.parametres
   return (
     <div className={s.drawer} role="dialog" aria-modal="true" aria-label="Discussion avec le directeur artistique" onClick={fermer}>
       <div className={s.drawerBody} onClick={(e) => e.stopPropagation()}>
@@ -372,23 +424,42 @@ function Discussion({ x, fermer, rafraichir, dire }: { x: Demande; fermer: () =>
           {p.recette && <span className={`${s.chip} ${s.chipVert}`}>{RECETTES[p.recette].nom}</span>}
           {p.offre && p.offre !== 'aucune' && <span className={s.chip}>{OFFRES[p.offre]}</span>}
         </p>}
+        {p?.alignement && <ol className={s.dirPaliers}>
+          <li data-etat={etat.idee ? 'fait' : 'encours'}>① L’idée</li>
+          {etat.storyboard !== null && <li data-etat={etat.storyboard ? 'fait' : etat.idee ? 'encours' : 'avenir'}>② Le storyboard</li>}
+          <li data-etat={etat.etape === 'creer' ? 'encours' : 'avenir'}>{etat.storyboard !== null ? '③' : '②'} {p.rendu === 'video' ? 'La vidéo' : 'La création'}</li>
+        </ol>}
         <div className={s.dirFil}>
           {(x.echanges ?? []).map((m, i) => (
             <div key={i} className={m.auteur === 'agent' ? s.dirMsgAgent : s.dirMsgMoi}>
-              <small className={s.muted}>{m.auteur === 'agent' ? 'Directeur artistique' : 'Toi'} · {quand(m.le)}</small>
-              <div className={s.dirMsgTexte}>{avecGras(m.texte)}</div>
+              <small className={s.muted}>{m.auteur === 'agent' ? (m.palier === 'storyboard' ? 'Directeur artistique · storyboard' : 'Directeur artistique') : 'Toi'} · {quand(m.le)}</small>
+              <div className={s.dirMsgTexte}>{avecLiens(m.texte)}</div>
+              <Pieces pieces={m.pieces} />
             </div>))}
-          {!peutRepondre && <p className={`${s.small} ${s.muted}`}><Loader2 size={12} className={s.tourne} /> {x.valide_le ? 'Validé : la création est en route.' : 'Il prépare sa réponse…'}</p>}
+          {!peutRepondre && <p className={`${s.small} ${s.muted}`}><Loader2 size={12} className={s.tourne} /> {x.valide_le ? 'Validé : il est au travail.' : 'Il prépare sa réponse…'}</p>}
         </div>
         {peutRepondre && <div className={s.dirReponse}>
+          {surStoryboard && x.creatif_id && <p className={`${s.notice} ${s.warn}`} style={{ marginTop: 0 }}>Regarde le storyboard dans le Studio (images de départ, accroche filmée, textes, carte de fin) avant de valider : <a href={`/ads/studio?c=${x.creatif_id}`}>ouvrir la création</a>. Le reste des crédits ne part qu’après ton « Valider ».</p>}
           <textarea rows={4} className={s.champTexte} value={texte} onChange={(e) => setTexte(e.target.value)} maxLength={4000}
-            placeholder="Ta réponse : ce qui te plaît, ce qu’il faut changer, tes réponses à ses questions… (facultatif pour valider)" />
+            placeholder={surStoryboard ? 'Plan par plan : ce qui va, ce qu’il faut refaire avant de filmer (« plan 3 : tube plus grand »)… Colle aussi des liens.' : 'Ta réponse : ce qui te plaît, ce qu’il faut changer, tes réponses à ses questions… Colle aussi des liens (TikTok, Instagram, Ad Library).'} />
+          {(jointes.length > 0 || envoiPiece != null) && <div className={s.dirPieces}>
+            {jointes.map((j, i) => (
+              <span key={j.url} className={s.dirPieceJointe}>
+                {j.type === 'image' ? <img src={miniature(j.url)} alt="" /> : <video src={j.url} muted playsInline preload="metadata" />}
+                <button type="button" onClick={() => setJointes((y) => y.filter((_, k) => k !== i))} aria-label="Retirer"><X size={11} /></button>
+              </span>))}
+            {envoiPiece != null && <span className={s.dirPieceJointe}><Loader2 size={14} className={s.tourne} /> {envoiPiece} %</span>}
+          </div>}
           <div className={s.btns}>
-            <button type="button" className={s.primary} disabled={envoi != null} onClick={() => void agir('valide')}>{envoi === 'valide' ? <Loader2 size={14} className={s.tourne} /> : <Check size={14} />} Valider et lancer la création</button>
-            <button type="button" className={s.ghost} disabled={envoi != null || texte.trim().length < 2} onClick={() => void agir('reponse')}>{envoi === 'reponse' ? <Loader2 size={14} className={s.tourne} /> : <Send size={14} />} Répondre (il ajuste)</button>
+            <button type="button" className={s.primary} disabled={envoi != null || envoiPiece != null} onClick={() => void agir('valide')}>{envoi === 'valide' ? <Loader2 size={14} className={s.tourne} /> : <Check size={14} />} {surStoryboard ? 'Valider et filmer le reste' : etat.storyboard !== null ? 'Valider l’idée (storyboard ensuite)' : 'Valider et lancer la création'}</button>
+            <button type="button" className={s.ghost} disabled={envoi != null || envoiPiece != null || texte.trim().length < 2} onClick={() => void agir('reponse')}>{envoi === 'reponse' ? <Loader2 size={14} className={s.tourne} /> : <Send size={14} />} Répondre (il ajuste)</button>
+            <label className={`${s.ghost} ${s.clipEnvoi}`} aria-disabled={envoiPiece != null || jointes.length >= 8}>
+              <input type="file" accept="image/*,video/*" multiple disabled={envoiPiece != null || jointes.length >= 8} onChange={(e) => { const f = e.target.files; void joindre(f).finally(() => { e.target.value = '' }) }} />
+              <Paperclip size={13} /> Joindre photo / vidéo
+            </label>
             <button type="button" className={s.ghost} disabled={envoi != null} onClick={() => void agir('abandon')}><Trash2 size={13} /> Abandonner</button>
           </div>
-          <small className={s.muted}>« Valider » : il crée exactement ce qui est convenu ici (ton texte ci-dessus compte comme dernière consigne). « Répondre » : il revient avec une proposition ajustée.</small>
+          <small className={s.muted}>{surStoryboard ? '« Valider » : il filme les plans restants, avec tes remarques ci-dessus. « Répondre » : il corrige le storyboard et te le renvoie.' : '« Valider » : il avance à l’étape suivante (ton texte compte comme dernière consigne). « Répondre » : il revient avec une proposition ajustée.'} Il regarde tes photos et vidéos, et ouvre les liens publics (Instagram et TikTok bloquent souvent les robots : une capture d’écran passe toujours).</small>
         </div>}
       </div>
     </div>
