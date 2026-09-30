@@ -368,3 +368,24 @@ test('les pièces jointes : images et vidéos de Shine, liens https', async () =
   assert.throws(() => piecesValides([{ url: 'http://exemple.com' }], 'shine'), /https/)
   assert.throws(() => piecesValides(Array(9).fill('https://a.b/c'), 'shine'), /8 pièces/)
 })
+
+test('un seul film : chaque son de clip ramené au même niveau, la bande-son sur le plan 1, le texte d’accroche dès la 1re image', async () => {
+  const { gainNormalise, niveauDb, NIVEAU_CLIP_DB } = await import('../../lib/ads/reel-model')
+  // Le grincement de #39 (-42 dB) remonte, la mousse (-27 dB) descend un peu : les deux finissent au même niveau.
+  assert.ok(Math.abs(20 * Math.log10(gainNormalise(-42)) + -42 - NIVEAU_CLIP_DB) < 0.01 || gainNormalise(-42) === 8)
+  assert.ok(Math.abs(20 * Math.log10(gainNormalise(-27)) + -27 - NIVEAU_CLIP_DB) < 0.01)
+  assert.equal(gainNormalise(-90), 1, 'un silence ne se gonfle pas')
+  assert.equal(gainNormalise(-10), 0.5, 'borné vers le bas')
+  const sinus = Array.from({ length: 4800 }, (_, i) => 0.5 * Math.sin(i / 5))
+  assert.ok(Math.abs(niveauDb(sinus) - 20 * Math.log10(0.5 / Math.SQRT2)) < 0.2)
+  // La bande-son : Cloudinary de Shine seulement, et sur le plan 1.
+  const bande = { url: 'https://res.cloudinary.com/shine/video/upload/v1/shine-ads/clips/bande.mp3', volume: 0.4 }
+  assert.doesNotThrow(() => verifierOption(plan({ mouvement: 'zoom', duree: 2, bandeSon: bande }), 0, 'reel', []))
+  assert.throws(() => verifierOption(plan({ mouvement: 'zoom', duree: 2, bandeSon: bande }), 2, 'reel', []), /plan 1/)
+  assert.equal(OptionLivreeSchema.safeParse({ concept: 'P', pourquoi: 'Parce que ça arrête le pouce.', texte: { fr: 'Ta *peau*' }, bandeSon: { url: 'https://exemple.com/a.mp3' } }).success, false)
+  // L'accroche : des mots visibles dès t = 0 ; les autres plans gardent leur entrée.
+  const z: PlanReel = { mouvement: 'zoom', duree: 2, produits: 0, texte: 'Ta peau *brille* à midi ?' }
+  assert.ok(etatPlan(z, 0, true).mots[0].opacite > 0.9, 'premier mot lisible à la 1re image')
+  assert.ok(etatPlan(z, 0.3, true).mots.every((m) => m.opacite > 0.9), 'toute l’accroche en 0,3 s')
+  assert.equal(etatPlan(z, 0, false).mots[0].opacite, 0)
+})

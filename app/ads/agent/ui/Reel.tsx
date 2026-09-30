@@ -20,6 +20,7 @@ export type PlanDessin = PlanReel & {
   image: string | null; detourees: string[]; noms?: string[]; voixUrl?: string | null; captures?: string[]
   clip?: string | null; clipDebut?: number; clipDuree?: number | null   // un clip video reel en fond (Cloudinary)
   clipSon?: boolean                                                   // garder le son du clip (sinon, muet)
+  bandeSon?: { url: string; volume: number } | null                   // plan 1 : la bande-son de tout le Reel
 }
 type Ressources = Map<string, HTMLImageElement>
 type Ctx = CanvasRenderingContext2D
@@ -80,6 +81,24 @@ function chargerClip(url: string, hd: boolean): Promise<void> {
     }
     essai(0)
   })
+}
+/** L'etalonnage Shine des clips, et un grain de film partage (le meme d'un clip a l'autre, anime par le temps : apercu = export). */
+const ETALONNAGE = 'contrast(1.05) saturate(0.9) sepia(0.07) brightness(1.02)'
+let tuileGrain: HTMLCanvasElement | null = null
+function grain(ctx: Ctx, t: number) {
+  if (!tuileGrain) {
+    tuileGrain = document.createElement('canvas'); tuileGrain.width = 256; tuileGrain.height = 256
+    const g = tuileGrain.getContext('2d')!, img = g.createImageData(256, 256)
+    let s = 7
+    for (let k = 0; k < img.data.length; k += 4) { s = (s * 16807) % 2147483647; const v = s % 256; img.data[k] = img.data[k + 1] = img.data[k + 2] = v; img.data[k + 3] = 255 }
+    g.putImageData(img, 0, 0)
+  }
+  const f = Math.floor(t * 24)
+  ctx.save(); ctx.globalAlpha = 0.045; ctx.globalCompositeOperation = 'overlay'
+  const motif = ctx.createPattern(tuileGrain, 'repeat')!
+  motif.setTransform(new DOMMatrix().translate((f * 73) % 256, (f * 151) % 256))
+  ctx.fillStyle = motif; ctx.fillRect(0, 0, W, H)
+  ctx.restore()
 }
 const clipsDe = (plans: PlanDessin[]) => [...new Set(plans.map((p) => p.clip).filter((u): u is string => Boolean(u)))]
 
@@ -253,7 +272,12 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
     const zoom = 1 + (e.fond.echelle - 1) * 0.4
     const ech = Math.max(W / clip.videoWidth, H / clip.videoHeight) * zoom
     const w = clip.videoWidth * ech, h = clip.videoHeight * ech
+    // Un seul etalonnage pour tous les clips (des modeles differents, un seul film) : un peu plus
+    // chaud, contraste doux, saturation tenue ; puis un grain commun qui les colle ensemble.
+    ctx.filter = ETALONNAGE
     ctx.drawImage(clip, (W - w) / 2, (H - h) / 2, w, h)
+    ctx.filter = 'none'
+    grain(ctx, plans.slice(0, i).reduce((n, p) => n + p.duree, 0) + local)
   } else if (shine) {
     dessinerFondShine(ctx, shine, plans.slice(0, i).reduce((n, p) => n + p.duree, 0) + local, res)
   } else if (fond) {
@@ -862,7 +886,8 @@ export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, 
   const figer = (x: number) => { enLecture.current = false; cancelAnimationFrame(raf.current); setLecture(false); setT(x) }
   const voix = avecVoix ? voixDe(plans) : []
   const sonsClips = sonsClipsDe(plans)
-  const cleSon = JSON.stringify([plans.map((p) => [p.mouvement, p.duree, p.produits, p.transition, p.bulles?.length, p.points?.length, p.choix?.length]), bruitages, voix, sonsClips])
+  const bande = plans[0]?.bandeSon ? { url: urlSonClip(plans[0].bandeSon.url), volume: plans[0].bandeSon.volume } : null
+  const cleSon = JSON.stringify([plans.map((p) => [p.mouvement, p.duree, p.produits, p.transition, p.bulles?.length, p.points?.length, p.choix?.length]), bruitages, voix, sonsClips, bande])
 
   useEffect(() => {
     let vivant = true
@@ -875,7 +900,7 @@ export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, 
   // La piste se refabrique quand le montage change (un peu apres la derniere retouche).
   useEffect(() => {
     let vivant = true
-    const h = setTimeout(() => { void mixerPiste(plans, { bruitages, voix, clips: sonsClips }).then((b) => { if (vivant) setPiste(b) }).catch(() => {}) }, 350)
+    const h = setTimeout(() => { void mixerPiste(plans, { bruitages, voix, clips: sonsClips, bande }).then((b) => { if (vivant) setPiste(b) }).catch(() => {}) }, 350)
     return () => { vivant = false; clearTimeout(h) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cleSon])
@@ -950,12 +975,12 @@ export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, 
       const source = new CanvasSource(toile, { codec: 'avc', quality: QUALITY_HIGH })
       sortie.addVideoTrack(source, { frameRate: IPS })
       // La bande-son : en AAC, le format qu'Instagram attend. Sans AAC, la video part muette (et on le dit).
-      const bande = bruitages || voix.length || sonsClips.length ? await mixerPiste(plans, { bruitages, voix, clips: sonsClips }) : null
-      const avecSon = bande && (await canEncodeAudio('aac', { numberOfChannels: 2, sampleRate: TAUX }))
+      const piste = bruitages || voix.length || sonsClips.length || bande ? await mixerPiste(plans, { bruitages, voix, clips: sonsClips, bande }) : null
+      const avecSon = piste && (await canEncodeAudio('aac', { numberOfChannels: 2, sampleRate: TAUX }))
       const sonPiste = avecSon ? new AudioBufferSource({ codec: 'aac', quality: QUALITY_HIGH }) : null
       if (sonPiste) sortie.addAudioTrack(sonPiste)
       await sortie.start()
-      if (sonPiste && bande) await sonPiste.add(bande)
+      if (sonPiste && piste) await sonPiste.add(piste)
       const n = nbImages(plans)
       for (let f = 0; f < n; f++) {
         await placerClipsExport(plans, f / IPS)
@@ -968,7 +993,7 @@ export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, 
       const a = document.createElement('a')
       a.href = URL.createObjectURL(blob); a.download = `${nom}.mp4`; a.click()
       setTimeout(() => URL.revokeObjectURL(a.href), 5000)
-      if (bande && !avecSon) setErreur('Vidéo exportée sans le son : ce navigateur n’encode pas l’AAC.')
+      if (piste && !avecSon) setErreur('Vidéo exportée sans le son : ce navigateur n’encode pas l’AAC.')
     } catch (e) { setErreur(e instanceof Error ? e.message : 'Export impossible') }
     finally { setExport(null) }
   }

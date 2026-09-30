@@ -449,6 +449,11 @@ export const LivraisonDirection = z.object({
     texteVideo: z.boolean().optional(),
     // Filme sans image de depart (texte → video) : seulement un plan SANS produit (ambiance, cheveux, peau, matiere).
     sansDepart: z.boolean().optional(),
+    // Plan 1 seulement : la bande-son de tout le Reel (un fichier son du Cloudinary de Shine), et son volume.
+    bandeSon: z.object({
+      url: z.string().trim().max(600).regex(/^https:\/\/res\.cloudinary\.com\/[a-z0-9_-]+\/video\/upload\/\S+$/i, 'bande-son : un son envoyé sur le Cloudinary de Shine'),
+      volume: z.number().min(0).max(1).default(0.5),
+    }).nullable().optional(),
   })).min(1).max(10),
   // Chaque consigne du brief, et le ou les plans qui la tiennent ([] = tenue partout, ex. « ne parle pas de l'été »).
   couverture: z.array(z.object({ consigne: z.string().trim().min(2).max(300), plans: z.array(z.number().int().min(1).max(10)).max(10) })).max(15).optional(),
@@ -506,6 +511,7 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
     // Sans image de depart, le modele video invente tout ce qu'il montre : jamais un produit (il inventerait l'emballage).
     // La carte de fin aussi : ses produits sont les vrais detoures poses par-dessus, jamais dans le clip.
     if (o.sansDepart && (!['zoom', 'fin'].includes(o.mouvement) || !Array.isArray(o.produitIds) || o.produitIds.length || String(o.clipPrompt ?? '').trim().length < 60)) throw new Error(`${nom} : « sansDepart » (filmé sans image de départ, texte → vidéo) : un plan « zoom » ou la carte de fin, SANS produit dans l'image (« produitIds »: []) et avec sa consigne de mouvement (« clipPrompt », 60 caractères au moins). Un produit visible dans le clip part toujours d'une image de départ, sinon le modèle invente l'emballage.`)
+    if (o.bandeSon && i !== 0) throw new Error(`${nom} : la bande-son se pose sur le plan 1 (elle court sous tout le Reel).`)
     if (o.clip?.duree && o.clip.debut >= o.clip.duree) throw new Error(`${nom} : le clip commence après sa fin (${o.clip.debut} s pour un clip de ${o.clip.duree} s).`)
     if (o.avisId && o.mouvement !== 'zoom') throw new Error(`${nom} : un avis client se montre sur un plan « zoom ».`)
     if (o.avisId && o.illustration) throw new Error(`${nom} : un schéma OU un avis par plan, pas les deux.`)
@@ -523,7 +529,7 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
     for (const [langue, texte] of Object.entries(o.voix ?? {})) {
       if (typeof texte === 'string' && voixTropLongue(texte, o.duree)) throw new Error(`${nom} : la voix off (${langue}) dure ~${dureeVoix(texte)} s chuchotée pour un plan de ${o.duree} s — elle déborderait sur le plan suivant. ${motsVoixMax(o.duree)} mots au plus, ou allonge le plan.`)
     }
-  } else if (o.animes?.length || o.mouvement || o.transition || o.bulles || o.points || o.choix || o.voix || o.ecrans || o.clip || o.sansDepart) {
+  } else if (o.animes?.length || o.mouvement || o.transition || o.bulles || o.points || o.choix || o.voix || o.ecrans || o.clip || o.sansDepart || o.bandeSon) {
     throw new Error(`${nom} : « animes », « mouvement », « transition », « bulles », « points », « choix », « voix » et « ecrans » ne servent que dans un Reel.`)
   }
 }

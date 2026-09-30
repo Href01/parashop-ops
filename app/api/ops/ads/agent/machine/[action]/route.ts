@@ -1,7 +1,7 @@
 import { contexte, echecDemande, publierRapport, reclamerDemande } from '@/lib/ads/agent'
 import { synchroniserPubsMeta } from '@/lib/ads/meta-sync'
 import { genererImage, lireImage, poserImageDepuisUrl, supprimerImage } from '@/lib/ads/images'
-import { poserClipDepuisUrl } from '@/lib/ads/clips'
+import { poserBandeSon, poserClipDepuisUrl } from '@/lib/ads/clips'
 import { proposerDirection, contexteDirection, enregistrerDirection, modifierPlan, terminerDirection } from '@/lib/ads/direction'
 import { genererVoix, type LangueVoix } from '@/lib/ads/voix'
 import type { FormatImage } from '@/lib/ads/creatif-model'
@@ -49,6 +49,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
       case 'rapport':
         return Response.json(await publierRapport(body), { headers: PRIVATE_HEADERS })
       // Une image faite par un modele d'image Higgsfield (connecteur de Claude) : posee dans le plan.
+      // La bande-son du Reel (plan 1) : une musique ou une ambiance faite ailleurs.
+      case 'bande-son':
+        return Response.json({ bande: await poserBandeSon({ optionId: Number(body?.optionId), url: String(body?.url || ''), volume: body?.volume, par: 'agent' }) }, { headers: PRIVATE_HEADERS })
       case 'image-url':
         return Response.json({ image: await poserImageDepuisUrl({ optionId: Number(body?.optionId), url: String(body?.url || ''), source: body?.source, modele: body?.modele, credits: body?.credits, par: 'agent' }) }, { headers: PRIVATE_HEADERS })
       case 'image':

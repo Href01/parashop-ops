@@ -70,6 +70,20 @@ async function copierSurCloudinary(url: string, nom: string): Promise<{ url: str
  * ou un autre outil : copie sur Cloudinary, pose dans le plan, et trace dans le journal (sans cout : il
  * est paye hors du BOS).
  */
+/** La bande-son du Reel (musique ou ambiance, faite ailleurs) : copiee sur Cloudinary et posee sur le plan 1. */
+export async function poserBandeSon(o: { optionId: number; url: string; volume?: unknown; par: string | null }) {
+  const url = String(o.url || '').trim()
+  if (!/^https:\/\/\S+$/i.test(url) || url.length > 2000) throw new Error('Adresse de la bande-son : une URL https complète.')
+  const opt = (await pool.query(`SELECT id, carte, mouvement FROM "AdsCreativeOption" WHERE id = $1`, [o.optionId])).rows[0]
+  if (!opt || !opt.mouvement) throw new Error('Plan de Reel introuvable.')
+  if (opt.carte !== 1) throw new Error('La bande-son se pose sur le plan 1 (elle court sous tout le Reel).')
+  const { nuage } = identifiants()
+  const son = url.startsWith(`https://res.cloudinary.com/${nuage}/video/upload/`) ? { url } : await copierSurCloudinary(url, `bande-${opt.id}-${Date.now()}`)
+  const volume = Math.min(1, Math.max(0, Number(o.volume ?? 0.5) || 0.5))
+  await pool.query(`UPDATE "AdsCreativeOption" SET motion = jsonb_set(coalesce(motion, '{}'::jsonb), '{bandeSon}', $2::jsonb), maj_le = now() WHERE id = $1`, [opt.id, JSON.stringify({ url: son.url, volume })])
+  return { url: son.url, volume }
+}
+
 /** Des credits notes par le directeur artistique : un nombre positif raisonnable, sinon rien (« non chiffre »). */
 export const creditsNotes = (x: unknown) => { const n = Number(x); return Number.isFinite(n) && n >= 0 && n <= 2000 && x !== '' && x != null ? Math.round(n * 100) / 100 : null }
 /** Le nom d'un modele Higgsfield tel que l'agent le note (« kling-3.0 », « seedance-2.0-720p »). */

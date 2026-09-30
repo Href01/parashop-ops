@@ -405,9 +405,10 @@ export function etatPlan(plan: PlanReel, t: number, premier: boolean, indice = 0
   }
 
   const liste = plan.texteVideo ? [] : mots(plan.texte)
-  const debutTexte = plan.mouvement === 'rebond' || plan.mouvement === 'duo' ? 0.35 : 0.15
+  // L'accroche (premier plan) : le texte est la des la premiere image, tout entier en 0,3 s.
+  const debutTexte = premier ? -0.12 : plan.mouvement === 'rebond' || plan.mouvement === 'duo' ? 0.35 : 0.15
   const etatsMots: EtatMot[] = liste.map((m, i) => {
-    const x = t - debutTexte - i * 0.075
+    const x = t - debutTexte - i * (premier ? 0.03 : 0.075)
     const s = ressort(x * 3)
     return { ...m, echelle: x <= 0 ? 0 : 0.55 + 0.45 * s, opacite: borne(x / 0.1), dy: (1 - Math.min(1, s)) * 0.02 }
   })
@@ -672,6 +673,25 @@ export function urlClip(url: string, hd = false): string {
 }
 
 /** Le son d'un clip (Cloudinary extrait la piste audio d'une video en changeant l'extension). */
+/**
+ * UN SEUL FILM, UN SEUL SON. Les clips viennent de modeles differents : chacun a son
+ * niveau (le grincement de #39 etait a -42 dB, la mousse a -27 dB). On ramene chaque
+ * son de clip au meme niveau (dB RMS) avant de le mixer ; le gain reste borne (x0,5 a x8)
+ * pour ne pas faire monter un souffle en bruit.
+ */
+export const NIVEAU_CLIP_DB = -24
+export const NIVEAU_BANDE_DB = -28
+export function gainNormalise(rmsDb: number, cibleDb = NIVEAU_CLIP_DB): number {
+  if (!Number.isFinite(rmsDb) || rmsDb < -70) return 1
+  return Math.min(8, Math.max(0.5, 10 ** ((cibleDb - rmsDb) / 20)))
+}
+/** Le niveau RMS (dB) d'un extrait de signal. */
+export function niveauDb(echantillons: ArrayLike<number>, debut = 0, fin = echantillons.length): number {
+  let q = 0, n = 0
+  for (let i = Math.max(0, debut); i < Math.min(fin, echantillons.length); i++) { q += echantillons[i] * echantillons[i]; n++ }
+  return n ? 20 * Math.log10(Math.sqrt(q / n) + 1e-9) : -Infinity
+}
+
 export function urlSonClip(url: string): string {
   const m = /^(https:\/\/res\.cloudinary\.com\/[^/]+\/video\/upload\/)(.+?)(\.[a-z0-9]{2,4})?$/i.exec(url)
   return m ? `${m[1]}${m[2].replace(/^(?:[a-z]{1,3}_[^/]*\/)+/, '')}.mp3` : url

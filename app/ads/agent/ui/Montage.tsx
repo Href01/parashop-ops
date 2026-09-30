@@ -118,6 +118,7 @@ export function planDessin(c: Creatif, o: Option, b: Brouillon, langue: Langue, 
     marques: b.animes.map((id) => d.catalogue.find((p) => p.id === id)?.marque ?? ''), lettres: b.lettres,
     illustration: b.mouvement === 'zoom' ? b.illustration : null, cache: b.cache && ['revele', 'pop', 'rebond'].includes(b.mouvement),
     clip: b.clip?.url ?? null, clipDebut: b.clip?.debut ?? 0, clipDuree: b.clip?.duree ?? null, clipSon: b.clipSon, texteVideo: b.texteVideo,
+    bandeSon: o.carte === 1 ? o.motion?.bandeSon ?? null : null,
     avis: b.mouvement === 'zoom' && o.motion?.avis ? { texte: o.motion.avis.texte, note: o.motion.avis.note } : null,
     // Le quiz ouvert appelle toujours a commenter sa reponse ; ailleurs, l'appel choisi.
     appel: b.mouvement === 'quiz' && b.ouvert ? APPELS[b.appel ?? 'reponse'][langue] : b.appel && ['pop', 'zoom'].includes(b.mouvement) ? APPELS[b.appel][langue] : null,

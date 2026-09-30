@@ -452,8 +452,47 @@ function Son({ opts, langue, rafraichir, dire }: { opts: Option[]; langue: Langu
   }
   const totalVoix = opts.reduce((n, o) => n + dureeVoixPlan(o, langue, mesures[o.id]), 0)
   const totalReel = opts.reduce((n, o) => n + (Number(o.duree) || 0), 0)
+  // La bande-son : une seule piste sous tout le Reel, portee par le plan 1.
+  const premier = opts[0]
+  const bande = premier?.motion?.bandeSon ?? null
+  const [volume, setVolume] = useState(bande?.volume ?? 0.5)
+  const [envoiBande, setEnvoiBande] = useState<number | null>(null)
+  const majBande = async (b: { url: string; volume: number } | null, texte: string) => {
+    try { await poster({ option: { id: premier.id, bandeSon: b } }); await rafraichir(); dire(true, texte) } catch (e) { dire(false, (e as Error).message) }
+  }
+  const envoyerBande = async (f: File) => {
+    if (f.size > 40 * 1048576) { dire(false, 'Fichier trop lourd (40 Mo au plus).'); return }
+    setEnvoiBande(0)
+    try {
+      const sig = (await poster({ clipSignature: true })) as unknown as { url: string; apiKey: string; timestamp: string; folder: string; signature: string }
+      const fd = new FormData()
+      fd.append('file', f); fd.append('api_key', sig.apiKey); fd.append('timestamp', sig.timestamp); fd.append('folder', sig.folder); fd.append('signature', sig.signature)
+      const r = await new Promise<{ secure_url?: string; error?: { message?: string } }>((ok, ko) => {
+        const q = new XMLHttpRequest(); q.open('POST', sig.url)
+        q.upload.onprogress = (e) => { if (e.lengthComputable) setEnvoiBande(Math.round((e.loaded / e.total) * 100)) }
+        q.onload = () => { try { ok(JSON.parse(q.responseText)) } catch { ko(new Error('Réponse de Cloudinary illisible.')) } }
+        q.onerror = () => ko(new Error('Envoi interrompu (réseau).')); q.send(fd)
+      })
+      if (!r.secure_url) throw new Error(`Cloudinary : ${r.error?.message ?? 'envoi refusé'}`)
+      await majBande({ url: r.secure_url, volume }, 'Bande-son posée : écoute l’aperçu.')
+    } catch (e) { dire(false, e instanceof Error ? e.message : 'Envoi impossible') } finally { setEnvoiBande(null) }
+  }
   return (
     <div className={s.bloc}>
+      <h3>La bande-son du Reel</h3>
+      <p className={`${a.small} ${a.muted}`}>Une seule piste sous tous les plans (musique ou ambiance) : c’est elle qui fait d’une suite de clips un seul film. Le son de chaque clip est ramené au même niveau, avec un fondu à chaque coupe.</p>
+      {bande && <audio controls preload="metadata" src={bande.url} style={{ width: '100%' }} />}
+      <div className={a.genererLigne}>
+        <label className={`${a.ghost} ${a.clipEnvoi}`} aria-disabled={envoiBande != null || !premier}>
+          <input type="file" accept="audio/*,video/mp4" disabled={envoiBande != null || !premier} onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void envoyerBande(f) }} />
+          {envoiBande != null ? <><Loader2 size={12} className={a.tourne} /> Envoi… {envoiBande} %</> : <><Mic size={12} /> {bande ? 'Changer la bande-son' : 'Ajouter une bande-son'}</>}
+        </label>
+        {bande && <label className={a.champ} style={{ minWidth: 180 }}>Volume {Math.round(volume * 100)} %
+          <input type="range" min={0} max={1} step={0.05} value={volume} onChange={(e) => setVolume(Number(e.target.value))} onMouseUp={() => void majBande({ url: bande.url, volume }, 'Volume enregistré.')} onTouchEnd={() => void majBande({ url: bande.url, volume }, 'Volume enregistré.')} /></label>}
+        {bande && <button type="button" className={a.ghost} onClick={() => void majBande(null, 'Bande-son retirée.')}>Retirer</button>}
+      </div>
+      <small className={a.muted}>Un son libre de droits (Meta Sound Collection, bibliothèque audio YouTube…) : les sons tendance d’Instagram ne sont pas utilisables dans une pub.</small>
+      <h3>Les voix</h3>
       <p className={`${a.small} ${a.muted}`}>Les bruitages sont faits pour chaque mouvement (choc, pop, « ding », souffle). La voix off est chuchotée façon ASMR par OpenAI ; son texte s’écrit dans chaque plan (onglet Plans). Une voix doit se taire avant la fin de son plan.</p>
       {totalVoix > 0 && <p className={`${a.notice} ${totalVoix > totalReel ? a.warn : a.ok}`} style={{ marginTop: 0 }}>Voix ({langue}) : <b>{totalVoix.toFixed(1)} s</b> pour un Reel de <b>{totalReel} s</b>{totalVoix > totalReel ? ' — trop de texte : raccourcis les phrases.' : '.'}</p>}
       {aFaire.length > 1 && <button type="button" className={a.primary} disabled={occupe != null} onClick={() => void (async () => { for (const o of aFaire) await generer(o); dire(true, 'Voix générées.') })()}><Mic size={13} /> Générer les {aFaire.length} voix ({langue})</button>}
