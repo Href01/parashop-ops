@@ -395,7 +395,10 @@ export async function modifierPlan(id: number, patch: Json) {
   const avisPlan = await resoudreAvis(plan.avisId, produits)
   verifierClip(plan.clip?.url)
   verifierClip(plan.bandeSon?.url)
-  if (type === 'reel') verifierMontage(serie.map((x) => (x.id === id ? plan.duree ?? 0 : Number(x.duree) || 0)))
+  if (type === 'reel') {
+    const premier = serie[0]?.id === id ? { clip: plan.clip, clipPrompt: plan.clipPrompt } : ((serie[0]?.motion ?? {}) as { clip?: unknown; clipPrompt?: unknown })
+    verifierMontage(serie.map((x) => (x.id === id ? plan.duree ?? 0 : Number(x.duree) || 0)), Boolean(premier.clip || String(premier.clipPrompt ?? '').trim()))
+  }
   const ancien = (o.motion ?? {}) as Json
   const motion = type === 'reel'
     ? { ...ancien, transition: plan.transition ?? 'coupe', ambiance: plan.ambiance ?? 'aucune', bulles: plan.bulles ?? [], points: plan.points ?? [], choix: plan.choix ?? [], voix: plan.voix ?? ancien.voix ?? null, confiance: plan.confiance ?? [], prix: plan.prix ?? false, ecrans: plan.mouvement === 'site' ? plan.ecrans ?? [] : undefined, fond: plan.fond ?? 'decor', ouvert: plan.mouvement === 'quiz' ? plan.ouvert ?? false : undefined, melange: plan.mouvement === 'pop' ? plan.melange ?? false : undefined, lettres: plan.lettres ?? false, appel: plan.appel ?? null, illustration: plan.mouvement === 'zoom' ? plan.illustration ?? null : null, cache: plan.cache ?? false, avis: avisPlan ?? null, clip: plan.clip ?? null, clipPrompt: plan.clipPrompt ?? null, clipSon: plan.clipSon ?? false, texteVideo: plan.texteVideo ?? false, sansDepart: plan.sansDepart ?? false, bandeSon: plan.bandeSon ?? null }

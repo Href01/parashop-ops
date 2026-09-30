@@ -32,7 +32,7 @@ export type Illustration = (typeof ILLUSTRATIONS)[number]
 
 /** Le bouton touche dans une capture du site, en fractions de la capture. */
 export type Cible = { x: number; y: number; w: number; h: number }
-export type Transition = 'coupe' | 'traversee' | 'balayage' | 'revelation' | 'vague'
+export type Transition = 'coupe' | 'traversee' | 'balayage' | 'revelation' | 'vague' | 'raccord'
 export type Ambiance = 'aucune' | 'etincelles' | 'gouttes' | 'bulles' | 'sable'
 export type Bulle = { de: 'cliente' | 'shine'; texte: string }
 export type PlanReel = {
@@ -585,7 +585,7 @@ export function evenementsSonores(plans: PlanReel[]): EvenementSonore[] {
   let debut = 0
   for (const [i, plan] of plans.entries()) {
     const ev = (t: number, son: Son, force = 1) => { if (t >= 0 && t < plan.duree) out.push({ t: Math.round((debut + t) * 1000) / 1000, son, force }) }
-    if (i > 0 && plan.transition && plan.transition !== 'coupe') ev(0, 'souffle')
+    if (i > 0 && plan.transition && plan.transition !== 'coupe' && plan.transition !== 'raccord') ev(0, 'souffle')
     const n = plan.produits
     for (let k = 0; k < n; k++) {
       const d = 0.1 + k * 0.14
@@ -653,9 +653,10 @@ export function evenementsSonores(plans: PlanReel[]): EvenementSonore[] {
 }
 
 /** La transition d'entree d'un plan : type et avancement (null hors de la fenetre). */
-export function transitionA(plans: PlanReel[], i: number, local: number): { type: Exclude<Transition, 'coupe'>; p: number } | null {
+export function transitionA(plans: PlanReel[], i: number, local: number): { type: Exclude<Transition, 'coupe' | 'raccord'>; p: number } | null {
   const tr = plans[i]?.transition
-  if (i === 0 || !tr || tr === 'coupe' || local >= DUREE_TRANSITION) return null
+  // Le raccord n'est pas une transition dessinee : le clip suivant continue le precedent, sans rien entre les deux.
+  if (i === 0 || !tr || tr === 'coupe' || tr === 'raccord' || local >= DUREE_TRANSITION) return null
   return { type: tr, p: local / DUREE_TRANSITION }
 }
 

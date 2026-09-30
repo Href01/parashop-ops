@@ -58,6 +58,7 @@ export const TRANSITIONS = {
   balayage: 'Balayage (whip pan) : les plans filent de côté',
   revelation: 'Révélation : le plan s’ouvre en cercle',
   vague: 'Vague : une lame verte ondulée dévoile le plan',
+  raccord: 'Raccord (plan-séquence) : aucune coupure visible — le clip continue le précédent',
 } as const
 /**
  * LES FONDS SHINE : des degrades dessines par le BOS aux couleurs de la maison,
@@ -410,7 +411,7 @@ export const LivraisonDirection = z.object({
     animes: z.array(z.number().int().positive()).max(4).optional(),
     mouvement: z.enum(['rebond', 'pop', 'glisse', 'zoom', 'duo', 'fin', 'revele', 'etiquette', 'quiz', 'dm', 'etapes', 'site']).optional(),
     duree: z.number().min(1).max(6).optional(),
-    transition: z.enum(['coupe', 'traversee', 'balayage', 'revelation', 'vague']).optional(),
+    transition: z.enum(['coupe', 'traversee', 'balayage', 'revelation', 'vague', 'raccord']).optional(),
     ambiance: z.enum(['aucune', 'etincelles', 'gouttes', 'bulles', 'sable']).optional(),
     bulles: z.array(z.object({ de: z.enum(['cliente', 'shine']), texte: z.object({ fr: z.string().trim().min(1).max(90), darija: z.string().trim().max(90).default(''), ar: z.string().trim().max(90).default('') }) })).max(5).optional(),
     // etiquette : 2 ou 3 atouts ; etapes : le nom court de chaque produit, dans l'ordre ; site : le libelle de chaque ecran.
@@ -470,7 +471,8 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
   const nom = `${type === 'carrousel' ? 'Carte' : type === 'reel' ? 'Plan' : 'Option'} ${i + 1}`
   const inconnus = [...(o.produitIds ?? []), ...(o.animes ?? [])].filter((id) => !produitsCreation.includes(id))
   if (inconnus.length) throw new Error(`${nom} : produit(s) ${inconnus.join(', ')} hors de la création (${produitsCreation.join(', ') || 'aucun'}).`)
-  if (!o.texte.fr) throw new Error(`${nom} : le texte à poser en français manque.`)
+  const filme = Boolean(o.clip || String(o.clipPrompt ?? '').trim())
+  if (!o.texte.fr && !(filme && o.mouvement === 'zoom')) throw new Error(`${nom} : le texte à poser en français manque.`)
   if (!fondDessine(o.fond) && !o.sansDepart && o.prompt.length < 200) throw new Error(`${nom} : prompt : une consigne de photographe complète (200 caractères au moins), ou un fond Shine dessiné (« fond »).`)
   if (fondDessine(o.fond) && type !== 'reel') throw new Error(`${nom} : les fonds Shine dessinés servent aux Reels ; ici il faut une consigne d'image.`)
   const francais = [o.texte.fr, ...(o.bulles ?? []).map((b) => b.texte.fr), ...(o.points ?? []).map((x) => x.fr), ...(o.choix ?? []).map((x) => x.fr), o.voix?.fr]
@@ -535,10 +537,10 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
 }
 
 /** Le Reel entier : duree totale, accroche courte. */
-export function verifierMontage(durees: number[]) {
+export function verifierMontage(durees: number[], premierFilme = false) {
   const total = durees.reduce((n, d) => n + d, 0)
   if (total < 6 || total > 30) throw new Error(`Un Reel de ${total} s : vise 12 à 25 s (6 à 30 au plus).`)
-  if ((durees[0] ?? 0) > 2.5) throw new Error('Plan 1 : l’accroche tient en 2,5 s au plus, sinon on a déjà scrollé.')
+  if ((durees[0] ?? 0) > (premierFilme ? 15 : 2.5)) throw new Error(premierFilme ? 'Plan 1 : un plan filmé dure 15 s au plus (l’accroche est dans ses 2 premières secondes).' : 'Plan 1 : l’accroche tient en 2,5 s au plus, sinon on a déjà scrollé.')
 }
 
 /**
@@ -630,7 +632,7 @@ export function verifierLivraison(l: Livraison, d: DemandeDirection, produitsCre
   if (fautesCreation.length) throw new Error(`creation : français sans accents (${fautesCreation.map((f) => `« ${f} »`).join(', ')}).`)
   l.options.forEach((o, i) => verifierOption(o, i, d.type, produitsCreation))
   if (d.type === 'reel') {
-    verifierMontage(l.options.map((o) => o.duree ?? 0))
+    verifierMontage(l.options.map((o) => o.duree ?? 0), Boolean(l.options[0]?.clip || String(l.options[0]?.clipPrompt ?? '').trim()))
     verifierPack(l.options, contexte.packs ?? {})
     if (d.rendu === 'video') verifierRenduVideo(l.options, d)
     else if (d.recette) verifierRecette(l.options, d.recette, contexte.avisDispo ?? true)

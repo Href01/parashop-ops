@@ -268,8 +268,10 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
   const video = plan.clip ? VIDEOS.get(cleVideo(plan.clip, hd)) : undefined
   const clip = video && video.readyState >= 2 && video.videoWidth > 0 ? video : undefined
   if (clip) {
-    // Une poussee plus douce que sur une image : le clip bouge deja.
-    const zoom = 1 + (e.fond.echelle - 1) * 0.4
+    // Une poussee plus douce que sur une image : le clip bouge deja. Aucune dans un plan-sequence
+    // (raccord avant ou apres) : la derniere image d'un clip doit tomber exactement sur la premiere du suivant.
+    const raccord = plan.transition === 'raccord' || plans[i + 1]?.transition === 'raccord'
+    const zoom = raccord ? 1 : 1 + (e.fond.echelle - 1) * 0.4
     const ech = Math.max(W / clip.videoWidth, H / clip.videoHeight) * zoom
     const w = clip.videoWidth * ech, h = clip.videoHeight * ech
     // Un seul etalonnage pour tous les clips (des modeles differents, un seul film) : un peu plus
@@ -293,7 +295,7 @@ function dessinerPlan(ctx: Ctx, plans: PlanDessin[], i: number, local: number, r
   }
   // Sur un decor : un voile en haut, le texte blanc reste lisible. Sur un fond clair : texte brun, sans voile.
   const clair = clip ? false : shine ? FONDS_SHINE[shine].clair : !fond
-  if ((fond || clip) && !plan.texteVideo) {
+  if ((fond || clip) && !plan.texteVideo && plan.texte.trim()) {
     const voile = ctx.createLinearGradient(0, 0, 0, H * 0.46)
     voile.addColorStop(0, 'rgba(12,20,16,.5)'); voile.addColorStop(1, 'rgba(12,20,16,0)')
     ctx.fillStyle = voile; ctx.fillRect(0, 0, W, H * 0.46)

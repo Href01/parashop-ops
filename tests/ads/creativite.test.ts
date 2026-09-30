@@ -389,3 +389,22 @@ test('un seul film : chaque son de clip ramené au même niveau, la bande-son su
   assert.ok(etatPlan(z, 0.3, true).mots.every((m) => m.opacite > 0.9), 'toute l’accroche en 0,3 s')
   assert.equal(etatPlan(z, 0, false).mots[0].opacite, 0)
 })
+
+test('le plan-séquence (FOOH) : un long plan filmé, sans texte, raccordé sans coupure', async () => {
+  const { verifierMontage } = await import('../../lib/ads/direction-model')
+  const { transitionA, evenementsSonores } = await import('../../lib/ads/reel-model')
+  // Un plan 1 filmé de 10 s passe ; un plan 1 animé de 10 s reste refusé.
+  assert.doesNotThrow(() => verifierMontage([10, 3], true))
+  assert.throws(() => verifierMontage([10, 3]), /2,5 s/)
+  assert.throws(() => verifierMontage([16, 3], true), /15 s/)
+  // Un plan filmé peut rester sans texte (le réalisme d'abord) ; un plan animé, non.
+  const MOUV = 'Handheld phone POV from a highway overpass: a flatbed truck stacked with green boxes drives toward the bridge.'
+  const sansTexte = (o: Record<string, unknown>) => OptionLivreeSchema.parse({ concept: 'Le camion', pourquoi: 'Le spectacle arrête le pouce.', prompt: PROMPT, texte: { fr: '' }, produitIds: [], mouvement: 'zoom', duree: 5, clipPrompt: MOUV, ...o })
+  assert.doesNotThrow(() => verifierOption(sansTexte({}), 0, 'reel', [98]))
+  assert.throws(() => verifierOption(sansTexte({ clipPrompt: null }), 0, 'reel', [98]), /texte à poser/)
+  // Le raccord : ni transition dessinée, ni souffle, ni flash.
+  const plans: PlanReel[] = [{ mouvement: 'zoom', duree: 5, produits: 0, texte: '' }, { mouvement: 'zoom', duree: 5, produits: 0, texte: '', transition: 'raccord' }]
+  assert.equal(transitionA(plans, 1, 0.1), null)
+  assert.equal(evenementsSonores(plans).filter((e) => e.son === 'souffle').length, 0)
+  assert.equal(etatPlan(plans[1], 0.02, false).flash, 0)
+})
