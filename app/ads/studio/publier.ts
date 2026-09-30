@@ -45,7 +45,7 @@ export function verifierPublication(c: Creatif, opts: Option[], type: 'reel' | '
     // Un plan 1 filme (plan-sequence) porte son accroche dans ses premieres secondes : il peut durer plus.
     const filme = Boolean(opts[0]?.motion?.clip || String(opts[0]?.motion?.clipPrompt ?? '').trim())
     out.push(filme
-      ? { id: 'accroche', ok: (durees[0] ?? 99) <= 15, bloquant: true, titre: 'L’accroche est dans les 2 premières secondes', detail: `Plan 1 filmé : ${durees[0] ?? '—'} s. Vérifie qu’il se passe quelque chose dès la première image.` }
+      ? { id: 'accroche', ok: (durees[0] ?? 99) <= 30, bloquant: true, titre: 'L’accroche est dans les 2 premières secondes', detail: `Plan 1 filmé : ${durees[0] ?? '—'} s. Vérifie qu’il se passe quelque chose dès la première image.` }
       : { id: 'accroche', ok: (durees[0] ?? 9) <= 2.5, bloquant: true, titre: 'L’accroche tient en 2,5 s', detail: `Plan 1 : ${durees[0] ?? '—'} s. Au-delà, on a déjà scrollé.` })
     out.push({ id: 'produit1', ok: Boolean(p1?.animes?.length || p1?.produit_ids?.length), bloquant: false, titre: 'Un produit dès le plan 1', detail: 'Le produit héros se voit dans la première seconde.' })
     out.push({ id: 'duree', ok: total >= 8 && total <= 15, bloquant: false, titre: 'Entre 8 et 15 secondes', detail: `${total} s au total. Plus court, on ne comprend pas ; plus long, on décroche.` })

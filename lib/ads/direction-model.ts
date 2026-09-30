@@ -295,7 +295,8 @@ export function validerDemande(entree: unknown): DemandeDirection {
   // Une recette fixe le type et le nombre de plans.
   if (d.recette) { d.type = 'reel'; d.format = 'story'; d.nombre = RECETTES[d.recette].plans.length }
   const b = BORNES[d.type]
-  if (d.nombre < b.min || d.nombre > b.max) throw new Error(d.type === 'carrousel' ? `Un carrousel a de ${b.min} à ${b.max} cartes.` : d.type === 'reel' ? `Un Reel a de ${b.min} à ${b.max} plans.` : `De ${b.min} à ${b.max} options.`)
+  const min = d.type === 'reel' && d.rendu === 'video' ? 2 : b.min
+  if (d.nombre < min || d.nombre > b.max) throw new Error(d.type === 'carrousel' ? `Un carrousel a de ${b.min} à ${b.max} cartes.` : d.type === 'reel' ? `Un Reel a de ${min} à ${b.max} plans.` : `De ${b.min} à ${b.max} options.`)
   if (!b.formats.includes(d.format)) throw new Error(d.type === 'reel' ? 'Un Reel est vertical (9:16).' : 'Un carrousel Instagram est carré (1:1) ou vertical (4:5) : pas de format Story.')
   if (!d.creatifId && !d.produitIds?.length) throw new Error('Choisis au moins un produit, ou pars d’une création existante.')
   if (!d.creatifId && d.brief.length < 10) throw new Error('Pour une nouvelle création, décris en une phrase ce que tu veux (10 caractères au moins).')
@@ -410,7 +411,7 @@ export const LivraisonDirection = z.object({
     // Reel seulement : les vrais produits detoures, animes par-dessus le decor.
     animes: z.array(z.number().int().positive()).max(4).optional(),
     mouvement: z.enum(['rebond', 'pop', 'glisse', 'zoom', 'duo', 'fin', 'revele', 'etiquette', 'quiz', 'dm', 'etapes', 'site']).optional(),
-    duree: z.number().min(1).max(6).optional(),
+    duree: z.number().min(1).max(30).optional(),
     transition: z.enum(['coupe', 'traversee', 'balayage', 'revelation', 'vague', 'raccord']).optional(),
     ambiance: z.enum(['aucune', 'etincelles', 'gouttes', 'bulles', 'sable']).optional(),
     bulles: z.array(z.object({ de: z.enum(['cliente', 'shine']), texte: z.object({ fr: z.string().trim().min(1).max(90), darija: z.string().trim().max(90).default(''), ar: z.string().trim().max(90).default('') }) })).max(5).optional(),
@@ -473,6 +474,7 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
   if (inconnus.length) throw new Error(`${nom} : produit(s) ${inconnus.join(', ')} hors de la création (${produitsCreation.join(', ') || 'aucun'}).`)
   const filme = Boolean(o.clip || String(o.clipPrompt ?? '').trim())
   if (!o.texte.fr && !(filme && o.mouvement === 'zoom')) throw new Error(`${nom} : le texte à poser en français manque.`)
+  if (o.duree && o.duree > (filme ? 30 : 6)) throw new Error(filme ? `${nom} : un plan filmé dure 30 s au plus.` : `${nom} : un plan animé dure 6 s au plus (un plan filmé peut durer jusqu'à 30 s).`)
   if (!fondDessine(o.fond) && !o.sansDepart && o.prompt.length < 200) throw new Error(`${nom} : prompt : une consigne de photographe complète (200 caractères au moins), ou un fond Shine dessiné (« fond »).`)
   if (fondDessine(o.fond) && type !== 'reel') throw new Error(`${nom} : les fonds Shine dessinés servent aux Reels ; ici il faut une consigne d'image.`)
   const francais = [o.texte.fr, ...(o.bulles ?? []).map((b) => b.texte.fr), ...(o.points ?? []).map((x) => x.fr), ...(o.choix ?? []).map((x) => x.fr), o.voix?.fr]
@@ -540,7 +542,7 @@ export function verifierOption(o: OptionLivree, i: number, type: TypeDirection, 
 export function verifierMontage(durees: number[], premierFilme = false) {
   const total = durees.reduce((n, d) => n + d, 0)
   if (total < 6 || total > 30) throw new Error(`Un Reel de ${total} s : vise 12 à 25 s (6 à 30 au plus).`)
-  if ((durees[0] ?? 0) > (premierFilme ? 15 : 2.5)) throw new Error(premierFilme ? 'Plan 1 : un plan filmé dure 15 s au plus (l’accroche est dans ses 2 premières secondes).' : 'Plan 1 : l’accroche tient en 2,5 s au plus, sinon on a déjà scrollé.')
+  if ((durees[0] ?? 0) > (premierFilme ? 30 : 2.5)) throw new Error(premierFilme ? 'Plan 1 : un plan filmé dure 30 s au plus (l’accroche est dans ses 2 premières secondes).' : 'Plan 1 : l’accroche tient en 2,5 s au plus, sinon on a déjà scrollé.')
 }
 
 /**

@@ -2,6 +2,7 @@ import 'server-only'
 import { createHash } from 'node:crypto'
 import pool from '@/lib/db'
 import { etapeDirection, type Message } from './direction-model'
+import { urlClip } from './reel-model'
 
 /**
  * LES CLIPS VIDEO DES REELS : des images reelles (tournees au telephone, ou generees
@@ -84,6 +85,16 @@ export async function poserBandeSon(o: { optionId: number; url: string; volume?:
   return { url: son.url, volume }
 }
 
+/**
+ * Cloudinary convertit une video a la premiere demande d'une transformation ; pour un long
+ * clip, cela prend jusqu'a 2 minutes. On lance les deux conversions (apercu, export) des que
+ * le clip est pose : quand Achraf ouvre le Studio, elles sont pretes.
+ */
+export async function prechaufferClip(url: string | null | undefined) {
+  if (!url || !/^https:\/\/res\.cloudinary\.com\//.test(url)) return
+  await Promise.allSettled([false, true].map((hd) => fetch(urlClip(url, hd), { headers: { Range: 'bytes=0-1023' }, signal: AbortSignal.timeout(4000) })))
+}
+
 /** Des credits notes par le directeur artistique : un nombre positif raisonnable, sinon rien (« non chiffre »). */
 export const creditsNotes = (x: unknown) => { const n = Number(x); return Number.isFinite(n) && n >= 0 && n <= 2000 && x !== '' && x != null ? Math.round(n * 100) / 100 : null }
 /** Le nom d'un modele Higgsfield tel que l'agent le note (« kling-3.0 », « seedance-2.0-720p »). */
@@ -113,5 +124,6 @@ export async function poserClipDepuisUrl(o: { optionId: number; url: string; par
     `INSERT INTO "AdsClipGeneration" (option_id, creatif_id, modele, endpoint, prompt, image_url, duree, statut, video_source, clip_url, demande_par, credits)
      VALUES ($1, $2, $3, 'externe', $4, '', $5, 'terminee', $6, $7, $8, $9)`,
     [opt.id, opt.creatif_id, modele ? `higgsfield:${modele}` : (o.source || 'externe').slice(0, 60), String(opt.motion?.clipPrompt ?? ''), Math.round(clip.duree ?? 0), url, clip.url, o.par, creditsNotes(o.credits)])
+  await prechaufferClip(clip.url)
   return clip
 }

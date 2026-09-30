@@ -75,7 +75,7 @@ function chargerClip(url: string, hd: boolean): Promise<void> {
       const v = document.createElement('video')
       v.crossOrigin = 'anonymous'; v.muted = true; v.playsInline = true; v.preload = 'auto'; v.loop = true
       v.onloadeddata = () => { VIDEOS.set(cle, v); ok() }
-      v.onerror = () => { if (n >= 4) ok(); else setTimeout(() => essai(n + 1), 2500 * (n + 1)) }
+      v.onerror = () => { if (n >= 9) ok(); else setTimeout(() => essai(n + 1), Math.min(20000, 3000 * (n + 1))) }
       v.src = urlClip(url, hd) + (n ? `?r=${n}` : '')
       v.load()
     }
@@ -100,6 +100,8 @@ function grain(ctx: Ctx, t: number) {
   ctx.fillStyle = motif; ctx.fillRect(0, 0, W, H)
   ctx.restore()
 }
+/** Les plans dont le clip n'a pas pu etre charge (Cloudinary le convertit encore) : jamais une image figee a sa place. */
+const clipsAbsents = (plans: PlanDessin[], hd: boolean) => plans.map((p, i) => (p.clip && !VIDEOS.has(cleVideo(p.clip, hd)) ? i + 1 : 0)).filter(Boolean)
 const clipsDe = (plans: PlanDessin[]) => [...new Set(plans.map((p) => p.clip).filter((u): u is string => Boolean(u)))]
 
 /** Apercu : le clip du plan joue suit l'horloge du Reel ; les autres attendent. Rend les videos a re-peindre apres un seek. */
@@ -894,7 +896,12 @@ export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, 
   useEffect(() => {
     let vivant = true
     setPret(false)
-    void Promise.all([policesPretes(), charger(urlsDe(plans), res.current), ...clipsDe(plans).map((u) => chargerClip(u, false))]).then(() => { if (vivant) setPret(true) })
+    void Promise.all([policesPretes(), charger(urlsDe(plans), res.current), ...clipsDe(plans).map((u) => chargerClip(u, false))]).then(() => {
+      if (!vivant) return
+      setPret(true)
+      const absents = clipsAbsents(plans, false)
+      setErreur(absents.length ? `Le clip du plan ${absents.join(', ')} se prépare encore chez Cloudinary : l’aperçu montre son image de départ. Recharge la page dans une minute.` : null)
+    })
     return () => { vivant = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cle])
@@ -970,6 +977,9 @@ export function LecteurReel({ plans: plansRecus, langue, bouton, largeur = 260, 
       if (!(await canEncodeVideo('avc', { width: W, height: H }))) throw new Error('Ce navigateur ne sait pas encoder en H.264.')
       await policesPretes(); await charger(urlsDe(plans), res.current)
       await Promise.all(clipsDe(plans).map((u) => chargerClip(u, true)))
+      // Un clip pas pret ne doit jamais devenir une image figee dans la video exportee (Reel #44 : 14 s d'image fixe, avec le son).
+      const absents = clipsAbsents(plans, true)
+      if (absents.length) throw new Error(`Le clip du plan ${absents.join(', ')} n’est pas encore prêt (Cloudinary le convertit, jusqu’à 2 minutes pour un long clip) : réessaie l’export dans une minute.`)
       const toile = document.createElement('canvas')
       toile.width = W; toile.height = H
       const ctx = toile.getContext('2d')!

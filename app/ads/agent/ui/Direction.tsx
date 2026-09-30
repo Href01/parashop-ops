@@ -236,7 +236,7 @@ export function BriefDirection({ d, creatif, idee, envoye, erreur }: { d: BaseCr
         <div className={s.genererLigne}>
           <label className={s.champ}>{type === 'carrousel' ? 'Cartes' : type === 'reel' ? 'Plans' : 'Images'}
             <select className={s.select} value={nombre} onChange={(e) => setNombre(Number(e.target.value))}>
-              {Array.from({ length: b.max - b.min + 1 }, (_, i) => b.min + i).map((x) => <option key={x} value={x}>{x}{type === 'reel' ? ` plans (~${Math.round(x * (video ? 3.5 : 3))} s)` : ''}</option>)}
+              {Array.from({ length: b.max - (video ? 2 : b.min) + 1 }, (_, i) => (video ? 2 : b.min) + i).map((x) => <option key={x} value={x}>{x}{type === 'reel' ? ` plans (~${Math.round(x * (video ? 3.5 : 3))} s)` : ''}</option>)}
             </select></label>
           {type !== 'reel' && <label className={s.champ}>Format
             <select className={s.select} value={format} onChange={(e) => setFormat(e.target.value as FormatImage)}>

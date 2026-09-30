@@ -5,7 +5,7 @@ import { verdicts } from './conseils'
 import { reveillerDirecteur } from './declencher'
 import { AMBIANCES, A_MONTRER, BORNES, etapeDirection, piecesValides, type Message, type Palier, ETAPES_SITE, FONDS, OBJECTIFS, OFFRES, RECETTES, LIBELLES_SITE, LivraisonDirection, MOUVEMENTS, OptionLivreeSchema, RetoucheSchema, STYLES, TRANSITIONS, VEUT_SITE, consignesBrief, sujetDemande, validerDemande, verifierLivraison, verifierMontage, verifierOption, type DemandeDirection, type OptionLivree, type Retouche, type Style, type TypeDirection } from './direction-model'
 import { capturesSite, charpentesRecentes, lecons, packsDe, reglesBoutique, type CapturesProduit } from './apprentissage'
-import { nuageShine, verifierClip } from './clips'
+import { nuageShine, prechaufferClip, verifierClip } from './clips'
 import { FORMATS_IMAGE } from './creatif-model'
 import { urlDetouree } from './reel-model'
 
@@ -404,6 +404,8 @@ export async function modifierPlan(id: number, patch: Json) {
     ? { ...ancien, transition: plan.transition ?? 'coupe', ambiance: plan.ambiance ?? 'aucune', bulles: plan.bulles ?? [], points: plan.points ?? [], choix: plan.choix ?? [], voix: plan.voix ?? ancien.voix ?? null, confiance: plan.confiance ?? [], prix: plan.prix ?? false, ecrans: plan.mouvement === 'site' ? plan.ecrans ?? [] : undefined, fond: plan.fond ?? 'decor', ouvert: plan.mouvement === 'quiz' ? plan.ouvert ?? false : undefined, melange: plan.mouvement === 'pop' ? plan.melange ?? false : undefined, lettres: plan.lettres ?? false, appel: plan.appel ?? null, illustration: plan.mouvement === 'zoom' ? plan.illustration ?? null : null, cache: plan.cache ?? false, avis: avisPlan ?? null, clip: plan.clip ?? null, clipPrompt: plan.clipPrompt ?? null, clipSon: plan.clipSon ?? false, texteVideo: plan.texteVideo ?? false, sansDepart: plan.sansDepart ?? false, bandeSon: plan.bandeSon ?? null }
     : o.motion
   const note = typeof patch.note === 'string' ? patch.note.trim().slice(0, 1500) || null : o.note
+  // Un clip envoye depuis le Studio : ses conversions commencent tout de suite.
+  if (plan.clip?.url && plan.clip.url !== ((ancien.clip ?? {}) as { url?: string }).url) await prechaufferClip(plan.clip.url)
   const u = await pool.query(
     `UPDATE "AdsCreativeOption" SET texte = $2::jsonb, position = $3, prompt = $4, animes = $5, mouvement = $6, duree = $7, motion = $8::jsonb, note = $9, produit_ids = $10, maj_le = now()
      WHERE id = $1 RETURNING *`,

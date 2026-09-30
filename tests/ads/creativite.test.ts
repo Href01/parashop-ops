@@ -396,7 +396,7 @@ test('le plan-séquence (FOOH) : un long plan filmé, sans texte, raccordé sans
   // Un plan 1 filmé de 10 s passe ; un plan 1 animé de 10 s reste refusé.
   assert.doesNotThrow(() => verifierMontage([10, 3], true))
   assert.throws(() => verifierMontage([10, 3]), /2,5 s/)
-  assert.throws(() => verifierMontage([16, 3], true), /15 s/)
+  assert.doesNotThrow(() => verifierMontage([16, 3], true), 'un plan filmé de 16 s passe (Seedance 2.5 filme jusqu’à 30 s)')
   // Un plan filmé peut rester sans texte (le réalisme d'abord) ; un plan animé, non.
   const MOUV = 'Handheld phone POV from a highway overpass: a flatbed truck stacked with green boxes drives toward the bridge.'
   const sansTexte = (o: Record<string, unknown>) => OptionLivreeSchema.parse({ concept: 'Le camion', pourquoi: 'Le spectacle arrête le pouce.', prompt: PROMPT, texte: { fr: '' }, produitIds: [], mouvement: 'zoom', duree: 5, clipPrompt: MOUV, ...o })
@@ -407,4 +407,19 @@ test('le plan-séquence (FOOH) : un long plan filmé, sans texte, raccordé sans
   assert.equal(transitionA(plans, 1, 0.1), null)
   assert.equal(evenementsSonores(plans).filter((e) => e.son === 'souffle').length, 0)
   assert.equal(etatPlan(plans[1], 0.02, false).flash, 0)
+})
+
+test('un plan-séquence long : jusqu’à 30 s filmé, 6 s animé ; un Reel vidéo de 2 plans', async () => {
+  const { verifierMontage } = await import('../../lib/ads/direction-model')
+  const MOUV = 'Handheld phone POV from a highway overpass: a flatbed truck stacked with green boxes drives toward the bridge.'
+  const long = OptionLivreeSchema.parse({ concept: 'Le camion', pourquoi: 'Le spectacle arrête le pouce.', prompt: PROMPT, texte: { fr: '' }, produitIds: [], mouvement: 'zoom', duree: 14, clipPrompt: MOUV })
+  assert.doesNotThrow(() => verifierOption(long, 0, 'reel', [98]))
+  assert.throws(() => verifierOption({ ...long, clipPrompt: null, texte: { fr: 'Une *goutte*', darija: '', ar: '' } }, 1, 'reel', [98]), /6 s au plus/)
+  assert.equal(OptionLivreeSchema.safeParse({ ...long, duree: 31 }).success, false)
+  assert.doesNotThrow(() => verifierMontage([14, 4], true))
+  assert.throws(() => verifierMontage([14, 4]), /2,5 s/)
+  // Deux plans : le plan-séquence et la fin (en vidéo seulement).
+  const base = { type: 'reel', format: 'story', brief: 'Le colis Shine sur l’autoroute', produitIds: [98] }
+  assert.equal(validerDemande({ ...base, nombre: 2, rendu: 'video' }).nombre, 2)
+  assert.throws(() => validerDemande({ ...base, nombre: 2 }), /de 3 à 8 plans/)
 })

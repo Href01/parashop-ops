@@ -249,7 +249,7 @@ export function TableMontage({ c, d, opts, langue, brouillons, setBrouillon, sel
                     </select></label>
                   <label className={s.champ}>Durée
                     <span className={s.montageDuree}>
-                      <button type="button" onClick={() => maj({ duree: Math.max(1, b.duree - 0.5) })}>−</button><b>{b.duree.toLocaleString('fr-FR')} s</b><button type="button" onClick={() => maj({ duree: Math.min(6, b.duree + 0.5) })}>+</button>
+                      <button type="button" onClick={() => maj({ duree: Math.max(1, b.duree - 0.5) })}>−</button><b>{b.duree.toLocaleString('fr-FR')} s</b><button type="button" onClick={() => maj({ duree: Math.min(b.clip || b.clipPrompt.trim() ? 30 : 6, b.duree + 0.5) })}>+</button>
                     </span></label>
                   <label className={s.champ}>Transition d’entrée
                     <select className={s.select} value={b.transition} disabled={i === 0} onChange={(e) => maj({ transition: e.target.value as Transition })}>
