@@ -144,7 +144,9 @@ function alertes(b: Brouillon, i: number): string[] {
   }
   if (b.clipPrompt.trim() && !b.clip) out.push('Clip à ajouter : copie la consigne, filme ou génère le clip, puis envoie-le.')
   if (i === 0 && b.transition !== 'coupe') out.push('Le premier plan entre en coupe franche.')
-  if (i === 0 && b.duree > 2.5) out.push('L’accroche tient en 2,5 s au plus.')
+  // Un plan 1 filme (plan-sequence) porte son accroche dans ses premieres secondes : 30 s au plus, comme au serveur.
+  const filme = Boolean(b.clip || b.clipPrompt.trim())
+  if (i === 0 && b.duree > (filme ? 30 : 2.5)) out.push(filme ? 'Un plan filmé dure 30 s au plus.' : 'L’accroche tient en 2,5 s au plus.')
   const n = b.animes.length
   if (b.mouvement === 'duo' && n !== 2) out.push('« duo » anime exactement 2 produits.')
   if (['etiquette', 'quiz', 'revele'].includes(b.mouvement) && n !== 1) out.push(`« ${b.mouvement} » anime 1 produit.`)
