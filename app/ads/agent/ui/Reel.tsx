@@ -108,11 +108,13 @@ const clipsDe = (plans: PlanDessin[]) => [...new Set(plans.map((p) => p.clip).fi
 function caleClips(plans: PlanDessin[], t: number, joue: boolean): HTMLVideoElement[] {
   const { i, local } = planA(plans, t)
   const cherchent: HTMLVideoElement[] = []
+  // Deux plans peuvent couper le meme clip (une prise en deux plans raccord) : la video du plan joue n'est jamais mise en pause par l'autre.
+  const active = plans[i]?.clip ? VIDEOS.get(cleVideo(plans[i].clip!, false)) : undefined
   plans.forEach((p, k) => {
     if (!p.clip) return
     const v = VIDEOS.get(cleVideo(p.clip, false))
     if (!v) return
-    if (k !== i) { if (!v.paused) v.pause(); return }
+    if (k !== i) { if (v !== active && !v.paused) v.pause(); return }
     const voulu = instantClip(local, p.clipDebut ?? 0, v.duration || p.clipDuree)
     if (joue) {
       if (v.paused) { v.currentTime = voulu; void v.play().catch(() => {}) } else if (Math.abs(v.currentTime - voulu) > 0.3) v.currentTime = voulu
