@@ -110,14 +110,23 @@ function caleClips(plans: PlanDessin[], t: number, joue: boolean): HTMLVideoElem
   const cherchent: HTMLVideoElement[] = []
   // Deux plans peuvent couper le meme clip (une prise en deux plans raccord) : la video du plan joue n'est jamais mise en pause par l'autre.
   const active = plans[i]?.clip ? VIDEOS.get(cleVideo(plans[i].clip!, false)) : undefined
+  const suivant = (i + 1) % plans.length
   plans.forEach((p, k) => {
     if (!p.clip) return
     const v = VIDEOS.get(cleVideo(p.clip, false))
     if (!v) return
-    if (k !== i) { if (v !== active && !v.paused) v.pause(); return }
+    if (k !== i) {
+      if (v === active) return
+      if (!v.paused) v.pause()
+      // Le clip du plan suivant attend deja sur sa premiere image : au raccord il demarre sans chercher
+      // (une video qui cherche au dernier moment montre une ou deux images perimees : #44, a 4 s).
+      const depart = instantClip(0, p.clipDebut ?? 0, v.duration || p.clipDuree)
+      if (joue && k === suivant && !v.seeking && Math.abs(v.currentTime - depart) > 0.04) v.currentTime = depart
+      return
+    }
     const voulu = instantClip(local, p.clipDebut ?? 0, v.duration || p.clipDuree)
     if (joue) {
-      if (v.paused) { v.currentTime = voulu; void v.play().catch(() => {}) } else if (Math.abs(v.currentTime - voulu) > 0.3) v.currentTime = voulu
+      if (v.paused) { if (Math.abs(v.currentTime - voulu) > 0.15) v.currentTime = voulu; void v.play().catch(() => {}) } else if (Math.abs(v.currentTime - voulu) > 0.3) v.currentTime = voulu
     } else {
       if (!v.paused) v.pause()
       if (Math.abs(v.currentTime - voulu) > 0.04) { v.currentTime = voulu; cherchent.push(v) }
