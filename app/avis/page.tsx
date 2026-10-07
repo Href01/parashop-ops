@@ -5,6 +5,7 @@ import { Star, CheckCircle, XCircle, ShoppingBag, User } from 'lucide-react'
 import Link from 'next/link'
 import BosShell from '@/components/BosShell'
 import PageHead from '@/components/PageHead'
+import DemandesAvis from './DemandesAvis'
 
 interface Review {
   id: number
@@ -90,6 +91,8 @@ export default function AvisPage() {
           title="Modération des avis"
           note="Publiez les avis de vos clientes — visibles sur la boutique une fois approuvés."
         />
+
+        <DemandesAvis />
 
         {/* Filters */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 22 }}>
