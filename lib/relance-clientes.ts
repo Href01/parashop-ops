@@ -19,7 +19,7 @@ export type ReglesRelance = {
 
 export const REGLES_RELANCE_DEFAUT: ReglesRelance = {
   inactifDepuisJours: 60, delaiEntreRelancesJours: 60, pauseApresMessageJours: 7, lotMax: 50,
-  promo: { code: 'RETOUR15', pourcent: 15, validiteJours: 14, minimumDh: 0 },
+  promo: { code: 'BIENVENUE10', pourcent: 10, validiteJours: 14, minimumDh: 790 },
   modele: null,
 }
 

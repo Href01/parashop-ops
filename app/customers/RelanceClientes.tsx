@@ -7,8 +7,8 @@ import type { ReglesRelance } from '@/lib/relance-clientes'
 type Apercu = {
   total: number
   envoyables: number
-  exemple: { prenom: string; derniereCommande: string; nouveautes: string; dateFin: string } | null
-  codeExistant: { discount: number; isPercent: boolean; expiresAt: string | null; usedCount: number } | null
+  exemple: { prenom: string; derniereCommande: string; nouveautes: string } | null
+  offre: { existe: boolean; condition: string; probleme: string | null }
   bilan: { envoyees: number; lues: number; desinscrites: number; commandes: number; commandes_code: number; ca_livre: number }
   dernierPassage: { at: string; candidats: number; envoyees: number; echecs: number; code: string } | null
 }
@@ -31,7 +31,7 @@ const champs: { cle: 'inactifDepuisJours' | 'delaiEntreRelancesJours' | 'pauseAp
 const champsPromo: { cle: 'code' | 'pourcent' | 'validiteJours' | 'minimumDh'; label: string; type: 'text' | 'number' }[] = [
   { cle: 'code', label: 'Code promo', type: 'text' },
   { cle: 'pourcent', label: 'Réduction (%)', type: 'number' },
-  { cle: 'validiteJours', label: 'Valable (jours)', type: 'number' },
+  { cle: 'validiteJours', label: 'Valable (jours, code créé ici)', type: 'number' },
   { cle: 'minimumDh', label: 'Commande minimum (DH, 0 = aucun)', type: 'number' },
 ]
 
@@ -90,7 +90,7 @@ export default function RelanceClientes() {
       {ouvert && <div style={{ marginTop: 12 }}>
         <p style={{ fontSize: 12.5, color: 'var(--tx-lo)', margin: '0 0 14px', lineHeight: 1.5 }}>
           Un message WhatsApp avec les marques arrivées depuis sa dernière commande et un code promo. Jamais automatique : vous choisissez quand envoyer.
-          Exclues : commande en cours, désinscrites (« Ne plus recevoir d’offres », « stop »), déjà relancées récemment, ou un autre message reçu il y a moins de {regles.pauseApresMessageJours} jours.
+          Exclues : commande en cours, désinscrites (« Ne plus recevoir d’offres », « stop »), déjà relancées récemment, code déjà utilisé (il ne sert qu’une fois), ou un autre message reçu il y a moins de {regles.pauseApresMessageJours} jours.
         </p>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
@@ -120,7 +120,7 @@ export default function RelanceClientes() {
         {/* Le message tel qu'elle le recevra */}
         <div style={{ marginTop: 16, padding: 14, borderRadius: 12, background: 'var(--bg-2)', fontSize: 13, lineHeight: 1.6, color: 'var(--tx-hi)', whiteSpace: 'pre-line' }}>
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.06em', color: 'var(--tx-faint)', marginBottom: 6 }}>Exemple de message</div>
-          {`Bonjour ${ex?.prenom ?? 'Salma'} 🌸\nDepuis votre dernière commande, de nouveaux soins sont arrivés chez Shine : ${ex?.nouveautes ?? 'Anua, COSRX et Beauty of Joseon'}.\nPour vous, -${p.pourcent} % sur votre prochaine commande avec le code ${p.code}, valable jusqu’au ${ex?.dateFin ?? '…'} 🎁\nLivraison partout au Maroc, paiement à la livraison.`}
+          {`Bonjour ${ex?.prenom ?? 'Salma'} 🌸\nDepuis votre dernière commande, de nouveaux soins sont arrivés chez Shine : ${ex?.nouveautes ?? 'Anua, COSRX et Beauty of Joseon'}.\nPour vous, -${p.pourcent} % sur votre prochaine commande avec le code ${p.code}, ${apercu?.offre.condition ?? '…'} 🎁\nLivraison partout au Maroc, paiement à la livraison.`}
           <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
             <span className="badge-modern badge-info">Voir les nouveautés ↗</span>
             <span className="badge-modern badge-neutral">Ne plus recevoir d’offres</span>
@@ -146,10 +146,11 @@ export default function RelanceClientes() {
         {apercu && <div style={{ borderTop: '1px solid var(--line-soft)', marginTop: 14, paddingTop: 14 }}>
           <p style={{ fontSize: 13, color: 'var(--tx-mid)', margin: 0 }}>
             <b style={{ color: 'var(--tx-hi)' }}>{apercu.total}</b> clientes à relancer · prochain envoi : <b style={{ color: 'var(--tx-hi)' }}>{apercu.envoyables}</b> ·
-            {' '}code {p.code} {apercu.codeExistant ? (apercu.codeExistant.isPercent && Number(apercu.codeExistant.discount) === p.pourcent ? 'déjà créé' : 'déjà pris avec une autre réduction : changez de code') : 'créé au premier envoi'}
+            {' '}code {p.code} {apercu.offre.existe ? 'existant, utilisé tel quel' : 'créé au premier envoi'}
           </p>
-          <button type="button" className="btn-modern btn-sm btn-primary" style={{ marginTop: 10 }} disabled={occupe !== null || !approuve || apercu.envoyables <= 0}
-            title={approuve ? undefined : 'Le modèle WhatsApp doit d’abord être approuvé par Meta'}
+          {apercu.offre.probleme && <p style={{ marginTop: 8, fontSize: 12.5, fontWeight: 600, color: 'var(--amber, #B45309)' }}>⚠ {apercu.offre.probleme} L’envoi reste bloqué.</p>}
+          <button type="button" className="btn-modern btn-sm btn-primary" style={{ marginTop: 10 }} disabled={occupe !== null || !approuve || Boolean(apercu.offre.probleme) || apercu.envoyables <= 0}
+            title={!approuve ? 'Le modèle WhatsApp doit d’abord être approuvé par Meta' : apercu.offre.probleme ?? undefined}
             onClick={() => { if (confirm(`Envoyer le message à ${apercu.envoyables} clientes maintenant ? (code ${p.code}, -${p.pourcent} %)`)) void action('envoyer', { action: 'envoyer' }, d => `${d.envoyees ?? 0} messages envoyés${d.echecs?.length ? `, ${d.echecs.length} échecs` : ''} — code ${d.code}${d.codeCree ? ' créé' : ''}.`) }}>
             <Send style={{ width: 14, height: 14 }} /> {occupe === 'envoyer' ? 'Envoi en cours…' : `Envoyer à ${apercu.envoyables} clientes`}
           </button>
