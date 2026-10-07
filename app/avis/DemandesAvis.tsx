@@ -6,7 +6,13 @@ import type { ReglesAvis } from '@/lib/avis-demandes'
 
 type Passage = { at: string; candidats: number; envoyees: number; nouvelles: number; relances: number; attenteModele: number; echecs: number }
 type Apercu = { total: number; nouvelles: number; relances: number; premierBonus: number; bonusSuivant: number; bloquees: number; dernierPassage: Passage | null }
-type Statut = { cle: 'demande' | 'recompense'; nom: string; statut: string; motif: string | null }
+type Statut = { cle: 'demande' | 'recompense' | 'rappel'; nom: string; statut: string; motif: string | null }
+
+const LIBELLES_MODELE: Record<Statut['cle'], string> = {
+  demande: 'Demande d’avis avec montant',
+  rappel: 'Relance : « vos X DH vous attendent toujours »',
+  recompense: 'Bonus crédité',
+}
 
 const LIBELLES_STATUT: Record<string, { texte: string; classe: string }> = {
   APPROVED: { texte: 'Approuvé', classe: 'badge-success' },
@@ -62,6 +68,7 @@ export default function DemandesAvis() {
   const envoyables = apercu ? Math.min(apercu.total - apercu.bloquees, regles.lotParJour) : 0
   const modeles: Statut[] = statuts ?? [
     { cle: 'demande', nom: regles.modeleDemande?.nom ?? 'shine_avis_bonus_v1', statut: regles.modeleDemande?.statut ?? 'ABSENT', motif: null },
+    { cle: 'rappel', nom: regles.modeleRappel?.nom ?? 'shine_avis_rappel_v1', statut: regles.modeleRappel?.statut ?? 'ABSENT', motif: null },
     { cle: 'recompense', nom: regles.modeleRecompense?.nom ?? 'shine_avis_recompense_v1', statut: regles.modeleRecompense?.statut ?? 'ABSENT', motif: null },
   ]
   const manquants = modeles.some(m => m.statut === 'ABSENT')
@@ -122,13 +129,14 @@ export default function DemandesAvis() {
           {modeles.map(m => {
             const s = LIBELLES_STATUT[m.statut] ?? { texte: m.statut === 'ABSENT' ? 'Pas encore créé' : m.statut, classe: 'badge-neutral' }
             return <li key={m.cle} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 13 }}>
-              <span>{m.cle === 'demande' ? 'Demande d’avis avec montant' : 'Bonus crédité'} <code style={{ fontSize: 11.5, color: 'var(--tx-faint)' }}>{m.nom}</code></span>
+              <span>{LIBELLES_MODELE[m.cle] ?? m.cle} <code style={{ fontSize: 11.5, color: 'var(--tx-faint)' }}>{m.nom}</code></span>
               <span className={`badge-modern badge-sm ${s.classe}`}>{s.texte}{m.motif ? ` · ${m.motif}` : ''}</span>
             </li>
           })}
         </ul>
         <p style={{ fontSize: 12, color: 'var(--tx-faint)', margin: '8px 0 0' }}>
           Tant que le modèle de demande n’est pas approuvé, seules les demandes à 50 DH partent (ancien modèle) ; les autres attendent.
+          Tant que la relance n’est pas approuvée, les relances partent avec le message de demande.
         </p>
       </div>
 
