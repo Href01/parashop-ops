@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import BosShell from '@/components/BosShell'
 import PageHead from '@/components/PageHead'
 import RelanceClientes from './RelanceClientes'
+import CampagneWhatsApp from './CampagneWhatsApp'
 import { Search, Filter, Download, UserPlus, TrendingUp, TrendingDown, Clock, DollarSign } from 'lucide-react'
 
 type Customer = {
@@ -202,6 +203,8 @@ export default function CustomersPage() {
         />
 
         <RelanceClientes />
+        <CampagneWhatsApp cle="annonce" titre="Olaplex et soins coréens" audiences={['toutes', 'clientes', 'comptes']} />
+        <CampagneWhatsApp cle="milkshake" titre="Milk Shake" audiences={['toutes', 'clientes', 'comptes', 'marque']} />
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
