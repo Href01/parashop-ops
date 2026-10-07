@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import BosShell from '@/components/BosShell'
 import PageHead from '@/components/PageHead'
+import RelanceClientes from './RelanceClientes'
 import { Search, Filter, Download, UserPlus, TrendingUp, TrendingDown, Clock, DollarSign } from 'lucide-react'
 
 type Customer = {
@@ -199,6 +200,8 @@ export default function CustomersPage() {
             </>
           }
         />
+
+        <RelanceClientes />
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
