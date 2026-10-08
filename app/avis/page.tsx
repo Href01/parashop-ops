@@ -5,7 +5,19 @@ import { Star, CheckCircle, XCircle, ShoppingBag, User } from 'lucide-react'
 import Link from 'next/link'
 import BosShell from '@/components/BosShell'
 import PageHead from '@/components/PageHead'
+import { REGLES_AVIS_DEFAUT, type ReglesAvis } from '@/lib/avis-demandes'
+import { etapeSuivi, libelleErreur, type FileEnvoi as File, type LigneSuivi } from '@/lib/avis-suivi'
 import DemandesAvis from './DemandesAvis'
+import FileEnvoi from './FileEnvoi'
+import SuiviAvis from './SuiviAvis'
+
+type Vue = 'file' | 'suivi' | 'moderation' | 'reglages'
+const VUES: { cle: Vue; libelle: string }[] = [
+  { cle: 'file', libelle: 'À envoyer' },
+  { cle: 'suivi', libelle: 'Suivi' },
+  { cle: 'moderation', libelle: 'Modération' },
+  { cle: 'reglages', libelle: 'Réglages' },
+]
 
 interface Review {
   id: number
@@ -39,8 +51,45 @@ export default function AvisPage() {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'pending' | 'published' | 'all'>('pending')
   const [actionLoading, setActionLoading] = useState<number | null>(null)
+  const [vue, setVue] = useState<Vue>('file')
+  const [demandes, setDemandes] = useState<{ regles: ReglesAvis | null; file: File | null; erreur: string | null }>({ regles: null, file: null, erreur: null })
+  const [suivi, setSuivi] = useState<{ lignes: LigneSuivi[] | null; erreur: string | null }>({ lignes: null, erreur: null })
+  const [selection, setSelection] = useState<Set<number>>(new Set())
 
-  useEffect(() => { void fetchReviews() }, [])
+  useEffect(() => {
+    const v = new URLSearchParams(window.location.search).get('vue')
+    if (VUES.some(x => x.cle === v)) setVue(v as Vue)
+    void fetchReviews(); void chargerDemandes(); void chargerSuivi()
+  }, [])
+
+  function changerVue(v: Vue) {
+    setVue(v)
+    const url = new URL(window.location.href)
+    url.searchParams.set('vue', v)
+    window.history.replaceState(null, '', url)
+  }
+
+  async function chargerDemandes() {
+    try {
+      const r = await fetch('/api/ops/avis/demandes', { cache: 'no-store' })
+      const d = await r.json().catch(() => ({}))
+      setDemandes({ regles: d.regles ?? null, file: d.apercu ?? null, erreur: d.apercuErreur ?? (r.ok ? null : d.error || `Erreur ${r.status}`) })
+    } catch (e) {
+      setDemandes(p => ({ ...p, erreur: e instanceof Error ? e.message : 'Erreur réseau' }))
+    }
+  }
+
+  async function chargerSuivi() {
+    try {
+      const r = await fetch('/api/ops/avis/suivi', { cache: 'no-store' })
+      const d = await r.json().catch(() => ({}))
+      setSuivi(r.ok ? { lignes: d.lignes ?? [], erreur: null } : { lignes: null, erreur: d.error || `Erreur ${r.status}` })
+    } catch (e) {
+      setSuivi({ lignes: null, erreur: e instanceof Error ? e.message : 'Erreur réseau' })
+    }
+  }
+
+  async function toutRecharger() { await Promise.all([chargerDemandes(), chargerSuivi()]) }
 
   async function fetchReviews() {
     try {
@@ -88,12 +137,40 @@ export default function AvisPage() {
       <div style={{ padding: '22px 24px 60px', maxWidth: 1200, margin: '0 auto' }}>
 
         <PageHead
-          title="Modération des avis"
-          note="Publiez les avis de vos clientes — visibles sur la boutique une fois approuvés."
+          title="Avis clientes"
+          note="Demandez des avis par WhatsApp, suivez qui a répondu et publiez les avis reçus."
         />
 
-        <DemandesAvis />
+        <div className="filter-strip inline-flex gap-1 p-1 bg-bg-2 rounded-lg" role="tablist" aria-label="Gestion des avis"
+          // Sur téléphone les bandes de filtres défilent ; les quatre onglets, eux, restent tous visibles.
+          style={{ marginBottom: 18, flexWrap: 'wrap', overflowX: 'visible' }}>
+          {VUES.map(v => {
+            const n = v.cle === 'file' ? demandes.file?.total : v.cle === 'suivi' ? suivi.lignes?.length : v.cle === 'moderation' ? counts.pending : undefined
+            return (
+              <button key={v.cle} type="button" role="tab" aria-selected={vue === v.cle} onClick={() => changerVue(v.cle)}
+                className={`btn-modern btn-sm ${vue === v.cle ? 'btn-primary' : 'btn-subtle'}`}>
+                {v.libelle}{n !== undefined && <span style={{ marginLeft: 5, opacity: 0.8 }}>{n}</span>}
+              </button>
+            )
+          })}
+        </div>
 
+        {vue === 'file' && (demandes.regles
+          ? <FileEnvoi file={demandes.file} erreur={demandes.erreur} regles={demandes.regles} selection={selection} setSelection={setSelection} recharger={toutRecharger}
+              echecs={new Map((suivi.lignes ?? []).filter(l => etapeSuivi(l) === 'echec').map(l => [l.userId, libelleErreur(l.erreur)]))} />
+          : <div className="card" style={{ padding: 18, fontSize: 13, color: demandes.erreur ? 'var(--red, #B91C1C)' : 'var(--tx-faint)' }}>{demandes.erreur ?? 'Chargement…'}</div>)}
+
+        {vue === 'suivi' && (
+          <SuiviAvis lignes={suivi.lignes} erreur={suivi.erreur} regles={demandes.regles ?? REGLES_AVIS_DEFAUT} file={demandes.file?.file ?? []}
+            onPreparer={ids => { setSelection(new Set(ids)); changerVue('file') }}
+            onModeration={() => { setFilter('pending'); changerVue('moderation') }} />
+        )}
+
+        {vue === 'reglages' && (demandes.regles
+          ? <DemandesAvis regles={demandes.regles} recharger={toutRecharger} />
+          : <div className="card" style={{ padding: 18, fontSize: 13, color: 'var(--tx-faint)' }}>{demandes.erreur ?? 'Chargement…'}</div>)}
+
+        {vue === 'moderation' && <>
         {/* Filters */}
         <div style={{ display: 'flex', gap: 8, marginBottom: 22 }}>
           {(['pending', 'published', 'all'] as const).map(f => {
@@ -225,6 +302,7 @@ export default function AvisPage() {
             })}
           </div>
         )}
+        </>}
       </div>
     </BosShell>
   )

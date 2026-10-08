@@ -12,7 +12,8 @@ export const maxDuration = 300
  *   POST { action: 'regles', regles } → enregistre les montants et réglages
  *   POST { action: 'creerModeles' }   → soumet à Meta les modèles WhatsApp manquants
  *   POST { action: 'statutModeles' }  → relit chez Meta le statut des modèles
- *   POST { action: 'envoyer', limite? } → envoie maintenant (mêmes règles que la tâche)
+ *   POST { action: 'envoyer', userIds? } → envoie maintenant (mêmes règles que la tâche), à la
+ *                                      sélection si `userIds` est donné, dans la limite du plafond par envoi
  * Meta et WhatsApp passent par la boutique, qui détient la clé (secret partagé).
  */
 async function lireRegles() {
@@ -60,7 +61,13 @@ export async function POST(req: NextRequest) {
       }
       case 'creerModeles': return NextResponse.json(await boutique('/api/reviews/templates', 'POST'))
       case 'statutModeles': return NextResponse.json(await boutique('/api/reviews/templates', 'GET'))
-      case 'envoyer': return NextResponse.json(await boutique('/api/reviews/requests', 'POST', { limite: body.limite }))
+      case 'envoyer': {
+        const userIds = Array.isArray(body.userIds) ? body.userIds : undefined
+        if (userIds && (userIds.length === 0 || !userIds.every((id: unknown) => Number.isInteger(id) && (id as number) > 0))) {
+          return NextResponse.json({ error: 'Sélection vide ou invalide' }, { status: 400 })
+        }
+        return NextResponse.json(await boutique('/api/reviews/requests', 'POST', { limite: body.limite, userIds }))
+      }
       default: return NextResponse.json({ error: 'Action inconnue' }, { status: 400 })
     }
   } catch (e) {

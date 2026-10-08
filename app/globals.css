@@ -883,9 +883,14 @@ body {
   box-shadow: var(--shadow-1);
 }
 
-.filter-strip .btn-primary:hover {
+/* `:not(:disabled)` : sans lui, le survol de .btn-primary (modern-design-system.css,
+   même spécificité, chargé après) peignait le fond en rose plein sous un texte rose. */
+.filter-strip .btn-primary:hover,
+.filter-strip .btn-primary:hover:not(:disabled) {
   background: var(--bg-1);
+  box-shadow: var(--shadow-1);
   color: var(--rose-bright);
+  transform: none;
 }
 
 .btn {
