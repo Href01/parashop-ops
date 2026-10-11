@@ -61,17 +61,17 @@ interface DashboardStats {
     delivered: DashboardAnalytics
   }
   revenueSeries: Array<{ date: string; label: string; revenue: number; profit: number; orders: number }>
-  topProducts: Array<{ productId: number | null; name: string; units: number; revenue: number }>
-  topCities: Array<{ name: string; orders: number }>
-  channels: Array<{ name: string; revenue: number; color: string }>
-  pipeline: Array<{ label: string; value: number; tone: string }>
+  topProducts: Array<{ productId: number | null; name: string; units: number; revenue: number; stock?: number; marginPct?: number }>
+  topCities: Array<{ name: string; orders: number; revenue?: number }>
+  channels: Array<{ name: string; revenue: number; color: string; orders?: number; deliveryRate?: number | null }>
+  pipeline: Array<{ label: string; value: number; tone: string; sub?: string }>
   alerts: { total: number; items: Array<{ tone: string; title: string; subtitle: string; href: string }> }
   activity: Array<{ tone: string; title: string; subtitle: string; timestamp: string }>
   _cachedAt?: string
 }
 
 interface DashboardPnl {
-  rentabilite: { caLivre: number; profitLivre: number; margeLivree: number; pub: number; emballage: number; retours: number; depotVente?: number; net: number; marginPct: number }
+  rentabilite: { caLivre: number; profitLivre: number; margeLivree: number; pub: number; emballage: number; retours: number; depotVente?: number; net: number; marginPct: number; previousNet?: number | null }
   tresorerie: { encaisse: number; achats: number; pub: number; emballage: number; emballageEstime: boolean; frais: number; retours: number; depotVente?: number; net: number }
   packagingRate: number
   deliveredParcels: number
@@ -110,9 +110,9 @@ interface ReconciliationBasis {
 
 interface DashboardAnalytics {
   revenueSeries: Array<{ date: string; label: string; revenue: number; profit: number; orders: number }>
-  topProducts: Array<{ productId: number | null; name: string; units: number; revenue: number }>
-  topCities: Array<{ name: string; orders: number }>
-  channels: Array<{ name: string; revenue: number; color: string }>
+  topProducts: Array<{ productId: number | null; name: string; units: number; revenue: number; stock?: number; marginPct?: number }>
+  topCities: Array<{ name: string; orders: number; revenue?: number }>
+  channels: Array<{ name: string; revenue: number; color: string; orders?: number; deliveryRate?: number | null }>
   orders: number
   averageOrderValue: number
 }
@@ -362,9 +362,9 @@ export default function GlowDashboard() {
   const fallbackDeliveredOrders = R.matchedOrders ?? R.orders
   const analyticsFallback: DashboardAnalytics = {
     revenueSeries: stats.revenueSeries,
-    topProducts: stats.topProducts,
-    topCities: stats.topCities || [],
-    channels: stats.channels,
+    topProducts: stats.topProducts.map((p) => ({ ...p, stock: p.stock ?? 0, marginPct: p.marginPct ?? 0 })),
+    topCities: (stats.topCities || []).map((c) => ({ ...c, revenue: c.revenue ?? 0 })),
+    channels: stats.channels.map((c) => ({ ...c, orders: 0, deliveryRate: null as number | null })),
     orders: byDeliv ? fallbackDeliveredOrders : stats.ordersWeek,
     averageOrderValue: byDeliv && fallbackDeliveredOrders > 0
       ? R.revenue / fallbackDeliveredOrders
@@ -374,6 +374,11 @@ export default function GlowDashboard() {
   const analyticsBasisLabel = byDeliv ? 'livraison' : 'création'
   const activePnl = stats.pnlByBasis?.[basis] ?? stats.pnl
   const activeRoas = (stats.adSpend ?? 0) > 0 ? dRevenue / (stats.adSpend || 1) : stats.roas
+  // Delta de marge nette vs periode precedente (meme convention que le CA :
+  // +100 % quand on part de zero). null = pas de point de comparaison.
+  const prevNet = activePnl?.rentabilite.previousNet ?? null
+  const curNet = activePnl?.rentabilite.net ?? dProfit
+  const netDelta = prevNet == null ? null : prevNet <= 0 ? (curNet > 0 ? 100 : null) : ((curNet - prevNet) / Math.abs(prevNet)) * 100
 
   const exportCsv = () => {
     const rows = [['date', 'revenue', 'profit', 'orders'], ...activeAnalytics.revenueSeries.map((p) => [p.date, String(p.revenue), String(p.profit), String(p.orders)])]
@@ -491,7 +496,7 @@ export default function GlowDashboard() {
             <HeroTile tone="rose" icon={<TrendingUp style={{ width: 14, height: 14 }} />} label={`CA livré · ${analyticsBasisLabel} · ${periodLabel}`} amount={dRevenue} delta={dRevenueDelta} deltaLabel={compareLabel} />
           </div>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
-            <HeroTile tone="green" icon={<PiggyBank style={{ width: 14, height: 14 }} />} label={`Marge nette · ${analyticsBasisLabel}`} amount={activePnl?.rentabilite.net ?? dProfit} sub={`${Math.round(activePnl?.rentabilite.marginPct ?? dMargin)}% après pub, emballage, retours`} />
+            <HeroTile tone="green" icon={<PiggyBank style={{ width: 14, height: 14 }} />} label={`Marge nette · ${analyticsBasisLabel}`} amount={activePnl?.rentabilite.net ?? dProfit} delta={netDelta} deltaLabel={compareLabel} sub={`${Math.round(activePnl?.rentabilite.marginPct ?? dMargin)}% après pub, emballage, retours`} />
           </div>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
             <HeroTile tone="green" icon={<Wallet style={{ width: 14, height: 14 }} />} label={byDeliv ? 'Cash net généré · trésorerie' : 'Cash net attribué · cohorte'} amount={activePnl?.tresorerie.net ?? dCash} sub={byDeliv ? 'liquide réel entré − sorti' : 'cash Sendit des colis créés − dépenses'} />
@@ -599,11 +604,15 @@ export default function GlowDashboard() {
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {activeAnalytics.topProducts.length === 0 ? <Empty /> : activeAnalytics.topProducts.slice(0, 6).map((p, i) => {
                 const max = activeAnalytics.topProducts[0]?.revenue || 1
+                // Pastille stock : le top produit en rupture est l'alerte n°1.
+                const stockTone = (p.stock ?? 1) <= 0 ? 'var(--red)' : (p.stock ?? 99) <= 5 ? 'var(--amber)' : 'var(--green)'
                 const inner = (
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
-                      <span style={{ color: 'var(--tx-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{p.name}</span>
-                      <span style={{ color: 'var(--tx-mid)', whiteSpace: 'nowrap', marginLeft: 8 }}><b style={{ color: 'var(--tx-hi)' }}>{mad(p.revenue)}</b> · {p.units}u</span>
+                      <span style={{ color: 'var(--tx-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                        <span title={(p.stock ?? 0) <= 0 ? 'RUPTURE — à réapprovisionner' : `Stock : ${p.stock}`} style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: stockTone, marginRight: 6, verticalAlign: 'baseline' }} />{p.name}
+                      </span>
+                      <span style={{ color: 'var(--tx-mid)', whiteSpace: 'nowrap', marginLeft: 8 }}><b style={{ color: 'var(--tx-hi)' }}>{mad(p.revenue)}</b> · {p.units}u{p.marginPct != null ? ` · ${p.marginPct.toFixed(0)}%` : ''}</span>
                     </div>
                     <div style={{ height: 5, borderRadius: 3, background: 'var(--bg-3)', overflow: 'hidden' }}>
                       <div style={{ width: `${(p.revenue / max) * 100}%`, height: '100%', background: 'var(--rose-bright)', borderRadius: 3 }} />
@@ -628,7 +637,7 @@ export default function GlowDashboard() {
                       <span style={{ display: 'flex', alignItems: 'center', gap: 7, color: 'var(--tx-hi)' }}>
                         <span style={{ width: 8, height: 8, borderRadius: '50%', background: c.color || 'var(--rose-bright)' }} />{c.name}
                       </span>
-                      <b style={{ color: 'var(--tx-hi)' }}>{mad(c.revenue)} MAD</b>
+                      <span style={{ color: 'var(--tx-mid)', whiteSpace: 'nowrap', marginLeft: 8 }}><b style={{ color: 'var(--tx-hi)' }}>{mad(c.revenue)} MAD</b>{c.deliveryRate != null ? ` · livré ${c.deliveryRate.toFixed(0)}%` : ''}</span>
                     </div>
                     <div style={{ height: 5, borderRadius: 3, background: 'var(--bg-3)', overflow: 'hidden' }}>
                       <div style={{ width: `${(c.revenue / max) * 100}%`, height: '100%', background: c.color || 'var(--rose-bright)', borderRadius: 3 }} />
@@ -649,6 +658,7 @@ export default function GlowDashboard() {
                     <span style={{ fontSize: 12, color: 'var(--tx-mid)', display: 'flex', alignItems: 'center', gap: 6 }}>
                       <span style={{ width: 6, height: 6, borderRadius: '50%', background: colors[item.tone] || 'var(--tx-lo)' }} />
                       {item.label}
+                      {item.sub && <span className="fs11 tx-faint">· {item.sub}</span>}
                     </span>
                     <span style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--mono)', color: colors[item.tone] || 'var(--tx-hi)' }}>{item.value}</span>
                   </div>
@@ -714,7 +724,7 @@ export default function GlowDashboard() {
                   <div key={i}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 3 }}>
                       <span style={{ color: 'var(--tx-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{c.name}</span>
-                      <span style={{ color: 'var(--tx-mid)', whiteSpace: 'nowrap', marginLeft: 8 }}><b style={{ color: 'var(--tx-hi)' }}>{c.orders}</b> cmd</span>
+                      <span style={{ color: 'var(--tx-mid)', whiteSpace: 'nowrap', marginLeft: 8 }}><b style={{ color: 'var(--tx-hi)' }}>{c.orders}</b> cmd{c.revenue != null && c.revenue > 0 ? <> · <b style={{ color: 'var(--tx-hi)' }}>{mad(c.revenue)}</b></> : ''}</span>
                     </div>
                     <div style={{ height: 5, borderRadius: 3, background: 'var(--bg-3)', overflow: 'hidden' }}>
                       <div style={{ width: `${(c.orders / max) * 100}%`, height: '100%', background: 'var(--blue)', borderRadius: 3 }} />

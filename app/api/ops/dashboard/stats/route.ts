@@ -47,6 +47,10 @@ interface SummaryRow {
   realizedDeliveryCost: number | string | null
   realizedOrders: number | string | null
   previousRealizedRevenue: number | string | null
+  previousProfitDelivered: number | string | null
+  previousRealizedProfit: number | string | null
+  previousRealizedOrders: number | string | null
+  previousDeliveredCreated: number | string | null
 }
 
 interface SeriesRow {
@@ -62,6 +66,7 @@ interface SeriesRow {
 
 interface PipelineRow {
   pending: number | string | null
+  pendingValue: number | string | null
   confirmed: number | string | null
   sendit: number | string | null
   delivered: number | string | null
@@ -74,12 +79,15 @@ interface ProductRow {
   name: string | null
   units: number | string | null
   revenue: number | string | null
+  stock: number | string | null
+  cogs: number | string | null
 }
 
 interface CityRow {
   basis: 'created' | 'delivered'
   name: string | null
   orders: number | string | null
+  revenue: number | string | null
 }
 
 interface AlertCountsRow {
@@ -107,6 +115,12 @@ interface ChannelRow {
   name: string | null
   orders: number | string | null
   revenue: number | string | null
+}
+
+interface ChannelQualityRow {
+  name: string | null
+  delivered: number | string | null
+  cancelled: number | string | null
 }
 
 interface ActivityHistoryRow {
@@ -403,6 +417,7 @@ export async function GET(req: Request) {
       lowStockRows,
       roasRows,
       channelRows,
+      channelQualityRows,
       activityHistoryRows,
       recentOrdersRows,
       senditLedgerRows,
@@ -461,7 +476,11 @@ export async function GET(req: Request) {
           COALESCE(SUM(profit) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedProfit",
           COALESCE(SUM(delivery_cost) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedDeliveryCost",
           COUNT(*) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED')::int AS "realizedOrders",
-          COALESCE(SUM(revenue) FILTER (WHERE "deliveredAt" >= (SELECT compare_start FROM bounds) AND "deliveredAt" < (SELECT compare_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "previousRealizedRevenue"
+          COALESCE(SUM(revenue) FILTER (WHERE "deliveredAt" >= (SELECT compare_start FROM bounds) AND "deliveredAt" < (SELECT compare_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "previousRealizedRevenue",
+          COALESCE(SUM(profit) FILTER (WHERE "createdAt" >= (SELECT compare_start FROM bounds) AND "createdAt" < (SELECT compare_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "previousProfitDelivered",
+          COALESCE(SUM(profit) FILTER (WHERE "deliveredAt" >= (SELECT compare_start FROM bounds) AND "deliveredAt" < (SELECT compare_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "previousRealizedProfit",
+          COUNT(*) FILTER (WHERE "deliveredAt" >= (SELECT compare_start FROM bounds) AND "deliveredAt" < (SELECT compare_end FROM bounds) AND status = 'DELIVERED')::int AS "previousRealizedOrders",
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT compare_start FROM bounds) AND "createdAt" < (SELECT compare_end FROM bounds) AND status = 'DELIVERED')::int AS "previousDeliveredCreated"
         FROM order_financials
       `),
       safeQuery<SeriesRow>('series', `
@@ -518,6 +537,7 @@ export async function GET(req: Request) {
         ${FINANCIAL_CTE}
         SELECT
           COUNT(*) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'PENDING')::int AS pending,
+          COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'PENDING'), 0)::double precision AS "pendingValue",
           COUNT(*) FILTER (
             WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds)
               AND status = 'CONFIRMED'
@@ -540,7 +560,9 @@ export async function GET(req: Request) {
             oi."productId" AS "productId",
             COALESCE(NULLIF(TRIM(p.name), ''), CONCAT('Product #', COALESCE(oi."productId"::text, '-'))) AS name,
             COALESCE(SUM(oi.quantity), 0)::int AS units,
-            COALESCE(SUM(COALESCE(oi.price, 0) * COALESCE(oi.quantity, 0)), 0)::double precision AS revenue
+            COALESCE(SUM(COALESCE(oi.price, 0) * COALESCE(oi.quantity, 0)), 0)::double precision AS revenue,
+            COALESCE(MAX(p.stock), 0)::int AS stock,
+            COALESCE(SUM(COALESCE(oi."totalCost", oi."unitCost" * oi.quantity, p."costPrice" * oi.quantity, 0)), 0)::double precision AS cogs
           FROM "OrderItem" oi
           INNER JOIN order_financials ofn ON ofn.id = oi."orderId"
           LEFT JOIN "Product" p ON p.id = oi."productId"
@@ -553,7 +575,9 @@ export async function GET(req: Request) {
             oi."productId" AS "productId",
             COALESCE(NULLIF(TRIM(p.name), ''), CONCAT('Product #', COALESCE(oi."productId"::text, '-'))) AS name,
             COALESCE(SUM(oi.quantity), 0)::int AS units,
-            COALESCE(SUM(COALESCE(oi.price, 0) * COALESCE(oi.quantity, 0)), 0)::double precision AS revenue
+            COALESCE(SUM(COALESCE(oi.price, 0) * COALESCE(oi.quantity, 0)), 0)::double precision AS revenue,
+            COALESCE(MAX(p.stock), 0)::int AS stock,
+            COALESCE(SUM(COALESCE(oi."totalCost", oi."unitCost" * oi.quantity, p."costPrice" * oi.quantity, 0)), 0)::double precision AS cogs
           FROM "OrderItem" oi
           INNER JOIN order_financials ofn ON ofn.id = oi."orderId"
           LEFT JOIN "Product" p ON p.id = oi."productId"
@@ -565,7 +589,7 @@ export async function GET(req: Request) {
           SELECT *, ROW_NUMBER() OVER (PARTITION BY basis ORDER BY units DESC, revenue DESC) AS rank
           FROM product_totals
         )
-        SELECT basis, "productId", name, units, revenue
+        SELECT basis, "productId", name, units, revenue, stock, cogs
         FROM ranked
         WHERE rank <= 5
         ORDER BY basis, rank
@@ -576,7 +600,8 @@ export async function GET(req: Request) {
           SELECT
             'created'::text AS basis,
             COALESCE(NULLIF(TRIM("deliveryCity"), ''), 'Unknown') AS name,
-            COUNT(*)::int AS orders
+            COUNT(*)::int AS orders,
+            COALESCE(SUM(revenue) FILTER (WHERE status = 'DELIVERED'), 0)::double precision AS revenue
           FROM order_financials
           WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds)
             AND status IN ('CONFIRMED', 'DELIVERED')
@@ -585,7 +610,8 @@ export async function GET(req: Request) {
           SELECT
             'delivered'::text AS basis,
             COALESCE(NULLIF(TRIM("deliveryCity"), ''), 'Unknown') AS name,
-            COUNT(*)::int AS orders
+            COUNT(*)::int AS orders,
+            COALESCE(SUM(revenue), 0)::double precision AS revenue
           FROM order_financials
           WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds)
             AND status = 'DELIVERED'
@@ -595,7 +621,7 @@ export async function GET(req: Request) {
           SELECT *, ROW_NUMBER() OVER (PARTITION BY basis ORDER BY orders DESC, name ASC) AS rank
           FROM city_totals
         )
-        SELECT basis, name, orders
+        SELECT basis, name, orders, revenue
         FROM ranked
         WHERE rank <= 5
         ORDER BY basis, rank
@@ -677,6 +703,26 @@ export async function GET(req: Request) {
         SELECT basis, name, orders, revenue
         FROM channel_totals
         ORDER BY basis, orders DESC, revenue DESC
+      `),
+      safeQuery<ChannelQualityRow>('channel-quality', `
+        ${FINANCIAL_CTE}
+        SELECT
+          CASE
+            WHEN "sessionId" IS NOT NULL THEN 'Site'
+            WHEN LOWER(COALESCE("sourceChannel", '')) LIKE '%whatsapp%' THEN 'WhatsApp (manuel)'
+            WHEN LOWER(COALESCE("sourceChannel", '')) LIKE '%instagram%' THEN 'Instagram (manuel)'
+            WHEN LOWER(COALESCE("sourceChannel", '')) LIKE '%tiktok%' THEN 'TikTok (manuel)'
+            WHEN LOWER(COALESCE("sourceChannel", '')) LIKE '%sendit%'
+              OR NULLIF(TRIM(COALESCE("sourceChannel", '')), '') IS NULL
+              OR LOWER(COALESCE("sourceChannel", '')) LIKE '%manual%' THEN 'Manuel (origine non renseignée)'
+            ELSE "sourceChannel" || ' (manuel)'
+          END AS name,
+          COUNT(*) FILTER (WHERE status = 'DELIVERED')::int AS delivered,
+          COUNT(*) FILTER (WHERE status = 'CANCELLED')::int AS cancelled
+        FROM order_financials
+        WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds)
+          AND status IN ('DELIVERED', 'CANCELLED')
+        GROUP BY 1
       `),
       safeQuery<ActivityHistoryRow>('activity-history', `
         SELECT
@@ -925,14 +971,14 @@ export async function GET(req: Request) {
       `),
       // P&L inputs for the period [from, to]: supplier purchase cash-out, ad spend,
       // logged operating expenses, and the packaging per-parcel rate.
-      safeQuery<{ purchaseSpend: number; adSpend: number; opex: number; opexPackaging: number; returnFees: number; packagingRate: number }>('pnl', `
+      safeQuery<{ purchaseSpend: number; adSpend: number; opex: number; opexPackaging: number; returnFees: number; packagingRate: number; previousPurchaseSpend: number; previousAdSpend: number; previousOpex: number; previousOpexPackaging: number; previousReturnFees: number }>('pnl', `
         SELECT
           (SELECT COALESCE(SUM(im."totalCost"),0) FROM "InventoryMovement" im
              -- Partner consignment stock is never Shine's spend (migration 042).
              LEFT JOIN "Product" p ON p.id = im."productId"
-               WHERE im.type='Purchase' AND im."totalCost" IS NOT NULL AND (p."partnerId" IS NULL)
-                AND (im."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::date
-                AND (im."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day'))::double precision AS "purchaseSpend",
+              WHERE im.type='Purchase' AND im."totalCost" IS NOT NULL AND (p."partnerId" IS NULL)
+               AND (im."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::date
+               AND (im."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day'))::double precision AS "purchaseSpend",
           (SELECT COALESCE(SUM("returnDeliveryFee"),0) FROM "Order"
              WHERE ("returnedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::date
                AND ("returnedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day'))::double precision AS "returnFees",
@@ -942,7 +988,22 @@ export async function GET(req: Request) {
              WHERE "date" >= '${from}'::date AND "date" <= '${to}'::date)::double precision AS "opex",
           (SELECT COALESCE(SUM(amount),0) FROM "OperatingExpense"
              WHERE category='Emballage' AND "date" >= '${from}'::date AND "date" <= '${to}'::date)::double precision AS "opexPackaging",
-          (SELECT COALESCE(value::numeric,0) FROM "AppSetting" WHERE key='packaging_cost_per_parcel')::double precision AS "packagingRate"
+          (SELECT COALESCE(value::numeric,0) FROM "AppSetting" WHERE key='packaging_cost_per_parcel')::double precision AS "packagingRate",
+          -- Meme entrees sur la periode precedente : servent au delta de marge nette.
+          (SELECT COALESCE(SUM("returnDeliveryFee"),0) FROM "Order"
+             WHERE ("returnedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${compareFrom}'::date
+               AND ("returnedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${compareTo}'::date + INTERVAL '1 day'))::double precision AS "previousReturnFees",
+          (SELECT COALESCE(SUM(spend),0) FROM "AdSpendDaily"
+             WHERE date >= '${compareFrom}'::date AND date <= '${compareTo}'::date)::double precision AS "previousAdSpend",
+          (SELECT COALESCE(SUM(amount),0) FROM "OperatingExpense"
+             WHERE "date" >= '${compareFrom}'::date AND "date" <= '${compareTo}'::date)::double precision AS "previousOpex",
+          (SELECT COALESCE(SUM(amount),0) FROM "OperatingExpense"
+             WHERE category='Emballage' AND "date" >= '${compareFrom}'::date AND "date" <= '${compareTo}'::date)::double precision AS "previousOpexPackaging",
+          (SELECT COALESCE(SUM(im."totalCost"),0) FROM "InventoryMovement" im
+             LEFT JOIN "Product" p ON p.id = im."productId"
+              WHERE im.type='Purchase' AND im."totalCost" IS NOT NULL AND (p."partnerId" IS NULL)
+               AND (im."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${compareFrom}'::date
+               AND (im."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${compareTo}'::date + INTERVAL '1 day'))::double precision AS "previousPurchaseSpend"
       `),
     ])
 
@@ -989,6 +1050,11 @@ export async function GET(req: Request) {
     const realizedProfit = toNumber(summary?.realizedProfit)
     const realizedOrders = toNumber(summary?.realizedOrders)
     const previousRealizedRevenue = toNumber(summary?.previousRealizedRevenue)
+    // Entrees de la periode precedente pour le delta de marge nette (rentabilite).
+    const previousProfitDelivered = toNumber(summary?.previousProfitDelivered)
+    const previousRealizedProfit = toNumber(summary?.previousRealizedProfit)
+    const previousRealizedOrders = toNumber(summary?.previousRealizedOrders)
+    const previousDeliveredCreated = toNumber(summary?.previousDeliveredCreated)
     const realizedMargin = realizedRevenue > 0 ? (realizedProfit / realizedRevenue) * 100 : 0
     const realizedRevenueDelta = percentageChange(realizedRevenue, previousRealizedRevenue)
 
@@ -1093,6 +1159,7 @@ export async function GET(req: Request) {
           retours: returnFees,
           net: profitNet,
           marginPct: revenue > 0 ? (profitNet / revenue) * 100 : 0,
+          previousNet: null as number | null,
         },
         tresorerie: {
           encaisse: cash,
@@ -1118,6 +1185,16 @@ export async function GET(req: Request) {
        alors que Shine n'en garde que sa part. On retire une seule ligne, calculee
        par le meme moteur que le releve du partenaire (lib/partner-ledger.ts). */
     const depot = await ajustementDepotVente(from, to)
+    /* Meme correction sur la periode precedente, pour le delta de marge nette.
+       Sans elle, la comparaison melangerait le resultat de Shine et celui du
+       partenariat des deux cotes. */
+    const depotPrev = await ajustementDepotVente(compareFrom, compareTo)
+    const prevNetFor = (grossProfit: number, parcels: number) => {
+      const prevPackaging = parcels * packagingRate
+      const prevAd = toNumber(pnlRow?.previousAdSpend)
+      const prevRet = toNumber(pnlRow?.previousReturnFees)
+      return grossProfit - prevPackaging - prevAd - prevRet - depotPrev.part
+    }
     const avecDepot = (p: ReturnType<typeof buildPnl>) => {
       if (depot.part === 0 && depot.cash === 0) return { ...p, rentabilite: { ...p.rentabilite, depotVente: 0 }, tresorerie: { ...p.tresorerie, depotVente: 0 } }
       const net = p.rentabilite.net - depot.part
@@ -1131,6 +1208,11 @@ export async function GET(req: Request) {
       created: avecDepot(buildPnl(revenueDelivered, profitDelivered, createdCash, createdParcels)),
       delivered: avecDepot(buildPnl(realizedRevenue, realizedProfit, treasuryCash, deliveredParcels)),
     }
+    // Delta de marge nette vs periode precedente, par base — mêmes entrees,
+    // même formule, seules les bornes changent. Les colis estimes viennent des
+    // commandes (le ledger Sendit ne couvre que la periode courante).
+    pnlByBasis.created.rentabilite.previousNet = prevNetFor(previousProfitDelivered, previousDeliveredCreated)
+    pnlByBasis.delivered.rentabilite.previousNet = prevNetFor(previousRealizedProfit, previousRealizedOrders)
     // Preserve the existing field for older clients; it remains the actual cash basis.
     const pnl = pnlByBasis.delivered
     const marginPercent = revenueWeek > 0 ? (estimatedProfitWeek / revenueWeek) * 100 : 0
@@ -1151,18 +1233,25 @@ export async function GET(req: Request) {
 
     const mapProducts = (basis: 'created' | 'delivered') => topProductRows
       .filter((row) => row.basis === basis)
-      .map((row) => ({
-        productId: row.productId ?? null,
-        name: row.name || 'Unknown product',
-        units: toNumber(row.units),
-        revenue: toNumber(row.revenue),
-      }))
+      .map((row) => {
+        const revenue = toNumber(row.revenue)
+        const cogs = toNumber(row.cogs)
+        return {
+          productId: row.productId ?? null,
+          name: row.name || 'Unknown product',
+          units: toNumber(row.units),
+          revenue,
+          stock: toNumber(row.stock),
+          marginPct: revenue > 0 ? ((revenue - cogs) / revenue) * 100 : 0,
+        }
+      })
 
     const mapCities = (basis: 'created' | 'delivered') => topCityRows
       .filter((row) => row.basis === basis)
       .map((row) => ({
         name: row.name || 'Unknown',
         orders: toNumber(row.orders),
+        revenue: toNumber(row.revenue),
       }))
 
     const revenueSeries = mapSeries('created')
@@ -1173,7 +1262,7 @@ export async function GET(req: Request) {
     const deliveredTopCities = mapCities('delivered')
 
     const pipelineItems = [
-      { label: 'En attente', value: toNumber(pipeline?.pending), tone: 'amber' as Tone },
+      { label: 'En attente', value: toNumber(pipeline?.pending), tone: 'amber' as Tone, sub: toNumber(pipeline?.pendingValue) > 0 ? `${Math.round(toNumber(pipeline?.pendingValue)).toLocaleString('fr-FR')} MAD à vérifier` : undefined },
       { label: 'Confirmées', value: toNumber(pipeline?.confirmed), tone: 'blue' as Tone },
       { label: 'Chez Sendit', value: toNumber(pipeline?.sendit), tone: 'violet' as Tone },
       { label: 'Livrées', value: toNumber(pipeline?.delivered), tone: 'green' as Tone },
@@ -1231,6 +1320,20 @@ export async function GET(req: Request) {
         : null,
     ].filter(Boolean)
 
+    // La pub qui mange la marge : au-dela de 25 % du CA livre, le budget doit
+    // etre revu avant d'etre augmente. Seuil fixe, assume.
+    const adSpendTotal = toNumber(roasRows[0]?.spend)
+    const adShare = realizedRevenue > 0 && adSpendTotal > 0 ? (adSpendTotal / realizedRevenue) * 100 : 0
+    const pubAlert = adShare > 25 ? 1 : 0
+    if (pubAlert) {
+      attentionItems.unshift({
+        tone: 'red' as Tone,
+        title: `Pub = ${adShare.toFixed(0)} % du CA livré`,
+        subtitle: `${Math.round(adSpendTotal).toLocaleString('fr-FR')} MAD de pub pour ${Math.round(realizedRevenue).toLocaleString('fr-FR')} MAD livrés — revoir le budget avant d'augmenter`,
+        href: '/ads',
+      })
+    }
+
     const activity = activityHistoryRows.length > 0
       ? activityHistoryRows.map((row) => ({
           tone: toneFromStatus(row.status),
@@ -1261,12 +1364,22 @@ export async function GET(req: Request) {
       return rows.map((row) => {
         const name = row.name || 'Unknown'
         const orders = toNumber(row.orders)
+        // Taux de livraison resolu (livrees / livrees+annulees), base creation
+        // uniquement : en base livraison tout est livre par construction.
+        let deliveryRate: number | null = null
+        if (basis === 'created') {
+          const q = channelQualityRows.find((x) => (x.name || 'Unknown') === name)
+          const liv = toNumber(q?.delivered)
+          const ann = toNumber(q?.cancelled)
+          if (liv + ann > 0) deliveryRate = (liv / (liv + ann)) * 100
+        }
         return {
           name,
           orders,
           revenue: toNumber(row.revenue),
           value: total > 0 ? Math.round((orders / total) * 100) : 0,
           color: channelColor(name),
+          deliveryRate,
         }
       })
     }
@@ -1352,7 +1465,7 @@ export async function GET(req: Request) {
       topCities,
       channels,
       alerts: {
-        total: needsConfirmation + unshippedConfirmed + missingCosts + lowStockTotal + deliveryIssues,
+        total: needsConfirmation + unshippedConfirmed + missingCosts + lowStockTotal + deliveryIssues + pubAlert,
         items: attentionItems.length > 0
           ? attentionItems
           : [
