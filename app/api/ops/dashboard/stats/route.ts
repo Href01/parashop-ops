@@ -927,10 +927,12 @@ export async function GET(req: Request) {
       // logged operating expenses, and the packaging per-parcel rate.
       safeQuery<{ purchaseSpend: number; adSpend: number; opex: number; opexPackaging: number; returnFees: number; packagingRate: number }>('pnl', `
         SELECT
-          (SELECT COALESCE(SUM("totalCost"),0) FROM "InventoryMovement"
-             WHERE type='Purchase' AND "totalCost" IS NOT NULL
-               AND ("createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::date
-               AND ("createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day'))::double precision AS "purchaseSpend",
+          (SELECT COALESCE(SUM(im."totalCost"),0) FROM "InventoryMovement" im
+             -- Partner consignment stock is never Shine's spend (migration 042).
+             LEFT JOIN "Product" p ON p.id = im."productId"
+               WHERE im.type='Purchase' AND im."totalCost" IS NOT NULL AND (p."partnerId" IS NULL)
+                AND (im."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::date
+                AND (im."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day'))::double precision AS "purchaseSpend",
           (SELECT COALESCE(SUM("returnDeliveryFee"),0) FROM "Order"
              WHERE ("returnedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::date
                AND ("returnedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day'))::double precision AS "returnFees",

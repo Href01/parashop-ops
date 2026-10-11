@@ -34,11 +34,14 @@ export async function GET(request: NextRequest) {
          LEFT JOIN "Product" p ON p.id = im."productId"
          -- "Dépenses" = purchases with a real recorded cost. A stock-in logged
          -- without a cost is an inventory correction, not a tracked expense, so it
-         -- must not inflate units or dilute the average cost here.
-         WHERE im.type = 'Purchase' AND im."totalCost" IS NOT NULL AND im."totalCost" > 0
-           AND im."createdAt" >= NOW() - ($1 || ' days')::interval
-         GROUP BY im."productId", p.name, p.brand, p.supplier, p.stock
-         ORDER BY spent DESC, units DESC`,
+          -- must not inflate units or dilute the average cost here.
+          -- Partner consignment stock is never Shine's spend, even if a unit cost
+          -- was recorded for the partner's own margin math (see migration 042).
+          WHERE im.type = 'Purchase' AND im."totalCost" IS NOT NULL AND im."totalCost" > 0
+            AND (p."partnerId" IS NULL)
+            AND im."createdAt" >= NOW() - ($1 || ' days')::interval
+          GROUP BY im."productId", p.name, p.brand, p.supplier, p.stock
+          ORDER BY spent DESC, units DESC`,
         [String(days)]
       ),
       pool.query(
@@ -49,6 +52,7 @@ export async function GET(request: NextRequest) {
          FROM "InventoryMovement" im
          LEFT JOIN "Product" p ON p.id = im."productId"
          WHERE im.type = 'Purchase' AND im."totalCost" IS NOT NULL AND im."totalCost" > 0
+           AND (p."partnerId" IS NULL)
            AND im."createdAt" >= NOW() - ($1 || ' days')::interval
          ORDER BY im."createdAt" DESC
          LIMIT 50`,
@@ -66,6 +70,7 @@ export async function GET(request: NextRequest) {
          FROM "InventoryMovement" im
          LEFT JOIN "Product" p ON p.id = im."productId"
          WHERE im.type = 'Purchase' AND im."totalCost" IS NOT NULL AND im."totalCost" > 0
+           AND (p."partnerId" IS NULL)
            AND im."createdAt" >= NOW() - ($1 || ' days')::interval`,
         [String(days)]
       ),

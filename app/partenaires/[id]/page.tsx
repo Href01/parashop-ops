@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import BosShell from '@/components/BosShell'
@@ -134,45 +134,7 @@ export default function PartenairePage() {
         </Section>
 
         {/* ── Stock ───────────────────────────────────────────────────────── */}
-        <Section titre="Son stock chez Shine" note="Le stock restant lui appartient : sa valeur au coût n'entre pas dans le patrimoine de Shine.">
-          <Defilant>
-            <table className="table-modern" style={{ width: '100%', minWidth: 780 }}>
-              <thead><tr>
-                <th>Produit</th><th style={{ textAlign: 'right' }}>Prix</th><th style={{ textAlign: 'right' }}>Achat</th><th style={{ textAlign: 'right' }}>Marge u.</th>
-                <th style={{ textAlign: 'right' }}>Entrés</th><th style={{ textAlign: 'right' }}>Vendus</th><th style={{ textAlign: 'right' }}>En cours</th><th style={{ textAlign: 'right' }}>Stock</th><th style={{ textAlign: 'right' }}>Valeur au coût</th>
-              </tr></thead>
-              <tbody>
-                {stock.map((s) => (
-                  <tr key={s.id}>
-                    <td style={{ minWidth: 220 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        {s.image ? <img src={s.image} alt="" style={{ width: 30, height: 30, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} /> : <span style={{ width: 30, height: 30, borderRadius: 6, background: 'var(--line-soft)', flexShrink: 0 }} />}
-                        <div style={{ minWidth: 0 }}>
-                          <div className="fs12" style={{ fontWeight: 600, color: 'var(--tx-hi)', lineHeight: 1.3 }}>{s.name}</div>
-                          <div className="fs11 tx-lo">{s.brand} · #{s.id}</div>
-                        </div>
-                      </div>
-                    </td>
-                    <Num v={s.price} /><Num v={s.costPrice} /><Num v={s.unitMargin} />
-                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{s.entrees}</td>
-                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{s.vendus}</td>
-                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{s.enCours || '—'}</td>
-                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: s.stock <= 0 ? 'var(--red, #c0392b)' : 'var(--tx-hi)' }}>{s.stock}</td>
-                    <Num v={s.valeurCout} />
-                  </tr>
-                ))}
-                <tr style={{ borderTop: '2px solid var(--line-soft)', fontWeight: 800 }}>
-                  <td>Total</td><td /><td /><td />
-                  <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{stock.reduce((a, s) => a + s.entrees, 0)}</td>
-                  <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{stock.reduce((a, s) => a + s.vendus, 0)}</td>
-                  <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{stock.reduce((a, s) => a + s.enCours, 0)}</td>
-                  <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{stock.reduce((a, s) => a + s.stock, 0)}</td>
-                  <Num v={stock.reduce((a, s) => a + s.valeurCout, 0)} gras />
-                </tr>
-              </tbody>
-            </table>
-          </Defilant>
-        </Section>
+        <GestionStock partnerId={P.id} partnerName={P.name} stock={stock} onChange={load} />
 
         {/* ── Ventes detaillees ───────────────────────────────────────────── */}
         <Section titre="Ventes de la période, ligne par ligne" note={L.lines.length === 0 ? 'Aucune vente livrée sur cette période.' : `${L.lines.length} ligne(s) — chaque montant est la part de SES produits dans la commande.`}>
@@ -409,6 +371,136 @@ function Parametres({ partner, onChange }: { partner: Data['ledger']['partner'];
         <button className="btn-modern btn-sm">Enregistrer</button>
         {ok && <span className="fs12" style={{ color: 'var(--green)' }}>Enregistré</span>}
       </form>
+    </Section>
+  )
+}
+
+/* Le stock du partenaire : chaque entree est confiee par lui (jamais un achat
+   de Shine), et un nouveau produit se cree ici, rattache d'office. */
+function GestionStock({ partnerId, partnerName, stock, onChange }: { partnerId: number; partnerName: string; stock: StockRow[]; onChange: () => void }) {
+  const [ouvert, setOuvert] = useState<number | null>(null)
+  const [qty, setQty] = useState('')
+  const [cout, setCout] = useState('')
+  const [eerr, setEerr] = useState('')
+  const [ebusy, setEbusy] = useState(false)
+  const [montreNouveau, setMontreNouveau] = useState(false)
+  const [n, setN] = useState({ name: '', brand: '', price: '', cost: '', qty: '', category: 'Visage' })
+  const [nerr, setNerr] = useState('')
+  const [nbusy, setNbusy] = useState(false)
+
+  const ouvrirEntree = (s: StockRow) => {
+    setOuvert(s.id); setQty(''); setCout(s.costPrice ? String(s.costPrice) : ''); setEerr('')
+  }
+  const envoyerEntree = async (s: StockRow) => {
+    setEerr('')
+    const q = Math.trunc(Number(qty))
+    if (!Number.isInteger(q) || q <= 0) { setEerr('Quantité entière supérieure à 0'); return }
+    setEbusy(true)
+    try {
+      const r = await fetch(`/api/ops/partners/${partnerId}/stock`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ productId: s.id, quantity: q, ...(cout !== '' ? { costPerUnit: Number(cout) } : {}) }),
+      })
+      if (!r.ok) { setEerr((await r.json().catch(() => ({}))).error || 'Échec'); return }
+      setOuvert(null); onChange()
+    } finally { setEbusy(false) }
+  }
+  const creerProduit = async (e: React.FormEvent) => {
+    e.preventDefault(); setNerr('')
+    if (!n.name.trim()) { setNerr('Le nom du produit est requis'); return }
+    if (n.price === '' || Number(n.price) < 0) { setNerr('Prix de vente invalide'); return }
+    setNbusy(true)
+    try {
+      const r = await fetch(`/api/ops/partners/${partnerId}/products`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: n.name.trim(), brand: n.brand.trim() || partnerName,
+          price: Number(n.price), ...(n.cost !== '' ? { costPrice: Number(n.cost) } : {}),
+          category: n.category, ...(n.qty !== '' ? { quantity: Math.trunc(Number(n.qty)) } : {}),
+        }),
+      })
+      if (!r.ok) { setNerr((await r.json().catch(() => ({}))).error || 'Échec'); return }
+      setN({ name: '', brand: '', price: '', cost: '', qty: '', category: 'Visage' })
+      setMontreNouveau(false); onChange()
+    } finally { setNbusy(false) }
+  }
+
+  return (
+    <Section titre="Son stock chez Shine" note="Le stock restant lui appartient : sa valeur au coût n'entre pas dans le patrimoine de Shine, et chaque entrée est un dépôt du partenaire — jamais un achat de Shine.">
+      <Defilant>
+        <table className="table-modern" style={{ width: '100%', minWidth: 820 }}>
+          <thead><tr>
+            <th>Produit</th><th style={{ textAlign: 'right' }}>Prix</th><th style={{ textAlign: 'right' }}>Achat</th><th style={{ textAlign: 'right' }}>Marge u.</th>
+            <th style={{ textAlign: 'right' }}>Entrés</th><th style={{ textAlign: 'right' }}>Vendus</th><th style={{ textAlign: 'right' }}>En cours</th><th style={{ textAlign: 'right' }}>Stock</th><th style={{ textAlign: 'right' }}>Valeur au coût</th><th />
+          </tr></thead>
+          <tbody>
+            {stock.map((s) => (
+              <Fragment key={s.id}>
+                <tr>
+                  <td style={{ minWidth: 220 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {s.image ? <img src={s.image} alt="" style={{ width: 30, height: 30, borderRadius: 6, objectFit: 'cover', flexShrink: 0 }} /> : <span style={{ width: 30, height: 30, borderRadius: 6, background: 'var(--line-soft)', flexShrink: 0 }} />}
+                      <div style={{ minWidth: 0 }}>
+                        <div className="fs12" style={{ fontWeight: 600, color: 'var(--tx-hi)', lineHeight: 1.3 }}>{s.name}</div>
+                        <div className="fs11 tx-lo">{s.brand} · #{s.id}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <Num v={s.price} /><Num v={s.costPrice} /><Num v={s.unitMargin} />
+                  <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{s.entrees}</td>
+                  <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{s.vendus}</td>
+                  <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{s.enCours || '—'}</td>
+                  <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: s.stock <= 0 ? 'var(--red, #c0392b)' : 'var(--tx-hi)' }}>{s.stock}</td>
+                  <Num v={s.valeurCout} />
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button className="btn-modern btn-subtle btn-sm" onClick={() => (ouvert === s.id ? setOuvert(null) : ouvrirEntree(s))}>+ Entrée</button>
+                  </td>
+                </tr>
+                {ouvert === s.id && (
+                  <tr key={`${s.id}-entree`}>
+                    <td colSpan={10} style={{ background: 'var(--bg-2)' }}>
+                      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                        <Champ label="Quantité confiée"><input type="number" step="1" min="1" className="input-modern" value={qty} onChange={(e) => setQty(e.target.value)} style={{ width: 100 }} autoFocus /></Champ>
+                        <Champ label="Prix d'achat (DH/u.)"><input type="number" step="0.01" min="0" className="input-modern" value={cout} onChange={(e) => setCout(e.target.value)} placeholder={String(s.costPrice || '')} style={{ width: 130 }} /></Champ>
+                        <button className="btn-modern btn-sm" disabled={ebusy} onClick={() => envoyerEntree(s)}>{ebusy ? 'Enregistrement…' : 'Enregistrer'}</button>
+                        <button className="btn-modern btn-subtle btn-sm" onClick={() => setOuvert(null)}>Annuler</button>
+                        {eerr && <div className="fs12" style={{ color: 'var(--red, #c0392b)', width: '100%' }}>{eerr}</div>}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            ))}
+            <tr style={{ borderTop: '2px solid var(--line-soft)', fontWeight: 800 }}>
+              <td>Total</td><td /><td /><td />
+              <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{stock.reduce((a, s) => a + s.entrees, 0)}</td>
+              <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{stock.reduce((a, s) => a + s.vendus, 0)}</td>
+              <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{stock.reduce((a, s) => a + s.enCours, 0)}</td>
+              <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{stock.reduce((a, s) => a + s.stock, 0)}</td>
+              <Num v={stock.reduce((a, s) => a + s.valeurCout, 0)} gras />
+              <td />
+            </tr>
+          </tbody>
+        </table>
+      </Defilant>
+
+      <div style={{ marginTop: 12 }}>
+        {!montreNouveau ? (
+          <button className="btn-modern btn-sm" onClick={() => { setMontreNouveau(true); setN((v) => ({ ...v, brand: v.brand || partnerName })) }}>+ Nouveau produit</button>
+        ) : (
+          <form onSubmit={creerProduit} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', background: 'var(--bg-2)', borderRadius: 8, padding: 12 }}>
+            <Champ label="Nom du produit" grand><input className="input-modern" value={n.name} onChange={(e) => setN({ ...n, name: e.target.value })} placeholder="ex. Sérum riz & niacinamide 30ml" style={{ width: '100%' }} /></Champ>
+            <Champ label="Marque"><input className="input-modern" value={n.brand} onChange={(e) => setN({ ...n, brand: e.target.value })} placeholder={partnerName} style={{ width: 150 }} /></Champ>
+            <Champ label="Catégorie"><select className="input-modern" value={n.category} onChange={(e) => setN({ ...n, category: e.target.value })} style={{ width: 120 }}>{['Visage', 'Corps', 'Cheveux'].map((c) => <option key={c}>{c}</option>)}</select></Champ>
+            <Champ label="Prix de vente (DH)"><input type="number" step="0.01" min="0" className="input-modern" value={n.price} onChange={(e) => setN({ ...n, price: e.target.value })} style={{ width: 110 }} /></Champ>
+            <Champ label="Prix d'achat (DH)"><input type="number" step="0.01" min="0" className="input-modern" value={n.cost} onChange={(e) => setN({ ...n, cost: e.target.value })} placeholder="payé par le partenaire" style={{ width: 130 }} /></Champ>
+            <Champ label="Stock confié"><input type="number" step="1" min="0" className="input-modern" value={n.qty} onChange={(e) => setN({ ...n, qty: e.target.value })} placeholder="0" style={{ width: 90 }} /></Champ>
+            <button className="btn-modern btn-sm" disabled={nbusy}>{nbusy ? 'Création…' : 'Créer le produit'}</button>
+            <button type="button" className="btn-modern btn-subtle btn-sm" onClick={() => setMontreNouveau(false)}>Annuler</button>
+            {nerr && <div className="fs12" style={{ color: 'var(--red, #c0392b)', width: '100%' }}>{nerr}</div>}
+          </form>
+        )}
+      </div>
     </Section>
   )
 }
