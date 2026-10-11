@@ -491,7 +491,7 @@ export default function GlowDashboard() {
             <HeroTile tone="rose" icon={<TrendingUp style={{ width: 14, height: 14 }} />} label={`CA livré · ${analyticsBasisLabel} · ${periodLabel}`} amount={dRevenue} delta={dRevenueDelta} deltaLabel={compareLabel} />
           </div>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
-            <HeroTile tone="green" icon={<PiggyBank style={{ width: 14, height: 14 }} />} label={`Profit net · ${analyticsBasisLabel}`} amount={activePnl?.rentabilite.net ?? dProfit} sub={`${Math.round(activePnl?.rentabilite.marginPct ?? dMargin)}% de marge`} />
+            <HeroTile tone="green" icon={<PiggyBank style={{ width: 14, height: 14 }} />} label={`Marge nette · ${analyticsBasisLabel}`} amount={activePnl?.rentabilite.net ?? dProfit} sub={`${Math.round(activePnl?.rentabilite.marginPct ?? dMargin)}% après pub, emballage, retours`} />
           </div>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
             <HeroTile tone="green" icon={<Wallet style={{ width: 14, height: 14 }} />} label={byDeliv ? 'Cash net généré · trésorerie' : 'Cash net attribué · cohorte'} amount={activePnl?.tresorerie.net ?? dCash} sub={byDeliv ? 'liquide réel entré − sorti' : 'cash Sendit des colis créés − dépenses'} />
@@ -540,12 +540,12 @@ export default function GlowDashboard() {
                 <div className="card-modern g-stagger" style={{ background: 'var(--bg-1)', padding: 16 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }}>🔵 Rentabilité <span style={{ fontWeight: 500, color: 'var(--tx-faint)', fontSize: 11 }}>· {byDeliv ? 'date de livraison' : 'cohorte création'}</span></div>
                   <PnlRow label="CA livré" value={r.caLivre} />
-                  <PnlRow label="Profit livré" sub={`net produits + livraison · ${r.margeLivree.toFixed(0)}%`} value={r.profitLivre} muted />
+                  <PnlRow label="Marge brute commandes" sub={`avant pub, emballage, retours · ${r.margeLivree.toFixed(0)}%`} value={r.profitLivre} muted />
                   <PnlRow label="Pub" value={-r.pub} neg />
                   <PnlRow label="Emballage" sub={`${activePnl.deliveredParcels} colis × ${activePnl.packagingRate} DH`} value={-r.emballage} neg />
                   {r.retours > 0 && <PnlRow label="Retours / échanges" sub="frais livraison retour" value={-r.retours} neg />}
                   {(r.depotVente ?? 0) !== 0 && <PnlRow label="Dépôt-vente" sub="part du partenaire + frais du partenariat" value={-(r.depotVente ?? 0)} neg />}
-                  <PnlRow label="Profit net" value={r.net} total pct={r.marginPct} />
+                  <PnlRow label="Marge nette" sub="après pub, emballage, retours" value={r.net} total pct={r.marginPct} />
                 </div>
                 <div className="card-modern g-stagger" style={{ background: 'var(--bg-1)', padding: 16 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }}>🟢 {byDeliv ? 'Trésorerie' : 'Cash cohorte'} <span style={{ fontWeight: 500, color: 'var(--tx-faint)', fontSize: 11 }}>· {byDeliv ? 'cash réel' : 'attribution Sendit'}</span></div>

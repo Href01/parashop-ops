@@ -137,7 +137,7 @@ export default function ProductDetailPage() {
                   <button className="btn-modern btn-primary btn-sm" onClick={saveSupplier} disabled={savingSupplier}>{savingSupplier ? '…' : 'OK'}</button>
                 </div>
               </div>
-              <Stat label="Marge" value={margin == null ? '—' : `${margin.toFixed(0)}%`} accent={margin != null && margin >= 35} warn={margin != null && margin < 20} />
+              <Stat label="Marge produit" value={margin == null ? '—' : `${margin.toFixed(0)}%`} accent={margin != null && margin >= 35} warn={margin != null && margin < 20} />
               <Stat label="Stock" value={`${num(p.stock)} u.`} warn={num(p.stock) <= num(p.lowStockThreshold)} />
               <Stat label="Vendus (total)" value={`${num(p.sold?.units)} u.`} />
               <Stat label="CA livré (total)" value={mad(p.sold?.revenue)} accent />

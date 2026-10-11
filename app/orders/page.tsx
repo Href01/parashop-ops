@@ -640,7 +640,7 @@ export default function OrdersPage() {
                   <th>Livraison</th>
                   <th className="r">CA</th>
                   <th className="r">Profit</th>
-                  <th className="r">Marge</th>
+                  <th className="r" title="Marge commande : encaissé − achat − livraison, avant pub & emballage">Marge cmd.</th>
                   <th>Données</th>
                   <th className="r">Date</th>
                   <th></th>
@@ -774,7 +774,7 @@ export default function OrdersPage() {
                           )}
                         </td>
                         <td className="r">
-                          {margin === null ? <span className="tx-faint fs12">-</span> : <span className={`num ${margin < 0 ? 'neg' : 'tx-mid'}`}>{margin.toFixed(1)}%</span>}
+                          {margin === null ? <span className="tx-faint fs12">-</span> : <span title="Marge commande : avant pub & emballage" className={`num ${margin < 0 ? 'neg' : 'tx-mid'}`}>{margin.toFixed(1)}%</span>}
                         </td>
                         <td>
                           <span className="comp-mini">

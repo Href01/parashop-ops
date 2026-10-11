@@ -1225,7 +1225,7 @@ export default function OrderDetailPage() {
                 <div className="pl-row total"><span>Profit net</span><span className={`num ${totals.profit >= 0 ? 'pos' : 'neg'}`}>{totals.profit >= 0 ? '+' : ''}{formatMoney(totals.profit)} MAD</span></div>
                 <div className="margin-box">
                   <MarginDonut value={totals.margin} />
-                  <div><div className="label">Marge nette</div><div className={`num fs22 fw600 ${totals.margin >= 25 ? 'pos' : 'neg'}`}>{totals.margin.toFixed(1)}%</div><div className="fs11 tx-lo">objectif 30%+</div></div>
+                  <div><div className="label">Marge commande</div><div className={`num fs22 fw600 ${totals.margin >= 25 ? 'pos' : 'neg'}`}>{totals.margin.toFixed(1)}%</div><div className="fs11 tx-lo">avant pub & emballage · objectif 30%+</div></div>
                 </div>
               </div>
             </div>

@@ -44,6 +44,14 @@ const enDate = (s: string) => /^\d{4}-\d{2}-\d{2}$/.test(s) ? new Date(Number(s.
 const jour = (iso: string) => enDate(iso).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })
 const moisDebut = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1).toLocaleDateString('en-CA')
 const moisFin = (d: Date) => new Date(d.getFullYear(), d.getMonth() + 1, 0).toLocaleDateString('en-CA')
+const isoJour = (d: Date) => d.toLocaleDateString('en-CA')
+const moinsJours = (iso: string, n: number) => { const d = enDate(iso); d.setDate(d.getDate() - n); return isoJour(d) }
+const diffJours = (a: string, b: string) => Math.round((enDate(b).getTime() - enDate(a).getTime()) / 86400000)
+/** Variation en %, ou null quand elle ne veut rien dire (base nulle ou absente). */
+const deltaPct = (cur: number, old: number | undefined) => {
+  if (old == null || old === 0) return null
+  return ((cur - old) / Math.abs(old)) * 100
+}
 
 export default function PartenairePage() {
   const { id } = useParams<{ id: string }>()
@@ -51,6 +59,7 @@ export default function PartenairePage() {
   const [erreur, setErreur] = useState('')
   const [periode, setPeriode] = useState<{ from: string; to: string } | null>(null)
   const [campagnes, setCampagnes] = useState<Campaign[] | null>(null)
+  const [prev, setPrev] = useState<{ totals: Totals; from: string; to: string } | null>(null)
 
   const load = useCallback(async () => {
     const q = periode ? `?from=${periode.from}&to=${periode.to}` : ''
@@ -59,6 +68,23 @@ export default function PartenairePage() {
     setData(await r.json())
   }, [id, periode])
   useEffect(() => { load() }, [load])
+  /* Comparaison : les totaux de la periode precedente de meme duree, via la
+     meme API (aucun calcul ajoute). Masquee quand elle precede le partenariat. */
+  useEffect(() => {
+    if (!data) { setPrev(null); return }
+    const { from, to } = data.ledger.period
+    const start = data.ledger.partner.startDate
+    const len = diffJours(from, to) + 1
+    const pTo = moinsJours(from, 1)
+    if (pTo < start) { setPrev(null); return }
+    const pFrom = moinsJours(pTo, len - 1) < start ? start : moinsJours(pTo, len - 1)
+    let mort = false
+    fetch(`/api/ops/partners/${id}?from=${pFrom}&to=${pTo}`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!mort && d) setPrev({ totals: d.ledger.totals, from: pFrom, to: pTo }) })
+      .catch(() => {})
+    return () => { mort = true }
+  }, [data, id])
   useEffect(() => {
     fetch(`/api/ops/partners/${id}/campaigns`, { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((d) => setCampagnes(d?.campaigns ?? []))
   }, [id])
@@ -106,11 +132,17 @@ export default function PartenairePage() {
 
         {/* ── Chiffres de la periode ──────────────────────────────────────── */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginTop: 12 }}>
-          <Kpi label="CA livré" valeur={dh(T.revenue)} sous={`${T.deliveredOrders} commandes · ${T.unitsSold} unités`} />
-          <Kpi label="Marge nette" valeur={dh(T.net)} couleur={T.net < 0 ? 'var(--red, #c0392b)' : 'var(--green)'} sous={T.revenue > 0 ? `${((T.net / T.revenue) * 100).toFixed(1)} % du CA` : '—'} />
-          <Kpi label={`Part Shine (${P.shinePct} %)`} valeur={dh(T.shineShare)} />
-          <Kpi label={`Part partenaire (${100 - P.shinePct} %)`} valeur={dh(T.partnerShare)} />
+          <Kpi label="CA livré" valeur={dh(T.revenue)} sous={`${T.deliveredOrders} commandes · ${T.unitsSold} unités`} titre="Encaissé sur ses produits, remises déduites — avant tous les frais" delta={prev ? deltaPct(T.revenue, prev.totals.revenue) : null} />
+          <Kpi label="Marge nette" valeur={dh(T.net)} couleur={T.net < 0 ? 'var(--red, #c0392b)' : 'var(--green)'} sous={T.revenue > 0 ? `${((T.net / T.revenue) * 100).toFixed(1)} % du CA` : '—'} titre="Après TOUS les frais : achat, livraison, emballage, retours, pub, dépenses" delta={prev ? deltaPct(T.net, prev.totals.net) : null} />
+          <Kpi label={`Part Shine (${P.shinePct} %)`} valeur={dh(T.shineShare)} titre={`${P.shinePct} % de la marge nette de la période`} delta={prev ? deltaPct(T.shineShare, prev.totals.shineShare) : null} />
+          <Kpi label={`Part partenaire (${100 - P.shinePct} %)`} valeur={dh(T.partnerShare)} titre={`${100 - P.shinePct} % de la marge nette de la période`} delta={prev ? deltaPct(T.partnerShare, prev.totals.partnerShare) : null} />
         </div>
+        {prev && (
+          <p className="fs11 tx-faint" style={{ margin: '6px 2px 0' }}>Comparé à la période précédente de même durée (du {jour(prev.from)} au {jour(prev.to)}).</p>
+        )}
+
+        {/* ── Les parts : qui touche quoi sur la marge nette ─────────────── */}
+        <Partage shinePct={P.shinePct} shine={T.shineShare} partner={T.partnerShare} net={T.net} />
 
         {/* ── Du CA a la marge nette ──────────────────────────────────────── */}
         <Section titre="Du chiffre d'affaires à la marge nette" note="Chaque ligne reprend le calcul du tableau de bord, au prorata de ses produits dans chaque commande.">
@@ -192,12 +224,36 @@ function Section({ titre, note, children }: { titre: string; note?: string; chil
 function Defilant({ children }: { children: React.ReactNode }) {
   return <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>{children}</div>
 }
-function Kpi({ label, valeur, sous, couleur }: { label: string; valeur: string; sous?: string; couleur?: string }) {
+function Kpi({ label, valeur, sous, couleur, titre, delta }: { label: string; valeur: string; sous?: string; couleur?: string; titre?: string; delta?: number | null }) {
   return (
-    <div className="card-modern" style={{ padding: '12px 14px' }}>
+    <div className="card-modern" style={{ padding: '12px 14px' }} title={titre}>
       <div className="fs12 tx-lo">{label}</div>
       <div style={{ fontSize: 20, fontWeight: 800, fontFamily: 'var(--mono)', color: couleur || 'var(--tx-hi)' }}>{valeur}</div>
       {sous && <div className="fs11 tx-faint">{sous}</div>}
+      {delta != null && (
+        <div className="fs11" style={{ fontWeight: 700, color: delta >= 0 ? 'var(--green)' : 'var(--red, #c0392b)' }}>
+          {delta >= 0 ? '▲ +' : '▼ '}{delta.toFixed(0)} % vs période précédente
+        </div>
+      )}
+    </div>
+  )
+}
+/* Les parts, d'un coup d'œil : la marge nette coupee selon le partage convenu. */
+function Partage({ shinePct, shine, partner, net }: { shinePct: number; shine: number; partner: number; net: number }) {
+  if (net === 0) return null
+  const tot = Math.abs(shine) + Math.abs(partner)
+  const wS = tot > 0 ? (Math.abs(shine) / tot) * 100 : 0
+  return (
+    <div className="card-modern" style={{ padding: '12px 14px', marginTop: 10 }} title="Chaque part = son % de la marge nette de la période">
+      <div className="fs12 tx-lo" style={{ marginBottom: 6 }}>Partage de la marge nette {net < 0 ? '(négative : la perte se partage comme le gain)' : ''}</div>
+      <div style={{ display: 'flex', height: 14, borderRadius: 7, overflow: 'hidden', background: 'var(--line-soft)' }}>
+        <div style={{ width: `${wS}%`, background: 'var(--green)', transition: 'width .2s' }} />
+        <div style={{ width: `${100 - wS}%`, background: 'var(--amber)', transition: 'width .2s' }} />
+      </div>
+      <div className="fs12 tx-mid" style={{ display: 'flex', justifyContent: 'space-between', marginTop: 6, fontFamily: 'var(--mono)' }}>
+        <span><span style={{ color: 'var(--green)', fontWeight: 800 }}>■</span> Shine {shinePct} % → <b>{dh(shine)}</b></span>
+        <span><span style={{ color: 'var(--amber)', fontWeight: 800 }}>■</span> Partenaire {100 - shinePct} % → <b>{dh(partner)}</b></span>
+      </div>
     </div>
   )
 }

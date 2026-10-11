@@ -249,7 +249,7 @@ export default function ProductsPage() {
                   <th>Catégorie</th>
                   <th className="r">Prix</th>
                   <th className="r">Coût</th>
-                  <th className="r">Marge</th>
+                  <th className="r" title="Marge produit : (prix − coût) ÷ prix, hors livraison">Marge pdt</th>
                   <th>Stock</th>
                   <th className="r"></th>
                 </tr>

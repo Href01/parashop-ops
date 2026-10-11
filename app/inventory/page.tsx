@@ -499,7 +499,7 @@ export default function InventoryPage() {
                       <th>État</th>
                       <th className="r">Stock</th>
                       <th className="r" title="Ce qui se vend par semaine (moyenne sur 30j) · ↑ accélère ↓ ralentit">Se vend</th>
-                      <th className="r col-detail" title="Marge = (prix de vente − coût) ÷ prix de vente">Marge</th>
+                      <th className="r col-detail" title="Marge produit = (prix de vente − coût) ÷ prix de vente">Marge pdt</th>
                       <th className="r" title="À acheter au fournisseur — pour les produits que tu stockes. Survole pour le détail.">À commander</th>
                       <th className="col-detail" title="Fournisseur & stock virtuel">Fournisseur</th>
                       <th />
