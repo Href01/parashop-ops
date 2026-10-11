@@ -152,7 +152,7 @@ export async function PUT(
     const { id: productId } = await params
     const body = await request.json()
 
-    const { costPrice, lowStockThreshold, supplier, virtualStock, importUnavailable, importEtaWeeks } = body
+    const { costPrice, lowStockThreshold, supplier, virtualStock, importUnavailable, importEtaWeeks, partnerId } = body
 
     // Build update query dynamically
     const updates: string[] = []
@@ -160,6 +160,28 @@ export async function PUT(
     let paramIndex = 1
     // Import-unavailable tag changes what the storefront shows → revalidate the site.
     let siteAffected = false
+
+    // Attacher / detacher un produit a un partenaire (depot-vente). Le releve du
+    // partenaire se calculant en direct depuis les lignes de commande, tout
+    // l'historique du produit suit le rattachement — ne rattacher que des
+    // produits sans ventes, ou en connaissance de cause.
+    if (partnerId !== undefined) {
+      if (partnerId === null) {
+        updates.push(`"partnerId" = NULL`)
+      } else {
+        const pid = Number(partnerId)
+        if (!Number.isInteger(pid)) {
+          return NextResponse.json({ error: 'Partenaire invalide' }, { status: 400 })
+        }
+        const pe = await pool.query(`SELECT id FROM "Partner" WHERE id = $1`, [pid])
+        if (pe.rowCount === 0) {
+          return NextResponse.json({ error: 'Partenaire introuvable' }, { status: 404 })
+        }
+        updates.push(`"partnerId" = $${paramIndex}`)
+        values.push(pid)
+        paramIndex++
+      }
+    }
 
     if (costPrice !== undefined) {
       updates.push(`"costPrice" = $${paramIndex}`)

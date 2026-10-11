@@ -28,7 +28,8 @@ export async function GET(request: NextRequest) {
         sku,
         image,
         stock,
-        "lowStockThreshold"
+        "lowStockThreshold",
+        "partnerId"
       FROM "Product"
       WHERE 1=1
     `

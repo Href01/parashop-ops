@@ -381,29 +381,61 @@ function GestionStock({ partnerId, partnerName, stock, onChange }: { partnerId: 
   const [ouvert, setOuvert] = useState<number | null>(null)
   const [qty, setQty] = useState('')
   const [cout, setCout] = useState('')
+  const [emode, setEmode] = useState<'in' | 'out' | 'set'>('in')
   const [eerr, setEerr] = useState('')
   const [ebusy, setEbusy] = useState(false)
   const [montreNouveau, setMontreNouveau] = useState(false)
   const [n, setN] = useState({ name: '', brand: '', price: '', cost: '', qty: '', category: 'Visage' })
   const [nerr, setNerr] = useState('')
   const [nbusy, setNbusy] = useState(false)
+  const [montreRattacher, setMontreRattacher] = useState(false)
+  const [rq, setRq] = useState('')
+  const [rr, setRr] = useState<{ id: number; name: string; brand: string; stock: number; partnerId: number | null }[] | null>(null)
+  const [rerr, setRerr] = useState('')
+  const [rbusy, setRbusy] = useState<number | null>(null)
 
   const ouvrirEntree = (s: StockRow) => {
-    setOuvert(s.id); setQty(''); setCout(s.costPrice ? String(s.costPrice) : ''); setEerr('')
+    setOuvert(s.id); setQty(''); setCout(s.costPrice ? String(s.costPrice) : ''); setEerr(''); setEmode('in')
   }
   const envoyerEntree = async (s: StockRow) => {
     setEerr('')
-    const q = Math.trunc(Number(qty))
-    if (!Number.isInteger(q) || q <= 0) { setEerr('Quantité entière supérieure à 0'); return }
+    const brut = Math.trunc(Number(qty))
+    if (!Number.isInteger(brut) || (emode !== 'set' && brut === 0) || (emode === 'set' && brut < 0)) { setEerr(emode === 'set' ? 'Stock réel entier, 0 ou plus' : 'Quantité entière non nulle'); return }
+    // « set » = inventaire : on saisit le stock REEL, le mouvement applique la difference.
+    const q = emode === 'set' ? brut - s.stock : emode === 'out' ? -Math.abs(brut) : Math.abs(brut)
+    if (q === 0) { setOuvert(null); return }
     setEbusy(true)
     try {
       const r = await fetch(`/api/ops/partners/${partnerId}/stock`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ productId: s.id, quantity: q, ...(cout !== '' ? { costPerUnit: Number(cout) } : {}) }),
+        body: JSON.stringify({ productId: s.id, quantity: q, ...(cout !== '' && q > 0 ? { costPerUnit: Number(cout) } : {}) }),
       })
       if (!r.ok) { setEerr((await r.json().catch(() => ({}))).error || 'Échec'); return }
       setOuvert(null); onChange()
     } finally { setEbusy(false) }
+  }
+  const detacher = async (s: StockRow) => {
+    if (!confirm(`Détacher « ${s.name} » de ${partnerName} ?\n\nSon stock redevient celui de Shine et ses ventes — y compris passées — sortent du relevé.`)) return
+    const r = await fetch(`/api/ops/products/${s.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ partnerId: null }) })
+    if (!r.ok) { alert((await r.json().catch(() => ({}))).error || 'Échec'); return }
+    onChange()
+  }
+  const chercher = async (e?: React.FormEvent) => {
+    e?.preventDefault(); setRerr('')
+    if (rq.trim().length < 2) { setRerr('Tape au moins 2 lettres'); return }
+    const r = await fetch(`/api/ops/products?search=${encodeURIComponent(rq.trim())}`, { cache: 'no-store' })
+    if (!r.ok) { setRerr('Recherche impossible'); return }
+    setRr(await r.json())
+  }
+  const rattacher = async (p: { id: number; name: string; partnerId: number | null }) => {
+    if (p.partnerId === partnerId) return
+    if (p.partnerId != null && !confirm(`« ${p.name} » appartient déjà à un autre partenaire. Le transférer à ${partnerName} ?`)) return
+    setRerr(''); setRbusy(p.id)
+    try {
+      const r = await fetch(`/api/ops/products/${p.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ partnerId }) })
+      if (!r.ok) { setRerr((await r.json().catch(() => ({}))).error || 'Échec'); return }
+      setRr((v) => (v ? v.filter((x) => x.id !== p.id) : v)); onChange()
+    } finally { setRbusy(null) }
   }
   const creerProduit = async (e: React.FormEvent) => {
     e.preventDefault(); setNerr('')
@@ -426,7 +458,7 @@ function GestionStock({ partnerId, partnerName, stock, onChange }: { partnerId: 
   }
 
   return (
-    <Section titre="Son stock chez Shine" note="Le stock restant lui appartient : sa valeur au coût n'entre pas dans le patrimoine de Shine, et chaque entrée est un dépôt du partenaire — jamais un achat de Shine.">
+    <Section titre="Son stock chez Shine" note="Le stock restant lui appartient : sa valeur au coût n'entre pas dans le patrimoine de Shine. Chaque mouvement est un dépôt du partenaire — jamais un achat de Shine. Bouton Stock : entrée, sortie/correction, ou ajustement au réel compté.">
       <Defilant>
         <table className="table-modern" style={{ width: '100%', minWidth: 820 }}>
           <thead><tr>
@@ -453,15 +485,27 @@ function GestionStock({ partnerId, partnerName, stock, onChange }: { partnerId: 
                   <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700, color: s.stock <= 0 ? 'var(--red, #c0392b)' : 'var(--tx-hi)' }}>{s.stock}</td>
                   <Num v={s.valeurCout} />
                   <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                    <button className="btn-modern btn-subtle btn-sm" onClick={() => (ouvert === s.id ? setOuvert(null) : ouvrirEntree(s))}>+ Entrée</button>
+                    <button className="btn-modern btn-subtle btn-sm" onClick={() => (ouvert === s.id ? setOuvert(null) : ouvrirEntree(s))}>Stock</button>
+                    <button className="btn-modern btn-subtle btn-sm" style={{ marginLeft: 4 }} title="Détacher ce produit du partenaire" onClick={() => detacher(s)}>Détacher</button>
                   </td>
                 </tr>
                 {ouvert === s.id && (
                   <tr key={`${s.id}-entree`}>
                     <td colSpan={10} style={{ background: 'var(--bg-2)' }}>
                       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                        <Champ label="Quantité confiée"><input type="number" step="1" min="1" className="input-modern" value={qty} onChange={(e) => setQty(e.target.value)} style={{ width: 100 }} autoFocus /></Champ>
-                        <Champ label="Prix d'achat (DH/u.)"><input type="number" step="0.01" min="0" className="input-modern" value={cout} onChange={(e) => setCout(e.target.value)} placeholder={String(s.costPrice || '')} style={{ width: 130 }} /></Champ>
+                        <div style={{ display: 'inline-flex', gap: 2, padding: 2, background: 'var(--bg-3)', borderRadius: 8 }}>
+                          {([['in', '+ Entrée'], ['out', '− Sortie'], ['set', '= Réel']] as ['in' | 'out' | 'set', string][]).map(([m, label]) => (
+                            <button key={m} type="button" className="btn-modern btn-sm" onClick={() => { setEmode(m); setEerr('') }}
+                              title={m === 'in' ? 'Le partenaire confie du stock' : m === 'out' ? 'Retrait, casse ou correction négative' : 'Inventaire : saisir le stock réel compté'}
+                              style={{ background: emode === m ? 'var(--card)' : 'transparent', color: emode === m ? 'var(--tx-hi)' : 'var(--tx-lo)', boxShadow: emode === m ? '0 1px 3px rgba(0,0,0,.08)' : 'none', fontWeight: emode === m ? 700 : 500 }}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                        <Champ label={emode === 'set' ? `Stock réel compté (actuel : ${s.stock})` : emode === 'out' ? 'Quantité à retirer' : 'Quantité confiée'}><input type="number" step="1" min={emode === 'set' ? 0 : 1} className="input-modern" value={qty} onChange={(e) => setQty(e.target.value)} style={{ width: 110 }} autoFocus /></Champ>
+                        {emode === 'in' && (
+                          <Champ label="Prix d'achat (DH/u.)"><input type="number" step="0.01" min="0" className="input-modern" value={cout} onChange={(e) => setCout(e.target.value)} placeholder={String(s.costPrice || '')} style={{ width: 130 }} /></Champ>
+                        )}
                         <button className="btn-modern btn-sm" disabled={ebusy} onClick={() => envoyerEntree(s)}>{ebusy ? 'Enregistrement…' : 'Enregistrer'}</button>
                         <button className="btn-modern btn-subtle btn-sm" onClick={() => setOuvert(null)}>Annuler</button>
                         {eerr && <div className="fs12" style={{ color: 'var(--red, #c0392b)', width: '100%' }}>{eerr}</div>}
@@ -484,10 +528,15 @@ function GestionStock({ partnerId, partnerName, stock, onChange }: { partnerId: 
         </table>
       </Defilant>
 
-      <div style={{ marginTop: 12 }}>
+      <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {!montreNouveau ? (
-          <button className="btn-modern btn-sm" onClick={() => { setMontreNouveau(true); setN((v) => ({ ...v, brand: v.brand || partnerName })) }}>+ Nouveau produit</button>
-        ) : (
+          <button className="btn-modern btn-sm" onClick={() => { setMontreNouveau(true); setMontreRattacher(false); setN((v) => ({ ...v, brand: v.brand || partnerName })) }}>+ Nouveau produit</button>
+        ) : null}
+        {!montreRattacher ? (
+          <button className="btn-modern btn-subtle btn-sm" onClick={() => { setMontreRattacher(true); setMontreNouveau(false); setRr(null); setRq(''); setRerr('') }}>Rattacher un produit existant</button>
+        ) : null}
+      </div>
+      {montreNouveau && (
           <form onSubmit={creerProduit} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end', background: 'var(--bg-2)', borderRadius: 8, padding: 12 }}>
             <Champ label="Nom du produit" grand><input className="input-modern" value={n.name} onChange={(e) => setN({ ...n, name: e.target.value })} placeholder="ex. Sérum riz & niacinamide 30ml" style={{ width: '100%' }} /></Champ>
             <Champ label="Marque"><input className="input-modern" value={n.brand} onChange={(e) => setN({ ...n, brand: e.target.value })} placeholder={partnerName} style={{ width: 150 }} /></Champ>
@@ -500,7 +549,28 @@ function GestionStock({ partnerId, partnerName, stock, onChange }: { partnerId: 
             {nerr && <div className="fs12" style={{ color: 'var(--red, #c0392b)', width: '100%' }}>{nerr}</div>}
           </form>
         )}
-      </div>
+      {montreRattacher && (
+        <div style={{ background: 'var(--bg-2)', borderRadius: 8, padding: 12, width: '100%' }}>
+          <form onSubmit={chercher} style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+            <Champ label="Chercher un produit"><input className="input-modern" value={rq} onChange={(e) => setRq(e.target.value)} placeholder="nom, marque…" style={{ width: 220 }} /></Champ>
+            <button className="btn-modern btn-sm">Chercher</button>
+            <button type="button" className="btn-modern btn-subtle btn-sm" onClick={() => setMontreRattacher(false)}>Fermer</button>
+            {rerr && <div className="fs12" style={{ color: 'var(--red, #c0392b)', width: '100%' }}>{rerr}</div>}
+          </form>
+          {rr && (rr.length === 0 ? <p className="fs12 tx-faint" style={{ margin: '8px 0 0' }}>Aucun produit trouvé.</p> : (
+            <div style={{ display: 'grid', gap: 4, marginTop: 8 }}>
+              {rr.map((p) => (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 4px', borderBottom: '1px solid var(--line-soft)' }}>
+                  <span className="fs12" style={{ flex: 1, minWidth: 0, color: 'var(--tx-hi)' }}>{p.name} <span className="tx-lo">· {p.brand} · stock {p.stock}{p.partnerId === partnerId ? ' · déjà rattaché' : p.partnerId != null ? ' · autre partenaire' : ''}</span></span>
+                  {p.partnerId !== partnerId && (
+                    <button className="btn-modern btn-sm" disabled={rbusy === p.id} onClick={() => rattacher(p)}>{rbusy === p.id ? '…' : 'Rattacher'}</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
     </Section>
   )
 }
