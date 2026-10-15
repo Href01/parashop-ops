@@ -79,6 +79,8 @@ export type LedgerTotals = {
   packaging: number
   returns: number
   adsLinked: number
+  /** Sa part des campagnes mixtes, au prorata de ses ventes du mois. */
+  adsMixed: number
   expenses: number
   expensesByCategory: Record<string, number>
   expensesPaidByShine: number
@@ -94,6 +96,51 @@ export type LedgerTotals = {
 
 const r2 = (n: number) => Math.round(n * 100) / 100
 const num = (v: unknown) => (v == null ? 0 : Number(v) || 0)
+
+/* LES CAMPAGNES MIXTES — celles qui montrent ses produits ET ceux de Shine
+   (catalogue Advantage+…). Usage du metier : chacun porte la part qui
+   correspond a ses ventes. Pour chaque mois, la part du partenaire est la part
+   de SES produits dans le CA livre de Shine ce mois-la ; cette part de la
+   depense entre dans la marge partagee. Calcul par mois civil : un mois se
+   compte toujours pareil, qu'on regarde le mois, la semaine ou depuis le debut.
+   La liste vit dans AppSetting (`partner_mixed_campaigns` = { "<id>": [externalId] }). */
+export const CLE_CAMPAGNES_MIXTES = 'partner_mixed_campaigns'
+
+export async function campagnesMixtes(partnerId: number): Promise<string[]> {
+  const r = await pool.query(`SELECT value FROM "AppSetting" WHERE key = $1`, [CLE_CAMPAGNES_MIXTES])
+  try {
+    const v = JSON.parse(r.rows[0]?.value ?? '{}')
+    const ids = v?.[String(partnerId)]
+    return Array.isArray(ids) ? ids.filter((x: unknown): x is string => typeof x === 'string') : []
+  } catch { return [] }
+}
+
+/** Part des produits du partenaire dans le CA livre, par mois civil (YYYY-MM-01). */
+async function partVentesParMois(ids: number[], mois: string[]): Promise<Map<string, { part: number; total: number; partenaire: number }>> {
+  const res = new Map<string, { part: number; total: number; partenaire: number }>()
+  if (ids.length === 0 || mois.length === 0) return res
+  const r = await pool.query(
+    `WITH o AS (
+       SELECT o.id, date_trunc('month', (o."deliveredAt" AT TIME ZONE '${BUSINESS_TIMEZONE}'))::date AS m, COALESCE(o.revenue, 0)::double precision AS rev
+         FROM "Order" o
+        WHERE o.status::text = 'DELIVERED' AND o."deliveredAt" IS NOT NULL
+          AND date_trunc('month', (o."deliveredAt" AT TIME ZONE '${BUSINESS_TIMEZONE}'))::date = ANY($2::date[])
+     ), w AS (
+       SELECT oi."orderId",
+              SUM(oi.price * oi.quantity) FILTER (WHERE oi."productId" = ANY($1::int[]))::double precision AS mine,
+              SUM(oi.price * oi.quantity)::double precision AS allv
+         FROM "OrderItem" oi WHERE oi."orderId" IN (SELECT id FROM o) GROUP BY 1
+     )
+     SELECT o.m::text AS m, SUM(o.rev) AS total, SUM(o.rev * COALESCE(w.mine, 0) / NULLIF(w.allv, 0)) AS partenaire
+       FROM o LEFT JOIN w ON w."orderId" = o.id GROUP BY o.m`,
+    [ids, mois],
+  )
+  for (const x of r.rows) {
+    const total = num(x.total), partenaire = num(x.partenaire)
+    res.set(String(x.m).slice(0, 10), { part: total > 0 ? partenaire / total : 0, total, partenaire })
+  }
+  return res
+}
 
 async function partnerProductIds(partnerId: number): Promise<number[]> {
   const r = await pool.query(`SELECT id FROM "Product" WHERE "partnerId" = $1`, [partnerId])
@@ -245,6 +292,30 @@ export async function computeLedger(partnerId: number, period: Period) {
   )
   const adsDetail = ads.rows.map((a) => ({ externalId: a.externalId, name: a.name, spend: r2(num(a.spend)) }))
 
+  // ── Publicite des campagnes mixtes : sa part, mois par mois ──────────────
+  const mixtes = (await campagnesMixtes(partnerId)).filter((e) => !adsDetail.some((a) => a.externalId === e))
+  const adsMixedDetail: { externalId: string; name: string; spend: number; part: number; allocated: number }[] = []
+  if (mixtes.length > 0) {
+    const m = await pool.query(
+      `SELECT a."externalId", MAX(a."campaignName") AS name, date_trunc('month', a.date)::date::text AS m, SUM(a.spend)::double precision AS spend
+         FROM "AdSpendDaily" a
+        WHERE a."externalId" = ANY($1::text[]) AND a.date BETWEEN $2::date AND $3::date
+        GROUP BY a."externalId", 3`,
+      [mixtes, period.from, period.to],
+    )
+    const parts = await partVentesParMois(ids, [...new Set(m.rows.map((x) => String(x.m).slice(0, 10)))])
+    const parCampagne = new Map<string, { name: string; spend: number; allocated: number }>()
+    for (const x of m.rows) {
+      const share = parts.get(String(x.m).slice(0, 10))?.part ?? 0
+      const c = parCampagne.get(x.externalId) ?? { name: x.name, spend: 0, allocated: 0 }
+      c.spend += num(x.spend); c.allocated += num(x.spend) * share
+      parCampagne.set(x.externalId, c)
+    }
+    for (const [externalId, c] of parCampagne) {
+      adsMixedDetail.push({ externalId, name: c.name, spend: r2(c.spend), part: c.spend > 0 ? c.allocated / c.spend : 0, allocated: r2(c.allocated) })
+    }
+  }
+
   // ── Depenses du partenariat ───────────────────────────────────────────────
   const exp = await pool.query(
     `SELECT id, date::text AS date, category, label, amount, "paidBy" FROM "PartnerExpense"
@@ -264,11 +335,12 @@ export async function computeLedger(partnerId: number, period: Period) {
   const packaging = sum(lines.map((l) => l.packaging))
   const returns = sum(returnsDetail.map((x) => x.fee))
   const adsLinked = sum(adsDetail.map((a) => a.spend))
+  const adsMixed = sum(adsMixedDetail.map((a) => a.allocated))
   const expensesTotal = sum(expenses.map((e) => e.amount))
-  const net = r2(revenue - cogs - orderCosts - packaging - returns - adsLinked - expensesTotal)
+  const net = r2(revenue - cogs - orderCosts - packaging - returns - adsLinked - adsMixed - expensesTotal)
 
   const totals: LedgerTotals = {
-    revenue, cogs, orderCosts, packaging, returns, adsLinked,
+    revenue, cogs, orderCosts, packaging, returns, adsLinked, adsMixed,
     expenses: expensesTotal,
     expensesByCategory,
     expensesPaidByShine: sum(expenses.filter((e) => e.paidBy === 'shine').map((e) => e.amount)),
@@ -286,7 +358,7 @@ export async function computeLedger(partnerId: number, period: Period) {
       id: p.id, name: p.name, shinePct, notes: p.notes, active: p.active,
       startDate: String(p.startDate instanceof Date ? p.startDate.toISOString() : p.startDate).slice(0, 10),
     },
-    period, packagingRate, lines, returnsDetail, adsDetail, expenses, advancesDetail, totals,
+    period, packagingRate, lines, returnsDetail, adsDetail, adsMixedDetail, expenses, advancesDetail, totals,
   }
 }
 

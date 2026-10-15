@@ -22,19 +22,19 @@ type Line = { orderId: number; orderNumber: string | null; deliveredAt: string; 
 type Expense = { id: number; date: string; category: string; label: string | null; amount: number; paidBy: 'shine' | 'partner' }
 type Payment = { id: number; date: string; amount: number; method: string | null; note: string | null }
 type StockRow = { id: number; name: string; brand: string; image: string | null; price: number; costPrice: number; stock: number; entrees: number; vendus: number; enCours: number; unitMargin: number; valeurCout: number; valeurVente: number }
-type Totals = { revenue: number; cogs: number; orderCosts: number; packaging: number; returns: number; adsLinked: number; expenses: number; expensesByCategory: Record<string, number>; expensesPaidByShine: number; expensesPaidByPartner: number; advances: number; net: number; shineShare: number; partnerShare: number; deliveredOrders: number; unitsSold: number }
+type Totals = { revenue: number; cogs: number; orderCosts: number; packaging: number; returns: number; adsLinked: number; adsMixed?: number; expenses: number; expensesByCategory: Record<string, number>; expensesPaidByShine: number; expensesPaidByPartner: number; advances: number; net: number; shineShare: number; partnerShare: number; deliveredOrders: number; unitsSold: number }
 type Data = {
   today: string
   ledger: {
     partner: { id: number; name: string; shinePct: number; startDate: string; notes: string | null; active: boolean }
     period: { from: string; to: string }; packagingRate: number
     lines: Line[]; returnsDetail: { orderId: number; orderNumber: string | null; returnedAt: string; fee: number }[]
-    adsDetail: { externalId: string; name: string; spend: number }[]; expenses: Expense[]; advancesDetail: Expense[]; totals: Totals
+    adsDetail: { externalId: string; name: string; spend: number }[]; adsMixedDetail?: { externalId: string; name: string; spend: number; part: number; allocated: number }[]; expenses: Expense[]; advancesDetail: Expense[]; totals: Totals
   }
   stock: StockRow[]
   settlement: { cogsSold: number; expensesPaidByPartner: number; advances: number; partnerShare: number; shineShare: number; net: number; owed: number; paid: number; balance: number; payments: Payment[]; depuisDebut?: Totals }
 }
-type Campaign = { externalId: string; name: string; platform: string; spend: number; lastDate: string; linked: boolean }
+type Campaign = { externalId: string; name: string; platform: string; spend: number; lastDate: string; linked: boolean; mode?: 'dedie' | 'mixte' | null }
 
 const AVANCE = 'Avance reçue'
 const CATEGORIES = ['Douane & taxes', 'Transport', 'Cartons & fournitures', 'Publicité', 'Autre', AVANCE]
@@ -156,9 +156,12 @@ export default function PartenairePage() {
               <Ligne label="CA encaissé sur ses produits" note="ce que les clientes ont réellement payé, remises déduites" valeur={T.revenue} />
               <Ligne label="Coût d'achat des produits vendus" note="son argent, qui lui est rendu" valeur={-T.cogs} />
               <Ligne label="Livraison nette et frais de commande" note="coût Sendit moins livraison facturée, commission, frais d'échec" valeur={-T.orderCosts} />
-              <Ligne label={`Emballage (${L.packagingRate} DH par colis)`} note="au prorata des colis mixtes" valeur={-T.packaging} />
+              <Ligne label={`Emballage (${L.packagingRate} DH par colis)`} note="payé par Shine, partagé comme les autres frais — au prorata si le colis contient aussi des produits Shine" valeur={-T.packaging} />
               <Ligne label="Colis retournés ou refusés" note={`${L.returnsDetail.length} commande(s)`} valeur={-T.returns} />
-              <Ligne label="Publicité — campagnes liées" note={`${L.adsDetail.length} campagne(s)`} valeur={-T.adsLinked} />
+              <Ligne label="Publicité — ses campagnes" note={`${L.adsDetail.length} campagne(s) qui ne montrent que ses produits : toute la dépense`} valeur={-T.adsLinked} />
+              {(L.adsMixedDetail?.length ?? 0) > 0 && (
+                <Ligne label="Publicité — campagnes mixtes" note={`sa part, au prorata de ses ventes du mois : ${(L.adsMixedDetail ?? []).map((a) => `${a.name || a.externalId} ${Math.round(a.part * 100)} % de ${dh(a.spend)}`).join(' · ')}`} valeur={-(T.adsMixed ?? 0)} />
+              )}
               {CATEGORIES.filter((c) => T.expensesByCategory[c]).map((c) => (
                 <Ligne key={c} label={c} note="dépense du partenariat" valeur={-T.expensesByCategory[c]} />
               ))}
@@ -202,7 +205,7 @@ export default function PartenairePage() {
         <Depenses partnerId={P.id} depenses={[...L.expenses, ...(L.advancesDetail ?? [])].sort((a, b) => b.date.localeCompare(a.date))} today={data.today} onChange={load} />
 
         {/* ── Publicite ───────────────────────────────────────────────────── */}
-        <Campagnes partnerId={P.id} campagnes={campagnes} depensePeriode={L.adsDetail} onChange={(c) => { setCampagnes(c); load() }} />
+        <Campagnes partnerId={P.id} campagnes={campagnes} depensePeriode={L.adsDetail} mixtes={L.adsMixedDetail ?? []} onChange={(c) => { setCampagnes(c); load() }} />
 
         {/* ── Versements ──────────────────────────────────────────────────── */}
         <Versements partnerId={P.id} versements={S.payments} today={data.today} solde={S.balance} onChange={load} />
@@ -251,10 +254,11 @@ function Kpi({ label, valeur, sous, couleur, titre, delta }: { label: string; va
  * ligne par ligne pour que chacun puisse refaire le calcul.
  */
 function Bilan({ shinePct, t, paid, balance }: { shinePct: number; t: Totals; paid: number; balance: number }) {
-  const garde = t.revenue + (t.advances ?? 0) - t.adsLinked - t.orderCosts - t.packaging - t.returns - t.expensesPaidByShine - paid
+  const garde = t.revenue + (t.advances ?? 0) - t.adsLinked - (t.adsMixed ?? 0) - t.orderCosts - t.packaging - t.returns - t.expensesPaidByShine - paid
   // Egal a sa part de la marge nette ; un ecart d'un centime ne vient que des arrondis de chaque ligne.
   const revientShine = Math.abs(garde - balance - t.shineShare) < 0.05 ? t.shineShare : garde - balance
-  const roas = t.adsLinked > 0 ? t.revenue / t.adsLinked : null
+  const pubTotale = t.adsLinked + (t.adsMixed ?? 0)
+  const roas = pubTotale > 0 ? t.revenue / pubTotale : null
   const gagne = t.shineShare >= 0
   const L = ({ l, v, note, gras, signe = true }: { l: string; v: number; note?: string; gras?: boolean; signe?: boolean }) => (
     <tr style={gras ? { borderTop: '2px solid var(--line-soft)' } : undefined}>
@@ -270,7 +274,7 @@ function Bilan({ shinePct, t, paid, balance }: { shinePct: number; t: Totals; pa
           <div style={{ fontSize: 26, fontWeight: 800, fontFamily: 'var(--mono)', color: gagne ? 'var(--green)' : 'var(--red, #c0392b)' }}>{dh(t.shineShare)}</div>
           <div className="fs12 tx-mid" style={{ lineHeight: 1.6, marginTop: 6 }}>
             {shinePct} % de la marge nette ({dh(t.net)}) sur {t.deliveredOrders} commande(s), {t.unitsSold} unité(s) vendues.<br />
-            CA de ses produits {dh(t.revenue)} · pub de ses campagnes {dh(t.adsLinked)}{roas != null && <> · chaque dirham de pub a rapporté <b>{roas.toFixed(2)} DH</b> de CA</>}.
+            CA de ses produits {dh(t.revenue)} · pub à sa charge {dh(t.adsLinked + (t.adsMixed ?? 0))}{roas != null && <> · chaque dirham de pub a rapporté <b>{roas.toFixed(2)} DH</b> de CA</>}.
           </div>
           <p className="fs11 tx-lo" style={{ margin: '8px 0 0', lineHeight: 1.5 }}>
             {gagne
@@ -283,9 +287,10 @@ function Bilan({ shinePct, t, paid, balance }: { shinePct: number; t: Totals; pa
             <tbody>
               <L l="Encaissé sur ses produits" note="payé par les clientes, remises déduites" v={t.revenue} />
               {(t.advances ?? 0) > 0 && <L l="Avances qu'il t'a remises" note="ex. budget pub" v={t.advances} />}
-              <L l="Pub de ses campagnes liées" note="dépensée par Shine chez Meta" v={-t.adsLinked} />
-              <L l="Livraison nette & frais" v={-t.orderCosts} />
-              <L l="Emballage" v={-t.packaging} />
+              <L l="Pub de ses campagnes" note="dépensée par Shine chez Meta" v={-t.adsLinked} />
+              {(t.adsMixed ?? 0) > 0 && <L l="Sa part des campagnes mixtes" note="au prorata de ses ventes" v={-(t.adsMixed ?? 0)} />}
+              <L l="Livraison nette & frais" note="payés par Shine (Sendit)" v={-t.orderCosts} />
+              <L l="Emballage" note="payé par Shine, 7 DH par colis" v={-t.packaging} />
               {t.returns > 0 && <L l="Retours" v={-t.returns} />}
               {t.expensesPaidByShine > 0 && <L l="Frais du partenariat payés par Shine" v={-t.expensesPaidByShine} />}
               {paid > 0 && <L l="Déjà versé au partenaire" v={-paid} />}
@@ -396,19 +401,22 @@ function Depenses({ partnerId, depenses, today, onChange }: { partnerId: number;
   )
 }
 
-function Campagnes({ partnerId, campagnes, depensePeriode, onChange }: { partnerId: number; campagnes: Campaign[] | null; depensePeriode: { externalId: string; spend: number }[]; onChange: (c: Campaign[]) => void }) {
-  const [sel, setSel] = useState<Set<string>>(new Set())
+type Mode = 'dedie' | 'mixte' | ''
+function Campagnes({ partnerId, campagnes, depensePeriode, mixtes, onChange }: { partnerId: number; campagnes: Campaign[] | null; depensePeriode: { externalId: string; spend: number }[]; mixtes: { externalId: string; part: number; allocated: number }[]; onChange: (c: Campaign[]) => void }) {
+  const [sel, setSel] = useState<Map<string, Mode>>(new Map())
   const [busy, setBusy] = useState(false)
-  useEffect(() => { if (campagnes) setSel(new Set(campagnes.filter((c) => c.linked).map((c) => c.externalId))) }, [campagnes])
-  const modifie = useMemo(() => campagnes ? campagnes.some((c) => c.linked !== sel.has(c.externalId)) : false, [campagnes, sel])
+  const modeDe = (c: Campaign): Mode => (c.mode ?? (c.linked ? 'dedie' : null)) || ''
+  useEffect(() => { if (campagnes) setSel(new Map(campagnes.map((c) => [c.externalId, modeDe(c)]))) }, [campagnes])
+  const modifie = useMemo(() => campagnes ? campagnes.some((c) => modeDe(c) !== (sel.get(c.externalId) ?? '')) : false, [campagnes, sel])
   const enregistrer = async () => {
     setBusy(true)
-    await fetch(`/api/ops/partners/${partnerId}/campaigns`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ externalIds: [...sel] }) })
+    const de = (m: Mode) => [...sel].filter(([, v]) => v === m).map(([k]) => k)
+    await fetch(`/api/ops/partners/${partnerId}/campaigns`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ externalIds: de('dedie'), mixtes: de('mixte') }) })
     const d = await fetch(`/api/ops/partners/${partnerId}/campaigns`, { cache: 'no-store' }).then((r) => r.json())
     setBusy(false); onChange(d.campaigns)
   }
   return (
-    <Section titre="Publicité" note="Coche uniquement les campagnes qui ne montrent QUE ses produits : toute leur dépense entre dans son relevé. Une campagne mixte se saisit plutôt en dépense « Publicité », avec la part convenue.">
+    <Section titre="Publicité" note="« Ses produits seulement » : toute la dépense entre dans son relevé. « Mixte » (catalogue, pub qui montre aussi les produits Shine) : seule sa part entre, au prorata de ses ventes du mois. La dépense retenue est ensuite partagée comme toute la marge.">
       {campagnes === null ? <div className="skeleton-line" style={{ width: '30%', height: 12 }} />
         : campagnes.length === 0 ? <p className="fs12 tx-faint" style={{ margin: 0 }}>Aucune campagne synchronisée sur les 90 derniers jours.</p>
         : (
@@ -416,16 +424,27 @@ function Campagnes({ partnerId, campagnes, depensePeriode, onChange }: { partner
             <div style={{ display: 'grid', gap: 4 }}>
               {campagnes.map((c) => {
                 const periode = depensePeriode.find((d) => d.externalId === c.externalId)
+                const mixte = mixtes.find((d) => d.externalId === c.externalId)
+                const m = sel.get(c.externalId) ?? ''
                 return (
-                  <label key={c.externalId} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 4px', borderBottom: '1px solid var(--line-soft)', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={sel.has(c.externalId)} onChange={(e) => { const n = new Set(sel); if (e.target.checked) n.add(c.externalId); else n.delete(c.externalId); setSel(n) }} />
-                    <span className="fs12" style={{ flex: 1, minWidth: 0, color: 'var(--tx-hi)' }}>{c.name || c.externalId}</span>
-                    <span className="fs11 tx-lo" style={{ fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }}>{dh(c.spend)} / 90 j{periode ? ` · ${dh(periode.spend)} sur la période` : ''}</span>
-                  </label>
+                  <div key={c.externalId} style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 10, padding: '6px 4px', borderBottom: '1px solid var(--line-soft)' }}>
+                    <span className="fs12" style={{ flex: '1 1 220px', minWidth: 0, color: 'var(--tx-hi)' }}>{c.name || c.externalId}</span>
+                    <span className="fs11 tx-lo" style={{ fontFamily: 'var(--mono)', whiteSpace: 'nowrap' }}>
+                      {dh(c.spend)} / 90 j
+                      {periode ? ` · ${dh(periode.spend)} sur la période` : ''}
+                      {mixte ? ` · sa part ${Math.round(mixte.part * 100)} % = ${dh(mixte.allocated)}` : ''}
+                    </span>
+                    <select className="input-modern" aria-label={`Rattachement de ${c.name || c.externalId}`} value={m} style={{ width: 200, flex: 'none', padding: '4px 8px' }}
+                      onChange={(e) => { const n = new Map(sel); n.set(c.externalId, e.target.value as Mode); setSel(n) }}>
+                      <option value="">Non liée</option>
+                      <option value="dedie">Ses produits (100 %)</option>
+                      <option value="mixte">Mixte (prorata ventes)</option>
+                    </select>
+                  </div>
                 )
               })}
             </div>
-            <button className="btn-modern btn-sm" style={{ marginTop: 10 }} disabled={!modifie || busy} onClick={enregistrer}>{busy ? 'Enregistrement…' : 'Enregistrer les campagnes liées'}</button>
+            <button className="btn-modern btn-sm" style={{ marginTop: 10 }} disabled={!modifie || busy} onClick={enregistrer}>{busy ? 'Enregistrement…' : 'Enregistrer la publicité'}</button>
           </>
         )}
     </Section>
@@ -707,7 +726,7 @@ function exporterCsv(d: Data) {
     [],
     ['COMPTE DE RÉSULTAT DE LA PÉRIODE'],
     ['CA encaissé', n(T.revenue)], ["Coût d'achat des produits vendus", n(-T.cogs)], ['Livraison nette et frais de commande', n(-T.orderCosts)],
-    ['Emballage', n(-T.packaging)], ['Colis retournés', n(-T.returns)], ['Publicité (campagnes liées)', n(-T.adsLinked)],
+    ['Emballage', n(-T.packaging)], ['Colis retournés', n(-T.returns)], ['Publicité (ses campagnes)', n(-T.adsLinked)], ['Publicité (part des campagnes mixtes)', n(-(T.adsMixed ?? 0))],
     ...Object.entries(T.expensesByCategory).map(([c, v]) => [c, n(-v)]),
     ['Marge nette', n(T.net)], [`Part Shine (${L.partner.shinePct} %)`, n(T.shineShare)], [`Part partenaire (${100 - L.partner.shinePct} %)`, n(T.partnerShare)],
     [],

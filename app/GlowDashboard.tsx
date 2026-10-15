@@ -452,10 +452,10 @@ export default function GlowDashboard() {
 
           {/* Base de calcul (libellé court, détail en info-bulle) */}
           <div
-            title={byDeliv ? 'Cash Sendit par livraison. Comparer avec Sendit → Type de date → Date de livraison.' : 'Cash Sendit par création. Correspond au filtre Date de Création de Sendit.'}
+            title={byDeliv ? 'Par livraison : une vente compte le jour où le colis est livré et payé (comme Sendit → date de livraison). C’est la vue de l’argent réellement gagné.' : 'Par commande : une vente compte le jour où la cliente a commandé (comme Sendit → date de création). Utile pour juger une pub ou une semaine de commandes.'}
             style={{ display: 'inline-flex', gap: 2, padding: 3, borderRadius: 10, background: 'var(--bg-2)', border: '1px solid var(--line-soft)' }}
           >
-            {([['delivered', 'Cash réalisé'], ['created', 'Cohorte']] as const).map(([b, lbl]) => (
+            {([['delivered', 'Par livraison'], ['created', 'Par commande']] as const).map(([b, lbl]) => (
               <button key={b} onClick={() => setBasis(b)} style={{
                 fontSize: 12, fontWeight: 600, padding: '5px 11px', borderRadius: 7, border: 'none', cursor: 'pointer',
                 background: basis === b ? 'var(--tx-hi)' : 'transparent', color: basis === b ? 'var(--bg-1)' : 'var(--tx-lo)',
@@ -498,27 +498,27 @@ export default function GlowDashboard() {
             réunis dans une seule carte à filets fins pour gagner de la hauteur. */}
         <div className="hero-row" style={{ marginBottom: 14 }}>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
-            <HeroTile tone="rose" icon={<TrendingUp style={{ width: 14, height: 14 }} />} label={`CA livré · ${analyticsBasisLabel} · ${periodLabel}`} amount={dRevenue} delta={dRevenueDelta} deltaLabel={compareLabel} />
+            <HeroTile tone="rose" icon={<TrendingUp style={{ width: 14, height: 14 }} />} label={`CA livré · ${periodLabel}`} amount={dRevenue} delta={dRevenueDelta} deltaLabel={compareLabel} />
           </div>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
-            <HeroTile tone="green" icon={<PiggyBank style={{ width: 14, height: 14 }} />} label={`Marge nette · ${analyticsBasisLabel}`} amount={activePnl?.rentabilite.net ?? dProfit} delta={netDelta} deltaMad={netDeltaMad} deltaLabel={compareLabel} sub={`${Math.round(activePnl?.rentabilite.marginPct ?? dMargin)}% après pub, emballage, retours`} />
+            <HeroTile tone="green" icon={<PiggyBank style={{ width: 14, height: 14 }} />} label={`Marge nette · ${periodLabel}`} amount={activePnl?.rentabilite.net ?? dProfit} delta={netDelta} deltaMad={netDeltaMad} deltaLabel={compareLabel} sub={`${Math.round(activePnl?.rentabilite.marginPct ?? dMargin)}% après pub, emballage, retours`} />
           </div>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
-            <HeroTile tone="green" icon={<Wallet style={{ width: 14, height: 14 }} />} label={byDeliv ? 'Cash net généré · trésorerie' : 'Cash net attribué · cohorte'} amount={activePnl?.tresorerie.net ?? dCash} sub={byDeliv ? 'liquide réel entré − sorti' : 'cash Sendit des colis créés − dépenses'} />
+            <HeroTile tone="green" icon={<Wallet style={{ width: 14, height: 14 }} />} label={byDeliv ? `Cash net · ${periodLabel}` : 'Cash net des commandes de la période'} amount={activePnl?.tresorerie.net ?? dCash} sub={byDeliv ? 'liquide réel entré − sorti' : 'cash Sendit des colis créés − dépenses'} />
           </div>
         </div>
         <div className="kpi-quad" style={{ marginBottom: 18 }}>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
-            <Kpi label={byDeliv ? 'Livraisons' : 'Livrées · cohorte création'} value={String(dOrders)} sub={`${byDeliv ? 'colis Sendit' : 'colis'} · ${activeAnalytics.orders} commandes · panier ${mad(activeAnalytics.averageOrderValue)} MAD`} />
+            <Kpi label={byDeliv ? 'Livraisons' : 'Commandes de la période livrées'} value={String(dOrders)} sub={`${byDeliv ? 'colis Sendit' : 'colis'} · ${activeAnalytics.orders} commandes · panier ${mad(activeAnalytics.averageOrderValue)} MAD`} />
           </div>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
-            <Kpi label="Taux livraison · cohorte" value={`${stats.deliveryRate.toFixed(0)}%`} sub="livrées / résolues par création" />
+            <Kpi label="Taux de livraison" value={`${stats.deliveryRate.toFixed(0)}%`} sub="colis livrés ÷ colis terminés (livrés, refusés, annulés) des commandes de la période" />
           </div>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
-            <Kpi label={`ROAS · ${analyticsBasisLabel}`} value={activeRoas != null ? `${activeRoas.toFixed(1)}x` : '—'} sub="CA livré ÷ pub de la période" />
+            <Kpi label="ROAS (CA ÷ pub)" value={activeRoas != null ? `${activeRoas.toFixed(1)}x` : '—'} sub="dirhams de CA livré pour 1 DH de pub — seuil de rentabilité dans « Performance »" />
           </div>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
-            <Kpi label="CA attendu · cohorte création" value={`${mad(stats.revenueWeek)}`} unit="MAD" sub={stats.revenueWeek > stats.revenueDelivered ? `+ ${mad(stats.revenueWeek - stats.revenueDelivered)} en cours` : 'toutes livrées'} />
+            <Kpi label="CA des commandes de la période" value={`${mad(stats.revenueWeek)}`} unit="MAD" sub={stats.revenueWeek > stats.revenueDelivered ? `+ ${mad(stats.revenueWeek - stats.revenueDelivered)} en cours` : 'toutes livrées'} />
           </div>
         </div>
 
@@ -530,7 +530,7 @@ export default function GlowDashboard() {
             <div style={{ marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
                 <div>
-                  <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx-hi)' }}>Résultat · {periodLabel} · {analyticsBasisLabel}</h3>
+                  <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx-hi)' }}>Résultat · {periodLabel} <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--tx-faint)' }}>({byDeliv ? 'par livraison' : 'par commande'})</span></h3>
                   <p style={{ fontSize: 11, color: 'var(--tx-faint)', marginTop: 2 }}>{byDeliv ? 'Rentabilité = ventes livrées dans la période · Trésorerie = cash réel entré/sorti' : 'Rentabilité et cash attribués aux commandes créées dans la période'}</p>
                   {(() => {
                     const { from, to } = periodParams()
@@ -613,8 +613,8 @@ export default function GlowDashboard() {
             onSave={saveGoalSmart}
             extra={[
               { label: byDeliv ? 'Commandes livrées' : 'Commandes confirmées + livrées', value: String(activeAnalytics.orders) },
-              { label: `Panier moyen · ${analyticsBasisLabel}`, value: `${mad(activeAnalytics.averageOrderValue)} MAD` },
-              { label: 'Taux livraison · cohorte création', value: `${stats.deliveryRate.toFixed(0)}%` },
+              { label: 'Panier moyen', value: `${mad(activeAnalytics.averageOrderValue)} MAD` },
+              { label: 'Taux de livraison', value: `${stats.deliveryRate.toFixed(0)}%` },
             ]}
           />
         </div>
@@ -622,7 +622,7 @@ export default function GlowDashboard() {
         {/* Top products + channels (real data, previously unused) */}
         <div className="dash-lower g-stagger">
           <Card>
-            <Label>Top produits · {periodLabel} · {analyticsBasisLabel}</Label>
+            <Label>Top produits · {periodLabel}</Label>
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {activeAnalytics.topProducts.length === 0 ? <Empty /> : activeAnalytics.topProducts.slice(0, 6).map((p, i) => {
                 const max = activeAnalytics.topProducts[0]?.revenue || 1
@@ -634,7 +634,7 @@ export default function GlowDashboard() {
                       <span style={{ color: 'var(--tx-hi)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
                         <span title={(p.stock ?? 0) <= 0 ? 'RUPTURE — à réapprovisionner' : `Stock : ${p.stock}`} style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', background: stockTone, marginRight: 6, verticalAlign: 'baseline' }} />{p.name}
                       </span>
-                      <span style={{ color: 'var(--tx-mid)', whiteSpace: 'nowrap', marginLeft: 8 }}><b style={{ color: 'var(--tx-hi)' }}>{mad(p.revenue)}</b> · {p.units}u{p.marginPct != null ? ` · ${p.marginPct.toFixed(0)}%` : ''}</span>
+                      <span style={{ color: 'var(--tx-mid)', whiteSpace: 'nowrap', marginLeft: 8 }}><b style={{ color: 'var(--tx-hi)' }}>{mad(p.revenue)} MAD</b> · {p.units} vendu{p.units > 1 ? 's' : ''}{p.marginPct != null ? ` · marge ${p.marginPct.toFixed(0)} %` : ''}</span>
                     </div>
                     <div style={{ height: 5, borderRadius: 3, background: 'var(--bg-3)', overflow: 'hidden' }}>
                       <div style={{ width: `${(p.revenue / max) * 100}%`, height: '100%', background: 'var(--rose-bright)', borderRadius: 3 }} />
@@ -649,7 +649,7 @@ export default function GlowDashboard() {
           </Card>
 
           <Card>
-            <Label>Canaux de vente · {periodLabel} · {analyticsBasisLabel}</Label>
+            <Label>Canaux de vente · {periodLabel}</Label>
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {activeAnalytics.channels.length === 0 ? <Empty /> : activeAnalytics.channels.slice(0, 6).map((c, i) => {
                 const max = Math.max(...activeAnalytics.channels.map((x) => x.revenue), 1)
@@ -671,7 +671,7 @@ export default function GlowDashboard() {
           </Card>
           {/* Pipeline */}
           <Card>
-            <Label>Pipeline · cohorte création · {periodLabel}</Label>
+            <Label>Où en sont les commandes de {periodLabel}</Label>
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
               {stats.pipeline.map((item, i) => {
                 const colors: Record<string, string> = { amber: 'var(--amber)', blue: 'var(--blue)', violet: 'var(--violet)', green: 'var(--green)', red: 'var(--red)', rose: 'var(--rose-bright)' }
@@ -738,7 +738,7 @@ export default function GlowDashboard() {
 
           {/* Top cities */}
           <Card>
-            <Label>Top villes · {periodLabel} · {analyticsBasisLabel}</Label>
+            <Label>Top villes · {periodLabel}</Label>
             <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {activeAnalytics.topCities.length === 0 ? <Empty /> : activeAnalytics.topCities.slice(0, 6).map((c, i) => {
                 const max = activeAnalytics.topCities[0]?.orders || 1
