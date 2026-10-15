@@ -103,3 +103,23 @@ test('une perte se partage comme un gain', () => {
   close(r.partnerShare, -40, 'sa part de la perte')
   close(r.owed, 350, 'du')
 })
+
+test("une avance du partenaire lui est due et ne touche pas la marge", () => {
+  // Cas reel (oct. 2026) : 2 000 DH remis pour la pub, 577 DH depenses sur ses campagnes.
+  const net = 979 - 590 - 35 - 14 - 577 // la pub reelle est deja dans la marge
+  const r = settle({ cogs: 590, expensesPaidByPartner: 0, advances: 2000, net }, 50, 0)
+  close(r.partnerShare, net / 2, 'sa part de la vraie marge')
+  close(r.balance, 590 + 2000 + net / 2, 'son stock vendu + son avance + sa part')
+  // Saisie en depense, la meme avance comptait la pub deux fois : 1 000 DH de trop a la charge de Shine.
+  const faux = settle({ cogs: 590, expensesPaidByPartner: 2000, net: net - 2000 }, 50, 0)
+  close(r.shineShare - faux.shineShare, 1000, "l'erreur corrigee")
+})
+
+test("l'argent garde par Shine moins ce qu'elle doit redonne exactement sa part", () => {
+  const t = { revenue: 979, cogs: 590, orderCosts: 35, packaging: 14, returns: 0, adsLinked: 577, expPartner: 120, expShine: 40, advances: 2000 }
+  const net = t.revenue - t.cogs - t.orderCosts - t.packaging - t.returns - t.adsLinked - t.expPartner - t.expShine
+  const paid = 300
+  const s = settle({ cogs: t.cogs, expensesPaidByPartner: t.expPartner, advances: t.advances, net }, 50, paid)
+  const garde = t.revenue + t.advances - t.adsLinked - t.orderCosts - t.packaging - t.returns - t.expShine - paid
+  close(garde - s.balance, s.shineShare, 'garde moins du = part de Shine')
+})

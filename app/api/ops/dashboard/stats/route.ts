@@ -44,6 +44,11 @@ interface SummaryRow {
   realizedBank: number | string | null
   realizedCash: number | string | null
   realizedProfit: number | string | null
+  realizedCogs: number | string | null
+  cogsDelivered: number | string | null
+  previousRevenueDeliveredCreated: number | string | null
+  previousCogsDelivered: number | string | null
+  previousRealizedCogs: number | string | null
   realizedDeliveryCost: number | string | null
   realizedOrders: number | string | null
   previousRealizedRevenue: number | string | null
@@ -282,7 +287,9 @@ function financialCte(from: string, to: string, cFrom: string, cTo: string) {
         END
       )::numeric AS profit,
       COALESCE(ic.item_count, 0)::int AS item_count,
-      COALESCE(ic.missing_cost_items, 0)::int AS missing_cost_items
+      COALESCE(ic.missing_cost_items, 0)::int AS missing_cost_items,
+      -- Le cout d'achat des produits, pour detailler la marge brute (CA − cout − livraison & frais).
+      COALESCE(ic.cogs, 0)::numeric AS cogs
     FROM "Order" o
     LEFT JOIN item_costs ic ON ic."orderId" = o.id
   )
@@ -437,6 +444,7 @@ export async function GET(req: Request) {
           COALESCE(SUM(cod_collected) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "codReceivedDelivered",
           COALESCE(SUM(bank_collected) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "bankReceivedDelivered",
           COALESCE(SUM(profit) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "profitDelivered",
+          COALESCE(SUM(cogs) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "cogsDelivered",
           COALESCE(SUM(cash_collected - delivery_cost) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "cashReceivedDelivered",
           COALESCE(SUM(delivery_cost) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "deliveryCostDelivered",
           COALESCE(SUM(revenue) FILTER (
@@ -474,13 +482,17 @@ export async function GET(req: Request) {
           COALESCE(SUM(bank_collected) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedBank",
           COALESCE(SUM(cash_collected - delivery_cost) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedCash",
           COALESCE(SUM(profit) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedProfit",
+          COALESCE(SUM(cogs) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedCogs",
           COALESCE(SUM(delivery_cost) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "realizedDeliveryCost",
           COUNT(*) FILTER (WHERE "deliveredAt" >= (SELECT range_start FROM bounds) AND "deliveredAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED')::int AS "realizedOrders",
           COALESCE(SUM(revenue) FILTER (WHERE "deliveredAt" >= (SELECT compare_start FROM bounds) AND "deliveredAt" < (SELECT compare_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "previousRealizedRevenue",
           COALESCE(SUM(profit) FILTER (WHERE "createdAt" >= (SELECT compare_start FROM bounds) AND "createdAt" < (SELECT compare_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "previousProfitDelivered",
           COALESCE(SUM(profit) FILTER (WHERE "deliveredAt" >= (SELECT compare_start FROM bounds) AND "deliveredAt" < (SELECT compare_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "previousRealizedProfit",
           COUNT(*) FILTER (WHERE "deliveredAt" >= (SELECT compare_start FROM bounds) AND "deliveredAt" < (SELECT compare_end FROM bounds) AND status = 'DELIVERED')::int AS "previousRealizedOrders",
-          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT compare_start FROM bounds) AND "createdAt" < (SELECT compare_end FROM bounds) AND status = 'DELIVERED')::int AS "previousDeliveredCreated"
+          COUNT(*) FILTER (WHERE "createdAt" >= (SELECT compare_start FROM bounds) AND "createdAt" < (SELECT compare_end FROM bounds) AND status = 'DELIVERED')::int AS "previousDeliveredCreated",
+          COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= (SELECT compare_start FROM bounds) AND "createdAt" < (SELECT compare_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "previousRevenueDeliveredCreated",
+          COALESCE(SUM(cogs) FILTER (WHERE "createdAt" >= (SELECT compare_start FROM bounds) AND "createdAt" < (SELECT compare_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "previousCogsDelivered",
+          COALESCE(SUM(cogs) FILTER (WHERE "deliveredAt" >= (SELECT compare_start FROM bounds) AND "deliveredAt" < (SELECT compare_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "previousRealizedCogs"
         FROM order_financials
       `),
       safeQuery<SeriesRow>('series', `
@@ -1141,7 +1153,7 @@ export async function GET(req: Request) {
     const returnFees = toNumber(pnlRow?.returnFees)
     const packagingRate = toNumber(pnlRow?.packagingRate)
     const nonPackagingOpex = Math.max(0, opex - opexPackaging)
-    const buildPnl = (revenue: number, grossProfit: number, cash: number, parcels: number) => {
+    const buildPnl = (revenue: number, grossProfit: number, cash: number, parcels: number, cogs: number) => {
       const packagingAccrued = parcels * packagingRate
       // Logged packaging is a period cash expense. Otherwise estimate it from the
       // parcel population for the selected accounting basis.
@@ -1152,6 +1164,10 @@ export async function GET(req: Request) {
       return {
         rentabilite: {
           caLivre: revenue,
+          // CA − cout d'achat − (livraison nette, commission, frais d'echec) = marge brute.
+          // La troisieme ligne est le reste exact : la somme tombe toujours juste.
+          coutProduits: cogs,
+          livraisonFrais: revenue - cogs - grossProfit,
           profitLivre: grossProfit,
           margeLivree: grossMargin,
           pub: adSpendPnl,
@@ -1196,23 +1212,47 @@ export async function GET(req: Request) {
       return grossProfit - prevPackaging - prevAd - prevRet - depotPrev.part
     }
     const avecDepot = (p: ReturnType<typeof buildPnl>) => {
-      if (depot.part === 0 && depot.cash === 0) return { ...p, rentabilite: { ...p.rentabilite, depotVente: 0 }, tresorerie: { ...p.tresorerie, depotVente: 0 } }
+      const detail = {
+        partnerShare: depot.partnerShare, frais: depot.frais,
+        versements: depot.versements, fraisPayesShine: depot.fraisPayesShine, avances: depot.avances,
+        duPartenaire: depot.du, partenaires: depot.partenaires,
+      }
+      if (depot.part === 0 && depot.cash === 0) return { ...p, depot: detail, rentabilite: { ...p.rentabilite, depotVente: 0 }, tresorerie: { ...p.tresorerie, depotVente: 0 } }
       const net = p.rentabilite.net - depot.part
       return {
         ...p,
+        depot: detail,
         rentabilite: { ...p.rentabilite, depotVente: depot.part, net, marginPct: p.rentabilite.caLivre > 0 ? (net / p.rentabilite.caLivre) * 100 : 0 },
         tresorerie: { ...p.tresorerie, depotVente: depot.cash, net: p.tresorerie.net - depot.cash },
       }
     }
     const pnlByBasis = {
-      created: avecDepot(buildPnl(revenueDelivered, profitDelivered, createdCash, createdParcels)),
-      delivered: avecDepot(buildPnl(realizedRevenue, realizedProfit, treasuryCash, deliveredParcels)),
+      created: avecDepot(buildPnl(revenueDelivered, profitDelivered, createdCash, createdParcels, toNumber(summary?.cogsDelivered))),
+      delivered: avecDepot(buildPnl(realizedRevenue, realizedProfit, treasuryCash, deliveredParcels, toNumber(summary?.realizedCogs))),
     }
     // Delta de marge nette vs periode precedente, par base — mêmes entrees,
     // même formule, seules les bornes changent. Les colis estimes viennent des
     // commandes (le ledger Sendit ne couvre que la periode courante).
     pnlByBasis.created.rentabilite.previousNet = prevNetFor(previousProfitDelivered, previousDeliveredCreated)
     pnlByBasis.delivered.rentabilite.previousNet = prevNetFor(previousRealizedProfit, previousRealizedOrders)
+    /* LA PERIODE DE COMPARAISON, LIGNE PAR LIGNE — memes regles que la periode
+       courante, seules les bornes changent. Permet de voir QUELLE ligne a bouge. */
+    const precedentFor = (revenue: number, cogs: number, grossProfit: number, parcels: number) => {
+      const emballage = parcels * packagingRate
+      const pub = toNumber(pnlRow?.previousAdSpend)
+      const retours = toNumber(pnlRow?.previousReturnFees)
+      return {
+        caLivre: revenue, coutProduits: cogs, livraisonFrais: revenue - cogs - grossProfit, profitLivre: grossProfit,
+        pub, emballage, retours, depotVente: depotPrev.part,
+        net: grossProfit - emballage - pub - retours - depotPrev.part, commandes: parcels,
+      }
+    }
+    const precedents = {
+      created: precedentFor(toNumber(summary?.previousRevenueDeliveredCreated), toNumber(summary?.previousCogsDelivered), previousProfitDelivered, previousDeliveredCreated),
+      delivered: precedentFor(toNumber(summary?.previousRealizedRevenue), toNumber(summary?.previousRealizedCogs), previousRealizedProfit, previousRealizedOrders),
+    }
+    Object.assign(pnlByBasis.created, { precedent: precedents.created })
+    Object.assign(pnlByBasis.delivered, { precedent: precedents.delivered })
     // Preserve the existing field for older clients; it remains the actual cash basis.
     const pnl = pnlByBasis.delivered
     const marginPercent = revenueWeek > 0 ? (estimatedProfitWeek / revenueWeek) * 100 : 0

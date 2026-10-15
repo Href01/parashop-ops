@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
-import { EXPENSE_CATEGORIES } from '@/lib/partner-ledger'
+import { AVANCE, EXPENSE_CATEGORIES } from '@/lib/partner-ledger'
 
 /**
  * POST   /api/ops/partners/:id/expenses { date, category, label?, amount, paidBy }
@@ -28,6 +28,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (!(EXPENSE_CATEGORIES as readonly string[]).includes(b.category)) return NextResponse.json({ error: 'Catégorie inconnue' }, { status: 400 })
   if (!Number.isFinite(amount) || amount <= 0) return NextResponse.json({ error: 'Montant invalide' }, { status: 400 })
   if (b.paidBy !== 'shine' && b.paidBy !== 'partner') return NextResponse.json({ error: 'Qui a payé ?' }, { status: 400 })
+  // Une avance, c'est de l'argent que le partenaire remet a Shine : jamais l'inverse.
+  if (b.category === AVANCE && b.paidBy !== 'partner') return NextResponse.json({ error: 'Une avance vient toujours du partenaire.' }, { status: 400 })
   const r = await pool.query(
     `INSERT INTO "PartnerExpense" ("partnerId", date, category, label, amount, "paidBy", "createdBy")
      VALUES ($1, $2::date, $3, $4, $5, $6, $7) RETURNING id`,

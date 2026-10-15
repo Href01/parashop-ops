@@ -25,8 +25,15 @@ import pool from '@/lib/db'
  * CE QUI LUI EST DU. Shine encaisse tout. Elle doit donc au partenaire :
  *   le cout des produits vendus (son argent, avance a l'achat)
  * + les depenses qu'il a payees lui-meme
+ * + l'argent qu'il a avance a Shine (ex. un budget pub)
  * + sa part de la marge nette
  * − ce qui lui a deja ete verse.
+ *
+ * UNE AVANCE N'EST PAS UNE DEPENSE. Quand le partenaire donne de l'argent a
+ * Shine (« 2 000 DH pour la pub »), c'est de la tresorerie qu'il prete : Shine
+ * le lui doit. Le cout reel, lui, est ce que Meta a depense sur ses campagnes
+ * liees, deja deduit de la marge. Saisie en depense, l'avance comptait la pub
+ * deux fois et faisait porter a Shine la moitie d'un cout qui n'existe pas.
  * Une marge nette negative reduit sa part a proportion : la perte se partage
  * comme le gain. Le solde se calcule toujours depuis le debut du partenariat —
  * une depense de douane d'aout ne disparait pas parce qu'on regarde septembre.
@@ -40,7 +47,11 @@ export const EXPENSE_CATEGORIES = [
   'Cartons & fournitures',
   'Publicité',
   'Autre',
+  'Avance reçue',
 ] as const
+
+/** L'argent que le partenaire a remis a Shine : il lui est du, ce n'est pas un cout. */
+export const AVANCE = 'Avance reçue'
 
 export type Period = { from: string; to: string }
 
@@ -72,6 +83,8 @@ export type LedgerTotals = {
   expensesByCategory: Record<string, number>
   expensesPaidByShine: number
   expensesPaidByPartner: number
+  /** Argent remis par le partenaire a Shine (hors marge, du au partenaire). */
+  advances: number
   net: number
   shineShare: number
   partnerShare: number
@@ -187,9 +200,9 @@ export function allocateOrderLines(o: OrderRow, its: ItemRow[], idSet: Set<numbe
  * vendus), les depenses qu'il a payees, sa part de la marge nette — moins ce
  * qui lui a deja ete verse. Une marge negative reduit sa part a proportion.
  */
-export function settle(t: { cogs: number; expensesPaidByPartner: number; net: number }, shinePct: number, paid: number) {
+export function settle(t: { cogs: number; expensesPaidByPartner: number; advances?: number; net: number }, shinePct: number, paid: number) {
   const partnerShare = r2((t.net * (100 - shinePct)) / 100)
-  const owed = r2(t.cogs + t.expensesPaidByPartner + partnerShare)
+  const owed = r2(t.cogs + t.expensesPaidByPartner + (t.advances ?? 0) + partnerShare)
   return { partnerShare, shineShare: r2((t.net * shinePct) / 100), owed, balance: r2(owed - paid) }
 }
 
@@ -238,7 +251,9 @@ export async function computeLedger(partnerId: number, period: Period) {
       WHERE "partnerId" = $1 AND date BETWEEN $2::date AND $3::date ORDER BY date DESC, id DESC`,
     [partnerId, period.from, period.to],
   )
-  const expenses = exp.rows.map((e) => ({ ...e, amount: num(e.amount), date: String(e.date instanceof Date ? e.date.toISOString().slice(0, 10) : e.date).slice(0, 10) }))
+  const lignesSaisies = exp.rows.map((e) => ({ ...e, amount: num(e.amount), date: String(e.date instanceof Date ? e.date.toISOString().slice(0, 10) : e.date).slice(0, 10) }))
+  const advancesDetail = lignesSaisies.filter((e) => e.category === AVANCE)
+  const expenses = lignesSaisies.filter((e) => e.category !== AVANCE)
   const expensesByCategory: Record<string, number> = {}
   for (const e of expenses) expensesByCategory[e.category] = r2((expensesByCategory[e.category] || 0) + e.amount)
 
@@ -258,6 +273,7 @@ export async function computeLedger(partnerId: number, period: Period) {
     expensesByCategory,
     expensesPaidByShine: sum(expenses.filter((e) => e.paidBy === 'shine').map((e) => e.amount)),
     expensesPaidByPartner: sum(expenses.filter((e) => e.paidBy === 'partner').map((e) => e.amount)),
+    advances: sum(advancesDetail.map((e) => e.amount)),
     net,
     shineShare: r2((net * shinePct) / 100),
     partnerShare: r2((net * (100 - shinePct)) / 100),
@@ -270,7 +286,7 @@ export async function computeLedger(partnerId: number, period: Period) {
       id: p.id, name: p.name, shinePct, notes: p.notes, active: p.active,
       startDate: String(p.startDate instanceof Date ? p.startDate.toISOString() : p.startDate).slice(0, 10),
     },
-    period, packagingRate, lines, returnsDetail, adsDetail, expenses, totals,
+    period, packagingRate, lines, returnsDetail, adsDetail, expenses, advancesDetail, totals,
   }
 }
 
@@ -313,8 +329,8 @@ export async function partnerSettlement(partnerId: number, startDate: string, to
   const all = await computeLedger(partnerId, { from: startDate, to: today })
   if (!all) return null
   const pay = await pool.query(
-    `SELECT id, date::text AS date, amount, method, note FROM "PartnerPayment" WHERE "partnerId" = $1 ORDER BY date DESC, id DESC`,
-    [partnerId],
+    `SELECT id, date::text AS date, amount, method, note FROM "PartnerPayment" WHERE "partnerId" = $1 AND date <= $2::date ORDER BY date DESC, id DESC`,
+    [partnerId, today],
   )
   const payments = pay.rows.map((x) => ({ ...x, amount: num(x.amount), date: String(x.date instanceof Date ? x.date.toISOString() : x.date).slice(0, 10) }))
   const paid = r2(payments.reduce((s, x) => s + x.amount, 0))
@@ -323,6 +339,7 @@ export async function partnerSettlement(partnerId: number, startDate: string, to
   return {
     cogsSold: t.cogs,
     expensesPaidByPartner: t.expensesPaidByPartner,
+    advances: t.advances,
     partnerShare: s.partnerShare,
     shineShare: s.shineShare,
     net: t.net,
@@ -330,6 +347,8 @@ export async function partnerSettlement(partnerId: number, startDate: string, to
     paid,
     balance: s.balance,
     payments,
+    /** Tous les chiffres depuis le debut, pour le bilan (argent passe par Shine, verdict). */
+    depuisDebut: t,
   }
 }
 
@@ -350,6 +369,10 @@ export function todayCasablanca(): string {
  * nette vaut N = C − depenses ; Shine garde s·N ; C − s·N = (1 − s)·N + depenses.)
  *
  *   tresorerie  : − (versements faits au partenaire + depenses payees par Shine)
+ *                 + avances recues du partenaire (de l'argent entre dans la caisse)
+ *
+ * Les montants sont aussi rendus separement pour que le tableau de bord les
+ * affiche ligne par ligne, avec ce que Shine doit au partenaire a la fin.
  *
  * Ne leve jamais : si le partenariat n'est pas configure, la correction vaut zero
  * et le tableau de bord reste exactement celui d'avant.
@@ -357,15 +380,19 @@ export function todayCasablanca(): string {
 export async function ajustementDepotVente(from: string, to: string) {
   try {
     const ps = await pool.query(`SELECT id, "startDate"::text AS s FROM "Partner" WHERE active`)
-    let part = 0
-    let cash = 0
+    let partnerShare = 0, frais = 0, fraisPayesShine = 0, avances = 0, du = 0
     for (const p of ps.rows) {
       const debut = from < p.s ? p.s : from
       if (debut > to) continue
       const L = await computeLedger(p.id, { from: debut, to })
       if (!L) continue
-      part += L.totals.partnerShare + L.totals.expenses
-      cash += L.totals.expensesPaidByShine
+      partnerShare += L.totals.partnerShare
+      frais += L.totals.expenses
+      fraisPayesShine += L.totals.expensesPaidByShine
+      avances += L.totals.advances
+      // Ce que Shine lui doit a la fin de la periode, depuis le debut du partenariat.
+      const S = await partnerSettlement(p.id, p.s, to)
+      if (S) du += S.balance
     }
     const v = await pool.query(
       `SELECT COALESCE(SUM(pp.amount), 0)::double precision AS s
@@ -373,9 +400,16 @@ export async function ajustementDepotVente(from: string, to: string) {
         WHERE pa.active AND pp.date BETWEEN $1::date AND $2::date`,
       [from, to],
     )
-    cash += num(v.rows[0]?.s)
-    return { part: r2(part), cash: r2(cash), partenaires: ps.rowCount ?? 0 }
+    const versements = num(v.rows[0]?.s)
+    return {
+      part: r2(partnerShare + frais),
+      cash: r2(versements + fraisPayesShine - avances),
+      partnerShare: r2(partnerShare), frais: r2(frais),
+      versements: r2(versements), fraisPayesShine: r2(fraisPayesShine), avances: r2(avances),
+      du: r2(du),
+      partenaires: ps.rowCount ?? 0,
+    }
   } catch {
-    return { part: 0, cash: 0, partenaires: 0 }
+    return { part: 0, cash: 0, partnerShare: 0, frais: 0, versements: 0, fraisPayesShine: 0, avances: 0, du: 0, partenaires: 0 }
   }
 }

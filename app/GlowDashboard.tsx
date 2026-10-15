@@ -71,7 +71,9 @@ interface DashboardStats {
 }
 
 interface DashboardPnl {
-  rentabilite: { caLivre: number; profitLivre: number; margeLivree: number; pub: number; emballage: number; retours: number; depotVente?: number; net: number; marginPct: number; previousNet?: number | null }
+  depot?: { partnerShare: number; frais: number; versements: number; fraisPayesShine: number; avances: number; duPartenaire: number; partenaires: number }
+  precedent?: { caLivre: number; coutProduits: number; livraisonFrais: number; profitLivre: number; pub: number; emballage: number; retours: number; depotVente: number; net: number; commandes: number } | null
+  rentabilite: { caLivre: number; coutProduits?: number; livraisonFrais?: number; profitLivre: number; margeLivree: number; pub: number; emballage: number; retours: number; depotVente?: number; net: number; marginPct: number; previousNet?: number | null }
   tresorerie: { encaisse: number; achats: number; pub: number; emballage: number; emballageEstime: boolean; frais: number; retours: number; depotVente?: number; net: number }
   packagingRate: number
   deliveredParcels: number
@@ -378,7 +380,10 @@ export default function GlowDashboard() {
   // +100 % quand on part de zero). null = pas de point de comparaison.
   const prevNet = activePnl?.rentabilite.previousNet ?? null
   const curNet = activePnl?.rentabilite.net ?? dProfit
-  const netDelta = prevNet == null ? null : prevNet <= 0 ? (curNet > 0 ? 100 : null) : ((curNet - prevNet) / Math.abs(prevNet)) * 100
+  // Un % n'a pas de sens quand l'un des deux resultats est negatif ou nul
+  // (« −226 % » sur une perte) : on montre alors l'ecart en MAD.
+  const netDeltaMad = prevNet != null && (prevNet <= 0 || curNet <= 0) ? curNet - prevNet : null
+  const netDelta = prevNet == null || netDeltaMad != null ? null : ((curNet - prevNet) / Math.abs(prevNet)) * 100
 
   const exportCsv = () => {
     const rows = [['date', 'revenue', 'profit', 'orders'], ...activeAnalytics.revenueSeries.map((p) => [p.date, String(p.revenue), String(p.profit), String(p.orders)])]
@@ -496,7 +501,7 @@ export default function GlowDashboard() {
             <HeroTile tone="rose" icon={<TrendingUp style={{ width: 14, height: 14 }} />} label={`CA livré · ${analyticsBasisLabel} · ${periodLabel}`} amount={dRevenue} delta={dRevenueDelta} deltaLabel={compareLabel} />
           </div>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
-            <HeroTile tone="green" icon={<PiggyBank style={{ width: 14, height: 14 }} />} label={`Marge nette · ${analyticsBasisLabel}`} amount={activePnl?.rentabilite.net ?? dProfit} delta={netDelta} deltaLabel={compareLabel} sub={`${Math.round(activePnl?.rentabilite.marginPct ?? dMargin)}% après pub, emballage, retours`} />
+            <HeroTile tone="green" icon={<PiggyBank style={{ width: 14, height: 14 }} />} label={`Marge nette · ${analyticsBasisLabel}`} amount={activePnl?.rentabilite.net ?? dProfit} delta={netDelta} deltaMad={netDeltaMad} deltaLabel={compareLabel} sub={`${Math.round(activePnl?.rentabilite.marginPct ?? dMargin)}% après pub, emballage, retours`} />
           </div>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
             <HeroTile tone="green" icon={<Wallet style={{ width: 14, height: 14 }} />} label={byDeliv ? 'Cash net généré · trésorerie' : 'Cash net attribué · cohorte'} amount={activePnl?.tresorerie.net ?? dCash} sub={byDeliv ? 'liquide réel entré − sorti' : 'cash Sendit des colis créés − dépenses'} />
@@ -504,7 +509,7 @@ export default function GlowDashboard() {
         </div>
         <div className="kpi-quad" style={{ marginBottom: 18 }}>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
-            <Kpi label={byDeliv ? 'Livraisons' : 'Livrées · cohorte création'} value={String(dOrders)} sub={`panier ${mad(activeAnalytics.averageOrderValue)} MAD`} />
+            <Kpi label={byDeliv ? 'Livraisons' : 'Livrées · cohorte création'} value={String(dOrders)} sub={`${byDeliv ? 'colis Sendit' : 'colis'} · ${activeAnalytics.orders} commandes · panier ${mad(activeAnalytics.averageOrderValue)} MAD`} />
           </div>
           <div className="card-modern g-stagger" style={{ padding: 0, overflow: 'hidden' }}>
             <Kpi label="Taux livraison · cohorte" value={`${stats.deliveryRate.toFixed(0)}%`} sub="livrées / résolues par création" />
@@ -520,6 +525,7 @@ export default function GlowDashboard() {
         {/* Résultat de la période: Rentabilité + Trésorerie */}
         {activePnl && (() => {
           const r = activePnl.rentabilite, t = activePnl.tresorerie
+          const pp = activePnl.precedent ?? null
           return (
             <div style={{ marginBottom: 16 }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, marginBottom: 10, flexWrap: 'wrap' }}>
@@ -544,26 +550,42 @@ export default function GlowDashboard() {
               <div className="pnl-duo">
                 <div className="card-modern g-stagger" style={{ background: 'var(--bg-1)', padding: 16 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }}>🔵 Rentabilité <span style={{ fontWeight: 500, color: 'var(--tx-faint)', fontSize: 11 }}>· {byDeliv ? 'date de livraison' : 'cohorte création'}</span></div>
-                  <PnlRow label="CA livré" value={r.caLivre} />
-                  <PnlRow label="Marge brute commandes" sub={`avant pub, emballage, retours · ${r.margeLivree.toFixed(0)}%`} value={r.profitLivre} muted />
-                  <PnlRow label="Pub" value={-r.pub} neg />
-                  <PnlRow label="Emballage" sub={`${activePnl.deliveredParcels} colis × ${activePnl.packagingRate} DH`} value={-r.emballage} neg />
-                  {r.retours > 0 && <PnlRow label="Retours / échanges" sub="frais livraison retour" value={-r.retours} neg />}
-                  {(r.depotVente ?? 0) !== 0 && <PnlRow label="Dépôt-vente" sub="part du partenaire + frais du partenariat" value={-(r.depotVente ?? 0)} neg />}
-                  <PnlRow label="Marge nette" sub="après pub, emballage, retours" value={r.net} total pct={r.marginPct} />
+                  <PnlRow label="CA livré" sub="payé par les clientes pour les produits, hors livraison facturée" value={r.caLivre} prev={pp?.caLivre} />
+                  {r.coutProduits != null && <PnlRow label="Coût d'achat des produits" sub="prix d'achat figé au moment de la commande" value={-r.coutProduits} prev={pp ? -pp.coutProduits : undefined} neg />}
+                  {r.livraisonFrais != null && <PnlRow label="Livraison & frais de commande" sub="coût Sendit − livraison facturée, commissions" value={-r.livraisonFrais} prev={pp ? -pp.livraisonFrais : undefined} neg />}
+                  <PnlRow label="= Marge brute" sub={`avant pub, emballage, retours · ${r.margeLivree.toFixed(0)} % du CA`} value={r.profitLivre} prev={pp?.profitLivre} subtotal />
+                  <PnlRow label="Pub" sub="dépense Meta de la période" value={-r.pub} prev={pp ? -pp.pub : undefined} neg />
+                  <PnlRow label="Emballage" sub={`${activePnl.deliveredParcels} colis × ${activePnl.packagingRate} DH`} value={-r.emballage} prev={pp ? -pp.emballage : undefined} neg />
+                  {(r.retours > 0 || (pp?.retours ?? 0) > 0) && <PnlRow label="Retours / échanges" sub="frais livraison retour" value={-r.retours} prev={pp ? -pp.retours : undefined} neg />}
+                  {((r.depotVente ?? 0) !== 0 || (pp?.depotVente ?? 0) !== 0) && (() => {
+                    const d = activePnl.depot
+                    const perte = (d?.partnerShare ?? 0) < 0
+                    const sous = `${perte ? 'il absorbe sa part de la perte sur ses produits' : 'sa part du bénéfice de ses produits'}${d && d.frais > 0 ? ` + frais du partenariat ${mad(d.frais)}` : ''}`
+                    return <PnlRow label="Part du partenaire (dépôt-vente)" sub={sous} href="/partenaires" value={-(r.depotVente ?? 0)} prev={pp ? -pp.depotVente : undefined} neg />
+                  })()}
+                  <PnlRow label="Marge nette" sub="ce qui reste à Shine après tout" value={r.net} prev={pp?.net} total pct={r.marginPct} />
+                  {pp && <p style={{ margin: '6px 0 0', fontSize: 10.5, color: 'var(--tx-faint)' }}>Colonne grise : {compareLabel}, mêmes règles de calcul.</p>}
                 </div>
                 <div className="card-modern g-stagger" style={{ background: 'var(--bg-1)', padding: 16 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)', marginBottom: 10 }}>🟢 {byDeliv ? 'Trésorerie' : 'Cash cohorte'} <span style={{ fontWeight: 500, color: 'var(--tx-faint)', fontSize: 11 }}>· {byDeliv ? 'cash réel' : 'attribution Sendit'}</span></div>
                   <PnlRow label="Cash encaissé" sub={`COD ${mad(dEncaisse)}${dBank > 0 ? ` + virements ${mad(dBank)}` : ''} − frais Sendit ${mad(dFees)}`} value={t.encaisse} />
+                  {(activePnl.depot?.avances ?? 0) > 0 && <PnlRow label="Avance reçue du partenaire" sub="son argent, confié à Shine — il lui est dû" href="/partenaires" value={activePnl.depot?.avances ?? 0} />}
                   <PnlRow label="Achats fournisseur" value={-t.achats} neg />
                   <PnlRow label="Pub" value={-t.pub} neg />
                   <PnlRow label="Emballage" sub={t.emballageEstime ? 'estimé · colis × taux' : 'réel loggé'} value={-t.emballage} neg />
                   {t.frais > 0 && <PnlRow label="Dépenses (frais divers)" value={-t.frais} neg />}
                   {t.retours > 0 && <PnlRow label="Retours / échanges" sub="frais livraison retour" value={-t.retours} neg />}
-                  {(t.depotVente ?? 0) !== 0 && <PnlRow label="Dépôt-vente" sub="versé au partenaire + frais payés par Shine" value={-(t.depotVente ?? 0)} neg />}
-                  <PnlRow label="Cash net généré" value={t.net} total />
+                  {(activePnl.depot?.versements ?? 0) > 0 && <PnlRow label="Versé au partenaire" href="/partenaires" value={-(activePnl.depot?.versements ?? 0)} neg />}
+                  {(activePnl.depot?.fraisPayesShine ?? 0) > 0 && <PnlRow label="Frais du partenariat payés par Shine" value={-(activePnl.depot?.fraisPayesShine ?? 0)} neg />}
+                  <PnlRow label="Cash net généré" sub="entré moins sorti sur la période" value={t.net} total />
+                  {(activePnl.depot?.duPartenaire ?? 0) !== 0 && (
+                    <p style={{ margin: '8px 0 0', fontSize: 11.5, lineHeight: 1.5, color: 'var(--tx-lo)' }}>
+                      À rendre au partenaire : <b style={{ color: 'var(--tx-hi)' }}>{mad(activePnl.depot?.duPartenaire ?? 0)} MAD</b> (son stock vendu, ses avances, sa part) — solde depuis le début, à garder de côté · <Link href="/partenaires" style={{ color: 'var(--blue)' }}>relevé</Link>
+                    </p>
+                  )}
                 </div>
               </div>
+              <Performance r={r} pp={pp} commandes={activeAnalytics.orders} compareLabel={compareLabel} />
             </div>
           )
         })()}
@@ -1058,19 +1080,84 @@ function ReconciliationPanel({ data, periodLabel, basisLabel, lastPulledAt, chec
   )
 }
 
-function PnlRow({ label, value, sub, neg, muted, total, pct }: { label: string; value: number; sub?: string; neg?: boolean; muted?: boolean; total?: boolean; pct?: number }) {
-  const fmt = (v: number) => `${v < 0 ? '−' : ''}${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(Math.abs(v))}`
-  const color = total ? (value >= 0 ? 'var(--green)' : 'var(--red, #dc2626)') : neg ? 'var(--tx-mid)' : muted ? 'var(--tx-mid)' : 'var(--tx-hi)'
+function PnlRow({ label, value, sub, neg, muted, total, subtotal, pct, href, prev }: { label: string; value: number; sub?: string; neg?: boolean; muted?: boolean; total?: boolean; subtotal?: boolean; pct?: number; href?: string; prev?: number }) {
+  const fmt = (v: number) => `${v < 0 ? '−' : v > 0 && neg ? '+' : ''}${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(Math.abs(v))}`
+  const color = total ? (value >= 0 ? 'var(--green)' : 'var(--red, #dc2626)') : subtotal ? 'var(--tx-hi)' : neg ? 'var(--tx-mid)' : muted ? 'var(--tx-mid)' : 'var(--tx-hi)'
+  const sep = total || subtotal
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, padding: total ? '10px 0 0' : '4px 0', marginTop: total ? 4 : 0, borderTop: total ? '1px solid var(--line-soft)' : undefined }}>
+    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, padding: sep ? '8px 0 4px' : '4px 0', marginTop: sep ? 4 : 0, borderTop: total ? '1px solid var(--line-soft)' : subtotal ? '1px dashed var(--line-soft)' : undefined }}>
       <div style={{ minWidth: 0 }}>
-        <span style={{ display: 'block', fontSize: total ? 13 : 12.5, fontWeight: total ? 700 : 500, color: total ? 'var(--tx-hi)' : 'var(--tx-mid)' }}>{label}</span>
+        <span style={{ display: 'block', fontSize: total ? 13 : 12.5, fontWeight: total || subtotal ? 700 : 500, color: total || subtotal ? 'var(--tx-hi)' : 'var(--tx-mid)' }}>
+          {href ? <Link href={href} style={{ color: 'inherit', textDecoration: 'underline', textDecorationColor: 'var(--line-soft)', textUnderlineOffset: 3 }}>{label}</Link> : label}
+        </span>
         {sub && <span style={{ display: 'block', fontSize: 10.5, lineHeight: 1.35, color: 'var(--tx-faint)', marginTop: 1 }}>{sub}</span>}
       </div>
       <span className="num" style={{ fontSize: total ? 16 : 13, fontWeight: total ? 700 : 600, color, whiteSpace: 'nowrap' }}>
         {fmt(value)}<span style={{ fontSize: 10, color: 'var(--tx-faint)', marginLeft: 3 }}>MAD</span>
         {total && pct !== undefined && <span style={{ fontSize: 11, color: 'var(--tx-faint)', marginLeft: 6 }}>{pct.toFixed(0)}%</span>}
+        {prev !== undefined && <span title="Période de comparaison" style={{ display: 'inline-block', minWidth: 54, textAlign: 'right', fontSize: 10.5, fontWeight: 500, color: 'var(--tx-faint)', marginLeft: 8 }}>{fmt(prev)}</span>}
       </span>
+    </div>
+  )
+}
+
+/**
+ * LA PUB SE PAIE-T-ELLE ? Les chiffres par commande et le seuil de rentabilite
+ * de la pub. ROAS d'equilibre = 1 / (marge brute − emballage) en part du CA :
+ * en dessous, chaque dirham de pub coute plus qu'il ne rapporte.
+ */
+type LignesPnl = { caLivre: number; profitLivre: number; pub: number; emballage: number; net: number }
+function Performance({ r, pp, commandes, compareLabel }: { r: LignesPnl; pp: (LignesPnl & { commandes: number }) | null; commandes: number; compareLabel: string }) {
+  const calc = (x: LignesPnl, n: number) => {
+    const contrib = x.caLivre > 0 ? (x.profitLivre - x.emballage) / x.caLivre : 0
+    return {
+      panier: n > 0 ? x.caLivre / n : null,
+      pubParCommande: n > 0 ? x.pub / n : null,
+      margeParCommande: n > 0 ? (x.profitLivre - x.emballage) / n : null,
+      netParCommande: n > 0 ? x.net / n : null,
+      pubPct: x.caLivre > 0 ? (x.pub / x.caLivre) * 100 : null,
+      roas: x.pub > 0 ? x.caLivre / x.pub : null,
+      roasEquilibre: contrib > 0 ? 1 / contrib : null,
+      caEquilibre: contrib > 0 ? x.pub / contrib : null,
+    }
+  }
+  const c = calc(r, commandes)
+  const p = pp ? calc(pp, pp.commandes) : null
+  const m = (v: number | null) => (v == null ? '—' : `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(Math.round(v))} MAD`)
+  const x = (v: number | null) => (v == null ? '—' : `${v.toFixed(2)}x`)
+  const pc = (v: number | null) => (v == null ? '—' : `${Math.round(v)} %`)
+  const rentable = c.roas != null && c.roasEquilibre != null ? c.roas >= c.roasEquilibre : null
+  const tuiles: { label: string; val: string; prev?: string; aide: string; alerte?: boolean }[] = [
+    { label: 'Panier moyen', val: m(c.panier), prev: p ? m(p.panier) : undefined, aide: 'CA livré ÷ commandes livrées' },
+    { label: 'Pub par commande livrée', val: m(c.pubParCommande), prev: p ? m(p.pubParCommande) : undefined, aide: 'pub ÷ commandes livrées : ce que coûte une vente', alerte: c.pubParCommande != null && c.margeParCommande != null && c.pubParCommande > c.margeParCommande },
+    { label: 'Marge par commande', val: m(c.margeParCommande), prev: p ? m(p.margeParCommande) : undefined, aide: 'marge brute − emballage, par commande, avant pub' },
+    { label: 'Résultat par commande', val: m(c.netParCommande), prev: p ? m(p.netParCommande) : undefined, aide: 'marge nette ÷ commandes livrées', alerte: (c.netParCommande ?? 0) < 0 },
+    { label: 'Pub en % du CA', val: pc(c.pubPct), prev: p ? pc(p.pubPct) : undefined, aide: 'part du CA livré dépensée en pub', alerte: (c.pubPct ?? 0) > 25 },
+    { label: 'ROAS réel / équilibre', val: `${x(c.roas)} / ${x(c.roasEquilibre)}`, prev: p ? `${x(p.roas)} / ${x(p.roasEquilibre)}` : undefined, aide: 'CA ÷ pub, face au ROAS minimum pour ne pas perdre (1 ÷ taux de marge après emballage)', alerte: rentable === false },
+  ]
+  return (
+    <div className="card-modern" style={{ background: 'var(--bg-1)', padding: 16, marginTop: 12 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--tx-hi)' }}>📊 Performance par commande</div>
+        {p && <span style={{ fontSize: 11, color: 'var(--tx-faint)' }}>en gris : {compareLabel}</span>}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10 }}>
+        {tuiles.map((t) => (
+          <div key={t.label} title={t.aide} style={{ padding: '10px 12px', borderRadius: 10, background: t.alerte ? 'var(--red-bg)' : 'var(--bg-2)', border: '1px solid var(--line-soft)' }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx-lo)' }}>{t.label}</div>
+            <div className="num" style={{ fontSize: 17, fontWeight: 700, color: t.alerte ? 'var(--red, #dc2626)' : 'var(--tx-hi)', marginTop: 3, whiteSpace: 'nowrap' }}>{t.val}</div>
+            {t.prev !== undefined && <div className="num" style={{ fontSize: 10.5, color: 'var(--tx-faint)', marginTop: 1 }}>{t.prev}</div>}
+            <div style={{ fontSize: 10.5, lineHeight: 1.35, color: 'var(--tx-faint)', marginTop: 4 }}>{t.aide}</div>
+          </div>
+        ))}
+      </div>
+      {c.caEquilibre != null && r.pub > 0 && (
+        <p style={{ margin: '10px 0 0', fontSize: 12, lineHeight: 1.55, color: rentable ? 'var(--tx-mid)' : 'var(--red, #dc2626)' }}>
+          {rentable
+            ? <>La pub est rentable : chaque dirham dépensé rapporte {x(c.roas)} de CA, au-dessus du seuil de {x(c.roasEquilibre)}.</>
+            : <>Pour couvrir {m(r.pub)} de pub avec la marge actuelle, il faut <b>{m(c.caEquilibre)}</b> de CA livré — il en manque <b>{m(Math.max(0, c.caEquilibre - r.caLivre))}</b>. Soit baisser la pub, soit monter la marge ou le panier.</>}
+        </p>
+      )}
     </div>
   )
 }
@@ -1266,7 +1353,7 @@ function useCountUp(target: number, duration = 650) {
   return v
 }
 
-function HeroTile({ label, amount, sub, delta, deltaLabel, tone, icon }: { label: string; amount: number; sub?: string; delta?: number | null; deltaLabel?: string; tone: 'rose' | 'green'; icon: React.ReactNode }) {
+function HeroTile({ label, amount, sub, delta, deltaMad, deltaLabel, tone, icon }: { label: string; amount: number; sub?: string; delta?: number | null; deltaMad?: number | null; deltaLabel?: string; tone: 'rose' | 'green'; icon: React.ReactNode }) {
   const color = tone === 'rose' ? 'var(--rose-bright)' : 'var(--green)'
   const iconBg = tone === 'rose' ? 'var(--rose-bg)' : 'var(--green-bg)'
   const shown = useCountUp(amount)
@@ -1283,21 +1370,22 @@ function HeroTile({ label, amount, sub, delta, deltaLabel, tone, icon }: { label
           <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx-mid)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
         </div>
         {delta != null && <DeltaPill value={delta} />}
+        {deltaMad != null && <DeltaPill value={deltaMad} unit="MAD" />}
       </div>
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 7 }}>
         <span style={{ fontSize: 34, fontWeight: 700, letterSpacing: '-0.035em', lineHeight: 1, fontVariantNumeric: 'tabular-nums', color: amount < 0 ? 'var(--red)' : 'var(--tx-hi)' }}>{display}</span>
         <span style={{ fontSize: 13, color: 'var(--tx-faint)', fontWeight: 500 }}>MAD</span>
       </div>
-      {(delta != null || sub) && (
+      {(delta != null || deltaMad != null || sub) && (
         <div style={{ marginTop: 9, fontSize: 12, color: 'var(--tx-faint)' }}>
-          {delta != null && deltaLabel ? `vs ${deltaLabel}` : sub}
+          {(delta != null || deltaMad != null) && deltaLabel ? `vs ${deltaLabel}` : sub}
         </div>
       )}
     </div>
   )
 }
 
-function DeltaPill({ value, small }: { value: number; small?: boolean }) {
+function DeltaPill({ value, small, unit }: { value: number; small?: boolean; unit?: 'MAD' }) {
   const up = value >= 0
   return (
     <span style={{
@@ -1306,7 +1394,7 @@ function DeltaPill({ value, small }: { value: number; small?: boolean }) {
       color: up ? 'var(--green)' : 'var(--red)', background: up ? 'var(--green-bg)' : 'var(--red-bg)',
     }}>
       {up ? <ArrowUp style={{ width: small ? 10 : 12, height: small ? 10 : 12 }} /> : <ArrowDown style={{ width: small ? 10 : 12, height: small ? 10 : 12 }} />}
-      {up ? '+' : ''}{value.toFixed(1)}%
+      {up ? '+' : '−'}{unit === 'MAD' ? `${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(Math.abs(value))} MAD` : `${Math.abs(value).toFixed(1)}%`}
     </span>
   )
 }
