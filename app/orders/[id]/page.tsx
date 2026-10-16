@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowLeft, Check, Clock, Edit3, MoreHorizontal, Truck, Wallet, X, ChevronDown, RefreshCw, Package, XCircle, AlertCircle, Star } from 'lucide-react'
+import { ArrowLeft, Check, Clock, Edit3, MoreHorizontal, Truck, Wallet, X, RefreshCw, Package, XCircle, AlertCircle, Star, Trash2 } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -106,6 +106,33 @@ export default function OrderDetailPage() {
   useEffect(() => { void loadCatalog() }, [])
 
   const [itemForm, setItemForm] = useState({ productId: '', qty: '1', price: '' })
+  const [itemDrafts, setItemDrafts] = useState<Record<number, { quantity: string; price: string }>>({})
+
+  async function patchItem(itemId: number, draft: { quantity: string; price: string }) {
+    const res = await fetch(`/api/ops/orders/${orderId}/items`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        itemId,
+        quantity: Number(draft.quantity),
+        price: Number(draft.price),
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) throw new Error(data.error || 'Échec de la modification')
+    return data as { warning?: string | null }
+  }
+
+  async function handleUpdateItem(itemId: number) {
+    const draft = itemDrafts[itemId]
+    if (!draft) return
+    setActionLoading(true); setActionError(''); setActionSuccess('')
+    try {
+      const data = await patchItem(itemId, draft)
+      setActionSuccess(data.warning ? `Ligne mise à jour. ${data.warning}` : 'Ligne mise à jour.')
+      await fetchOrder()
+    } catch (e: any) { setActionError(e.message) } finally { setActionLoading(false) }
+  }
 
   async function handleAddItem() {
     if (!itemForm.productId) return
@@ -122,21 +149,23 @@ export default function OrderDetailPage() {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Échec de l\'ajout')
-      setActionSuccess(data.costMissing
+      const success = data.costMissing
         ? 'Produit ajouté — ⚠️ ce produit n\'a pas de coût renseigné (marge encore biaisée : ajoute son coût dans Produits).'
-        : 'Produit ajouté ✓ — marge recalculée.')
+        : 'Produit ajouté — marge recalculée.'
+      setActionSuccess(data.warning ? `${success} ${data.warning}` : success)
       setItemForm({ productId: '', qty: '1', price: '' })
       await fetchOrder()
     } catch (e: any) { setActionError(e.message) } finally { setActionLoading(false) }
   }
 
   async function handleRemoveItem(itemId: number) {
+    if (!window.confirm('Retirer cet article de la commande ?')) return
     setActionLoading(true); setActionError(''); setActionSuccess('')
     try {
       const res = await fetch(`/api/ops/orders/${orderId}/items?itemId=${itemId}`, { method: 'DELETE' })
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Échec du retrait')
-      setActionSuccess('Produit retiré ✓')
+      setActionSuccess(data.warning ? `Produit retiré. ${data.warning}` : 'Produit retiré.')
       await fetchOrder()
     } catch (e: any) { setActionError(e.message) } finally { setActionLoading(false) }
   }
@@ -148,6 +177,11 @@ export default function OrderDetailPage() {
       if (!res.ok) throw new Error('Failed to fetch order')
       const data = (await res.json()) as Order
       setOrder(data)
+      setItemDrafts(Object.fromEntries(
+        (data.items || [])
+          .filter((item: any) => item.id)
+          .map((item: any) => [item.id, { quantity: String(item.quantity), price: String(item.price) }]),
+      ))
       setEditForm({
         deliveryName: data.deliveryName || '',
         deliveryPhone: data.deliveryPhone || '',
@@ -420,6 +454,19 @@ export default function OrderDetailPage() {
     setActionSuccess('')
 
     try {
+      const changedItems = (order.items || []).filter((item: any) => {
+        const draft = itemDrafts[item.id]
+        return draft && (
+          Number(draft.quantity) !== Number(item.quantity)
+          || Number(draft.price) !== Number(item.price)
+        )
+      })
+      const itemWarnings: string[] = []
+      for (const item of changedItems) {
+        const result = await patchItem(item.id, itemDrafts[item.id])
+        if (result.warning) itemWarnings.push(result.warning)
+      }
+
       const payload: Record<string, string> = { ...editForm }
       if (editForm.paymentMethod !== 'VIREMENT') {
         delete payload.paidAmount
@@ -432,9 +479,12 @@ export default function OrderDetailPage() {
         body: JSON.stringify(payload),
       })
 
-      if (!res.ok) throw new Error('Failed to update order')
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.error || data.details || 'Échec de la modification')
 
-      setActionSuccess('Order updated successfully')
+      setActionSuccess(itemWarnings.length > 0
+        ? `Commande mise à jour. ${itemWarnings.join(' ')}`
+        : 'Commande mise à jour.')
       setIsEditing(false)
       await fetchOrder()
     } catch (err: any) {
@@ -830,6 +880,11 @@ export default function OrderDetailPage() {
                 className="btn"
                 onClick={() => {
                   setIsEditing(false)
+                  setItemDrafts(Object.fromEntries(
+                    (order.items || [])
+                      .filter((item: any) => item.id)
+                      .map((item: any) => [item.id, { quantity: String(item.quantity), price: String(item.price) }]),
+                  ))
                   setEditForm({
                     deliveryName: order.deliveryName || '',
                     deliveryPhone: order.deliveryPhone || '',
@@ -1015,12 +1070,17 @@ export default function OrderDetailPage() {
               <div className="table-scroll">
                 <table className="tbl">
                   <thead>
-                    <tr><th>Product</th><th className="r">Unit price</th><th className="r">Cost</th><th className="r">Qty</th><th className="r">Total</th><th className="r">Profit</th><th></th></tr>
+                    <tr><th>Product</th><th className="r">Unit price</th><th className="r">Cost</th><th className="r">Qty</th><th className="r">Total</th><th className="r">Profit</th>{isEditing && <th aria-label="Actions"></th>}</tr>
                   </thead>
                   <tbody>
                     {order.items?.map((item, index) => {
-                      const total = toNumber(item.price) * toNumber(item.quantity)
-                      const profit = (toNumber(item.price) - toNumber(item.unitCost)) * toNumber(item.quantity)
+                      const draft = itemDrafts[item.id] || { quantity: String(item.quantity), price: String(item.price) }
+                      const lineQuantity = isEditing ? toNumber(draft.quantity) : toNumber(item.quantity)
+                      const linePrice = isEditing ? toNumber(draft.price) : toNumber(item.price)
+                      const total = linePrice * lineQuantity
+                      const profit = (linePrice - toNumber(item.unitCost)) * lineQuantity
+                      const lineChanged = Number(draft.quantity) !== Number(item.quantity)
+                        || Number(draft.price) !== Number(item.price)
                       return (
                         <tr key={item.id || index}>
                           <td>
@@ -1032,20 +1092,77 @@ export default function OrderDetailPage() {
                               </div>
                             </div>
                           </td>
-                          <td className="r num">{formatMoney(item.price)}</td>
+                          <td className="r num">
+                            {isEditing ? (
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                aria-label={`Prix unitaire de ${item.productName}`}
+                                value={draft.price}
+                                onChange={(e) => setItemDrafts((current) => ({
+                                  ...current,
+                                  [item.id]: { ...draft, price: e.target.value },
+                                }))}
+                                style={{ width: 82, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--line)', textAlign: 'right' }}
+                              />
+                            ) : formatMoney(item.price)}
+                          </td>
                           <td className="r num tx-lo">{formatMoney(item.unitCost)}</td>
-                          <td className="r num">x{item.quantity}</td>
+                          <td className="r num">
+                            {isEditing ? (
+                              <input
+                                type="number"
+                                min="1"
+                                max="999"
+                                step="1"
+                                aria-label={`Quantité de ${item.productName}`}
+                                value={draft.quantity}
+                                onChange={(e) => setItemDrafts((current) => ({
+                                  ...current,
+                                  [item.id]: { ...draft, quantity: e.target.value },
+                                }))}
+                                style={{ width: 58, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--line)', textAlign: 'right' }}
+                              />
+                            ) : `x${item.quantity}`}
+                          </td>
                           <td className="r num t-strong">{formatMoney(total)}</td>
                           <td className={`r num ${profit >= 0 ? 'pos' : 'neg'}`}>{profit >= 0 ? '+' : ''}{formatMoney(profit)}</td>
-                          <td className="r">{item.id ? <button onClick={() => handleRemoveItem(item.id)} disabled={actionLoading} title="Retirer" style={{ border: 'none', background: 'transparent', color: '#e11d74', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button> : null}</td>
+                          {isEditing && (
+                            <td className="r">
+                              <div style={{ display: 'inline-flex', gap: 4 }}>
+                                <button
+                                  type="button"
+                                  className="btn icon"
+                                  onClick={() => handleUpdateItem(item.id)}
+                                  disabled={!lineChanged || actionLoading}
+                                  title="Enregistrer la ligne"
+                                  aria-label={`Enregistrer ${item.productName}`}
+                                  style={{ width: 30, height: 30, opacity: lineChanged ? 1 : 0.4 }}
+                                >
+                                  <Check size={15} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn icon"
+                                  onClick={() => handleRemoveItem(item.id)}
+                                  disabled={actionLoading}
+                                  title="Retirer l’article"
+                                  aria-label={`Retirer ${item.productName}`}
+                                  style={{ width: 30, height: 30, color: 'var(--red)' }}
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
+                            </td>
+                          )}
                         </tr>
                       )
                     })}
                   </tbody>
                 </table>
               </div>
-              {/* Éditeur de lignes : ajouter le vrai produit (son coût -> marge réelle) */}
-              <div style={{ padding: '10px 12px', borderTop: '1px solid #eee', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              {isEditing && <div style={{ padding: '10px 12px', borderTop: '1px solid #eee', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <select
                   value={itemForm.productId}
                   onChange={(e) => {
@@ -1065,7 +1182,7 @@ export default function OrderDetailPage() {
                 <button onClick={handleAddItem} disabled={!itemForm.productId || actionLoading} className="btn" style={{ background: '#e11d74', color: '#fff', border: 'none', opacity: (!itemForm.productId || actionLoading) ? 0.5 : 1 }}>
                   {actionLoading ? '…' : 'Ajouter'}
                 </button>
-              </div>
+              </div>}
             </div>
 
             <div className="panel">

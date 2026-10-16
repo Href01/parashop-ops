@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "type-check": "tsc --noEmit",
     "test:analytics": "node --import tsx --test tests/analytics/*.test.ts",
+    "test:orders": "node --import tsx --test tests/orders/*.test.ts",
     "test:seo": "node --import tsx --test tests/seo/*.test.ts",
     "compute-metrics": "node scripts/compute-product-metrics.js"
   },
