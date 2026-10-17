@@ -2,7 +2,6 @@ import 'server-only'
 import pool from '@/lib/db'
 import { performancePubs, strategie } from './agent'
 import { verdicts } from './conseils'
-import { reveillerDirecteur } from './declencher'
 import { AMBIANCES, A_MONTRER, BORNES, etapeDirection, piecesValides, type Message, type Palier, ETAPES_SITE, FONDS, OBJECTIFS, OFFRES, RECETTES, LIBELLES_SITE, LivraisonDirection, MOUVEMENTS, OptionLivreeSchema, RetoucheSchema, STYLES, TRANSITIONS, VEUT_SITE, consignesBrief, sujetDemande, validerDemande, verifierLivraison, verifierMontage, verifierOption, type DemandeDirection, type OptionLivree, type Retouche, type Style, type TypeDirection } from './direction-model'
 import { capturesSite, charpentesRecentes, lecons, packsDe, reglesBoutique, type CapturesProduit } from './apprentissage'
 import { nuageShine, prechaufferClip, verifierClip } from './clips'
@@ -10,15 +9,15 @@ import { FORMATS_IMAGE } from './creatif-model'
 import { urlDetouree } from './reel-model'
 
 /**
- * LE DIRECTEUR ARTISTIQUE, COTE BOS. Claude ecrit les consignes, OpenAI peint.
+ * LE DIRECTEUR ARTISTIQUE, COTE BOS : la file de demandes « direction ».
  *
  * 1. Achraf envoie un brief (options ou carrousel, format, styles, qualite)
- *    → une demande « direction » dans la file de l'agent, et la routine est
- *    reveillee si le declencheur est configure (lib/ads/declencher.ts).
- * 2. La routine Claude reclame la demande, lit son contexte (vraies photos
+ *    → une demande « direction » entre dans la file et attend son repreneur
+ *    (l'equipe Paperclip ; l'ancienne routine Claude cloud a ete retiree).
+ * 2. Le repreneur reclame la demande, lit son contexte (vraies photos
  *    produit, creation, strategie, pubs qui marchent, directions passees),
  *    regarde les photos, ecrit les options ou les cartes et les livre ici.
- * 3. Elle fait generer chaque visuel (lib/ads/images.ts, option par option),
+ * 3. Il fait generer chaque visuel (lib/ads/images.ts, option par option),
  *    les regarde, regenere ceux qui sont rates, note son controle, et clot.
  */
 
@@ -49,7 +48,7 @@ export async function demanderDirection(entree: unknown, par: string | null) {
      RETURNING id, genre, sujet, statut, demande_le, creatif_id, parametres`,
     [sujetDemande(d), par, d.creatifId ?? null, JSON.stringify(d)])
   const demande = r.rows[0]
-  return { demande, lancee: await reveillerDirecteur(demande.id) }
+  return { demande, lancee: false }
 }
 
 type DemandeEnCours = { id: number; genre: string; statut: string; sujet: string; creatif_id: number | null; parametres: DemandeDirection; retouche: Retouche | null; demande_par: string | null; valide_le: string | null; echanges: Json[] }
@@ -300,12 +299,12 @@ async function demandeAValider(id: number) {
   if (x.statut !== 'a_valider') throw new Error('Cette proposition n’attend pas de réponse (elle est déjà reprise par le directeur artistique).')
 }
 
-/** Achraf repond : le directeur artistique reprend la discussion (tout de suite si le declencheur est branche). */
+/** Achraf repond : le directeur artistique reprend la discussion au prochain passage de son repreneur. */
 export async function repondreDirection(id: number, texte: string, par: string | null, jointes: unknown = []) {
   if (texte.trim().length < 2) throw new Error('Écris ta réponse.')
   await demandeAValider(id)
   await pool.query(`UPDATE "AdsAgentRequest" SET statut = 'en_attente', echanges = coalesce(echanges, '[]'::jsonb) || $2::jsonb WHERE id = $1`, [id, message('achraf', texte, { par, ...pieces(jointes) })])
-  return { id, lancee: await reveillerDirecteur(id) }
+  return { id, lancee: false }
 }
 
 /** Achraf valide (avec une derniere note, s'il veut) : la creation part. */
@@ -317,7 +316,7 @@ export async function validerDirection(id: number, texte: string, par: string | 
   const suite = palier === 'storyboard' ? 'filme le reste.' : 'lance la création.'
   const note = texte.trim() ? `✓ Validé${palier === 'storyboard' ? ' (storyboard)' : ''}. ${texte.trim()}` : `✓ Validé${palier === 'storyboard' ? ' (storyboard)' : ''} : ${suite}`
   await pool.query(`UPDATE "AdsAgentRequest" SET statut = 'en_attente', valide_le = now(), echanges = coalesce(echanges, '[]'::jsonb) || $2::jsonb WHERE id = $1`, [id, message('achraf', note, { par, valide: true, palier, ...pieces(jointes) })])
-  return { id, lancee: await reveillerDirecteur(id) }
+  return { id, lancee: false }
 }
 
 /** Achraf abandonne un brief pas encore cree (il en lancera un autre). */
@@ -483,7 +482,7 @@ export async function demanderRetouche(entree: unknown, par: string | null) {
     `INSERT INTO "AdsAgentRequest" (genre, sujet, demande_par, creatif_id, parametres) VALUES ('direction', $1, $2, $3, $4::jsonb)
      RETURNING id, genre, sujet, statut, demande_le, creatif_id, parametres`,
     [sujet, par, o.creatif_id, JSON.stringify({ retouche: p.data })])
-  return { demande: r.rows[0], lancee: await reveillerDirecteur(r.rows[0].id) }
+  return { demande: r.rows[0], lancee: false }
 }
 
 /** Le contexte d'une retouche : le plan vise, toute sa serie (pour rester coherent), la creation, les vrais produits. */
