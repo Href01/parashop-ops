@@ -41,13 +41,14 @@ avec `npm ci`, sans fichier `.env` sauf mention contraire.
 | `npm ci` | 601 packages, exit 0 |
 | `npx tsc --noEmit` | exit 0 |
 | `npm test` | **459/459 pass** |
-| `npx prisma validate` | schéma valide |
-| `npm run build` (sans secret) | passe le point de rupture précédent (`RESEND_API_KEY`) ; échoue ensuite sur le téléchargement `next/font/google` (réseau du runner), pas sur un fichier manquant |
+| `npx prisma validate` | non rejoué dans le dernier run : téléchargement du binaire Prisma bloqué par le runner |
+| `npm run build` (sans secret) | compilation + TypeScript OK ; passe le point de rupture `RESEND_API_KEY` ; échoue ensuite à la collecte de `/ar/marques/[brand]` faute de `DATABASE_URL` (`SASL: client password must be a string`) |
 
-Le build du site ne peut pas être validé de bout en bout dans cet environnement :
-le runner ne télécharge pas les polices Google au moment du build. À rejouer sur
-Vercel/CI. Le correctif Resend est vérifié par `tsc` et par le déplacement de
-l'échec (plus aucune erreur « Missing API key » à l'import).
+Le build du site ne peut pas être validé de bout en bout sans base : plusieurs
+pages prérendues interrogent la base (`DATABASE_URL`). Cet échec est attendu et
+ne signale pas un fichier manquant ; à rejouer sur Vercel/CI avec les secrets.
+Le correctif Resend est vérifié par `tsc`, par la suite de tests, et par le
+déplacement de l'échec (plus aucune erreur « Missing API key » à l'import).
 
 ---
 
@@ -165,8 +166,8 @@ Puis smoke tests du §6 du runbook.
 - `run-migration.js` n'est pas transactionnel : un fichier à la fois, clone
   d'abord.
 - Les deux fichiers legacy BOS ne sont pas idempotents.
-- Le build du site dépend de ressources réseau (Google Fonts) et de
-  `DATABASE_URL` pour les pages prérendues ; le valider sur Vercel/CI.
+- Le build du site dépend de `DATABASE_URL` pour les pages prérendues (et de
+  ressources réseau) ; le valider sur Vercel/CI avec les secrets.
 - `npm run lint` du BOS échoue déjà sur `main` (17 erreurs React Compiler) :
   hors périmètre de cette PR, à traiter séparément.
 
