@@ -134,7 +134,7 @@ présence avec les requêtes du §4 avant de les rejouer.
 
 ## 3. Inventaire — BOS (`parashop-ops`)
 
-**55 fichiers numérotés + 2 fichiers legacy non numérotés.** Les numéros `004`
+**53 fichiers numérotés + 2 fichiers legacy non numérotés (55 au total).** Les numéros `004`
 et `009` sont des trous volontaires. Ordre d'application : `001` → `055`, puis
 les deux legacy.
 
