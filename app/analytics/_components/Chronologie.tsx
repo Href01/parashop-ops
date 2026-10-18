@@ -105,6 +105,7 @@ export const SENS: Record<string, { label: string; famille: Famille }> = {
   DELIVERY_FEE_SHOWN:   { label: 'Voit les frais de livraison', famille: 'paiement' },
   ADD_PAYMENT_INFO:     { label: 'Saisit ses coordonnées', famille: 'paiement' },
   PROMO_CODE_APPLIED:   { label: 'Applique un code promo', famille: 'paiement' },
+  APPLY_PROMO_SUCCESS:  { label: 'Applique un code promo', famille: 'paiement' },
   PROMO_CODE_REMOVED:   { label: 'Retire un code promo', famille: 'paiement' },
   USE_POINTS:           { label: 'Utilise ses points', famille: 'paiement' },
   OTP_REQUESTED:        { label: 'Demande le code', famille: 'paiement' },
@@ -440,8 +441,12 @@ export function detail(e: Evenement): string | null {
       morceaux.push(({ review: 'panier', delivery: 'formulaire de livraison', promotions: 'codes et offres', benefits: 'avantages', verification: 'vérification du téléphone', confirmation: 'confirmation' } as Record<string, string>)[txt(p.block) || ''] || txt(p.block)); break
     case 'CHECKOUT_RESUMED':
       morceaux.push('coordonnées conservées dans cet onglet'); break
-    case 'CHECKOUT_SUBMIT_ATTEMPT':
-      morceaux.push(mad(p.finalTotal), 'pas encore une commande acceptée'); break
+    case 'CHECKOUT_SUBMIT_ATTEMPT': {
+      const n = nb(p.itemsCount) ?? nb(p.numItems)
+      if (n != null) morceaux.push(`${n} article${n > 1 ? 's' : ''}`)
+      morceaux.push(mad(p.finalTotal ?? p.value), 'tentative, pas encore une commande acceptée')
+      break
+    }
     case 'CHECKOUT_STOCK_BLOCKED':
       morceaux.push(p.reason === 'quantity_unavailable' ? 'quantité ou référence indisponible' : 'vérification du stock non terminée'); break
     case 'CHECKOUT_ABANDONED': {
@@ -471,6 +476,7 @@ export function detail(e: Evenement): string | null {
       break
     }
     case 'PROMO_CODE_APPLIED':
+    case 'APPLY_PROMO_SUCCESS':
       morceaux.push(txt(p.code), mad(p.discountAmount) ? `−${mad(p.discountAmount)}` : null)
       break
     case 'PROMO_CODE_REMOVED':
@@ -711,7 +717,7 @@ export function diagnosticBlockage(evenements: Evenement[]): Blocage | null {
     }
   }
 
-  if (a('PLACE_ORDER'))
+  if (a('PLACE_ORDER') || a('CHECKOUT_SUBMIT_ATTEMPT'))
     return { quoi: 'A envoyé la commande, mais aucune confirmation n’est revenue — à vérifier côté serveur', montant: valeurPanier }
   if (a('ADD_PAYMENT_INFO') || a('BEGIN_CHECKOUT') || a('CLICK_CHECKOUT_FROM_CART'))
     return { quoi: 'Paiement démarré, sans commande enregistrée dans cette session', montant: valeurPanier }
@@ -770,7 +776,7 @@ export function checkoutAttempts(events: Evenement[]) {
     }
     if (event.name === 'CHECKOUT_FIELD_RECOVERED') attempt.recovered++
     if (event.name === 'CHECKOUT_RESUMED') attempt.resumed = true
-    if (event.name === 'PURCHASE_SUCCESS') attempt.ordered = true
+    if (event.name === 'PURCHASE_SUCCESS' || event.name === 'ORDER_CREATED') attempt.ordered = true
     if (event.name === 'CHECKOUT_EXITED') attempt.exited = true
     if (typeof p.elapsedMs === 'number' && Number.isFinite(p.elapsedMs)) attempt.elapsedMs = Math.max(attempt.elapsedMs, p.elapsedMs)
     attempts.set(id, attempt)
