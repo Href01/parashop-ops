@@ -1,0 +1,22 @@
+#!/bin/sh
+# Hook pre-push versionne — NON active par defaut.
+#
+# Bloque le push si le commit de tete n'a pas l'identite autorisee
+# (auteur et committer = mekouar01@gmail.com). Vercel ne controle que le
+# commit de tete : c'est ce que ce hook verifie.
+#
+# Activation (accord Achraf via la PR) :
+#   git config --local core.hooksPath .githooks
+# Rollback :
+#   git config --local --unset core.hooksPath
+#
+# Audit complet de la branche avant push :
+#   node scripts/check-git-identity.mjs --range
+
+node scripts/check-git-identity.mjs
+status=$?
+
+if [ "$status" -ne 0 ]; then
+  echo "push bloque : identite git non conforme (voir docs/GIT_IDENTITY.md)" >&2
+  exit 1
+fi

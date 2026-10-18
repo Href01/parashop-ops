@@ -1,0 +1,2 @@
+# Les hooks sont executes via sh : forcer LF pour eviter un shebang CRLF sous Windows.
+.githooks/* text eol=lf
