@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 import { cachedAnalytics } from '@/lib/analytics-cache'
 import { analyticsError, analyticsQuery } from '@/lib/analytics/db'
+import { canonicalEventNameSql, canonicalFunnelSteps, sourceEventNames } from '@/lib/analytics/events'
+import { countFunnel } from '@/lib/analytics/funnel'
 import { SESSION_BOT_FILTER_CLAUSE, TZ } from '@/lib/analytics/metrics'
 
 /**
@@ -28,7 +30,7 @@ export const ETAPES = {
   BEGIN_CHECKOUT: 'Checkout démarré',
   DELIVERY_CITY_SELECTED: 'Ville choisie',
   ADD_PAYMENT_INFO: 'Coordonnées saisies',
-  PLACE_ORDER: 'Commande envoyée',
+  CHECKOUT_SUBMIT_ATTEMPT: 'Commande envoyée',
   PURCHASE_SUCCESS: 'Commande acceptée',
 } as const
 
@@ -50,8 +52,11 @@ const dateEv = `("createdAt" AT TIME ZONE '${TZ}')::date`
  */
 async function entonnoir(etapes: string[], debut: string, fin: string, fenetreMin: number) {
   type Ev = { sessionId: string; name: string; at: Date; dansPeriode: boolean }
+  /* Le WHERE filtre les anciens ET les nouveaux noms (index sur `name`), puis
+     le SELECT les ramene au nom canonique. Une session qui porte a la fois
+     PLACE_ORDER et CHECKOUT_SUBMIT_ATTEMPT ne produit donc qu'une marche. */
   const r = await analyticsQuery<Ev>(`
-    SELECT e."sessionId", e.name, e."createdAt" AS at,
+    SELECT e."sessionId", ${canonicalEventNameSql('e')} AS name, e."createdAt" AS at,
            ${dateEv.replaceAll('"createdAt"', 'e."createdAt"')} BETWEEN $1::date AND $2::date AS "dansPeriode"
     FROM "AnalyticsEvent" e
     LEFT JOIN "AnalyticsSession" s ON s."sessionId" = e."sessionId"
@@ -59,56 +64,11 @@ async function entonnoir(etapes: string[], debut: string, fin: string, fenetreMi
       AND (e."createdAt" AT TIME ZONE '${TZ}') >= $1::date
       AND (e."createdAt" AT TIME ZONE '${TZ}') < $2::date + interval '1 day' + ($4 * interval '1 minute')
       ${SESSION_BOT_FILTER_CLAUSE}
-    ORDER BY e."sessionId", e."createdAt", e.id`, [debut, fin, etapes, fenetreMin])
+    ORDER BY e."sessionId", e."createdAt", e.id`, [debut, fin, sourceEventNames(etapes), fenetreMin])
 
-  const parSession = new Map<string, Ev[]>()
-  for (const row of r.rows) {
-    const liste = parSession.get(row.sessionId) ?? []
-    liste.push(row)
-    parSession.set(row.sessionId, liste)
-  }
-  const comptes = etapes.map(() => 0)
-  const delais = etapes.map(() => [] as number[])
-  const fenetreMs = fenetreMin * 60_000
-
-  for (const evs of parSession.values()) {
-    let meilleur: number[] = []
-    const departs = evs.map((e, i) => e.name === etapes[0] && e.dansPeriode ? i : -1).filter((i) => i >= 0)
-    for (const departIndex of departs) {
-      let index = departIndex
-      const temps = [new Date(evs[index].at).getTime()]
-      for (let i = 1; i < etapes.length; i++) {
-        let suivant = -1
-        for (let k = index + 1; k < evs.length; k++) {
-          const t = new Date(evs[k].at).getTime()
-          if (t - temps[0] > fenetreMs) break
-          if (evs[k].name === etapes[i]) { suivant = k; break }
-        }
-        if (suivant < 0) break
-        index = suivant
-        temps.push(new Date(evs[index].at).getTime())
-      }
-      if (temps.length > meilleur.length) meilleur = temps
-      if (meilleur.length === etapes.length) break
-    }
-    for (let i = 0; i < meilleur.length; i++) {
-      comptes[i]++
-      if (i > 0) delais[i].push((meilleur[i] - meilleur[i - 1]) / 1000)
-    }
-  }
-
-  const mediane = (valeurs: number[]): number => {
-    if (!valeurs.length) return 0
-    const v = [...valeurs].sort((a, b) => a - b)
-    const i = Math.floor(v.length / 2)
-    return v.length % 2 ? v[i] : (v[i - 1] + v[i]) / 2
-  }
-  return etapes.map((e, i) => ({
-    evenement: e,
-    label: (ETAPES as Record<string, string>)[e] ?? e,
-    sessions: comptes[i],
-    /** Delai median depuis l'etape precedente, en secondes. */
-    delaiMedian: i === 0 ? null : mediane(delais[i]),
+  return countFunnel(r.rows, etapes, fenetreMin).map((etape) => ({
+    ...etape,
+    label: (ETAPES as Record<string, string>)[etape.evenement] ?? etape.evenement,
   }))
 }
 
@@ -455,8 +415,14 @@ export async function POST(request: NextRequest) {
 
     if (b?.type === 'entonnoir') {
       // Liste blanche stricte : seules les etapes du catalogue sont acceptees.
-      const etapes: string[] = (Array.isArray(b.etapes) ? b.etapes : [])
-        .filter((e: string) => typeof e === 'string' && e in ETAPES)
+      // Les anciens noms (PLACE_ORDER) sont ramenes au canonique AVANT le
+      // filtre, pour qu'un client non encore redeploye continue de fonctionner.
+      const etapes: string[] = canonicalFunnelSteps(
+        (Array.isArray(b.etapes) ? b.etapes : [])
+          .filter((e: unknown): e is string => typeof e === 'string')
+          .slice(0, 8),
+      )
+        .filter((e) => e in ETAPES)
         .slice(0, 8)
       if (etapes.length < 2) return NextResponse.json({ error: 'Au moins deux étapes' }, { status: 400 })
       const fenetre = Math.min(Math.max(Number(b.fenetreMin) || 1440, 1), 60 * 24 * 30)

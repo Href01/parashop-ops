@@ -18,7 +18,7 @@ import { BarreControle } from '../_components/Controls'
 import { useReport, interroger } from '../_components/useReport'
 import { Entonnoir, type EtapeEntonnoir } from '../_components/Charts'
 
-const DEFAUT = ['PRODUCT_VIEW_DETAIL', 'PRODUCT_ADD_TO_CART', 'BEGIN_CHECKOUT', 'ADD_PAYMENT_INFO', 'PLACE_ORDER']
+const DEFAUT = ['PRODUCT_VIEW_DETAIL', 'PRODUCT_ADD_TO_CART', 'BEGIN_CHECKOUT', 'ADD_PAYMENT_INFO', 'CHECKOUT_SUBMIT_ATTEMPT']
 
 const FENETRES = [
   { min: 15, label: '15 min' },
