@@ -2,7 +2,6 @@
 
 import {
   Bell,
-  Bot,
   Box,
   Calendar,
   ChartBar,
@@ -27,7 +26,6 @@ import {
   Warehouse,
   X,
   Handshake,
-  Clapperboard,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import Link from 'next/link'
@@ -83,8 +81,6 @@ const sections: Array<{ label: string; items: NavItem[] }> = [
     label: 'Croissance',
     items: [
       { label: 'Campagnes', href: '/ads', icon: Megaphone },
-      { label: 'Agent Meta Ads', href: '/ads/agent', icon: Bot },
-      { label: 'Studio créatif', href: '/ads/studio', icon: Clapperboard },
       { label: 'Événements', href: '/events', icon: Calendar },
       { label: 'Contenu', href: '/content', icon: Sparkles },
     ],
@@ -112,7 +108,7 @@ export default function BosShell({
   crumb,
   children,
 }: {
-  active: 'dashboard' | 'intelligence' | 'activity' | 'analytics' | 'orders' | 'sendit' | 'products' | 'customers' | 'inventory' | 'prices' | 'partenaires' | 'leads' | 'restock' | 'campaigns' | 'ads' | 'ads-agent' | 'ads-studio' | 'events' | 'content' | 'work' | 'workspace' | 'guide' | 'settings' | 'health'
+  active: 'dashboard' | 'intelligence' | 'activity' | 'analytics' | 'orders' | 'sendit' | 'products' | 'customers' | 'inventory' | 'prices' | 'partenaires' | 'leads' | 'restock' | 'campaigns' | 'ads' | 'events' | 'content' | 'work' | 'workspace' | 'guide' | 'settings' | 'health'
   title: string
   crumb: string
   children: ReactNode
@@ -269,13 +265,10 @@ export default function BosShell({
               )}
               {section.items.map((item) => {
                 const Icon = item.icon
-                // '/ads/agent' contient 'ads' : chaque page des publicites n'allume que son entree.
                 const isActive =
                   active === 'dashboard'
                     ? item.href === '/'
-                    : active === 'ads-agent' || active === 'ads-studio' || item.href === '/ads/agent' || item.href === '/ads/studio'
-                      ? (active === 'ads-agent' && item.href === '/ads/agent') || (active === 'ads-studio' && item.href === '/ads/studio')
-                      : item.href.includes(active === 'work' ? 'work-hub' : active)
+                    : item.href.includes(active === 'work' ? 'work-hub' : active)
 
                 return (
                   <Link
