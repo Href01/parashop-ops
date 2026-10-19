@@ -14,6 +14,8 @@
     "test:seo": "node --import tsx --test tests/seo/*.test.ts",
     "verify:git-identity": "node scripts/check-git-identity.mjs",
     "test:git-identity": "node --test tests/git-identity.test.mjs",
+    "verify:agent-auth": "node scripts/agent-auth-smoke.mjs",
+    "test:agent-auth": "node --test tests/agent-auth-smoke.test.mjs",
     "compute-metrics": "node scripts/compute-product-metrics.js"
   },
   "dependencies": {
