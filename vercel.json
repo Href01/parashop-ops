@@ -27,6 +27,14 @@
     {
       "path": "/api/cron/sync-sendit",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/veille",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/rapport-jour",
+      "schedule": "0 20 * * *"
     }
   ]
 }
