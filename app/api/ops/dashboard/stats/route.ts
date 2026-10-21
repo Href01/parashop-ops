@@ -1213,7 +1213,7 @@ export async function GET(req: Request) {
     }
     const avecDepot = (p: ReturnType<typeof buildPnl>) => {
       const detail = {
-        partnerShare: depot.partnerShare, frais: depot.frais,
+        partnerShare: depot.partnerShare, frais: depot.frais, pubPartenaire: depot.pubPartenaire,
         versements: depot.versements, fraisPayesShine: depot.fraisPayesShine, avances: depot.avances,
         duPartenaire: depot.du, partenaires: depot.partenaires,
       }

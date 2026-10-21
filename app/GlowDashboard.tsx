@@ -71,7 +71,7 @@ interface DashboardStats {
 }
 
 interface DashboardPnl {
-  depot?: { partnerShare: number; frais: number; versements: number; fraisPayesShine: number; avances: number; duPartenaire: number; partenaires: number }
+  depot?: { partnerShare: number; frais: number; pubPartenaire?: number; versements: number; fraisPayesShine: number; avances: number; duPartenaire: number; partenaires: number }
   precedent?: { caLivre: number; coutProduits: number; livraisonFrais: number; profitLivre: number; pub: number; emballage: number; retours: number; depotVente: number; net: number; commandes: number } | null
   rentabilite: { caLivre: number; coutProduits?: number; livraisonFrais?: number; profitLivre: number; margeLivree: number; pub: number; emballage: number; retours: number; depotVente?: number; net: number; marginPct: number; previousNet?: number | null }
   tresorerie: { encaisse: number; achats: number; pub: number; emballage: number; emballageEstime: boolean; frais: number; retours: number; depotVente?: number; net: number }
@@ -560,8 +560,11 @@ export default function GlowDashboard() {
                   {((r.depotVente ?? 0) !== 0 || (pp?.depotVente ?? 0) !== 0) && (() => {
                     const d = activePnl.depot
                     const perte = (d?.partnerShare ?? 0) < 0
-                    const sous = `${perte ? 'il absorbe sa part de la perte sur ses produits' : 'sa part du bénéfice de ses produits'}${d && d.frais > 0 ? ` + frais du partenariat ${mad(d.frais)}` : ''}`
-                    return <PnlRow label="Part du partenaire (dépôt-vente)" sub={sous} href="/partenaires" value={-(r.depotVente ?? 0)} prev={pp ? -pp.depotVente : undefined} neg />
+                    const pubSienne = d?.pubPartenaire ?? 0
+                    const sous = pubSienne > 0
+                      ? `la pub de ses produits (${mad(pubSienne)} MAD, comptée dans « Pub ») est payée par son budget ; sa part de la marge avant pub : ${mad(d?.partnerShare ?? 0)} MAD${d && d.frais > 0 ? ` · frais du partenariat ${mad(d.frais)} MAD` : ''}`
+                      : `${perte ? 'il absorbe sa part de la perte sur ses produits' : 'sa part du bénéfice de ses produits'}${d && d.frais > 0 ? ` + frais du partenariat ${mad(d.frais)}` : ''}`
+                    return <PnlRow label={pubSienne > 0 ? 'Dépôt-vente : sa pub moins sa part' : 'Part du partenaire (dépôt-vente)'} sub={sous} href="/partenaires" value={-(r.depotVente ?? 0)} prev={pp ? -pp.depotVente : undefined} neg />
                   })()}
                   <PnlRow label="Marge nette" sub="ce qui reste à Shine après tout" value={r.net} prev={pp?.net} total pct={r.marginPct} />
                   {pp && <p style={{ margin: '6px 0 0', fontSize: 10.5, color: 'var(--tx-faint)' }}>Colonne grise : {compareLabel}, mêmes règles de calcul.</p>}
@@ -580,7 +583,7 @@ export default function GlowDashboard() {
                   <PnlRow label="Cash net généré" sub="entré moins sorti sur la période" value={t.net} total />
                   {(activePnl.depot?.duPartenaire ?? 0) !== 0 && (
                     <p style={{ margin: '8px 0 0', fontSize: 11.5, lineHeight: 1.5, color: 'var(--tx-lo)' }}>
-                      À rendre au partenaire : <b style={{ color: 'var(--tx-hi)' }}>{mad(activePnl.depot?.duPartenaire ?? 0)} MAD</b> (son stock vendu, ses avances, sa part) — solde depuis le début, à garder de côté · <Link href="/partenaires" style={{ color: 'var(--blue)' }}>relevé</Link>
+                      À rendre au partenaire : <b style={{ color: 'var(--tx-hi)' }}>{mad(activePnl.depot?.duPartenaire ?? 0)} MAD</b> (son stock vendu, ses avances, sa part{(activePnl.depot?.pubPartenaire ?? 0) > 0 ? ' — moins la pub à sa charge' : ''}) — solde depuis le début, à garder de côté · <Link href="/partenaires" style={{ color: 'var(--blue)' }}>relevé</Link>
                     </p>
                   )}
                 </div>

@@ -22,7 +22,9 @@ type Line = { orderId: number; orderNumber: string | null; deliveredAt: string; 
 type Expense = { id: number; date: string; category: string; label: string | null; amount: number; paidBy: 'shine' | 'partner' }
 type Payment = { id: number; date: string; amount: number; method: string | null; note: string | null }
 type StockRow = { id: number; name: string; brand: string; image: string | null; price: number; costPrice: number; stock: number; entrees: number; vendus: number; enCours: number; unitMargin: number; valeurCout: number; valeurVente: number }
-type Totals = { revenue: number; cogs: number; orderCosts: number; packaging: number; returns: number; adsLinked: number; adsMixed?: number; expenses: number; expensesByCategory: Record<string, number>; expensesPaidByShine: number; expensesPaidByPartner: number; advances: number; net: number; shineShare: number; partnerShare: number; deliveredOrders: number; unitsSold: number }
+type ModePub = 'partage' | 'partenaire'
+type Part = { basePartage: number; shineShare: number; partnerShare: number; pubPartenaire: number }
+type Totals = { revenue: number; cogs: number; orderCosts: number; packaging: number; returns: number; adsLinked: number; adsMixed?: number; expenses: number; expensesByCategory: Record<string, number>; expensesPaidByShine: number; expensesPaidByPartner: number; advances: number; pubDepenses: number; margeAvantPub: number; pubTotale: number; net: number; modePub: ModePub; basePartage: number; shineShare: number; partnerShare: number; pubPartenaire: number; scenarios: Record<ModePub, Part>; deliveredOrders: number; unitsSold: number }
 type Data = {
   today: string
   ledger: {
@@ -32,11 +34,16 @@ type Data = {
     adsDetail: { externalId: string; name: string; spend: number }[]; adsMixedDetail?: { externalId: string; name: string; spend: number; part: number; allocated: number }[]; expenses: Expense[]; advancesDetail: Expense[]; totals: Totals
   }
   stock: StockRow[]
-  settlement: { cogsSold: number; expensesPaidByPartner: number; advances: number; partnerShare: number; shineShare: number; net: number; owed: number; paid: number; balance: number; payments: Payment[]; depuisDebut?: Totals }
+  settlement: { cogsSold: number; expensesPaidByPartner: number; advances: number; modePub: ModePub; margeAvantPub: number; pubTotale: number; pubPartenaire: number; partnerShare: number; shineShare: number; net: number; owed: number; paid: number; balance: number; scenarios: Record<ModePub, Part & { owed: number; balance: number }>; payments: Payment[]; depuisDebut: Totals }
 }
 type Campaign = { externalId: string; name: string; platform: string; spend: number; lastDate: string; linked: boolean; mode?: 'dedie' | 'mixte' | null }
 
 const AVANCE = 'Avance reçue'
+/** Les deux accords possibles sur la publicité — mêmes ventes, partage différent. */
+const MODES: Record<ModePub, { titre: string; court: string; base: string; regle: string }> = {
+  partage: { titre: 'Pub partagée', court: 'Pub partagée', base: 'marge nette (après pub)', regle: 'la pub est un frais commun : on partage ce qui reste APRÈS la pub' },
+  partenaire: { titre: 'Pub à la charge du partenaire', court: 'Pub à sa charge', base: 'marge avant pub', regle: 'la pub est son budget : on partage la marge AVANT pub, puis toute la pub est retirée de sa part (payée par son avance)' },
+}
 const CATEGORIES = ['Douane & taxes', 'Transport', 'Cartons & fournitures', 'Publicité', 'Autre', AVANCE]
 const dh = (n: number) => `${(Math.round(n * 100) / 100).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} DH`
 /* Une date AAAA-MM-JJ est un jour du calendrier, pas un instant : la lire
@@ -105,7 +112,7 @@ export default function PartenairePage() {
         </Link>
         <PageHead
           title={P.name}
-          note={<>Dépôt-vente : le stock lui appartient, Shine le vend. Marge nette partagée <b>{P.shinePct} % Shine / {100 - P.shinePct} % partenaire</b>, depuis le {jour(P.startDate)}.</>}
+          note={<>Dépôt-vente : le stock lui appartient, Shine le vend. <b>{MODES[T.modePub].titre}</b> — {MODES[T.modePub].base} partagée <b>{P.shinePct} % Shine / {100 - P.shinePct} % partenaire</b>, depuis le {jour(P.startDate)}.</>}
           actions={<button className="btn-modern btn-subtle btn-sm" onClick={() => exporterCsv(data)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><Download style={{ width: 13, height: 13 }} /> Exporter le relevé</button>}
         />
 
@@ -120,17 +127,21 @@ export default function PartenairePage() {
               <div>coût des produits vendus <b>{dh(S.cogsSold)}</b></div>
               <div>+ dépenses qu&apos;il a payées <b>{dh(S.expensesPaidByPartner)}</b></div>
               {S.advances > 0 && <div>+ argent qu&apos;il a avancé à Shine <b>{dh(S.advances)}</b></div>}
-              <div>+ sa part de la marge nette <b>{dh(S.partnerShare)}</b></div>
+              <div>+ sa part de la {MODES[S.modePub].base} <b>{dh(S.partnerShare)}</b></div>
+              {S.pubPartenaire > 0 && <div>− pub à sa charge (payée par son avance) <b>{dh(S.pubPartenaire)}</b></div>}
               <div>− déjà versé <b>{dh(S.paid)}</b></div>
             </div>
           </div>
           <p className="fs12 tx-lo" style={{ margin: '10px 0 0', lineHeight: 1.55 }}>
-            Shine encaisse tout : elle lui rend l&apos;argent qu&apos;il a avancé pour chaque produit vendu, les frais qu&apos;il a réglés lui-même, l&apos;argent qu&apos;il lui a confié (avances, ex. budget pub) et sa part du bénéfice. Une marge négative réduit sa part d&apos;autant — la perte se partage comme le gain.
+            Shine encaisse tout : elle lui rend l&apos;argent qu&apos;il a avancé pour chaque produit vendu, les frais qu&apos;il a réglés lui-même, l&apos;argent qu&apos;il lui a confié (avances, ex. budget pub) et sa part du bénéfice.{S.modePub === 'partenaire' ? ' La pub est son budget : ce qui a été dépensé chez Meta est retiré, le reste de son avance lui revient.' : ' Une marge négative réduit sa part d’autant — la perte se partage comme le gain.'}
           </p>
         </div>
 
         {/* ── Bilan depuis le debut : gagne-t-on, ou passe l'argent ───────── */}
-        {S.depuisDebut && <Bilan shinePct={P.shinePct} t={S.depuisDebut} paid={S.paid} balance={S.balance} />}
+        <Bilan shinePct={P.shinePct} t={S.depuisDebut} paid={S.paid} balance={S.balance} />
+
+        {/* ── Les deux accords cote a cote ────────────────────────────────── */}
+        <Scenarios partnerId={P.id} shinePct={P.shinePct} S={S} onChange={load} />
 
         {/* ── Periode ─────────────────────────────────────────────────────── */}
         <Periode start={P.startDate} today={data.today} courante={L.period} onChange={setPeriode} />
@@ -138,39 +149,45 @@ export default function PartenairePage() {
         {/* ── Chiffres de la periode ──────────────────────────────────────── */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, marginTop: 12 }}>
           <Kpi label="CA livré" valeur={dh(T.revenue)} sous={`${T.deliveredOrders} commandes · ${T.unitsSold} unités`} titre="Encaissé sur ses produits, remises déduites — avant tous les frais" delta={prev ? deltaPct(T.revenue, prev.totals.revenue) : null} />
-          <Kpi label="Marge nette" valeur={dh(T.net)} couleur={T.net < 0 ? 'var(--red, #c0392b)' : 'var(--green)'} sous={T.revenue > 0 ? `${((T.net / T.revenue) * 100).toFixed(1)} % du CA` : '—'} titre="Après TOUS les frais : achat, livraison, emballage, retours, pub, dépenses" delta={prev ? deltaPct(T.net, prev.totals.net) : null} />
-          <Kpi label={`Part Shine (${P.shinePct} %)`} valeur={dh(T.shineShare)} titre={`${P.shinePct} % de la marge nette de la période`} delta={prev ? deltaPct(T.shineShare, prev.totals.shineShare) : null} />
-          <Kpi label={`Part partenaire (${100 - P.shinePct} %)`} valeur={dh(T.partnerShare)} titre={`${100 - P.shinePct} % de la marge nette de la période`} delta={prev ? deltaPct(T.partnerShare, prev.totals.partnerShare) : null} />
+          <Kpi label="Marge avant pub" valeur={dh(T.margeAvantPub)} couleur={T.margeAvantPub < 0 ? 'var(--red, #c0392b)' : 'var(--green)'} sous={T.revenue > 0 ? `${((T.margeAvantPub / T.revenue) * 100).toFixed(1)} % du CA` : '—'} titre="CA − achat − livraison & frais − emballage − retours − dépenses hors pub" delta={prev ? deltaPct(T.margeAvantPub, prev.totals.margeAvantPub) : null} />
+          <Kpi label="Pub" valeur={dh(T.pubTotale)} sous={T.pubTotale > 0 ? `ROAS ${(T.revenue / T.pubTotale).toFixed(2)}` : '—'} titre="Ses campagnes + sa part des campagnes mixtes + dépenses « Publicité »" delta={prev ? deltaPct(T.pubTotale, prev.totals.pubTotale) : null} />
+          <Kpi label="Marge nette (après pub)" valeur={dh(T.net)} couleur={T.net < 0 ? 'var(--red, #c0392b)' : 'var(--green)'} sous={T.revenue > 0 ? `${((T.net / T.revenue) * 100).toFixed(1)} % du CA` : '—'} titre="Marge avant pub − pub" delta={prev ? deltaPct(T.net, prev.totals.net) : null} />
+          <Kpi label={`Part Shine (${P.shinePct} %)`} valeur={dh(T.shineShare)} couleur={T.shineShare < 0 ? 'var(--red, #c0392b)' : undefined} sous={`de la ${MODES[T.modePub].base}`} titre={`${P.shinePct} % de la ${MODES[T.modePub].base} de la période`} delta={prev ? deltaPct(T.shineShare, prev.totals.shineShare) : null} />
+          <Kpi label={`Part partenaire (${100 - P.shinePct} %)`} valeur={dh(T.partnerShare - T.pubPartenaire)} sous={T.pubPartenaire > 0 ? `${dh(T.partnerShare)} − pub ${dh(T.pubPartenaire)}` : `de la ${MODES[T.modePub].base}`} titre={T.pubPartenaire > 0 ? 'Sa part de la marge avant pub, moins toute la pub (son budget)' : `${100 - P.shinePct} % de la marge nette de la période`} delta={prev ? deltaPct(T.partnerShare - T.pubPartenaire, prev.totals.partnerShare - prev.totals.pubPartenaire) : null} />
         </div>
         {prev && (
           <p className="fs11 tx-faint" style={{ margin: '6px 2px 0' }}>Comparé à la période précédente de même durée (du {jour(prev.from)} au {jour(prev.to)}).</p>
         )}
 
         {/* ── Les parts : qui touche quoi sur la marge nette ─────────────── */}
-        <Partage shinePct={P.shinePct} shine={T.shineShare} partner={T.partnerShare} net={T.net} />
+        <Partage shinePct={P.shinePct} shine={T.shineShare} partner={T.partnerShare} net={T.basePartage} base={MODES[T.modePub].base} />
 
         {/* ── Du CA a la marge nette ──────────────────────────────────────── */}
-        <Section titre="Du chiffre d'affaires à la marge nette" note="Chaque ligne reprend le calcul du tableau de bord, au prorata de ses produits dans chaque commande.">
+        <Section titre="Du chiffre d'affaires à la marge nette" note="Chaque ligne reprend le calcul du tableau de bord, au prorata de ses produits dans chaque commande. D'abord ce que coûte la vente, puis la pub à part.">
           <table className="table-modern" style={{ width: '100%' }}>
             <tbody>
               <Ligne label="CA encaissé sur ses produits" note="ce que les clientes ont réellement payé, remises déduites" valeur={T.revenue} />
               <Ligne label="Coût d'achat des produits vendus" note="son argent, qui lui est rendu" valeur={-T.cogs} />
               <Ligne label="Livraison nette et frais de commande" note="coût Sendit moins livraison facturée, commission, frais d'échec" valeur={-T.orderCosts} />
-              <Ligne label={`Emballage (${L.packagingRate} DH par colis)`} note="payé par Shine, partagé comme les autres frais — au prorata si le colis contient aussi des produits Shine" valeur={-T.packaging} />
+              <Ligne label={`Emballage (${L.packagingRate} DH par colis)`} note="payé par Shine — au prorata si le colis contient aussi des produits Shine" valeur={-T.packaging} />
               <Ligne label="Colis retournés ou refusés" note={`${L.returnsDetail.length} commande(s)`} valeur={-T.returns} />
+              {CATEGORIES.filter((c) => c !== 'Publicité' && T.expensesByCategory[c]).map((c) => (
+                <Ligne key={c} label={c} note="dépense du partenariat" valeur={-T.expensesByCategory[c]} />
+              ))}
+              <Total label="= Marge avant pub" note="ce que rapportent ses produits une fois vendus, livrés et emballés" valeur={T.margeAvantPub} />
               <Ligne label="Publicité — ses campagnes" note={`${L.adsDetail.length} campagne(s) qui ne montrent que ses produits : toute la dépense`} valeur={-T.adsLinked} />
               {(L.adsMixedDetail?.length ?? 0) > 0 && (
                 <Ligne label="Publicité — campagnes mixtes" note={`sa part, au prorata de ses ventes du mois : ${(L.adsMixedDetail ?? []).map((a) => `${a.name || a.externalId} ${Math.round(a.part * 100)} % de ${dh(a.spend)}`).join(' · ')}`} valeur={-(T.adsMixed ?? 0)} />
               )}
-              {CATEGORIES.filter((c) => T.expensesByCategory[c]).map((c) => (
-                <Ligne key={c} label={c} note="dépense du partenariat" valeur={-T.expensesByCategory[c]} />
-              ))}
-              <tr style={{ borderTop: '2px solid var(--line-soft)' }}>
-                <td style={{ fontWeight: 800, color: 'var(--tx-hi)' }}>Marge nette</td>
-                <td style={{ textAlign: 'right', fontWeight: 800, fontFamily: 'var(--mono)', color: T.net < 0 ? 'var(--red, #c0392b)' : 'var(--green)' }}>{dh(T.net)}</td>
-              </tr>
+              {T.pubDepenses > 0 && <Ligne label="Publicité — autres dépenses" note="saisies dans les dépenses du partenariat" valeur={-T.pubDepenses} />}
+              <Total label="= Marge nette (après pub)" valeur={T.net} />
             </tbody>
           </table>
+          <div className="fs12 tx-mid" style={{ marginTop: 10, padding: '10px 12px', borderRadius: 10, background: 'var(--line-soft)', lineHeight: 1.6 }}>
+            <b>Accord : {MODES[T.modePub].titre.toLowerCase()}</b> — {MODES[T.modePub].regle}.<br />
+            On partage la {MODES[T.modePub].base} <b>{dh(T.basePartage)}</b> → Shine {P.shinePct} % = <b>{dh(T.shineShare)}</b> · partenaire {100 - P.shinePct} % = <b>{dh(T.partnerShare)}</b>
+            {T.pubPartenaire > 0 && <> − pub {dh(T.pubPartenaire)} = <b>{dh(T.partnerShare - T.pubPartenaire)}</b></>}.
+          </div>
         </Section>
 
         {/* ── Stock ───────────────────────────────────────────────────────── */}
@@ -211,7 +228,7 @@ export default function PartenairePage() {
         <Versements partnerId={P.id} versements={S.payments} today={data.today} solde={S.balance} onChange={load} />
 
         {/* ── Parametres ──────────────────────────────────────────────────── */}
-        <Parametres partner={P} onChange={load} />
+        <Parametres partner={P} modePub={T.modePub} onChange={load} />
       </div>
     </BosShell>
   )
@@ -257,8 +274,8 @@ function Bilan({ shinePct, t, paid, balance }: { shinePct: number; t: Totals; pa
   const garde = t.revenue + (t.advances ?? 0) - t.adsLinked - (t.adsMixed ?? 0) - t.orderCosts - t.packaging - t.returns - t.expensesPaidByShine - paid
   // Egal a sa part de la marge nette ; un ecart d'un centime ne vient que des arrondis de chaque ligne.
   const revientShine = Math.abs(garde - balance - t.shineShare) < 0.05 ? t.shineShare : garde - balance
-  const pubTotale = t.adsLinked + (t.adsMixed ?? 0)
-  const roas = pubTotale > 0 ? t.revenue / pubTotale : null
+  const roas = t.pubTotale > 0 ? t.revenue / t.pubTotale : null
+  const M = MODES[t.modePub]
   const gagne = t.shineShare >= 0
   const L = ({ l, v, note, gras, signe = true }: { l: string; v: number; note?: string; gras?: boolean; signe?: boolean }) => (
     <tr style={gras ? { borderTop: '2px solid var(--line-soft)' } : undefined}>
@@ -273,13 +290,15 @@ function Bilan({ shinePct, t, paid, balance }: { shinePct: number; t: Totals; pa
           <div className="fs12 tx-lo">{gagne ? 'Le partenariat rapporte à Shine' : 'Le partenariat coûte à Shine'}</div>
           <div style={{ fontSize: 26, fontWeight: 800, fontFamily: 'var(--mono)', color: gagne ? 'var(--green)' : 'var(--red, #c0392b)' }}>{dh(t.shineShare)}</div>
           <div className="fs12 tx-mid" style={{ lineHeight: 1.6, marginTop: 6 }}>
-            {shinePct} % de la marge nette ({dh(t.net)}) sur {t.deliveredOrders} commande(s), {t.unitsSold} unité(s) vendues.<br />
-            CA de ses produits {dh(t.revenue)} · pub à sa charge {dh(t.adsLinked + (t.adsMixed ?? 0))}{roas != null && <> · chaque dirham de pub a rapporté <b>{roas.toFixed(2)} DH</b> de CA</>}.
+            {shinePct} % de la {M.base} ({dh(t.basePartage)}) sur {t.deliveredOrders} commande(s), {t.unitsSold} unité(s) vendues.<br />
+            CA de ses produits {dh(t.revenue)} · pub {dh(t.pubTotale)}{t.modePub === 'partenaire' ? ' (à sa charge)' : ' (partagée)'}{roas != null && <> · chaque dirham de pub a rapporté <b>{roas.toFixed(2)} DH</b> de CA</>}.
           </div>
           <p className="fs11 tx-lo" style={{ margin: '8px 0 0', lineHeight: 1.5 }}>
             {gagne
               ? 'Après avoir rendu au partenaire son argent et sa part, il reste ce montant à Shine.'
-              : 'La marge de ses produits ne couvre pas encore la pub et les frais : la perte se partage, Shine en porte sa part.'}
+              : t.modePub === 'partenaire'
+                ? 'La marge de ses produits ne couvre pas encore les frais de vente : la perte se partage.'
+                : 'La marge de ses produits ne couvre pas encore la pub et les frais : la perte se partage, Shine en porte sa part.'}
           </p>
         </div>
         <div>
@@ -295,8 +314,8 @@ function Bilan({ shinePct, t, paid, balance }: { shinePct: number; t: Totals; pa
               {t.expensesPaidByShine > 0 && <L l="Frais du partenariat payés par Shine" v={-t.expensesPaidByShine} />}
               {paid > 0 && <L l="Déjà versé au partenaire" v={-paid} />}
               <L l="= Argent du partenariat chez Shine" v={garde} gras signe={false} />
-              <L l="− À lui rendre (son stock vendu, ses avances, sa part)" v={-balance} />
-              <L l={revientShine >= 0 ? '= Ce qui revient à Shine' : '= Ce que Shine perd'} note={`égal à sa part de la marge nette (${shinePct} %)`} v={revientShine} gras signe={false} />
+              <L l={t.modePub === 'partenaire' ? '− À lui rendre (son stock vendu, son avance moins la pub, sa part)' : '− À lui rendre (son stock vendu, ses avances, sa part)'} v={-balance} />
+              <L l={revientShine >= 0 ? '= Ce qui revient à Shine' : '= Ce que Shine perd'} note={`égal à sa part de la ${M.base} (${shinePct} %)`} v={revientShine} gras signe={false} />
             </tbody>
           </table>
         </div>
@@ -305,13 +324,71 @@ function Bilan({ shinePct, t, paid, balance }: { shinePct: number; t: Totals; pa
   )
 }
 
-function Partage({ shinePct, shine, partner, net }: { shinePct: number; shine: number; partner: number; net: number }) {
+/**
+ * LES DEUX ACCORDS, COTE A COTE, SUR LES MEMES CHIFFRES DEPUIS LE DEBUT.
+ * Seul change ce qui se partage : la marge apres pub, ou la marge avant pub
+ * avec toute la pub pour le partenaire. Le reste (son stock vendu, ses frais,
+ * ses avances, les versements) est identique dans les deux colonnes.
+ */
+function Scenarios({ partnerId, shinePct, S, onChange }: { partnerId: number; shinePct: number; S: Data['settlement']; onChange: () => void }) {
+  const [busy, setBusy] = useState(false)
+  const ordre: ModePub[] = ['partenaire', 'partage']
+  const appliquer = async (m: ModePub) => {
+    if (!confirm(`Passer l'accord à « ${MODES[m].titre} » ? Tout le relevé et le tableau de bord seront recalculés depuis le début.`)) return
+    setBusy(true)
+    await fetch(`/api/ops/partners/${partnerId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ modePub: m }) })
+    setBusy(false); onChange()
+  }
+  const lignes: { l: string; note?: string; v: (m: ModePub) => number; gras?: boolean }[] = [
+    { l: 'Ce qui se partage', note: `marge avant pub ${dh(S.margeAvantPub)} · pub ${dh(S.pubTotale)}`, v: (m) => S.scenarios[m].basePartage },
+    { l: `Part Shine (${shinePct} %)`, v: (m) => S.scenarios[m].shineShare, gras: true },
+    { l: `Part partenaire (${100 - shinePct} %)`, v: (m) => S.scenarios[m].partnerShare },
+    { l: '− Pub à sa charge', v: (m) => (S.scenarios[m].pubPartenaire ? -S.scenarios[m].pubPartenaire : 0) },
+    { l: '= Ce que gagne le partenaire', v: (m) => S.scenarios[m].partnerShare - S.scenarios[m].pubPartenaire, gras: true },
+    { l: 'À lui rendre aujourd’hui', note: 'son stock vendu + ses frais + ses avances + sa part − pub − versé', v: (m) => S.scenarios[m].balance, gras: true },
+  ]
+  return (
+    <Section titre="Les deux accords possibles — depuis le début" note="Mêmes ventes, mêmes frais, même pub : seul change qui paie la pub. La colonne encadrée est l'accord appliqué partout (solde, bilan, tableau de bord).">
+      <Defilant>
+        <table className="table-modern" style={{ width: '100%' }}>
+          <thead><tr>
+            <th />
+            {ordre.map((m) => (
+              <th key={m} style={{ textAlign: 'right', verticalAlign: 'bottom', padding: '8px 6px', background: m === S.modePub ? 'var(--green-bg)' : undefined }}>
+                <div style={{ color: 'var(--tx-hi)', whiteSpace: 'normal' }}>{MODES[m].court}</div>
+                {m === S.modePub
+                  ? <span className="badge-modern badge-sm badge-success">accord actuel</span>
+                  : <button className="btn-modern btn-subtle btn-sm" disabled={busy} onClick={() => appliquer(m)}>Appliquer</button>}
+              </th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {lignes.map((x) => (
+              <tr key={x.l} style={x.gras ? { borderTop: '1px solid var(--line-soft)' } : undefined}>
+                <td style={{ padding: '8px 6px' }}><div className="fs12" style={{ fontWeight: x.gras ? 800 : 500, color: 'var(--tx-hi)' }}>{x.l}</div>{x.note && <div className="fs11 tx-faint">{x.note}</div>}</td>
+                {ordre.map((m) => {
+                  const v = x.v(m)
+                  return <td key={m} style={{ textAlign: 'right', padding: '8px 6px', fontSize: 12, fontFamily: 'var(--mono)', whiteSpace: 'nowrap', fontWeight: x.gras ? 800 : 500, background: m === S.modePub ? 'var(--green-bg)' : undefined, color: x.gras && v < 0 ? 'var(--red, #c0392b)' : 'var(--tx-hi)' }}>{dh(v)}</td>
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Defilant>
+      <p className="fs12 tx-lo" style={{ margin: '10px 0 0', lineHeight: 1.55 }}>
+        {MODES.partenaire.titre} : {MODES.partenaire.regle}. {MODES.partage.titre} : {MODES.partage.regle} — Shine porte alors {shinePct} % de la pub alors que le budget vient de lui.
+      </p>
+    </Section>
+  )
+}
+
+function Partage({ shinePct, shine, partner, net, base }: { shinePct: number; shine: number; partner: number; net: number; base: string }) {
   if (net === 0) return null
   const tot = Math.abs(shine) + Math.abs(partner)
   const wS = tot > 0 ? (Math.abs(shine) / tot) * 100 : 0
   return (
-    <div className="card-modern" style={{ padding: '12px 14px', marginTop: 10 }} title="Chaque part = son % de la marge nette de la période">
-      <div className="fs12 tx-lo" style={{ marginBottom: 6 }}>Partage de la marge nette {net < 0 ? '(négative : la perte se partage comme le gain)' : ''}</div>
+    <div className="card-modern" style={{ padding: '12px 14px', marginTop: 10 }} title={`Chaque part = son % de la ${base} de la période`}>
+      <div className="fs12 tx-lo" style={{ marginBottom: 6 }}>Partage de la {base} {net < 0 ? '(négative : la perte se partage comme le gain)' : ''}</div>
       <div style={{ display: 'flex', height: 14, borderRadius: 7, overflow: 'hidden', background: 'var(--line-soft)' }}>
         <div style={{ width: `${wS}%`, background: 'var(--green)', transition: 'width .2s' }} />
         <div style={{ width: `${100 - wS}%`, background: 'var(--amber)', transition: 'width .2s' }} />
@@ -328,6 +405,14 @@ function Ligne({ label, note, valeur }: { label: string; note?: string; valeur: 
     <tr>
       <td><div className="fs13" style={{ color: 'var(--tx-hi)' }}>{label}</div>{note && <div className="fs11 tx-faint">{note}</div>}</td>
       <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', whiteSpace: 'nowrap', color: valeur < 0 ? 'var(--tx-mid)' : 'var(--tx-hi)' }}>{valeur > 0 ? '+ ' : valeur < 0 ? '− ' : ''}{dh(Math.abs(valeur))}</td>
+    </tr>
+  )
+}
+function Total({ label, note, valeur }: { label: string; note?: string; valeur: number }) {
+  return (
+    <tr style={{ borderTop: '2px solid var(--line-soft)' }}>
+      <td><div style={{ fontWeight: 800, color: 'var(--tx-hi)' }}>{label}</div>{note && <div className="fs11 tx-faint">{note}</div>}</td>
+      <td style={{ textAlign: 'right', fontWeight: 800, fontFamily: 'var(--mono)', whiteSpace: 'nowrap', color: valeur < 0 ? 'var(--red, #c0392b)' : 'var(--green)' }}>{dh(valeur)}</td>
     </tr>
   )
 }
@@ -416,7 +501,7 @@ function Campagnes({ partnerId, campagnes, depensePeriode, mixtes, onChange }: {
     setBusy(false); onChange(d.campaigns)
   }
   return (
-    <Section titre="Publicité" note="« Ses produits seulement » : toute la dépense entre dans son relevé. « Mixte » (catalogue, pub qui montre aussi les produits Shine) : seule sa part entre, au prorata de ses ventes du mois. La dépense retenue est ensuite partagée comme toute la marge.">
+    <Section titre="Publicité" note="« Ses produits seulement » : toute la dépense entre dans son relevé. « Mixte » (catalogue, pub qui montre aussi les produits Shine) : seule sa part entre, au prorata de ses ventes du mois. La dépense retenue entre dans « Pub » — partagée ou à sa charge selon l'accord (Paramètres).">
       {campagnes === null ? <div className="skeleton-line" style={{ width: '30%', height: 12 }} />
         : campagnes.length === 0 ? <p className="fs12 tx-faint" style={{ margin: 0 }}>Aucune campagne synchronisée sur les 90 derniers jours.</p>
         : (
@@ -491,8 +576,9 @@ function Versements({ partnerId, versements, today, solde, onChange }: { partner
   )
 }
 
-function Parametres({ partner, onChange }: { partner: Data['ledger']['partner']; onChange: () => void }) {
-  const [f, setF] = useState({ name: partner.name, shinePct: String(partner.shinePct), startDate: partner.startDate, notes: partner.notes || '' })
+function Parametres({ partner, modePub, onChange }: { partner: Data['ledger']['partner']; modePub: ModePub; onChange: () => void }) {
+  const [f, setF] = useState({ name: partner.name, shinePct: String(partner.shinePct), startDate: partner.startDate, notes: partner.notes || '', modePub })
+  useEffect(() => { setF((v) => ({ ...v, modePub })) }, [modePub])
   const [ok, setOk] = useState(false)
   const enregistrer = async (e: React.FormEvent) => {
     e.preventDefault(); setOk(false)
@@ -505,6 +591,7 @@ function Parametres({ partner, onChange }: { partner: Data['ledger']['partner'];
         <Champ label="Nom" grand><input className="input-modern" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} style={{ width: '100%' }} /></Champ>
         <Champ label="Part de Shine (%)"><input type="number" min="0" max="100" className="input-modern" value={f.shinePct} onChange={(e) => setF({ ...f, shinePct: e.target.value })} style={{ width: 90 }} /></Champ>
         <Champ label="Début"><input type="date" className="input-modern" value={f.startDate} onChange={(e) => setF({ ...f, startDate: e.target.value })} style={{ width: 150 }} /></Champ>
+        <Champ label="Publicité"><select className="input-modern" style={{ width: 240 }} value={f.modePub} onChange={(e) => setF({ ...f, modePub: e.target.value as ModePub })}><option value="partenaire">À la charge du partenaire</option><option value="partage">Partagée comme un frais</option></select></Champ>
         <Champ label="Accord convenu" grand><input className="input-modern" value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} style={{ width: '100%' }} /></Champ>
         <button className="btn-modern btn-sm">Enregistrer</button>
         {ok && <span className="fs12" style={{ color: 'var(--green)' }}>Enregistré</span>}
@@ -726,12 +813,16 @@ function exporterCsv(d: Data) {
     [],
     ['COMPTE DE RÉSULTAT DE LA PÉRIODE'],
     ['CA encaissé', n(T.revenue)], ["Coût d'achat des produits vendus", n(-T.cogs)], ['Livraison nette et frais de commande', n(-T.orderCosts)],
-    ['Emballage', n(-T.packaging)], ['Colis retournés', n(-T.returns)], ['Publicité (ses campagnes)', n(-T.adsLinked)], ['Publicité (part des campagnes mixtes)', n(-(T.adsMixed ?? 0))],
-    ...Object.entries(T.expensesByCategory).map(([c, v]) => [c, n(-v)]),
-    ['Marge nette', n(T.net)], [`Part Shine (${L.partner.shinePct} %)`, n(T.shineShare)], [`Part partenaire (${100 - L.partner.shinePct} %)`, n(T.partnerShare)],
+    ['Emballage', n(-T.packaging)], ['Colis retournés', n(-T.returns)],
+    ...Object.entries(T.expensesByCategory).filter(([c]) => c !== 'Publicité').map(([c, v]) => [c, n(-v)]),
+    ['= Marge avant pub', n(T.margeAvantPub)],
+    ['Publicité (ses campagnes)', n(-T.adsLinked)], ['Publicité (part des campagnes mixtes)', n(-(T.adsMixed ?? 0))], ['Publicité (autres dépenses)', n(-T.pubDepenses)],
+    ['= Marge nette (après pub)', n(T.net)],
+    ['Accord', MODES[T.modePub].titre], ['Montant partagé', n(T.basePartage)],
+    [`Part Shine (${L.partner.shinePct} %)`, n(T.shineShare)], [`Part partenaire (${100 - L.partner.shinePct} %)`, n(T.partnerShare)], ['Pub à sa charge', n(-T.pubPartenaire)],
     [],
     ['SOLDE DEPUIS LE DÉBUT'],
-    ['Coût des produits vendus', n(S.cogsSold)], ["Dépenses payées par le partenaire", n(S.expensesPaidByPartner)], ['Avances remises à Shine', n(S.advances ?? 0)], ['Sa part de la marge nette', n(S.partnerShare)], ['Déjà versé', n(-S.paid)], ['À reverser', n(S.balance)],
+    ['Coût des produits vendus', n(S.cogsSold)], ["Dépenses payées par le partenaire", n(S.expensesPaidByPartner)], ['Avances remises à Shine', n(S.advances ?? 0)], [`Sa part de la ${MODES[S.modePub].base}`, n(S.partnerShare)], ['Pub à sa charge', n(-S.pubPartenaire)], ['Déjà versé', n(-S.paid)], ['À reverser', n(S.balance)],
     [],
     ['VENTES'], ['Livrée le', 'Commande', 'Produit', 'Qté', 'CA', 'Achat', 'Livraison & frais', 'Emballage', 'Marge'],
     ...L.lines.map((l) => [l.deliveredAt.slice(0, 10), l.orderNumber || `#${l.orderId}`, l.productName, l.quantity, n(l.revenue), n(l.cogs), n(l.orderCosts), n(l.packaging), n(l.margin)]),

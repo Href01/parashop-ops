@@ -55,6 +55,36 @@ export const AVANCE = 'Avance reçue'
 
 export type Period = { from: string; to: string }
 
+/* QUI PORTE LA PUB — un accord par partenaire, dans AppSetting
+   (`partner_regles` = { "<id>": { "pub": "partenaire" } }).
+   - « partage » (defaut) : la pub est un frais comme un autre, la marge NETTE
+     (apres pub) se partage selon shinePct.
+   - « partenaire » : la pub est son budget a lui (souvent payee par son
+     avance) ; Shine apporte la vente, la livraison, l'emballage. Se partage
+     alors la marge AVANT pub, et toute la pub vient en deduction de ce qui
+     lui revient. Ce qu'il reste de son avance non depense lui reste du. */
+export type ModePub = 'partage' | 'partenaire'
+export const CLE_REGLES = 'partner_regles'
+
+export async function modePub(partnerId: number): Promise<ModePub> {
+  const r = await pool.query(`SELECT value FROM "AppSetting" WHERE key = $1`, [CLE_REGLES])
+  try {
+    return JSON.parse(r.rows[0]?.value ?? '{}')?.[String(partnerId)]?.pub === 'partenaire' ? 'partenaire' : 'partage'
+  } catch { return 'partage' }
+}
+
+export async function definirModePub(partnerId: number, mode: ModePub) {
+  const r = await pool.query(`SELECT value FROM "AppSetting" WHERE key = $1`, [CLE_REGLES])
+  let v: Record<string, Record<string, unknown>> = {}
+  try { v = JSON.parse(r.rows[0]?.value ?? '{}') || {} } catch { v = {} }
+  v[String(partnerId)] = { ...(v[String(partnerId)] ?? {}), pub: mode }
+  await pool.query(
+    `INSERT INTO "AppSetting" (key, value, "updatedAt") VALUES ($1, $2, now())
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, "updatedAt" = now()`,
+    [CLE_REGLES, JSON.stringify(v)],
+  )
+}
+
 export type LedgerLine = {
   orderId: number
   orderNumber: string | null
@@ -87,9 +117,22 @@ export type LedgerTotals = {
   expensesPaidByPartner: number
   /** Argent remis par le partenaire a Shine (hors marge, du au partenaire). */
   advances: number
+  /** Depenses saisies en « Publicité » (hors campagnes Meta liees). */
+  pubDepenses: number
+  /** CA − achat − livraison & frais − emballage − retours − depenses hors pub. */
+  margeAvantPub: number
+  /** Toute la pub : ses campagnes + sa part des mixtes + depenses « Publicité ». */
+  pubTotale: number
   net: number
+  modePub: ModePub
+  /** Ce qui se partage : la marge nette (« partage ») ou la marge avant pub (« partenaire »). */
+  basePartage: number
   shineShare: number
   partnerShare: number
+  /** La pub retiree de ce qui lui revient (0 en « partage » : elle est deja dans la marge nette). */
+  pubPartenaire: number
+  /** Les deux accords cote a cote, sur les memes chiffres. */
+  scenarios: Record<ModePub, { basePartage: number; shineShare: number; partnerShare: number; pubPartenaire: number }>
   deliveredOrders: number
   unitsSold: number
 }
@@ -242,15 +285,30 @@ export function allocateOrderLines(o: OrderRow, its: ItemRow[], idSet: Set<numbe
   })
 }
 
+/** Le partage selon l'accord : sur la marge nette, ou sur la marge avant pub avec toute la pub pour lui. */
+export function partager(net: number, pubTotale: number, shinePct: number, mode: ModePub) {
+  const basePartage = r2(mode === 'partenaire' ? net + pubTotale : net)
+  return {
+    basePartage,
+    shineShare: r2((basePartage * shinePct) / 100),
+    partnerShare: r2((basePartage * (100 - shinePct)) / 100),
+    pubPartenaire: mode === 'partenaire' ? r2(pubTotale) : 0,
+  }
+}
+
 /**
  * Ce que Shine doit au partenaire : son argent avance (cout des produits
- * vendus), les depenses qu'il a payees, sa part de la marge nette — moins ce
- * qui lui a deja ete verse. Une marge negative reduit sa part a proportion.
+ * vendus), les depenses qu'il a payees, les avances qu'il lui a remises, sa
+ * part de la marge — moins la pub quand elle est a sa charge, moins ce qui lui
+ * a deja ete verse. Une marge negative reduit sa part a proportion.
  */
-export function settle(t: { cogs: number; expensesPaidByPartner: number; advances?: number; net: number }, shinePct: number, paid: number) {
-  const partnerShare = r2((t.net * (100 - shinePct)) / 100)
-  const owed = r2(t.cogs + t.expensesPaidByPartner + (t.advances ?? 0) + partnerShare)
-  return { partnerShare, shineShare: r2((t.net * shinePct) / 100), owed, balance: r2(owed - paid) }
+export function settle(
+  t: { cogs: number; expensesPaidByPartner: number; advances?: number; net: number; pubTotale?: number },
+  shinePct: number, paid: number, mode: ModePub = 'partage',
+) {
+  const p = partager(t.net, t.pubTotale ?? 0, shinePct, mode)
+  const owed = r2(t.cogs + t.expensesPaidByPartner + (t.advances ?? 0) + p.partnerShare - p.pubPartenaire)
+  return { ...p, owed, balance: r2(owed - paid) }
 }
 
 export async function computeLedger(partnerId: number, period: Period) {
@@ -337,7 +395,15 @@ export async function computeLedger(partnerId: number, period: Period) {
   const adsLinked = sum(adsDetail.map((a) => a.spend))
   const adsMixed = sum(adsMixedDetail.map((a) => a.allocated))
   const expensesTotal = sum(expenses.map((e) => e.amount))
-  const net = r2(revenue - cogs - orderCosts - packaging - returns - adsLinked - adsMixed - expensesTotal)
+  const pubDepenses = r2(expensesByCategory['Publicité'] ?? 0)
+  const margeAvantPub = r2(revenue - cogs - orderCosts - packaging - returns - (expensesTotal - pubDepenses))
+  const pubTotale = r2(adsLinked + adsMixed + pubDepenses)
+  const net = r2(margeAvantPub - pubTotale)
+  const mode = await modePub(partnerId)
+  const scenarios = {
+    partage: partager(net, pubTotale, shinePct, 'partage'),
+    partenaire: partager(net, pubTotale, shinePct, 'partenaire'),
+  }
 
   const totals: LedgerTotals = {
     revenue, cogs, orderCosts, packaging, returns, adsLinked, adsMixed,
@@ -346,9 +412,10 @@ export async function computeLedger(partnerId: number, period: Period) {
     expensesPaidByShine: sum(expenses.filter((e) => e.paidBy === 'shine').map((e) => e.amount)),
     expensesPaidByPartner: sum(expenses.filter((e) => e.paidBy === 'partner').map((e) => e.amount)),
     advances: sum(advancesDetail.map((e) => e.amount)),
-    net,
-    shineShare: r2((net * shinePct) / 100),
-    partnerShare: r2((net * (100 - shinePct)) / 100),
+    pubDepenses, margeAvantPub, pubTotale, net,
+    modePub: mode,
+    ...scenarios[mode],
+    scenarios,
     deliveredOrders: new Set(lines.map((l) => l.orderId)).size,
     unitsSold: lines.reduce((s, l) => s + l.quantity, 0),
   }
@@ -407,17 +474,25 @@ export async function partnerSettlement(partnerId: number, startDate: string, to
   const payments = pay.rows.map((x) => ({ ...x, amount: num(x.amount), date: String(x.date instanceof Date ? x.date.toISOString() : x.date).slice(0, 10) }))
   const paid = r2(payments.reduce((s, x) => s + x.amount, 0))
   const t = all.totals
-  const s = settle(t, all.partner.shinePct, paid)
+  const s = settle(t, all.partner.shinePct, paid, t.modePub)
+  const autre: ModePub = t.modePub === 'partage' ? 'partenaire' : 'partage'
+  const sAutre = settle(t, all.partner.shinePct, paid, autre)
   return {
     cogsSold: t.cogs,
     expensesPaidByPartner: t.expensesPaidByPartner,
     advances: t.advances,
+    modePub: t.modePub,
+    margeAvantPub: t.margeAvantPub,
+    pubTotale: t.pubTotale,
+    pubPartenaire: s.pubPartenaire,
     partnerShare: s.partnerShare,
     shineShare: s.shineShare,
     net: t.net,
     owed: s.owed,
     paid,
     balance: s.balance,
+    /** Les deux accords sur les memes chiffres depuis le debut : part de chacun et solde. */
+    scenarios: { [t.modePub]: s, [autre]: sAutre } as Record<ModePub, ReturnType<typeof settle>>,
     payments,
     /** Tous les chiffres depuis le debut, pour le bilan (argent passe par Shine, verdict). */
     depuisDebut: t,
@@ -435,10 +510,12 @@ export function todayCasablanca(): string {
  * leur livraison, leur emballage, leur publicite. Or Shine n'en garde que sa
  * part. La correction se ramene a une ligne :
  *
- *   rentabilite : − (part du partenaire dans la marge nette + depenses du partenariat)
+ *   rentabilite : − (part du partenaire + depenses du partenariat − pub a sa charge)
  *
- * (Le tableau de bord contient deja la contribution C des ventes ; la marge
- * nette vaut N = C − depenses ; Shine garde s·N ; C − s·N = (1 − s)·N + depenses.)
+ * (Le tableau de bord contient deja la contribution C des ventes, pub Meta
+ * comprise ; la marge nette vaut N = C − depenses. Pub partagee : Shine garde
+ * s·N, et C − s·N = (1 − s)·N + depenses. Pub a sa charge : se partage la marge
+ * avant pub M = N + pub ; Shine garde s·M, et C − s·M = (1 − s)·M + depenses − pub.)
  *
  *   tresorerie  : − (versements faits au partenaire + depenses payees par Shine)
  *                 + avances recues du partenaire (de l'argent entre dans la caisse)
@@ -452,7 +529,7 @@ export function todayCasablanca(): string {
 export async function ajustementDepotVente(from: string, to: string) {
   try {
     const ps = await pool.query(`SELECT id, "startDate"::text AS s FROM "Partner" WHERE active`)
-    let partnerShare = 0, frais = 0, fraisPayesShine = 0, avances = 0, du = 0
+    let partnerShare = 0, frais = 0, pubPartenaire = 0, fraisPayesShine = 0, avances = 0, du = 0
     for (const p of ps.rows) {
       const debut = from < p.s ? p.s : from
       if (debut > to) continue
@@ -460,6 +537,8 @@ export async function ajustementDepotVente(from: string, to: string) {
       if (!L) continue
       partnerShare += L.totals.partnerShare
       frais += L.totals.expenses
+      // Pub a sa charge : le tableau de bord l'a comptee chez Shine, elle ne l'est pas.
+      pubPartenaire += L.totals.pubPartenaire
       fraisPayesShine += L.totals.expensesPaidByShine
       avances += L.totals.advances
       // Ce que Shine lui doit a la fin de la periode, depuis le debut du partenariat.
@@ -474,14 +553,14 @@ export async function ajustementDepotVente(from: string, to: string) {
     )
     const versements = num(v.rows[0]?.s)
     return {
-      part: r2(partnerShare + frais),
+      part: r2(partnerShare + frais - pubPartenaire),
       cash: r2(versements + fraisPayesShine - avances),
-      partnerShare: r2(partnerShare), frais: r2(frais),
+      partnerShare: r2(partnerShare), frais: r2(frais), pubPartenaire: r2(pubPartenaire),
       versements: r2(versements), fraisPayesShine: r2(fraisPayesShine), avances: r2(avances),
       du: r2(du),
       partenaires: ps.rowCount ?? 0,
     }
   } catch {
-    return { part: 0, cash: 0, partnerShare: 0, frais: 0, versements: 0, fraisPayesShine: 0, avances: 0, du: 0, partenaires: 0 }
+    return { part: 0, cash: 0, partnerShare: 0, frais: 0, pubPartenaire: 0, versements: 0, fraisPayesShine: 0, avances: 0, du: 0, partenaires: 0 }
   }
 }

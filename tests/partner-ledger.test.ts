@@ -122,4 +122,22 @@ test("l'argent garde par Shine moins ce qu'elle doit redonne exactement sa part"
   const s = settle({ cogs: t.cogs, expensesPaidByPartner: t.expPartner, advances: t.advances, net }, 50, paid)
   const garde = t.revenue + t.advances - t.adsLinked - t.orderCosts - t.packaging - t.returns - t.expShine - paid
   close(garde - s.balance, s.shineShare, 'garde moins du = part de Shine')
+  // Meme identite quand la pub est a sa charge.
+  const p = settle({ cogs: t.cogs, expensesPaidByPartner: t.expPartner, advances: t.advances, net, pubTotale: t.adsLinked }, 50, paid, 'partenaire')
+  close(garde - p.balance, p.shineShare, 'pub a sa charge : garde moins du = part de Shine')
+})
+
+test('pub a la charge du partenaire : on partage la marge avant pub, la pub sort de sa part', () => {
+  /* Cas reel (oct. 2026) : marge avant pub 340, pub 699,39 (577,07 ses
+     campagnes + 122,32 sa part des mixtes), 590 de stock vendu, 2 000 d'avance. */
+  const pub = 699.39
+  const net = 340 - pub
+  const partage = settle({ cogs: 590, expensesPaidByPartner: 0, advances: 2000, net, pubTotale: pub }, 50, 0, 'partage')
+  close(partage.shineShare, -179.7, 'pub partagee : Shine porte la moitie de la pub')
+  close(partage.balance, 2410.31, 'pub partagee : du')
+  const sienne = settle({ cogs: 590, expensesPaidByPartner: 0, advances: 2000, net, pubTotale: pub }, 50, 0, 'partenaire')
+  close(sienne.basePartage, 340, 'se partage la marge avant pub')
+  close(sienne.shineShare, 170, 'Shine : la moitie de la marge avant pub')
+  close(sienne.partnerShare - sienne.pubPartenaire, 170 - pub, 'lui : sa moitie moins toute la pub')
+  close(sienne.balance, 590 + 2000 - pub + 170, 'son stock + ce qui reste de son avance + sa part')
 })

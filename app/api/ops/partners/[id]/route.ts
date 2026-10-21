@@ -2,14 +2,15 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
-import { computeLedger, partnerSettlement, partnerStock, todayCasablanca } from '@/lib/partner-ledger'
+import { computeLedger, definirModePub, partnerSettlement, partnerStock, todayCasablanca, type ModePub } from '@/lib/partner-ledger'
 
 /**
  * GET   /api/ops/partners/:id?from=YYYY-MM-DD&to=YYYY-MM-DD
  *       → le releve de la periode (ventes ligne a ligne, frais, publicite,
  *         depenses, partage), l'etat du stock, et le solde a reverser — ce
  *         dernier toujours calcule depuis le debut du partenariat.
- * PATCH /api/ops/partners/:id { name?, shinePct?, startDate?, notes?, active? }
+ * PATCH /api/ops/partners/:id { name?, shinePct?, startDate?, notes?, active?, modePub? }
+ *       modePub : 'partage' (pub partagee comme un frais) | 'partenaire' (pub a sa charge)
  */
 export const dynamic = 'force-dynamic'
 
@@ -57,8 +58,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (typeof b.startDate === 'string' && DATE.test(b.startDate)) { vals.push(b.startDate); sets.push(`"startDate" = $${vals.length}::date`) }
   if (typeof b.notes === 'string') { vals.push(b.notes); sets.push(`notes = $${vals.length}`) }
   if (typeof b.active === 'boolean') { vals.push(b.active); sets.push(`active = $${vals.length}`) }
-  if (sets.length === 0) return NextResponse.json({ error: 'Rien a modifier' }, { status: 400 })
-  vals.push(id)
-  await pool.query(`UPDATE "Partner" SET ${sets.join(', ')}, "updatedAt" = now() WHERE id = $${vals.length}`, vals)
+  const pub = b.modePub === 'partage' || b.modePub === 'partenaire' ? (b.modePub as ModePub) : null
+  if (sets.length === 0 && !pub) return NextResponse.json({ error: 'Rien a modifier' }, { status: 400 })
+  if (sets.length > 0) {
+    vals.push(id)
+    await pool.query(`UPDATE "Partner" SET ${sets.join(', ')}, "updatedAt" = now() WHERE id = $${vals.length}`, vals)
+  }
+  if (pub) await definirModePub(id, pub)
   return NextResponse.json({ ok: true })
 }
