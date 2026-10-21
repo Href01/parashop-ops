@@ -9,6 +9,13 @@ export const maxDuration = 60
 export async function GET(request: Request) {
   if (!cronAuthorized(request)) return Response.json({ error: 'Unauthorized' }, { status: 401, headers: PRIVATE_HEADERS })
   if (!telegramConfigure()) return Response.json({ skipped: 'Telegram non configuré' }, { headers: PRIVATE_HEADERS })
+  /* LA NUIT (1 h - 9 h, Maroc), UN PASSAGE TOUTES LES 30 MIN SEULEMENT. Neon (plan
+     Launch) facture chaque heure ou la base est eveillee, et elle s'endort apres
+     5 min sans requete : un passage toutes les 5 min la garderait eveillee toute
+     la nuit (~8 h x 30 jours) pour une boutique ou personne ne commande. */
+  const [h, m] = new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Casablanca', hour: '2-digit', minute: '2-digit', hour12: false })
+    .format(new Date()).split(':').map(Number)
+  if (h >= 1 && h < 9 && m % 30 >= 5) return Response.json({ skipped: 'nuit' }, { headers: PRIVATE_HEADERS })
   try {
     return Response.json(await veille(), { headers: PRIVATE_HEADERS })
   } catch (e) {
