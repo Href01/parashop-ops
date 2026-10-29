@@ -27,6 +27,7 @@ import { CircleAlert, RotateCw } from 'lucide-react'
 import { V } from './Viz'
 import { T } from './Decision'
 import { calculerEcart } from '@/lib/analytics/ecart'
+import { ZoneDefilante } from './Defilement'
 
 /* ── Jetons ───────────────────────────────────────────────────────────────── */
 export const JET = {
@@ -144,19 +145,25 @@ export function ChampInfo({ label, definition, portee }: { label: string; defini
 }
 
 /* ── L'ecart vs comparaison ───────────────────────────────────────────────── */
-export function Ecart({ courant, precedent, hausseEstBonne = true }: {
+export function Ecart({ courant, precedent, hausseEstBonne = true, discret = false }: {
   courant: number | null | undefined
   precedent: number | null | undefined
   hausseEstBonne?: boolean
+  /** Dans un tableau : petit, et coloré seulement quand l'écart compte (≥ 25 %).
+   *  Un tableau où chaque cellule porte une flèche rouge ou verte ne laisse plus rien
+   *  ressortir : la couleur doit désigner, pas décorer. */
+  discret?: boolean
 }) {
   const e = calculerEcart(courant, precedent)
   if (!e) return null
   const bon = e.monte === hausseEstBonne
+  const marquant = !e.extreme && Math.abs(e.pct) >= 25
+  const couleur = e.extreme || Math.abs(e.pct) < 0.5 || (discret && !marquant) ? V.muted : bon ? V.good : V.critical
   // Fleche ET signe : la couleur n'est jamais le seul porteur du sens. Un ecart
   // extreme (« × 49 ») n'a PAS de couleur de verdict : ce n'est pas un bilan.
   return (
-    <span className="text-[11px] font-bold tabular-nums whitespace-nowrap" title={e.explication}
-      style={{ color: e.extreme || Math.abs(e.pct) < 0.5 ? V.muted : bon ? V.good : V.critical, cursor: e.extreme ? 'help' : undefined }}>
+    <span className={`${discret ? 'text-[10px] font-medium' : 'text-[11px] font-bold'} tabular-nums whitespace-nowrap`} title={e.explication}
+      style={{ color: couleur, cursor: e.extreme ? 'help' : undefined }}>
       {e.texte}
     </span>
   )
@@ -325,13 +332,23 @@ export function DimensionTable({
           style={{ border: `1px solid ${V.grid}`, color: V.ink }}
         />
         <span className={T.note} style={{ color: V.muted }}>{nf(filtrees.length)} lignes</span>
+        {/* Les cartes n'ont pas d'en-tetes a cliquer : le tri passe par ce menu. */}
+        <label className="sm:hidden flex items-center gap-1.5 w-full">
+          <span className={T.note} style={{ color: V.muted }}>Trier par</span>
+          <select aria-label="Trier par" value={tri.cle}
+            onChange={(e) => { setTri({ cle: e.target.value, desc: true }); setPage(0) }}
+            className="text-[12px] font-semibold rounded-lg px-2 py-1 outline-none flex-1 min-w-0"
+            style={{ border: `1px solid ${V.grid}`, color: V.ink, background: '#fff' }}>
+            {colonnes.map((c) => <option key={c.cle} value={c.cle}>{c.label}</option>)}
+          </select>
+        </label>
       </div>
 
       {filtrees.length === 0 ? (
         <p className={T.note} style={{ color: V.muted }}>{vide ?? 'Aucune donnée sur la période.'}</p>
       ) : (
         <>
-          <div className="overflow-x-auto -mx-1 px-1">
+          <ZoneDefilante className="hidden sm:block -mx-1 px-1">
             <table className="w-full" style={{ borderCollapse: 'collapse', minWidth: 120 + colonnes.length * (comparaison ? 132 : 104) }}>
               <thead>
                 <tr>
@@ -381,7 +398,7 @@ export function DimensionTable({
                             ? <span className={T.note} style={{ color: V.muted }} title={`${m.n} observations — sous le seuil`}>n={nf(m.n)}</span>
                             : fmt(m?.valeur, c.format)}
                           {comparaison && m?.precedent != null && (
-                            <div><Ecart courant={m.valeur} precedent={m.precedent} hausseEstBonne={c.hausseEstBonne ?? true} /></div>
+                            <div><Ecart discret courant={m.valeur} precedent={m.precedent} hausseEstBonne={c.hausseEstBonne ?? true} /></div>
                           )}
                         </td>
                       )
@@ -402,6 +419,54 @@ export function DimensionTable({
                 </tr>
               </tbody>
             </table>
+          </ZoneDefilante>
+
+          {/* TELEPHONE : une carte par ligne. Le tableau ne montrait que le nom et le bord de
+              la premiere colonne : tous les chiffres etaient hors cadre, sans indice. Une
+              carte les met tous a l'ecran, sans defilement lateral. */}
+          <div className="sm:hidden space-y-2" role="list">
+            {visibles.map((l) => {
+              const part = ((l.mesures[colonnes[0]?.cle]?.valeur ?? 0) / maxPremiere) * 100
+              return (
+                <div key={l.cle} role="listitem" className="rounded-lg px-3 py-2.5" style={{ border: `1px solid ${V.grid}`, background: '#fff' }}>
+                  <p className="text-[13px] font-semibold break-words" style={{ color: V.ink }}>{l.cle}</p>
+                  <div className="mt-1.5 h-1 rounded-sm" style={{ background: V.grid }} aria-hidden="true">
+                    <div className="h-full rounded-sm" style={{ width: `${Math.max(2, part)}%`, background: V.s1, opacity: .55 }} />
+                  </div>
+                  <div className="mt-2.5 grid grid-cols-3 gap-x-3 gap-y-2.5">
+                    {colonnes.map((c) => {
+                      const m = l.mesures[c.cle]
+                      return (
+                        <div key={c.cle} className="min-w-0">
+                          <p className="text-[10px] leading-tight" style={{ color: V.muted }}>{c.label}</p>
+                          <p className="text-[13px] font-bold tabular-nums leading-snug" style={{ color: V.ink }}>
+                            {m?.valeur == null && m?.n != null
+                              ? <span className="font-normal" style={{ color: V.muted }} title={`${m.n} observations — sous le seuil`}>n={nf(m.n)}</span>
+                              : fmt(m?.valeur, c.format)}
+                          </p>
+                          {comparaison && m?.precedent != null && (
+                            <Ecart discret courant={m.valeur} precedent={m.precedent} hausseEstBonne={c.hausseEstBonne ?? true} />
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+            <div className="rounded-lg px-3 py-2.5" style={{ background: V.grid + '55' }}>
+              <p className="text-[13px] font-bold" style={{ color: V.ink }}>Total</p>
+              <div className="mt-2 grid grid-cols-3 gap-x-3 gap-y-2">
+                {colonnes.map((c) => (
+                  <div key={c.cle} className="min-w-0">
+                    <p className="text-[10px] leading-tight" style={{ color: V.muted }}>{c.label}</p>
+                    <p className="text-[13px] font-bold tabular-nums" style={{ color: totaux[c.cle] == null ? V.muted : V.ink }}>
+                      {totaux[c.cle] == null ? '—' : fmt(totaux[c.cle], c.format)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
           {pages > 1 && (

@@ -19,7 +19,8 @@ import { T } from './_components/Decision'
 import { ReportShell, Scorecard, DimensionTable, Squelette, ErreurChargement, type ColonneMesure, type LigneTable } from './_components/Report'
 import { BarreControle } from './_components/Controls'
 import { useReport, interroger } from './_components/useReport'
-import { Cascade, Maturite, type FacteurVue } from './_components/Decision'
+import { Cascade, Maturite, Retenir, type FacteurVue } from './_components/Decision'
+import { lectureMarge } from '@/lib/analytics/lecture'
 
 type Reponse = Awaited<ReturnType<typeof interroger>>
 
@@ -109,6 +110,9 @@ export default function VueEnsemble() {
     }
   }, [total, etat.comparaison, etat.basis])
 
+  // La réponse avant les chiffres : pourquoi la marge a bougé, en une phrase.
+  const retenir = useMemo(() => (cascade ? lectureMarge(cascade) : null), [cascade])
+
   const colonnes: ColonneMesure[] = useMemo(
     () => (table?.modele.mesures ?? []).map((m) => ({
       cle: m.cle, label: m.label, definition: m.definition,
@@ -127,7 +131,7 @@ export default function VueEnsemble() {
             setFiltre={setFiltre} periodePersonnalisee={periodePersonnalisee}
             segments={{ appareil: ['mobile', 'desktop'], langue: ['fr', 'ar'] }} />
         }
-        enTete={erreur ? <ErreurChargement message={erreur} /> : null}
+        enTete={erreur ? <ErreurChargement message={erreur} /> : retenir ? <Retenir titre={retenir.titre} detail={retenir.detail} /> : null}
         scorecards={!tete ? (
           // Un squelette garde la place : la page ne saute pas quand les
           // chiffres arrivent, et l'œil sait déjà où ils vont apparaître.

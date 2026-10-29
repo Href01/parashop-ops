@@ -12,12 +12,13 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { V } from '../_components/Viz'
-import { T } from '../_components/Decision'
+import { T, Retenir } from '../_components/Decision'
 import { ReportShell, Scorecard, Squelette, ErreurChargement } from '../_components/Report'
 import { BarreControle } from '../_components/Controls'
 import { useReport, interroger } from '../_components/useReport'
 import { Entonnoir, type EtapeEntonnoir } from '../_components/Charts'
 import { FUNNEL_PAR_DEFAUT } from '@/lib/analytics/funnel'
+import { lectureConversion } from '@/lib/analytics/lecture'
 
 const DEFAUT: string[] = [...FUNNEL_PAR_DEFAUT]
 
@@ -89,6 +90,12 @@ export default function Conversion() {
     return { i: pire, taux: pireTaux, de: donnees[pire - 1], a: donnees[pire] }
   }, [donnees])
 
+  // La conclusion d'abord : elle etait la derniere ligne de la page, sous sept barres.
+  const retenir = useMemo(
+    () => (donnees ? lectureConversion(donnees.map((d) => ({ label: d.label, sessions: d.sessions }))) : null),
+    [donnees],
+  )
+
   const basculer = (cle: string) => {
     setEtapes((e) => (e.includes(cle) ? e.filter((x) => x !== cle) : [...e, cle]))
   }
@@ -102,7 +109,7 @@ export default function Conversion() {
           setFiltre={setFiltre} periodePersonnalisee={periodePersonnalisee}
           afficherComparaison={false} afficherBase={false} />
       }
-      enTete={erreur ? <ErreurChargement message={erreur} /> : null}
+      enTete={erreur ? <ErreurChargement message={erreur} /> : retenir ? <Retenir titre={retenir.titre} detail={retenir.detail} /> : null}
       scorecards={!donnees ? (
         [0, 1, 2, 3].map((i) => <div key={i}><Squelette lignes={2} hauteur={12} /></div>)
       ) : (
@@ -158,17 +165,6 @@ export default function Conversion() {
           </div>
 
           {!donnees ? <Squelette lignes={5} hauteur={22} /> : <Entonnoir etapes={donnees} valoriser={valoriser} />}
-
-          {donnees && marche && (
-            <p className={`${T.body} max-w-[70ch]`} style={{ color: V.ink2 }}>
-              La marche la plus coûteuse est <b>{marche.de.label} → {marche.a.label}</b> :
-              {' '}{(100 - marche.taux).toFixed(0)} % s&apos;arrêtent là.
-              {valoriser && (
-                <> Environ <b>{valoriser(marche.de.sessions - marche.a.sessions).toLocaleString('fr-FR')} MAD</b> de
-                marge ne se réalisent pas à cause d&apos;elle, au taux de conversion global de la période.</>
-              )}
-            </p>
-          )}
         </div>
       }
     />

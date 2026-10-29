@@ -38,6 +38,23 @@ export const nf = (n: number) => Math.round(n).toLocaleString('fr-FR')
 export const pctf = (n: number, d = 1) => `${n.toFixed(d).replace('.', ',')} %`
 export const signed = (n: number) => `${n >= 0 ? '+' : '−'}${mad(Math.abs(n))}`
 
+/* ── « À retenir » : la réponse avant les chiffres ─────────────────────────────
+   Chaque écran démarrait par des cartes de chiffres et laissait la conclusion à
+   la lectrice : sur Conversion la phrase « la marche la plus coûteuse est… »
+   était la DERNIÈRE ligne de la page, sous sept barres. Une analyste commence par
+   la réponse, puis la prouve. Le texte vient de fonctions pures et testées
+   (lib/analytics/lecture.ts), pas de gabarits écrits dans les pages. */
+export function Retenir({ titre, detail }: { titre: string; detail?: string }) {
+  return (
+    <div className="rounded-xl px-4 py-3" role="note"
+      style={{ background: '#f7f6f1', borderLeft: `3px solid ${V.ink}` }}>
+      <p className={T.label} style={{ color: V.muted }}>À retenir</p>
+      <p className="text-[15px] font-bold leading-snug mt-1 max-w-[72ch]" style={{ color: V.ink }}>{titre}</p>
+      {detail && <p className={`${T.body} mt-1 max-w-[72ch]`} style={{ color: V.ink2 }}>{detail}</p>}
+    </div>
+  )
+}
+
 /* ── Taux avec garde-fou d'effectif ───────────────────────────────────────────
    64 commandes decoupees par ville, canal et appareil : un « 67 % » calcule sur
    3 commandes n'est pas un constat, c'est du hasard mis en forme.
@@ -113,18 +130,18 @@ export function Cascade({
           // qui n'en est pas un.
           const c = f.provisoire ? V.axis : positif ? V.good : V.critical
           return (
-            <div key={f.label} className="flex items-center gap-3">
+            <div key={f.label} className="flex flex-wrap items-center gap-x-3 gap-y-1 sm:flex-nowrap">
               {/* Pas de `truncate` : « Volume de command… » ne veut rien dire.
                   Le libelle passe a la ligne, la ligne grandit — c'est le bon
                   arbitrage quand il n'y a que quatre facteurs. */}
-              <div className="w-[46%] min-w-0 sm:w-[34%]">
+              <div className="min-w-0 flex-1 sm:flex-none sm:w-[34%]">
                 <p className={`${T.body} font-semibold`} style={{ color: V.ink }}>{f.label}</p>
                 <p className={T.note} style={{ color: V.muted }}>{f.de} → {f.a}</p>
                 {f.provisoire && <p className={T.note} style={{ color: V.ink2 }}>◷ {f.provisoire}</p>}
               </div>
               {/* Le zero est au centre : un effet negatif part a gauche, un
                   positif a droite. On lit le signe avant de lire le chiffre. */}
-              <div className="flex-1 flex items-center min-w-0" aria-hidden="true">
+              <div className="order-last basis-full flex items-center min-w-0 sm:order-none sm:basis-auto sm:flex-1" aria-hidden="true">
                 <div className="w-1/2 flex justify-end">
                   {!positif && <div className="h-3.5 rounded-l" style={{ width: largeur(f.effet), background: c }} />}
                 </div>

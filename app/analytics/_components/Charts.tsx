@@ -8,6 +8,7 @@
  * mois sur l'autre, l'enchainement des pages.
  */
 
+import { useState } from 'react'
 import { V } from './Viz'
 import { T } from './Decision'
 
@@ -175,33 +176,46 @@ export function TableCohortes({ cellules, maxRangs = 6 }: { cellules: CelluleCoh
 
 export type PasChemin = { de: string; vers: string; n: number }
 
+/** Combien d'enchainements montrer d'emblee : les vingt suivants reculent la table sous
+ *  trois ecrans de defilement, pour des lignes a 49 visites. */
+const CHEMINS_VISIBLES = 8
+
 export function Chemins({ pas, onDepart }: { pas: PasChemin[]; onDepart?: (p: string) => void }) {
+  const [tout, setTout] = useState(false)
   if (pas.length === 0) return <p className={T.note} style={{ color: V.muted }}>Aucun enchaînement.</p>
   const max = Math.max(...pas.map((p) => p.n), 1)
+  const montres = tout ? pas : pas.slice(0, CHEMINS_VISIBLES)
+  const reste = pas.length - CHEMINS_VISIBLES
   // Grille a colonnes fixes plutot que des `flex-1` qui se disputent la place :
   // la premiere version centrait les paires au milieu d'un grand vide, avec les
   // barres rejetees a droite. On lit une liste, pas une constellation.
+  // Sur telephone la barre disparait : elle laissait 60 px a chaque nom de page.
   return (
     <div className="space-y-1 max-w-[760px]">
-      {pas.map((p, i) => (
-        <div key={i} className="grid items-center gap-2"
-          style={{ gridTemplateColumns: 'minmax(0,1fr) 12px minmax(0,1fr) 90px 42px' }}>
+      {montres.map((p, i) => (
+        <div key={i} className="grid items-center gap-2 grid-cols-[minmax(0,1fr)_12px_minmax(0,1fr)_42px] sm:grid-cols-[minmax(0,1fr)_12px_minmax(0,1fr)_90px_42px]">
           <span className="text-[12px] truncate" style={{ color: V.ink2 }} title={p.de}>{p.de}</span>
           <span className="text-[11px] text-center" style={{ color: V.muted }} aria-hidden="true">→</span>
           <button
             onClick={() => onDepart?.(p.vers)}
             disabled={!onDepart || p.vers.startsWith('(')}
-            className="text-[12px] truncate text-left disabled:cursor-default hover:underline"
+            className="text-[12px] truncate text-left disabled:cursor-default hover:underline min-h-7"
             style={{ color: V.ink }} title={p.vers}
           >
             {p.vers}
           </button>
-          <div className="h-1.5 rounded-sm" style={{ background: V.grid }}>
+          <div className="hidden sm:block h-1.5 rounded-sm" style={{ background: V.grid }}>
             <div className="rp-bar h-full rounded-sm" style={{ width: `${(p.n / max) * 100}%`, background: V.s1 }} />
           </div>
           <span className="text-[12px] tabular-nums text-right" style={{ color: V.ink }}>{nf(p.n)}</span>
         </div>
       ))}
+      {reste > 0 && (
+        <button type="button" onClick={() => setTout((t) => !t)} aria-expanded={tout}
+          className="min-h-9 text-[12px] font-semibold underline" style={{ color: V.ink2 }}>
+          {tout ? 'Réduire la liste' : `Voir les ${nf(reste)} autres enchaînements`}
+        </button>
+      )}
     </div>
   )
 }

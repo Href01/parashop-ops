@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useRef } from 'react'
 import { MODULES } from './Report'
+import { ZoneDefilante } from './Defilement'
 import { V } from './Viz'
 import { analyticsModuleHref } from '@/lib/analytics/navigation'
 
@@ -30,8 +31,10 @@ export default function AnalyticsNav() {
   }, [pathname])
 
   return (
+    // Onze onglets : sur un telephone trois sont visibles. Le bord estompe dit qu'il y en a d'autres.
+    <ZoneDefilante>
     <nav ref={navRef}
-      className="flex min-h-10 gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="flex min-h-10 w-max min-w-full gap-1"
       aria-label="Modules d'analyse">
       {MODULES.map((m) => {
         const actif = m.href === '/analytics' ? pathname === m.href : pathname.startsWith(m.href)
@@ -55,5 +58,6 @@ export default function AnalyticsNav() {
           page. Garder un onglet vers un doublon fige, c'est garantir qu'un jour
           on lira deux chiffres differents pour la meme question. */}
     </nav>
+    </ZoneDefilante>
   )
 }

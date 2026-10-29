@@ -17,6 +17,7 @@
  */
 
 import { useState } from 'react'
+import { ZoneDefilante } from './Defilement'
 import { V } from './Viz'
 import { T } from './Decision'
 import { PERIODES, PERIODES_DECALEES, periodeDecaleeActive, dateDuJour, type EtatRapport } from './useReport'
@@ -60,6 +61,10 @@ export function BarreControle({
   afficherBase?: boolean
 }) {
   const [ouvert, setOuvert] = useState(false)
+  // Sur un telephone, cinq rangees de reglages repoussaient toutes les donnees sous
+  // la ligne de flottaison. La periode reste visible ; le reste tient derriere UN bouton
+  // qui dit ce qui est actif, pour ne pas cacher un filtre qui fausse les chiffres.
+  const [filtresOuverts, setFiltresOuverts] = useState(false)
   const [d1, setD1] = useState(etat.periode.debut)
   const [d2, setD2] = useState(etat.periode.fin)
   const valeurFiltre = (dim: string) => etat.filtres.find((f) => f.dimension === dim)?.valeurs ?? []
@@ -67,6 +72,12 @@ export function BarreControle({
   const jour = dateDuJour()
   const enCours = etat.jours === 1 && etat.periode.fin === jour
   const decalee = periodeDecaleeActive(etat)
+  const aDesReglages = afficherComparaison || afficherBase || !!segments?.appareil || !!segments?.langue
+  const resume = [
+    afficherComparaison ? (etat.modeComparaison === 'precedente' ? 'vs précédente' : 'sans comparaison') : null,
+    afficherBase ? (etat.basis === 'cohorte' ? 'à la commande' : 'à la livraison') : null,
+    actifs > 0 ? `${actifs} segment${actifs > 1 ? 's' : ''}` : null,
+  ].filter(Boolean).join(' · ')
 
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -87,7 +98,7 @@ export function BarreControle({
       `}</style>
 
       <div className="relative min-w-0 max-w-full">
-        <div className="max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <ZoneDefilante className="max-w-full">
           <Groupe>
           {PERIODES.map((p) => (
             <Bouton
@@ -120,7 +131,7 @@ export function BarreControle({
             Dates…
           </Bouton>
           </Groupe>
-        </div>
+        </ZoneDefilante>
 
         {ouvert && (
           <div className="pop fixed inset-x-4 top-24 z-50 rounded-lg bg-white p-3 shadow-lg sm:absolute sm:inset-x-auto sm:left-0 sm:top-full sm:mt-1 sm:w-max"
@@ -150,6 +161,20 @@ export function BarreControle({
         )}
       </div>
 
+      {aDesReglages && (
+        <button type="button" onClick={() => setFiltresOuverts((o) => !o)}
+          aria-expanded={filtresOuverts}
+          className="ctrl sm:hidden inline-flex items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-semibold"
+          style={{ border: `1px solid ${V.grid}`, maxWidth: '100%' }}>
+          <span aria-hidden="true">{filtresOuverts ? '▾' : '▸'}</span>
+          <span>Réglages</span>
+          <span className="font-normal truncate" style={{ color: V.muted }}>· {resume || 'par défaut'}</span>
+        </button>
+      )}
+
+      {/* `contents` : les groupes restent des enfants directs de la rangée, comme avant,
+          et ne se cachent que sous 640 px tant que le bouton est refermé. */}
+      <div className={filtresOuverts ? 'contents' : 'hidden sm:contents'}>
       {afficherComparaison && (
         <Groupe>
           <Bouton actif={etat.modeComparaison === 'precedente'} onClick={() => maj({ cmp: null })}
@@ -211,6 +236,7 @@ export function BarreControle({
           tout réafficher
         </button>
       )}
+      </div>
 
       {/* Toujours sur sa propre ligne : le sélecteur de dates s'ouvre
           juste au-dessus et la recouvrait. */}
