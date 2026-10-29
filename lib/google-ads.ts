@@ -78,3 +78,23 @@ export async function googleAdsSearch<T = Record<string, unknown>>(query: string
   }
   return out
 }
+
+/** Ecriture (mutate). Ne sert qu'a la garde de stock : mettre un groupe en pause. */
+export async function googleAdsMutate(mutateOperations: unknown[]): Promise<void> {
+  const token = await googleAdsAccessToken()
+  const customer = String(process.env.GOOGLE_ADS_CUSTOMER_ID).replace(/\D/g, '')
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+    'x-goog-user-project': process.env.GOOGLE_ADS_PROJECT_ID || '',
+  }
+  if (process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID) headers['login-customer-id'] = process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID.replace(/\D/g, '')
+  const res = await fetch(`https://googleads.googleapis.com/${VERSION}/customers/${customer}/googleAds:mutate`, {
+    method: 'POST', headers, cache: 'no-store', signal: AbortSignal.timeout(TIMEOUT_MS),
+    body: JSON.stringify({ mutateOperations, partialFailure: false }),
+  })
+  if (!res.ok) {
+    const json = await res.json().catch(() => null) as { error?: { message?: string } } | null
+    throw new Error(`Google Ads mutate ${res.status}: ${json?.error?.message || 'erreur'}`)
+  }
+}

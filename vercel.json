@@ -21,6 +21,10 @@
       "schedule": "30 5 * * *"
     },
     {
+      "path": "/api/cron/google-ads-guard",
+      "schedule": "0,30 * * * *"
+    },
+    {
       "path": "/api/ops/ads/refresh-meta-token",
       "schedule": "0 6 * * 3"
     },
