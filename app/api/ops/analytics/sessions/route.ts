@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 import { analyticsError, analyticsQuery } from '@/lib/analytics/db'
 import { SESSION_BOT_FILTER_CLAUSE, TZ } from '@/lib/analytics/metrics'
+import { fenetreSql, traficAutomatiseSql } from '@/lib/analytics/automated'
 
 /**
  * LA LISTE DES SESSIONS, et qui est là maintenant.
@@ -13,7 +14,9 @@ import { SESSION_BOT_FILTER_CLAUSE, TZ } from '@/lib/analytics/metrics'
  * vitrine, et rattachable a la commande, ce qu'aucun outil externe ne sait faire
  * ici.
  *
- * GET /api/ops/analytics/sessions?minutes=30&filtre=…&appareil=…&canal=…&q=
+ * GET /api/ops/analytics/sessions?minutes=30&filtre=…&appareil=…&canal=…&q=…&auto=1
+ *   auto=1 : inclut le trafic automatise (robots, rendus Meta/Google, hebergeurs) —
+ *   par defaut il est ECARTE partout : liste, puces, taux, direct.
  */
 
 export const dynamic = 'force-dynamic'
@@ -86,18 +89,38 @@ export async function GET(request: NextRequest) {
     const q = (sp.get('q') || '').trim().slice(0, 60)
     const appareil = (sp.get('appareil') || '').trim().slice(0, 20)
     const canal = (sp.get('canal') || '').trim().slice(0, 40)
+    const inclureAuto = sp.get('auto') === '1'
 
     // Le direct : 30 minutes, comme GA4. Les 5 minutes precedentes etaient trop
     // courtes pour un site a ce volume — on y voyait « 0 visiteur » en
     // permanence, ce qui donne l'impression que la mesure est cassee.
-    const direct = await analyticsQuery(`
-      SELECT COUNT(DISTINCT e."sessionId")::int AS actifs,
-             COUNT(*)::int AS evenements
-      FROM "AnalyticsEvent" e
-      LEFT JOIN "AnalyticsSession" s ON s."sessionId" = e."sessionId"
-      WHERE e."createdAt" >= NOW() - INTERVAL '30 minutes'
-        AND e.name NOT IN ('ORDER_CONFIRMED', 'ORDER_DELIVERED', 'ORDER_CANCELLED')
-        ${SESSION_BOT_FILTER_CLAUSE}`)
+    // Les robots de relecture des annonces comptaient ici comme des visiteuses :
+    // on mesure la duree et les paniers de chaque session sur 24 h pour les ecarter
+    // avec la MEME regle que partout ailleurs.
+    const AUTO_DIRECT = traficAutomatiseSql({ session: 's', paniers: 'st.paniers', duree: 'st.duree', commande: 'o.id' })
+    const directP = analyticsQuery(`
+      WITH live AS (
+        SELECT DISTINCT "sessionId" FROM "AnalyticsEvent"
+        WHERE "createdAt" >= NOW() - INTERVAL '30 minutes' AND "sessionId" IS NOT NULL
+          AND name NOT IN ('ORDER_CONFIRMED', 'ORDER_DELIVERED', 'ORDER_CANCELLED')
+      ), st AS (
+        SELECT e."sessionId",
+               COUNT(*)::int AS evenements,
+               COUNT(*) FILTER (WHERE e.name = 'PRODUCT_ADD_TO_CART')::int AS paniers,
+               EXTRACT(epoch FROM (MAX(e."createdAt") - MIN(e."createdAt")))::int AS duree
+        FROM "AnalyticsEvent" e JOIN live l ON l."sessionId" = e."sessionId"
+        WHERE e."createdAt" >= NOW() - INTERVAL '24 hours'
+          AND e.name NOT IN ('ORDER_CONFIRMED', 'ORDER_DELIVERED', 'ORDER_CANCELLED')
+        GROUP BY 1
+      )
+      SELECT COUNT(*) FILTER (WHERE ${inclureAuto ? 'TRUE' : `NOT ${AUTO_DIRECT}`})::int AS actifs,
+             COUNT(*) FILTER (WHERE ${AUTO_DIRECT})::int AS automatises,
+             COALESCE(SUM(st.evenements) FILTER (WHERE ${inclureAuto ? 'TRUE' : `NOT ${AUTO_DIRECT}`}), 0)::int AS evenements
+      FROM live
+      LEFT JOIN "AnalyticsSession" s ON s."sessionId" = live."sessionId"
+      LEFT JOIN st ON st."sessionId" = live."sessionId"
+      LEFT JOIN LATERAL (SELECT id FROM "Order" WHERE "sessionId" = live."sessionId" ORDER BY "createdAt" DESC LIMIT 1) o ON true
+      WHERE TRUE ${SESSION_BOT_FILTER_CLAUSE}`)
 
     // Requête PARAMÉTRÉE. La version précédente interpolait la recherche dans
     // le SQL après avoir doublé les apostrophes : ça tenait, mais une règle qui
@@ -107,8 +130,53 @@ export async function GET(request: NextRequest) {
     // PREMIER pour que les memes indices servent a la periode precedente, en
     // ne changeant que les deux valeurs.
     params.push(debut, fin)
-    const FENETRE = `(s."firstSeenAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date`
-    const conditions: string[] = [FENETRE, SESSION_BOT_FILTER_CLAUSE.replace(/^\s*AND\s*/, '')]
+    // Fenetre ecrite avec des bornes sur la colonne (utilisables par l'index), a
+    // l'identique de l'ancien `(col AT TIME ZONE tz)::date BETWEEN a AND b`.
+    const FENETRE = fenetreSql('s."firstSeenAt"', '$1', '$2')
+    const BOT_NATIF = SESSION_BOT_FILTER_CLAUSE.replace(/^\s*AND\s*/, '')
+    const AUTO = traficAutomatiseSql({ session: 's', paniers: 'stats.paniers', duree: 'stats.duree', commande: 'o.id' })
+    const HUMAIN = inclureAuto ? 'TRUE' : `NOT ${AUTO}`
+    const conditions: string[] = [FENETRE, BOT_NATIF]
+
+    // UNE SEULE definition des statistiques par session, partagee par la liste, les
+    // puces, le taux et les listes deroulantes. Avant, la liste lisait les
+    // evenements a partir du DERNIER SESSION_START et les puces non, et seule la
+    // liste appliquait le filtre robots : un meme segment pouvait afficher deux
+    // effectifs differents.
+    const CTE_STATS = `
+      bornes AS (
+        SELECT "sessionId",
+               COALESCE(MAX("createdAt") FILTER (WHERE name = 'SESSION_START'), MIN("createdAt")) AS depart
+        FROM "AnalyticsEvent"
+        WHERE ${fenetreSql('"createdAt"', '$1', '$2')}
+          AND "sessionId" IS NOT NULL
+          AND name NOT IN ('ORDER_CONFIRMED', 'ORDER_DELIVERED', 'ORDER_CANCELLED')
+        GROUP BY 1
+      ), stats AS (
+        SELECT e."sessionId",
+               COUNT(*)::int AS actions,
+               COUNT(*) FILTER (WHERE e.name = 'PRODUCT_VIEW_DETAIL')::int AS fiches,
+               COUNT(*) FILTER (WHERE e.name = 'PRODUCT_ADD_TO_CART')::int AS paniers,
+               COUNT(*) FILTER (WHERE e.name = 'SEARCH_SUBMIT')::int AS recherches,
+               COUNT(*) FILTER (WHERE e.name IN (
+                 'PURCHASE_FAILED','CHECKOUT_VALIDATION_FAILED','PROMO_CODE_FAILED',
+                 'SEARCH_ZERO_RESULTS','OTP_INVALID','OTP_SEND_FAILED','OTP_DELIVERY_FAILED',
+                 'RAGE_CLICK','DEAD_CLICK','CHECKOUT_FIELD_ERROR','JS_ERROR'))::int AS frictions,
+               MAX(e."createdAt") AS derniere,
+               MIN(e."createdAt") AS premiere,
+               EXTRACT(epoch FROM (MAX(e."createdAt") - MIN(e."createdAt")))::int AS duree
+        FROM "AnalyticsEvent" e
+        JOIN bornes b ON b."sessionId" = e."sessionId" AND e."createdAt" >= b.depart
+        WHERE ${fenetreSql('e."createdAt"', '$1', '$2')}
+          AND e.name NOT IN ('ORDER_CONFIRMED', 'ORDER_DELIVERED', 'ORDER_CANCELLED')
+        GROUP BY 1
+      )`
+    const JOINTURES = `
+      FROM "AnalyticsSession" s
+      LEFT JOIN stats ON stats."sessionId" = s."sessionId"
+      LEFT JOIN LATERAL (
+        SELECT * FROM "Order" WHERE "sessionId" = s."sessionId" ORDER BY "createdAt" DESC LIMIT 1
+      ) o ON true`
 
     // Les filtres d'attribut s'appliquent AUSSI au comptage des segments : les
     // puces doivent compter dans le même périmètre que la liste qu'elles ouvrent.
@@ -129,34 +197,10 @@ export async function GET(request: NextRequest) {
     }
     conditions.push(...perimetre)
     if (filtre !== 'toutes') conditions.push(SEGMENTS[filtre].sql)
+    if (!inclureAuto) conditions.push(`NOT ${AUTO}`)
 
-    const r = await analyticsQuery(`
-      WITH bornes AS (
-        SELECT "sessionId",
-               COALESCE(MAX("createdAt") FILTER (WHERE name = 'SESSION_START'), MIN("createdAt")) AS depart
-        FROM "AnalyticsEvent"
-        WHERE ("createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
-          AND "sessionId" IS NOT NULL
-          AND name NOT IN ('ORDER_CONFIRMED', 'ORDER_DELIVERED', 'ORDER_CANCELLED')
-        GROUP BY 1
-      ), stats AS (
-        SELECT e."sessionId",
-               COUNT(*)::int AS actions,
-               COUNT(*) FILTER (WHERE e.name = 'PRODUCT_VIEW_DETAIL')::int AS fiches,
-               COUNT(*) FILTER (WHERE e.name = 'PRODUCT_ADD_TO_CART')::int AS paniers,
-               COUNT(*) FILTER (WHERE e.name = 'SEARCH_SUBMIT')::int AS recherches,
-               COUNT(*) FILTER (WHERE e.name IN (
-                 'PURCHASE_FAILED','CHECKOUT_VALIDATION_FAILED','PROMO_CODE_FAILED',
-                 'SEARCH_ZERO_RESULTS','OTP_INVALID','OTP_SEND_FAILED','OTP_DELIVERY_FAILED',
-                 'RAGE_CLICK','DEAD_CLICK','CHECKOUT_FIELD_ERROR','JS_ERROR'))::int AS frictions,
-               MAX(e."createdAt") AS derniere,
-               MIN(e."createdAt") AS premiere
-        FROM "AnalyticsEvent" e
-        JOIN bornes b ON b."sessionId" = e."sessionId" AND e."createdAt" >= b.depart
-        WHERE (e."createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
-          AND e.name NOT IN ('ORDER_CONFIRMED', 'ORDER_DELIVERED', 'ORDER_CANCELLED')
-        GROUP BY 1
-      )
+    const rP = analyticsQuery(`
+      WITH ${CTE_STATS}
       SELECT s."sessionId",
              s.device, s.city, s."utmSource", s."visitorId",
              s."firstSeenAt", COALESCE(stats.derniere, s."lastSeenAt", s."firstSeenAt") AS derniere,
@@ -168,12 +212,10 @@ export async function GET(request: NextRequest) {
              COALESCE(EXTRACT(epoch FROM (stats.derniere - stats.premiere)), 0)::int AS duree,
              o.id AS "orderId", o."deliveryName", o."deliveryPhone", o.status AS "orderStatus",
              COALESCE(o.revenue, o."productsTotal", o.total) AS montant,
-             (COALESCE(stats.derniere, s."lastSeenAt", s."firstSeenAt") >= NOW() - INTERVAL '5 minutes') AS "enLigne"
-      FROM "AnalyticsSession" s
-      LEFT JOIN stats ON stats."sessionId" = s."sessionId"
-      LEFT JOIN LATERAL (
-        SELECT * FROM "Order" WHERE "sessionId" = s."sessionId" ORDER BY "createdAt" DESC LIMIT 1
-      ) o ON true
+             (COALESCE(stats.derniere, s."lastSeenAt", s."firstSeenAt") >= NOW() - INTERVAL '5 minutes') AS "enLigne",
+             s."landingUrl", s."utmMedium", s."utmCampaign", s.country,
+             (${AUTO}) AS automatise
+      ${JOINTURES}
       WHERE ${conditions.join(' AND ')}
       ORDER BY COALESCE(stats.derniere, s."lastSeenAt", s."firstSeenAt") DESC
       LIMIT 60`, params)
@@ -188,47 +230,34 @@ export async function GET(request: NextRequest) {
     // diverger d'une condition, et l'écart affiché aurait été faux sans que rien
     // ne le signale.
     const compter = (d1: string, d2: string) => analyticsQuery(`
-      WITH stats AS (
-        SELECT "sessionId",
-               COUNT(*)::int AS actions,
-               COUNT(*) FILTER (WHERE name = 'PRODUCT_VIEW_DETAIL')::int AS fiches,
-               COUNT(*) FILTER (WHERE name = 'PRODUCT_ADD_TO_CART')::int AS paniers,
-               COUNT(*) FILTER (WHERE name = 'SEARCH_SUBMIT')::int AS recherches,
-               COUNT(*) FILTER (WHERE name IN (
-                 'PURCHASE_FAILED','CHECKOUT_VALIDATION_FAILED','PROMO_CODE_FAILED',
-                 'SEARCH_ZERO_RESULTS','OTP_INVALID','OTP_SEND_FAILED','OTP_DELIVERY_FAILED',
-                 'RAGE_CLICK','DEAD_CLICK','CHECKOUT_FIELD_ERROR','JS_ERROR'))::int AS frictions
-        FROM "AnalyticsEvent"
-        WHERE ("createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
-          AND "sessionId" IS NOT NULL
-          AND name NOT IN ('ORDER_CONFIRMED', 'ORDER_DELIVERED', 'ORDER_CANCELLED')
-        GROUP BY 1
-      )
+      WITH ${CTE_STATS}
       SELECT ${(Object.keys(SEGMENTS) as Filtre[])
-        .map((k) => `COUNT(*) FILTER (WHERE ${SEGMENTS[k].sql})::int AS "${k}"`).join(',\n             ')}
-      FROM "AnalyticsSession" s
-      LEFT JOIN stats ON stats."sessionId" = s."sessionId"
-      LEFT JOIN LATERAL (
-        SELECT * FROM "Order" WHERE "sessionId" = s."sessionId" ORDER BY "createdAt" DESC LIMIT 1
-      ) o ON true
-      WHERE ${[FENETRE, ...perimetre].join(' AND ')}`,
+        .map((k) => `COUNT(*) FILTER (WHERE (${SEGMENTS[k].sql}) AND ${HUMAIN})::int AS "${k}"`).join(',\n             ')},
+             COUNT(*) FILTER (WHERE o.status::text = 'CANCELLED' AND ${HUMAIN})::int AS "achat_annulees",
+             COUNT(*) FILTER (WHERE ${AUTO})::int AS "automatise"
+      ${JOINTURES}
+      WHERE ${[FENETRE, BOT_NATIF, ...perimetre].join(' AND ')}`,
       // Seules les deux bornes changent : les filtres d'attribut, eux, restent
       // identiques d'une période à l'autre, sinon on ne comparerait pas la même
       // population.
       [d1, d2, ...params.slice(2)])
 
-    const compte = await compter(debut, fin)
-    const comptePrec = cmp ? await compter(debutPrec, finPrec) : null
+    const compteP = compter(debut, fin)
+    const comptePrecP = cmp ? compter(debutPrec, finPrec) : Promise.resolve(null)
 
     // De quoi remplir les listes déroulantes sans les inventer.
-    const dims = await analyticsQuery(`
+    const dimsP = analyticsQuery(`
+      WITH ${CTE_STATS}
       SELECT LOWER(COALESCE(NULLIF(s.device,''), 'inconnu')) AS appareil,
              LOWER(COALESCE(NULLIF(s."utmSource",''), 'direct')) AS canal,
              COUNT(*)::int AS n
-      FROM "AnalyticsSession" s
-      WHERE (s."firstSeenAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
-        ${SESSION_BOT_FILTER_CLAUSE}
+      ${JOINTURES}
+      WHERE ${[FENETRE, BOT_NATIF, HUMAIN].join(' AND ')}
       GROUP BY GROUPING SETS ((1), (2))`, [debut, fin])
+
+    // Les cinq lectures sont independantes : on les lance ensemble. (Avec une
+    // connexion unique elles se mettent en file toutes seules, sans rien casser.)
+    const [direct, r, compte, comptePrec, dims] = await Promise.all([directP, rP, compteP, comptePrecP, dimsP])
 
     return NextResponse.json({
       periode: { debut, fin },
@@ -243,7 +272,9 @@ export async function GET(request: NextRequest) {
       direct: {
         actifs: Number(direct.rows[0]?.actifs ?? 0),
         evenements: Number(direct.rows[0]?.evenements ?? 0),
+        automatises: Number(direct.rows[0]?.automatises ?? 0),
       },
+      inclureAuto,
       sessions: r.rows.map((x) => ({
         sessionId: String(x.sessionId),
         device: (x.device as string) || '—',
@@ -255,6 +286,12 @@ export async function GET(request: NextRequest) {
         recherches: Number(x.recherches), frictions: Number(x.frictions),
         duree: Number(x.duree ?? 0),
         enLigne: x.enLigne === true,
+        automatise: x.automatise === true,
+        pays: (x.country as string) || null,
+        medium: (x.utmMedium as string) || null,
+        campagne: (x.utmCampaign as string) || null,
+        // Chemin d'arrivee, sans domaine ni parametres : c'est la page, pas l'URL.
+        arrivee: x.landingUrl ? String(x.landingUrl).replace(/^https?:\/\/[^/]+/, '').split(/[?#]/)[0] || '/' : null,
         commande: x.orderId ? {
           id: Number(x.orderId), nom: (x.deliveryName as string) || null,
           telephone: (x.deliveryPhone as string) || null,

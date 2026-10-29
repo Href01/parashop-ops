@@ -5,6 +5,7 @@ import { isFounder } from '@/lib/auth'
 import pool from '@/lib/db'
 import { getMetaToken } from '@/lib/meta-token'
 import { bustAnalyticsCache } from '@/lib/analytics-cache'
+import { META_GRAPH, fxToMad } from '@/lib/ads/meta-fx'
 
 /**
  * POST /api/ops/ads/sync-meta
@@ -20,8 +21,7 @@ import { bustAnalyticsCache } from '@/lib/analytics-cache'
  *   META_GRAPH_VERSION    — optional, defaults to v21.0
  */
 
-const VERSION = (process.env.META_GRAPH_VERSION || 'v21.0').replace(/^\/+|\/+$/g, '')
-const GRAPH = `https://graph.facebook.com/${VERSION}`
+const GRAPH = META_GRAPH
 
 interface MetaAction { action_type: string; value: string }
 interface MetaInsightRow {
@@ -52,34 +52,6 @@ function actionCount(actions: MetaAction[] | undefined, types: string[]): number
   let sum = 0
   for (const a of actions) if (types.includes(a.action_type)) sum += Number(a.value) || 0
   return sum
-}
-
-// Approximate fallbacks if the live FX lookup fails (rates drift slowly).
-const FX_FALLBACK: Record<string, number> = { USD: 10, EUR: 10.8, GBP: 12.6, MAD: 1 }
-
-/**
- * Conversion rate from the ad account's billing currency to MAD.
- * Priority: META_FX_TO_MAD env override → live rate (open.er-api.com, no key)
- * → approximate fallback → 1 (no conversion).
- */
-async function fxToMad(account: string, token: string): Promise<number> {
-  const override = Number(process.env.META_FX_TO_MAD)
-  if (Number.isFinite(override) && override > 0) return override
-  try {
-    const acc = await fetch(`${GRAPH}/${account}?fields=currency&access_token=${encodeURIComponent(token)}`, { cache: 'no-store' })
-    const accJson = await acc.json()
-    const currency = (accJson?.currency || 'MAD').toUpperCase()
-    if (currency === 'MAD') return 1
-    try {
-      const fxRes = await fetch(`https://open.er-api.com/v6/latest/${currency}`, { cache: 'no-store' })
-      const fxJson = await fxRes.json()
-      const rate = Number(fxJson?.rates?.MAD)
-      if (Number.isFinite(rate) && rate > 0) return rate
-    } catch { /* fall through */ }
-    return FX_FALLBACK[currency] || 1
-  } catch {
-    return 1
-  }
 }
 
 /**
