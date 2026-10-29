@@ -72,8 +72,8 @@ interface DashboardStats {
 
 interface DashboardPnl {
   depot?: { partnerShare: number; frais: number; pubPartenaire?: number; versements: number; fraisPayesShine: number; avances: number; duPartenaire: number; partenaires: number }
-  precedent?: { caLivre: number; coutProduits: number; livraisonFrais: number; profitLivre: number; pub: number; emballage: number; retours: number; depotVente: number; net: number; commandes: number } | null
-  rentabilite: { caLivre: number; coutProduits?: number; livraisonFrais?: number; profitLivre: number; margeLivree: number; pub: number; emballage: number; retours: number; depotVente?: number; net: number; marginPct: number; previousNet?: number | null }
+  precedent?: { caLivre: number; coutProduits: number; livraisonFrais: number; profitLivre: number; pub: number; pubShine?: number; partPartenaire?: number; emballage: number; retours: number; depotVente: number; net: number; commandes: number } | null
+  rentabilite: { caLivre: number; coutProduits?: number; livraisonFrais?: number; profitLivre: number; margeLivree: number; pub: number; pubShine?: number; partPartenaire?: number; emballage: number; retours: number; depotVente?: number; net: number; marginPct: number; previousNet?: number | null }
   tresorerie: { encaisse: number; achats: number; pub: number; emballage: number; emballageEstime: boolean; frais: number; retours: number; depotVente?: number; net: number }
   packagingRate: number
   deliveredParcels: number
@@ -554,17 +554,26 @@ export default function GlowDashboard() {
                   {r.coutProduits != null && <PnlRow label="Coût d'achat des produits" sub="prix d'achat figé au moment de la commande" value={-r.coutProduits} prev={pp ? -pp.coutProduits : undefined} neg />}
                   {r.livraisonFrais != null && <PnlRow label="Livraison & frais de commande" sub="coût Sendit − livraison facturée, commissions" value={-r.livraisonFrais} prev={pp ? -pp.livraisonFrais : undefined} neg />}
                   <PnlRow label="= Marge brute" sub={`avant pub, emballage, retours · ${r.margeLivree.toFixed(0)} % du CA`} value={r.profitLivre} prev={pp?.profitLivre} subtotal />
-                  <PnlRow label="Pub" sub="dépense Meta de la période" value={-r.pub} prev={pp ? -pp.pub : undefined} neg />
+                  {/* La pub de SHINE seule. Celle des produits du partenaire est payee par son budget : elle
+                      n'est pas un cout pour Shine, donc elle n'est plus dans cette ligne (la marge nette ne change pas). */}
+                  <PnlRow label="Pub"
+                    sub={(activePnl.depot?.pubPartenaire ?? 0) > 0
+                      ? `dépense Meta de Shine · hors ${mad(activePnl.depot?.pubPartenaire ?? 0)} MAD de pub des produits du partenaire (payée par son budget)`
+                      : 'dépense Meta de la période'}
+                    value={-(r.pubShine ?? r.pub)} prev={pp ? -(pp.pubShine ?? pp.pub) : undefined} neg />
                   <PnlRow label="Emballage" sub={`${activePnl.deliveredParcels} colis × ${activePnl.packagingRate} DH`} value={-r.emballage} prev={pp ? -pp.emballage : undefined} neg />
                   {(r.retours > 0 || (pp?.retours ?? 0) > 0) && <PnlRow label="Retours / échanges" sub="frais livraison retour" value={-r.retours} prev={pp ? -pp.retours : undefined} neg />}
-                  {((r.depotVente ?? 0) !== 0 || (pp?.depotVente ?? 0) !== 0) && (() => {
+                  {((r.depotVente ?? 0) !== 0 || (pp?.depotVente ?? 0) !== 0 || (r.partPartenaire ?? 0) !== 0 || (pp?.partPartenaire ?? 0) !== 0) && (() => {
                     const d = activePnl.depot
                     const perte = (d?.partnerShare ?? 0) < 0
                     const pubSienne = d?.pubPartenaire ?? 0
+                    // « Je ne compte plus la pub du partenaire comme un coût pour moi » : la ligne montre
+                    // sa part, point. Sa pub n'y figure plus (ni dans « Pub »), le resultat est le meme.
                     const sous = pubSienne > 0
-                      ? `la pub de ses produits (${mad(pubSienne)} MAD, comptée dans « Pub ») est payée par son budget ; sa part de la marge avant pub : ${mad(d?.partnerShare ?? 0)} MAD${d && d.frais > 0 ? ` · frais du partenariat ${mad(d.frais)} MAD` : ''}`
+                      ? `sa part de la marge avant pub de ses produits${d && d.frais > 0 ? ` + frais du partenariat ${mad(d.frais)} MAD` : ''} · sa pub (${mad(pubSienne)} MAD) est payée par son budget, elle n'est pas un coût pour Shine`
                       : `${perte ? 'il absorbe sa part de la perte sur ses produits' : 'sa part du bénéfice de ses produits'}${d && d.frais > 0 ? ` + frais du partenariat ${mad(d.frais)}` : ''}`
-                    return <PnlRow label={pubSienne > 0 ? 'Dépôt-vente : sa pub moins sa part' : 'Part du partenaire (dépôt-vente)'} sub={sous} href="/partenaires" value={-(r.depotVente ?? 0)} prev={pp ? -pp.depotVente : undefined} neg />
+                    return <PnlRow label="Part du partenaire (dépôt-vente)" sub={sous} href="/partenaires"
+                      value={-(r.partPartenaire ?? r.depotVente ?? 0)} prev={pp ? -(pp.partPartenaire ?? pp.depotVente) : undefined} neg />
                   })()}
                   <PnlRow label="Marge nette" sub="ce qui reste à Shine après tout" value={r.net} prev={pp?.net} total pct={r.marginPct} />
                   {pp && <p style={{ margin: '6px 0 0', fontSize: 10.5, color: 'var(--tx-faint)' }}>Colonne grise : {compareLabel}, mêmes règles de calcul.</p>}
@@ -574,7 +583,11 @@ export default function GlowDashboard() {
                   <PnlRow label="Cash encaissé" sub={`COD ${mad(dEncaisse)}${dBank > 0 ? ` + virements ${mad(dBank)}` : ''} − frais Sendit ${mad(dFees)}`} value={t.encaisse} />
                   {(activePnl.depot?.avances ?? 0) > 0 && <PnlRow label="Avance reçue du partenaire" sub="son argent, confié à Shine — il lui est dû" href="/partenaires" value={activePnl.depot?.avances ?? 0} />}
                   <PnlRow label="Achats fournisseur" value={-t.achats} neg />
-                  <PnlRow label="Pub" value={-t.pub} neg />
+                  {/* Trésorerie = l'argent RÉEL : Shine règle bien Meta, y compris pour les produits du partenaire,
+                      et son avance entre bien en caisse. On le dit, sans changer le chiffre. */}
+                  <PnlRow label="Pub"
+                    sub={(activePnl.depot?.pubPartenaire ?? 0) > 0 ? `dont ${mad(activePnl.depot?.pubPartenaire ?? 0)} MAD réglés pour les produits du partenaire (couverts par son avance)` : undefined}
+                    value={-t.pub} neg />
                   <PnlRow label="Emballage" sub={t.emballageEstime ? 'estimé · colis × taux' : 'réel loggé'} value={-t.emballage} neg />
                   {t.frais > 0 && <PnlRow label="Dépenses (frais divers)" value={-t.frais} neg />}
                   {t.retours > 0 && <PnlRow label="Retours / échanges" sub="frais livraison retour" value={-t.retours} neg />}

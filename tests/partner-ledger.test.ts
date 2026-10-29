@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { allocateOrderLines, settle, type ItemRow, type OrderRow } from '../lib/partner-ledger'
+import { affichageDepotVente } from '../lib/depot-affichage'
 
 /**
  * LE PARTAGE D'UN DEPOT-VENTE, VERIFIE A LA MAIN.
@@ -140,4 +141,38 @@ test('pub a la charge du partenaire : on partage la marge avant pub, la pub sort
   close(sienne.shineShare, 170, 'Shine : la moitie de la marge avant pub')
   close(sienne.partnerShare - sienne.pubPartenaire, 170 - pub, 'lui : sa moitie moins toute la pub')
   close(sienne.balance, 590 + 2000 - pub + 170, 'son stock + ce qui reste de son avance + sa part')
+})
+
+/* L'AFFICHAGE DU TABLEAU DE BORD — chiffres reels du 30 jours au 2026-10-29 :
+   marge brute 2 880, pub totale 3 594 (dont 1 722,58 pour les produits du partenaire),
+   emballage 98, retours 0, part du partenaire 703,5, frais 0. Marge nette : 207.
+   « Je ne compte plus la pub du partenaire comme un coût pour moi » : la ligne Pub ne
+   contient plus que la dépense de Shine, la ligne du partenaire que sa part. Le résultat
+   ne doit pas bouger d'un dirham. */
+test("la pub du partenaire sort de la ligne « Pub » sans changer la marge nette", () => {
+  const brut = 2880, pub = 3594, emballage = 98, retours = 0
+  const entree = { pub, partnerShare: 703.5, frais: 0, pubPartenaire: 1722.58 }
+
+  // l'ancienne présentation : toute la pub, puis « sa pub moins sa part » (= part + frais − pub à sa charge)
+  const ancienneLigne = entree.partnerShare + entree.frais - entree.pubPartenaire
+  assert.ok(Math.abs(ancienneLigne - -1019.08) < 0.011, 'avant : la ligne rendait 1 019 MAD')
+  const netAvant = brut - pub - emballage - retours - ancienneLigne
+
+  // la nouvelle : la pub de Shine seule, et la part du partenaire
+  const a = affichageDepotVente(entree)
+  close(a.pubShine, 1871.42, 'la pub de Shine seule')
+  close(a.partPartenaire, 703.5, 'la part du partenaire')
+  const netApres = brut - a.pubShine - emballage - retours - a.partPartenaire
+
+  close(netAvant, 207.08, 'marge nette avant')
+  close(netApres, netAvant, "la marge nette ne bouge pas d'un dirham")
+})
+
+test("les frais du partenariat s'ajoutent à sa part, et sans pub à sa charge rien ne change", () => {
+  const a = affichageDepotVente({ pub: 1000, partnerShare: 400, frais: 50, pubPartenaire: 0 })
+  assert.equal(a.pubShine, 1000, 'pas de pub partenaire : la pub est inchangée')
+  assert.equal(a.partPartenaire, 450, 'sa part + frais du partenariat')
+  // l'invariant tient aussi quand les frais existent : brut − pub − (part+frais) des deux côtés
+  const brut = 5000
+  assert.equal(brut - 1000 - (400 + 50 - 0), brut - a.pubShine - a.partPartenaire)
 })

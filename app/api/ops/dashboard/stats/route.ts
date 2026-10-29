@@ -7,6 +7,7 @@ import pool from '@/lib/db'
 import { cached } from '@/lib/ops-cache'
 import { getWeeklyGoal, getMonthlyGoal } from '@/app/api/ops/settings/goal/route'
 import { ajustementDepotVente } from '@/lib/partner-ledger'
+import { affichageDepotVente } from '@/lib/depot-affichage'
 import { heureLocaleDepuisTz, heureLocaleUtc, instantDepuisLocal, jourLocalDepuisTz } from '@/lib/analytics/metrics'
 
 const DAILY_REVENUE_GOAL = 6000
@@ -411,7 +412,11 @@ export async function GET(req: Request) {
     // for a COD store); a fully-past period → 6h (it only changes on late status edits).
     // ?fresh=1 (the "Actualiser" button) forces a live recompute.
     const fresh = sp.get('fresh') === '1'
-    const cacheKey = `dashboard-stats:${from}:${to}:${compareFrom}:${compareTo}`
+    // `v2` : la forme de la reponse a change (pubShine / partPartenaire). Le Data Cache survit aux
+    // redemarrages et aux deploiements, 1 a 6 h : sans changer la cle, le tableau de bord aurait
+    // continue de servir l'ancienne reponse. Le groupe (`dashboard-stats`) reste le meme, donc
+    // bustCache('dashboard-stats:') continue de tout purger.
+    const cacheKey = `dashboard-stats:v2:${from}:${to}:${compareFrom}:${compareTo}`
     const ttlMs = to >= isoDay(new Date()) ? 60 * 60 * 1000 : 6 * 60 * 60 * 1000
 
     const { data: payload, cachedAt, hit } = await cached(cacheKey, ttlMs, async () => {
@@ -1220,12 +1225,15 @@ export async function GET(req: Request) {
         versements: depot.versements, fraisPayesShine: depot.fraisPayesShine, avances: depot.avances,
         duPartenaire: depot.du, partenaires: depot.partenaires,
       }
-      if (depot.part === 0 && depot.cash === 0) return { ...p, depot: detail, rentabilite: { ...p.rentabilite, depotVente: 0 }, tresorerie: { ...p.tresorerie, depotVente: 0 } }
+      const affichage = affichageDepotVente({ pub: p.rentabilite.pub, partnerShare: depot.partnerShare, frais: depot.frais, pubPartenaire: depot.pubPartenaire })
+      if (depot.part === 0 && depot.cash === 0) return { ...p, depot: detail, rentabilite: { ...p.rentabilite, depotVente: 0, pubShine: p.rentabilite.pub, partPartenaire: 0 }, tresorerie: { ...p.tresorerie, depotVente: 0 } }
       const net = p.rentabilite.net - depot.part
       return {
         ...p,
         depot: detail,
-        rentabilite: { ...p.rentabilite, depotVente: depot.part, net, marginPct: p.rentabilite.caLivre > 0 ? (net / p.rentabilite.caLivre) * 100 : 0 },
+        // `depotVente` (et donc `net`) restent calcules comme avant ; `pubShine` et `partPartenaire`
+        // sont l'AFFICHAGE : la pub de Shine seule, et la part du partenaire. Meme marge nette.
+        rentabilite: { ...p.rentabilite, depotVente: depot.part, pubShine: affichage.pubShine, partPartenaire: affichage.partPartenaire, net, marginPct: p.rentabilite.caLivre > 0 ? (net / p.rentabilite.caLivre) * 100 : 0 },
         tresorerie: { ...p.tresorerie, depotVente: depot.cash, net: p.tresorerie.net - depot.cash },
       }
     }
@@ -1247,6 +1255,8 @@ export async function GET(req: Request) {
       return {
         caLivre: revenue, coutProduits: cogs, livraisonFrais: revenue - cogs - grossProfit, profitLivre: grossProfit,
         pub, emballage, retours, depotVente: depotPrev.part,
+        // Meme presentation que la periode courante (voir lib/depot-affichage.ts).
+        ...(() => { const a = affichageDepotVente({ pub, partnerShare: depotPrev.partnerShare, frais: depotPrev.frais, pubPartenaire: depotPrev.pubPartenaire }); return { pubShine: a.pubShine, partPartenaire: a.partPartenaire } })(),
         net: grossProfit - emballage - pub - retours - depotPrev.part, commandes: parcels,
       }
     }
