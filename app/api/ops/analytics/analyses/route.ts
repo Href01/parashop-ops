@@ -4,7 +4,7 @@ import { cachedAnalytics } from '@/lib/analytics-cache'
 import { analyticsError, analyticsQuery } from '@/lib/analytics/db'
 import { canonicalEventNameSql, canonicalFunnelSteps, sourceEventNames } from '@/lib/analytics/events'
 import { countFunnel } from '@/lib/analytics/funnel'
-import { SESSION_BOT_FILTER_CLAUSE, TZ, heureLocaleUtc, jourLocalUtc, heureLocaleDepuisTz } from '@/lib/analytics/metrics'
+import { SESSION_HUMAN_FILTER_CLAUSE, TZ, heureLocaleUtc, jourLocalUtc, heureLocaleDepuisTz } from '@/lib/analytics/metrics'
 
 /**
  * LES PRIMITIVES D'ANALYSE — entonnoir, cohortes, chemins.
@@ -29,8 +29,16 @@ export const ETAPES = {
   VIEW_CART: 'Panier ouvert',
   BEGIN_CHECKOUT: 'Checkout démarré',
   DELIVERY_CITY_SELECTED: 'Ville choisie',
-  ADD_PAYMENT_INFO: 'Coordonnées saisies',
-  CHECKOUT_SUBMIT_ATTEMPT: 'Commande envoyée',
+  /* L'ORDRE REEL, releve sur les 12 sessions qui ont achete en 30 jours (12 sur 12) :
+       BEGIN_CHECKOUT > CHECKOUT_SUBMIT_ATTEMPT > ADD_PAYMENT_INFO > OTP_VERIFIED > PURCHASE_SUCCESS
+     CHECKOUT_SUBMIT_ATTEMPT part au PREMIER clic sur « Commander » (avant la
+     validation et avant le code) ; ce n'est pas une commande envoyee. L'ancien
+     entonnoir par defaut mettait ADD_PAYMENT_INFO AVANT lui : l'entonnoir etant
+     sequentiel, la marche « Commande envoyee » valait toujours 0 et l'ecran
+     annoncait « 0 % de conversion, 100 % de fuite » avec 12 commandes en base. */
+  CHECKOUT_SUBMIT_ATTEMPT: 'Clic sur « Commander »',
+  ADD_PAYMENT_INFO: 'Coordonnées validées',
+  OTP_VERIFIED: 'Téléphone vérifié (code)',
   PURCHASE_SUCCESS: 'Commande acceptée',
 } as const
 
@@ -63,7 +71,7 @@ async function entonnoir(etapes: string[], debut: string, fin: string, fenetreMi
     WHERE e.name = ANY($3) AND e."sessionId" IS NOT NULL
       AND ${heureLocaleUtc('e."createdAt"')} >= $1::date
       AND ${heureLocaleUtc('e."createdAt"')} < $2::date + interval '1 day' + ($4 * interval '1 minute')
-      ${SESSION_BOT_FILTER_CLAUSE}
+      ${SESSION_HUMAN_FILTER_CLAUSE}
     ORDER BY e."sessionId", e."createdAt", e.id`, [debut, fin, sourceEventNames(etapes), fenetreMin])
 
   return countFunnel(r.rows, etapes, fenetreMin).map((etape) => ({
@@ -250,7 +258,7 @@ async function recherches(debut: string, fin: string) {
     LEFT JOIN "AnalyticsSession" s ON s."sessionId" = e."sessionId"
     WHERE e.name = ANY($3) AND e."sessionId" IS NOT NULL
       AND ${jourLocalUtc('e."createdAt"')} BETWEEN $1::date AND $2::date
-      ${SESSION_BOT_FILTER_CLAUSE}
+      ${SESSION_HUMAN_FILTER_CLAUSE}
     ORDER BY e."sessionId", e."createdAt", e.id`, [
       debut, fin, ['SEARCH_QUERY', 'SEARCH_SUBMIT', 'SEARCH_ZERO_RESULTS', 'SEARCH_RESULT_CLICK'],
     ])
@@ -368,7 +376,7 @@ async function chemins(depart: string | null, debut: string, fin: string) {
       LEFT JOIN "AnalyticsSession" s ON s."sessionId" = e."sessionId"
       WHERE e.name = 'PAGE_VIEW'
         AND ${jourLocalUtc('e."createdAt"')} BETWEEN $1::date AND $2::date
-        AND e.path IS NOT NULL ${SESSION_BOT_FILTER_CLAUSE}
+        AND e.path IS NOT NULL ${SESSION_HUMAN_FILTER_CLAUSE}
     ),
     pv AS (
       SELECT "sessionId", p, "createdAt",

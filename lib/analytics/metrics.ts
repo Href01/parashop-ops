@@ -14,6 +14,7 @@
 export const TZ = 'Africa/Casablanca'
 
 import { heureLocaleDepuisUtcSql, instantDepuisHeureLocaleSql, minuitLocalEnUtcSql } from '@/lib/analytics/maroc-time'
+import { robotSessionSql, sessionSansAchatSql } from '@/lib/analytics/automated-rules'
 
 /* ─────────────────────────────────────────────────────────────────────────────
    LE JOUR LOCAL — une seule facon de le calculer, qui ne passe PAS par les
@@ -134,6 +135,45 @@ export const SESSION_BOT_FILTER_CLAUSE = `
  * S'utilise dans un WHERE portant sur "PageView".
  */
 
+/**
+ * LES VISITES HUMAINES — le filtre de TOUS les rapports, sauf la page Sessions.
+ *
+ * `SESSION_BOT_FILTER_CLAUSE` ne retire que les robots que la colonne `isBot`
+ * connait. Ceux qui comptent en 30 jours ne s'y trouvent jamais : la relecture
+ * des annonces Google (« Google-AdWords-Express », Atlanta / Council Bluffs), les
+ * rendus de Meta, les hebergeurs. L'Acquisition, l'Engagement et la Conversion
+ * les comptaient donc comme des visites, alors que la page Sessions les ecartait :
+ * 5 418 sessions d'un cote, ~5 250 de l'autre, sans que rien ne le dise.
+ *
+ * La page Sessions garde le filtre « natif » ci-dessus, parce qu'elle offre un
+ * bouton « inclure le trafic automatise » : si ce filtre-ci s'y appliquait aussi,
+ * le bouton ne ferait plus rien.
+ */
+/* LES ROBOTS SONT CALCULES UNE FOIS, PAS A CHAQUE EVENEMENT.
+ *
+ * La premiere ecriture testait la regle (regexp sur l'agent, liste de villes, durée,
+ * deux EXISTS) sur chaque LIGNE d'evenement : 127 000 lignes en 30 jours, 2 050 ms
+ * contre 320 ms sans le filtre — six fois plus lent. Le sous-select ci-dessous ne
+ * depend pas de la ligne : PostgreSQL le materialise UNE fois en table de hachage,
+ * puis chaque evenement n'y fait qu'une recherche.
+ *
+ * `COALESCE(..., TRUE)` : un evenement dont la session est absente (jointure
+ * gauche) n'est pas un robot. Sans lui, `NULL NOT IN (...)` vaut NULL et la ligne
+ * disparaitrait silencieusement. */
+const ROBOTS_SANS_ACHAT = `
+  SELECT r."sessionId" FROM "AnalyticsSession" r
+  WHERE ${robotSessionSql('r')} AND ${sessionSansAchatSql('r')}`
+
+export const SESSION_HUMAN_FILTER_CLAUSE = `${SESSION_BOT_FILTER_CLAUSE}
+  AND COALESCE(s."sessionId" NOT IN (${ROBOTS_SANS_ACHAT}), TRUE)
+`
+
+/** Meme regle, pour les requetes sur "PageView" (qui n'a pas d'alias de session). */
+export const PAGEVIEW_HUMAN_FILTER_CLAUSE = `${BOT_FILTER_CLAUSE}
+  AND COALESCE("PageView"."sessionId" NOT IN (${ROBOTS_SANS_ACHAT}), TRUE)
+`
+
+
 /* ─────────────────────────────────────────────────────────────────────────────
    1. LA BASE DE DATE — deux questions, deux reponses, jamais melangees
 
@@ -213,27 +253,41 @@ export const BASIS_LABEL: Record<MoneyBasis, { titre: string; explication: strin
  * premieres, et deux classements qui derivent d'un cheveu donnent un taux faux
  * sans que rien ne le signale.
  *
- * `utmMedium = 'paid'` est le discriminant, et il correspond exactement a la
- * convention en place : `ig` arrive en `paid` avec un identifiant de campagne
- * et un `fbclid` (c'est la publicite), `Instagram` arrive en `referral` sans
- * campagne (c'est l'organique). Verifie sur 30 j : ig/paid 1 214 sessions
- * reparties sur 4 campagnes, Instagram/referral 315.
+ * LE DISCRIMINANT EST LE MEDIUM, ET IL A PLUSIEURS ECRITURES. `ig` arrive en
+ * `paid` avec un identifiant de campagne et un `fbclid` (c'est la publicite),
+ * `Instagram` arrive en `referral` sans campagne (c'est l'organique). Mais la
+ * campagne « Ventes » (12/10) pose `paid_social` et le NOM de la campagne : la
+ * regle d'origine (`= 'paid'`) rangeait ses 1 482 sessions en « organique » et
+ * deux commandes payees (441 MAD) chez l'organique. Mesure sur 30 j : Instagram
+ * (organique) +500 % et Facebook (organique) +932 %, alors que c'etait de la pub.
+ * `cpc` est la convention des annonces Google (notre suffixe d'URL).
  *
  * @param prefixe condition ajoutee devant chaque regle (les commandes ne
  *   classent par utm que si elles viennent du site), '' pour les sessions.
  */
+export const MEDIUMS_PAYANTS = ['paid', 'paid_social', 'paidsocial', 'paid-social', 'social_paid', 'cpc', 'ppc', 'paid_search', 'display'] as const
+
 function reglesUtm(src: string, med: string, prefixe = ''): string {
   const p = prefixe ? `${prefixe} AND ` : ''
+  const paye = `${med} IN (${MEDIUMS_PAYANTS.map((m) => `'${m}'`).join(', ')})`
   return `
-    WHEN ${p}${med} = 'paid' AND (${src} LIKE '%insta%' OR ${src} = 'ig') THEN 'Instagram Ads'
-    WHEN ${p}${med} = 'paid' AND (${src} LIKE '%face%' OR ${src} = 'fb') THEN 'Facebook Ads'
-    WHEN ${p}${med} = 'paid' AND (${src} LIKE '%tiktok%' OR ${src} = 'tt') THEN 'TikTok Ads'
-    WHEN ${p}${med} = 'paid' AND ${src} = 'an' THEN 'Audience Network'
-    WHEN ${p}${med} = 'paid' AND ${src} = 'th' THEN 'Threads Ads'
-    WHEN ${p}${med} = 'paid' AND ${src} IS NOT NULL THEN 'Pub ' || INITCAP(${src})
+    /* Google Ads AVANT « Recherche » : google / cpc contient « google » et se
+       rangeait dans la recherche gratuite — la depense Google n'aurait eu aucun
+       canal en face. */
+    WHEN ${p}${paye} AND (${src} LIKE '%google%' OR ${src} = 'adwords') THEN 'Google Ads'
+    WHEN ${p}${paye} AND (${src} LIKE '%insta%' OR ${src} = 'ig') THEN 'Instagram Ads'
+    WHEN ${p}${paye} AND (${src} LIKE '%face%' OR ${src} = 'fb') THEN 'Facebook Ads'
+    WHEN ${p}${paye} AND (${src} LIKE '%tiktok%' OR ${src} = 'tt') THEN 'TikTok Ads'
+    WHEN ${p}${paye} AND ${src} = 'an' THEN 'Audience Network'
+    WHEN ${p}${paye} AND ${src} = 'th' THEN 'Threads Ads'
+    WHEN ${p}${paye} AND ${src} = 'msg' THEN 'Messenger Ads'
+    WHEN ${p}${paye} AND (${src} = 'wa' OR ${src} LIKE '%whatsapp%') THEN 'WhatsApp Ads'
+    WHEN ${p}${paye} AND ${src} IS NOT NULL THEN 'Pub ' || INITCAP(${src})
     WHEN ${p}(${src} LIKE '%insta%' OR ${src} = 'ig') THEN 'Instagram (organique)'
     WHEN ${p}(${src} LIKE '%face%' OR ${src} = 'fb') THEN 'Facebook (organique)'
     WHEN ${p}(${src} LIKE '%tiktok%' OR ${src} = 'tt') THEN 'TikTok (organique)'
+    WHEN ${p}${src} = 'th' THEN 'Threads (organique)'
+    WHEN ${p}(${src} = 'wa' OR ${src} LIKE '%whatsapp%') THEN 'WhatsApp (lien)'
     WHEN ${p}(${src} LIKE '%search%' OR ${src} LIKE '%google%' OR ${src} = 'bing') THEN 'Recherche'
     /* Les assistants deviennent une source d'acquisition reelle : 84 visites en
        30 jours viennent de chatgpt.com. Sans cette regle elles tombaient dans
@@ -282,6 +336,11 @@ export function acquisitionChannelSql(o = 'o', s = 's'): string {
     ${reglesUtm(src, med, site)}
     WHEN ${site} THEN 'Direct'
     -- Commandes saisies a la main : l'origine est ce que l'equipe a renseigne.
+    -- Quand la cliente a dit venir d'une publicite, la commande est classee avec la
+    -- pub (« via pub ») : sans cela, une annonce qui envoie vers les messages ne
+    -- rapportait jamais rien dans le tableau, puisqu'elle n'ouvre aucune session.
+    WHEN ${ch} LIKE '%insta%' AND ${o}."sourcePayload"->>'origine' = 'pub' THEN 'Instagram (DM · via pub)'
+    WHEN ${ch} LIKE '%whats%' AND ${o}."sourcePayload"->>'origine' = 'pub' THEN 'WhatsApp (DM · via pub)'
     WHEN ${ch} LIKE '%insta%' THEN 'Instagram (DM)'
     WHEN ${ch} LIKE '%whats%' THEN 'WhatsApp (DM)'
     WHEN ${ch} LIKE '%tiktok%' THEN 'TikTok (DM)'
@@ -370,7 +429,11 @@ export function gammeAppareilSql(s = 's'): string {
 }
 
 /** Les canaux qui consomment du budget publicitaire — pour rapprocher ROAS et depense. */
-export const PAID_CHANNELS = ['Instagram Ads', 'Facebook Ads', 'TikTok Ads'] as const
+export const PAID_CHANNELS = [
+  'Instagram Ads', 'Facebook Ads', 'TikTok Ads', 'Google Ads', 'Audience Network', 'Threads Ads', 'Messenger Ads', 'WhatsApp Ads',
+  // Commandes saisies à la main que la cliente rattache à une publicité : la dépense est bien la leur.
+  'Instagram (DM · via pub)', 'WhatsApp (DM · via pub)',
+] as const
 export function isPaidChannel(c: string): boolean {
   return c.startsWith('Pub ') || (PAID_CHANNELS as readonly string[]).includes(c)
 }

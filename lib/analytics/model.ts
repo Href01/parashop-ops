@@ -21,7 +21,7 @@
  */
 
 import { PRODUCT_VIEW_CONVERTED_SQL } from './product-funnel'
-import { acquisitionChannelSql, sessionChannelSql, modeleAppareilSql, gammeAppareilSql, basisDateExpr, basisStatusFilter, BOT_FILTER_CLAUSE, SESSION_BOT_FILTER_CLAUSE, MIN_OBS, TZ, type MoneyBasis, heureLocaleUtc, jourLocalUtc, heureLocaleDepuisTz } from './metrics'
+import { acquisitionChannelSql, sessionChannelSql, modeleAppareilSql, gammeAppareilSql, basisDateExpr, basisStatusFilter, PAGEVIEW_HUMAN_FILTER_CLAUSE, SESSION_HUMAN_FILTER_CLAUSE, MIN_OBS, TZ, type MoneyBasis, heureLocaleUtc, jourLocalUtc, heureLocaleDepuisTz } from './metrics'
 
 /* ─────────────────────────────────────────────────────────────────────────────
    PORTEES
@@ -69,6 +69,20 @@ export type Dimension = {
   ordreSql?: string
 }
 
+/**
+ * Le nom d'une campagne, a partir de ce que la session ou la depense porte.
+ * `expr` peut etre un identifiant (on le traduit via AdSpendDaily, nom le plus
+ * recent) ou deja un nom (on le garde). Les espaces et retours a la ligne sont
+ * normalises : « IMPERFECTIONS⁉️\n » et « IMPERFECTIONS⁉️ » sont la meme campagne.
+ */
+export function nomCampagneSql(expr: string, repli = 'NULL'): string {
+  return `BTRIM(regexp_replace(COALESCE(
+    (SELECT ad."campaignName" FROM "AdSpendDaily" ad WHERE ad."externalId" = ${expr} ORDER BY ad.date DESC LIMIT 1),
+    ${expr},
+    ${repli},
+    '(sans campagne)'), '\\s+', ' ', 'g'))`
+}
+
 export const DIMENSIONS: Record<string, Dimension> = {
   canal: {
     cle: 'canal',
@@ -86,6 +100,33 @@ export const DIMENSIONS: Record<string, Dimension> = {
       pages: sessionChannelSql('s'),
       sessions: sessionChannelSql('s'),
       evenements: sessionChannelSql('s'),
+    },
+  },
+  /* LA CAMPAGNE — la cle qui manquait pour relier la depense a ce qu'elle rapporte.
+     Les trois sources n'ecrivent pas la campagne de la meme facon :
+       · Meta (ads classiques)  utm_campaign = identifiant (120251105075330361)
+       · Meta « Ventes » (12/10) utm_campaign = le NOM, ecrit en dur (« Ventes »)
+       · Google Ads              utm_campaign = {campaignid} (identifiant)
+       · AdSpendDaily            externalId = identifiant, campaignName = nom
+     On ramene tout au NOM de la campagne (le plus recent pour un identifiant).
+     Sans cette cle, 57 % de la depense Meta de octobre (publications boostees,
+     sans parametres utm) n'avait aucun visiteur en face, et « Ventes » (1 482
+     sessions, 497 MAD) ne se rattachait pas a sa depense. Une campagne qui coute
+     et n'a ni visite ni commande s'affiche telle quelle : c'est un angle mort de
+     mesure, et il doit se voir. */
+  campagne: {
+    cle: 'campagne',
+    label: 'Campagne',
+    definition:
+      "La campagne publicitaire, par son nom. Les visites et commandes sont rattachées par l'identifiant " +
+      "(ou le nom) posé dans l'URL de l'annonce ; une publication boostée depuis Instagram n'en pose pas : " +
+      "sa dépense apparaît alors sans visite ni commande.",
+    sql: {
+      commandes: nomCampagneSql(`COALESCE(NULLIF(TRIM(o."utmCampaign"), ''), NULLIF(TRIM(s."utmCampaign"), ''))`),
+      pages: nomCampagneSql(`NULLIF(TRIM(s."utmCampaign"), '')`),
+      sessions: nomCampagneSql(`NULLIF(TRIM(s."utmCampaign"), '')`),
+      evenements: nomCampagneSql(`NULLIF(TRIM(s."utmCampaign"), '')`),
+      pub: nomCampagneSql(`a."externalId"`, `a."campaignName"`),
     },
   },
   appareil: {
@@ -427,6 +468,15 @@ export const MESURES: Record<string, Mesure> = {
     definition: 'Part du CA livré qui reste en marge.',
     format: 'pourcent', hausseEstBonne: true, sql: null,
   },
+  margeApresPub: {
+    cle: 'margeApresPub', label: 'Marge après pub', source: 'commandes', portee: 'evenement',
+    definition:
+      "Marge des commandes livrées moins la dépense publicitaire de la même ligne. " +
+      "Lue par campagne : une campagne sans commande rattachée n'est pas « à zéro », " +
+      "elle est à −dépense — mais si ses annonces ne portent pas de paramètres utm, " +
+      "ses commandes existent peut-être sans lui être attribuées.",
+    format: 'mad', hausseEstBonne: true, sql: null,
+  },
   tauxLecture: {
     cle: 'tauxLecture', label: 'Lu jusqu\'au bout', source: 'evenements', portee: 'session',
     definition: "Part des sessions qui ont commencé à lire et sont allées jusqu'en bas.",
@@ -461,6 +511,12 @@ export const DERIVEES: Record<string, { depend: string[]; calc: (r: Record<strin
   tauxMarge: {
     depend: ['marge', 'caLivre'],
     calc: (r) => (r.caLivre > 0 ? (r.marge / r.caLivre) * 100 : null),
+  },
+  // `?? 0` : une ligne qui n'existe que dans une source (de la depense sans
+  // commande, ou l'inverse) n'a pas l'autre valeur, et NaN ne s'afficherait pas.
+  margeApresPub: {
+    depend: ['marge', 'depensePub'],
+    calc: (r) => Number(r.marge ?? 0) - Number(r.depensePub ?? 0),
   },
   tauxLecture: {
     depend: ['lectureFin', 'lectureDebut'],
@@ -626,7 +682,7 @@ export function construireSql(
         ELSE NULL
       END
       WHERE ${jourLocalUtc('e."createdAt"')} BETWEEN $1::date AND $2::date
-        ${SESSION_BOT_FILTER_CLAUSE}${clauseFiltres}
+        ${SESSION_HUMAN_FILTER_CLAUSE}${clauseFiltres}
       GROUP BY 1`
   } else if (source === 'pub') {
     texte = `
@@ -642,7 +698,7 @@ export function construireSql(
       FROM "PageView"
       LEFT JOIN "AnalyticsSession" s ON s."sessionId" = "PageView"."sessionId"
       WHERE ${jourLocalUtc('"PageView"."createdAt"')} BETWEEN $1::date AND $2::date
-        ${BOT_FILTER_CLAUSE}${clauseFiltres}
+        ${PAGEVIEW_HUMAN_FILTER_CLAUSE}${clauseFiltres}
       GROUP BY 1`
   } else {
     texte = `
@@ -650,7 +706,7 @@ export function construireSql(
              ${select}
       FROM "AnalyticsSession" s
       WHERE ${jourLocalUtc('s."firstSeenAt"')} BETWEEN $1::date AND $2::date
-        ${SESSION_BOT_FILTER_CLAUSE}${clauseFiltres}
+        ${SESSION_HUMAN_FILTER_CLAUSE}${clauseFiltres}
       GROUP BY 1`
   }
 

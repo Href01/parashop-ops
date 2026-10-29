@@ -89,7 +89,8 @@ export function Maturite({ enVol, total, pctResolu }: { enVol: number; total: nu
    Forme : barres horizontales flottantes, alignees sur un zero commun, dans
    l'ordre du calcul. Pas de camembert, pas de couleur de serie — seulement le
    signe, qui est la seule information a lire d'un coup d'oeil. */
-export type FacteurVue = { label: string; effet: number; de: string; a: string }
+/** `provisoire` : le facteur depend d'un chiffre qui n'est pas encore regle (commandes en cours de livraison). */
+export type FacteurVue = { label: string; effet: number; de: string; a: string; provisoire?: string }
 
 export function Cascade({
   depart, arrivee, facteurs, labelDepart, labelArrivee,
@@ -107,7 +108,10 @@ export function Cascade({
       <div className="my-1.5 space-y-1.5">
         {facteurs.map((f) => {
           const positif = f.effet >= 0
-          const c = positif ? V.good : V.critical
+          // Un facteur provisoire n'est ni bon ni mauvais : il se resorbe quand les
+          // commandes en cours arrivent. Le colorer en rouge annoncerait un recul
+          // qui n'en est pas un.
+          const c = f.provisoire ? V.axis : positif ? V.good : V.critical
           return (
             <div key={f.label} className="flex items-center gap-3">
               {/* Pas de `truncate` : « Volume de command… » ne veut rien dire.
@@ -116,6 +120,7 @@ export function Cascade({
               <div className="w-[46%] min-w-0 sm:w-[34%]">
                 <p className={`${T.body} font-semibold`} style={{ color: V.ink }}>{f.label}</p>
                 <p className={T.note} style={{ color: V.muted }}>{f.de} → {f.a}</p>
+                {f.provisoire && <p className={T.note} style={{ color: V.ink2 }}>◷ {f.provisoire}</p>}
               </div>
               {/* Le zero est au centre : un effet negatif part a gauche, un
                   positif a droite. On lit le signe avant de lire le chiffre. */}

@@ -94,7 +94,7 @@ export function dureeCourte(s: number): string {
 
 export type Famille = 'google' | 'meta' | 'organique' | 'direct' | 'autre'
 
-const META: Record<string, string> = { ig: 'Instagram', fb: 'Facebook', an: 'Audience Network', th: 'Threads', msg: 'Messenger' }
+const META: Record<string, string> = { ig: 'Instagram', fb: 'Facebook', an: 'Audience Network', th: 'Threads', msg: 'Messenger', wa: 'WhatsApp' }
 
 /**
  * La source telle qu'on la lit. Les emplacements Meta (ig, fb, an, th) restent

@@ -49,7 +49,16 @@ export default function Acquisition() {
 
   useEffect(() => {
     let vivant = true
-    const tablePromise = interroger({ ...base, dimension, mesures: [...MESURES], limite: 100 })
+    // Par campagne, la dépense est EN PREMIER (le tri se fait sur la première
+    // mesure) : c'est la ligne qui coûte le plus que l'on veut voir d'abord, et
+    // celle qui coûte sans rien attribuer s'y voit. La dépense n'est pas ventilable
+    // par appareil ou ville : avec un segment actif, elle est retirée plutôt que de
+    // rendre le croisement invalide.
+    const parCampagne = dimension === 'campagne' && !(etat.filtres && etat.filtres.length > 0)
+    const mesuresTable = parCampagne
+      ? ['depensePub', 'sessions', 'commandes', 'caLivre', 'marge', 'margeApresPub'] // 6 colonnes : elles tiennent sans défiler
+      : [...MESURES]
+    const tablePromise = interroger({ ...base, dimension, mesures: mesuresTable, limite: 100 })
     const canauxPromise = dimension === 'canal'
       ? tablePromise
       : interroger({ ...base, dimension: 'canal', mesures: [...MESURES], limite: 100 })
@@ -185,11 +194,15 @@ export default function Acquisition() {
       )}
       tableau={!table ? <Squelette lignes={6} hauteur={16} /> : (
         <DimensionTable
+          // La clé remet le tri à zéro quand la dimension change : sinon la table garde
+          // le tri « Sessions » et la campagne qui coûte le plus (0 visite) finit en page 3.
+          key={table.modele.dimension?.label ?? dimension}
           lignes={(tableEnrichie ?? table).lignes as LigneTable[]}
           colonnes={colonnes}
           labelDimension={table.modele.dimension?.label ?? 'Dimension'}
           dimensions={[
             { cle: 'canal', label: "Canal d'acquisition" },
+            { cle: 'campagne', label: 'Campagne' },
             { cle: 'ville', label: 'Ville' },
             { cle: 'appareil', label: 'Appareil' },
             { cle: 'gammeAppareil', label: "Gamme d'appareil" },

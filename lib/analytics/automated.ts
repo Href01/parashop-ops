@@ -24,21 +24,10 @@ import { TZ } from '@/lib/analytics/metrics'
  * On MARQUE, on ne supprime pas : la page offre « inclure le trafic automatise ».
  */
 
-export const VILLES_HEBERGEUR = [
-  'Prineville', 'Forest City', 'Luleå', 'Clonee', 'Council Bluffs', 'Boardman', 'The Dalles',
-  'Ashburn', 'Frankfurt am Main', 'Singapore', 'Fort Worth', 'Gallatin', 'Atlanta', 'Charneca',
-  'Dublin', 'Santa Clara', 'Des Moines', 'Lenoir', 'Altoona', 'Henrico', 'Quincy', 'Moncks Corner',
-  'Katy', 'New York City', 'London',
-]
-
-/** Fragments d'agent utilisateur (regex POSIX, insensible a la casse). */
-export const AGENTS_AUTOMATISES = [
-  'google-adwords', 'adsbot', 'inspectiontool', 'mediapartners', 'facebookexternalhit',
-  'meta-externalagent', 'facebot', 'lighthouse', 'headlesschrome', 'crawler', 'spider',
-  'python-requests', '\ybot\y',
-]
-
-export const DUREE_MAX_VISITE_AUTOMATISEE_S = 120
+/* Les listes vivent dans `automated-rules.ts` : les filtres des autres rapports
+   (metrics.ts) en ont besoin aussi, et ce fichier-ci importe metrics.ts. */
+import { VILLES_HEBERGEUR, AGENTS_AUTOMATISES, DUREE_MAX_VISITE_AUTOMATISEE_S } from '@/lib/analytics/automated-rules'
+export { VILLES_HEBERGEUR, AGENTS_AUTOMATISES, DUREE_MAX_VISITE_AUTOMATISEE_S }
 
 type Alias = {
   /** Alias de "AnalyticsSession" dans la requete. */

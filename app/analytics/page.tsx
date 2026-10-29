@@ -19,7 +19,7 @@ import { T } from './_components/Decision'
 import { ReportShell, Scorecard, DimensionTable, Squelette, ErreurChargement, type ColonneMesure, type LigneTable } from './_components/Report'
 import { BarreControle } from './_components/Controls'
 import { useReport, interroger } from './_components/useReport'
-import { Cascade, type FacteurVue } from './_components/Decision'
+import { Cascade, Maturite, type FacteurVue } from './_components/Decision'
 
 type Reponse = Awaited<ReturnType<typeof interroger>>
 
@@ -57,7 +57,9 @@ export default function VueEnsemble() {
   useEffect(() => {
     let vivant = true
     Promise.all([
-      interroger({ ...base, mesures: [...mesuresTete] }),
+      // `annulees` n'est pas une carte : elle sert a savoir combien de commandes sont
+      // ENCORE EN COURS (passees − livrees − annulees), donc ce qui n'est pas regle.
+      interroger({ ...base, mesures: [...mesuresTete, 'annulees'] }),
       interroger({ ...base, dimension, mesures: [...mesuresTable], limite: 100 }),
     ])
       .then(([t, d]) => { if (vivant) { setTete(t); setTable(d); setErreur(null) } })
@@ -72,7 +74,7 @@ export default function VueEnsemble() {
   // ── D'OÙ VIENT L'ÉCART ───────────────────────────────────────────────────
   // « La marge a bougé de X » ne dit rien. Nommer le facteur, en dirhams, désigne
   // l'endroit où agir. La somme des effets reconstitue exactement l'écart.
-  const cascade = useMemo((): { depart: number; arrivee: number; facteurs: FacteurVue[] } | null => {
+  const cascade = useMemo((): { depart: number; arrivee: number; facteurs: FacteurVue[]; enVol: number; total: number; pctResolu: number } | null => {
     if (!etat.comparaison || !total || etat.basis === 'cash') return null
     const courant = (c: string) => total[c]?.valeur ?? 0
     const precedent = (c: string) => total[c]?.precedent ?? 0
@@ -85,12 +87,23 @@ export default function VueEnsemble() {
     if (C0 === 0 || liv0 === 0) return null
     const nf = (n: number) => Math.round(n).toLocaleString('fr-FR')
     const pc = (n: number) => `${(n * 100).toFixed(1).replace('.', ',')} %`
+    // Les commandes ENCORE EN VOL : ni livrees, ni annulees. Elles comptent comme
+    // « non livrees » dans le taux ci-dessous (81 % = 17 livrees / 21 passees, dont
+    // 3 en transit), alors que la periode precedente, entierement reglee, affiche
+    // 100 %. Le delta est alors du timing, pas une degradation.
+    const enVol = Math.max(0, C1 - liv1 - courant('annulees'))
+    const provisoire = enVol > 0
+      ? `${nf(enVol)} commande${enVol > 1 ? 's' : ''} encore en cours : l'écart se résorbe à la livraison`
+      : undefined
     return {
       depart: C0 * L0 * M0,
       arrivee: C1 * L1 * M1,
+      enVol,
+      total: C1,
+      pctResolu: C1 > 0 ? ((C1 - enVol) / C1) * 100 : 100,
       facteurs: [
         { label: 'Volume de commandes', effet: (C1 - C0) * L0 * M0, de: `${nf(C0)} cmd`, a: `${nf(C1)} cmd` },
-        { label: 'Taux de livraison', effet: C1 * (L1 - L0) * M0, de: pc(L0), a: pc(L1) },
+        { label: 'Taux de livraison', effet: C1 * (L1 - L0) * M0, de: pc(L0), a: pc(L1), provisoire },
         { label: 'Marge par commande', effet: C1 * L1 * (M1 - M0), de: `${nf(M0)} MAD`, a: `${nf(M1)} MAD` },
       ],
     }
@@ -119,7 +132,7 @@ export default function VueEnsemble() {
           // Un squelette garde la place : la page ne saute pas quand les
           // chiffres arrivent, et l'œil sait déjà où ils vont apparaître.
           mesuresTete.map((c) => <div key={c}><Squelette lignes={2} hauteur={12} /></div>)
-        ) : (tete.modele.mesures.map((m) => (
+        ) : (tete.modele.mesures.filter((m) => m.cle !== 'annulees').map((m) => (
           <Scorecard
             key={m.cle}
             label={m.label} definition={m.definition} portee={m.portee}
@@ -138,6 +151,9 @@ export default function VueEnsemble() {
                     labelDepart="Marge période précédente" labelArrivee="Marge période courante"
                   />
                 </div>
+                {cascade.enVol > 0 && (
+                  <div className="mt-2"><Maturite enVol={cascade.enVol} total={cascade.total} pctResolu={cascade.pctResolu} /></div>
+                )}
                 <p className={`${T.note} mt-2`} style={{ color: V.muted }}>
                   La somme des trois effets reconstitue exactement l&apos;écart. La publicité n&apos;y figure pas :
                   elle est traitée dans <Link href="/analytics/acquisition" className="underline">Acquisition</Link>.

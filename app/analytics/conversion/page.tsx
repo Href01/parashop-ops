@@ -17,8 +17,9 @@ import { ReportShell, Scorecard, Squelette, ErreurChargement } from '../_compone
 import { BarreControle } from '../_components/Controls'
 import { useReport, interroger } from '../_components/useReport'
 import { Entonnoir, type EtapeEntonnoir } from '../_components/Charts'
+import { FUNNEL_PAR_DEFAUT } from '@/lib/analytics/funnel'
 
-const DEFAUT = ['PRODUCT_VIEW_DETAIL', 'PRODUCT_ADD_TO_CART', 'BEGIN_CHECKOUT', 'ADD_PAYMENT_INFO', 'CHECKOUT_SUBMIT_ATTEMPT']
+const DEFAUT: string[] = [...FUNNEL_PAR_DEFAUT]
 
 const FENETRES = [
   { min: 15, label: '15 min' },

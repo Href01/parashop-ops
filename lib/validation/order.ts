@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { normalizePaymentMethod } from '@/lib/order-utils'
+import { CLES_ORIGINE } from '@/lib/analytics/origine-commande'
 
 const MARKETPLACE_CHANNELS = new Set(['Jumia', 'Marjane Mall'])
 
@@ -40,6 +41,8 @@ export const NonNegativeNumberSchema = z.union([
  */
 export const CreateOrderSchema = z.object({
   sourceChannel: z.string().min(1),
+  /** D'où est venue la cliente (commandes saisies à la main). Absent = non renseigné. */
+  origine: z.enum(CLES_ORIGINE).optional(),
 
   // Delivery info
   deliveryName: z.string().min(2, 'Name must be at least 2 characters'),

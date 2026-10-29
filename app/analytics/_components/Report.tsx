@@ -26,6 +26,7 @@ import { useMemo, useState, type ReactNode } from 'react'
 import { CircleAlert, RotateCw } from 'lucide-react'
 import { V } from './Viz'
 import { T } from './Decision'
+import { calculerEcart } from '@/lib/analytics/ecart'
 
 /* ── Jetons ───────────────────────────────────────────────────────────────── */
 export const JET = {
@@ -148,16 +149,15 @@ export function Ecart({ courant, precedent, hausseEstBonne = true }: {
   precedent: number | null | undefined
   hausseEstBonne?: boolean
 }) {
-  if (courant == null || precedent == null || precedent === 0) return null
-  const pct = ((courant - precedent) / Math.abs(precedent)) * 100
-  if (!Number.isFinite(pct)) return null
-  const monte = pct >= 0
-  const bon = monte === hausseEstBonne
-  // Fleche ET signe : la couleur n'est jamais le seul porteur du sens.
+  const e = calculerEcart(courant, precedent)
+  if (!e) return null
+  const bon = e.monte === hausseEstBonne
+  // Fleche ET signe : la couleur n'est jamais le seul porteur du sens. Un ecart
+  // extreme (« × 49 ») n'a PAS de couleur de verdict : ce n'est pas un bilan.
   return (
-    <span className="text-[11px] font-bold tabular-nums whitespace-nowrap"
-      style={{ color: Math.abs(pct) < 0.5 ? V.muted : bon ? V.good : V.critical }}>
-      {monte ? '▲' : '▼'} {Math.abs(pct).toFixed(0)} %
+    <span className="text-[11px] font-bold tabular-nums whitespace-nowrap" title={e.explication}
+      style={{ color: e.extreme || Math.abs(e.pct) < 0.5 ? V.muted : bon ? V.good : V.critical, cursor: e.extreme ? 'help' : undefined }}>
+      {e.texte}
     </span>
   )
 }
@@ -247,11 +247,16 @@ export type LigneTable = {
 }
 
 export function DimensionTable({
-  lignes, colonnes, labelDimension, dimensions, onDimension, comparaison, lignesParPage = 10, vide,
+  lignes, colonnes, labelDimension, dimensions, onDimension, comparaison, lignesParPage = 10, vide, totauxExacts,
 }: {
   lignes: LigneTable[]
   colonnes: ColonneMesure[]
   labelDimension: string
+  /** Les totaux de la période, calculés SANS dimension. Quand une mesure y figure, la
+   *  ligne « Total » l'utilise au lieu de sommer les lignes : une session qui défile
+   *  sur trois pages compte dans trois lignes (somme 3 417) mais une seule fois dans la
+   *  période (2 191), et les lignes au-delà de la limite chargée n'y sont pas non plus. */
+  totauxExacts?: Record<string, number | null | undefined>
   /** Dimensions proposees dans le selecteur — c'est ce qui rend le tableau explorable. */
   dimensions?: Array<{ cle: string; label: string }>
   onDimension?: (cle: string) => void
@@ -278,6 +283,10 @@ export function DimensionTable({
   const totaux = useMemo(() => {
     const t: Record<string, number> = {}
     for (const c of colonnes) {
+      // Le total exact de la période prime : lui seul compte une session une fois.
+      // (Un pourcentage ou une mesure dérivée y est aussi exact : calculé sur la période entière.)
+      const exact = totauxExacts?.[c.cle]
+      if (exact != null) { t[c.cle] = exact; continue }
       // On n'additionne QUE ce qui s'additionne. Un pourcentage ne se somme
       // pas, et une mesure dérivée non plus : la ligne affichait « Total —
       // Marge / commande : 1 258 MAD », qui est la somme des marges unitaires
@@ -286,7 +295,7 @@ export function DimensionTable({
       t[c.cle] = filtrees.reduce((s, l) => s + (l.mesures[c.cle]?.valeur ?? 0), 0)
     }
     return t
-  }, [filtrees, colonnes])
+  }, [filtrees, colonnes, totauxExacts])
 
   const pages = Math.max(1, Math.ceil(filtrees.length / lignesParPage))
   const p = Math.min(page, pages - 1)

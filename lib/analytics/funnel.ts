@@ -9,6 +9,24 @@ import { canonicalEventName, canonicalFunnelSteps } from './events'
  * canonique), ou les deux a la fois pendant la transition.
  */
 
+/**
+ * L'entonnoir proposé par défaut, dans l'ORDRE RÉEL du checkout.
+ *
+ * Relevé sur les 12 sessions qui ont acheté en 30 jours (12 sur 12) :
+ *   BEGIN_CHECKOUT > CHECKOUT_SUBMIT_ATTEMPT > ADD_PAYMENT_INFO > OTP_VERIFIED > PURCHASE_SUCCESS
+ * `CHECKOUT_SUBMIT_ATTEMPT` part au premier clic sur « Commander », AVANT la
+ * validation des coordonnées et avant le code reçu par téléphone.
+ *
+ * L'entonnoir est séquentiel : une étape ne compte que si elle survient APRÈS la
+ * précédente. L'ancien défaut posait ADD_PAYMENT_INFO avant CHECKOUT_SUBMIT_ATTEMPT
+ * et s'arrêtait avant PURCHASE_SUCCESS ; sa dernière marche valait donc toujours 0
+ * et l'écran annonçait « 0 % de conversion, 100 % de fuite » pour 12 commandes.
+ */
+export const FUNNEL_PAR_DEFAUT = [
+  'PRODUCT_VIEW_DETAIL', 'PRODUCT_ADD_TO_CART', 'BEGIN_CHECKOUT',
+  'CHECKOUT_SUBMIT_ATTEMPT', 'ADD_PAYMENT_INFO', 'OTP_VERIFIED', 'PURCHASE_SUCCESS',
+] as const
+
 export type FunnelRawEvent = {
   sessionId: string
   name: string

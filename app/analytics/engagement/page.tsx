@@ -120,6 +120,7 @@ export default function Engagement() {
       }
       tableau={!table ? <Squelette lignes={6} hauteur={16} /> : (
         <DimensionTable lignes={table.lignes as LigneTable[]} colonnes={colonnes}
+          totauxExacts={Object.fromEntries(Object.entries(m ?? {}).map(([k, v]) => [k, v.valeur]))}
           labelDimension={table.modele.dimension?.label ?? 'Dimension'}
           dimensions={[
             { cle: 'page', label: 'Page' },

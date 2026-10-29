@@ -194,6 +194,7 @@ export async function POST(request: NextRequest) {
     // All data is now validated and type-safe!
     const {
       sourceChannel,
+      origine,
       handToHand,
       marketplace,
       channelCommission,
@@ -269,10 +270,11 @@ export async function POST(request: NextRequest) {
           "paymentReference",
           "paymentStatus",
           "channelCommission",
+          "sourcePayload",
           "createdAt"
         ) VALUES (
           $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-          $21, $22::timestamptz, $23, $24, $25, NOW()
+          $21, $22::timestamptz, $23, $24, $25, $26::jsonb, NOW()
         ) RETURNING *`,
         [
           orderNumber,
@@ -309,6 +311,10 @@ export async function POST(request: NextRequest) {
             ? Math.abs(Number(paidAmount) - total) <= 0.01 ? 'PAID' : 'PARTIAL'
             : 'PENDING',
           channelCommission,
+          // L'origine de la cliente (pub, publication, recommandation…), quand elle a été
+          // demandée : c'est ce qui permet de relier une commande Instagram « DM » à la
+          // publicité qui l'a déclenchée. NULL = non renseignée, jamais une valeur inventée.
+          origine ? JSON.stringify({ source: 'manual', origine }) : null,
         ]
       )
 

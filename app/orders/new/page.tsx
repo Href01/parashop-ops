@@ -6,6 +6,7 @@ import BosShell from '@/components/BosShell'
 import PageHead from '@/components/PageHead'
 import { AlertTriangle, CheckCircle2, CreditCard, FileText, Hand, MapPin, Minus, Package, Phone, Plus, Store, Truck, User, X, Zap } from 'lucide-react'
 import Link from 'next/link'
+import { ORIGINES_COMMANDE, demandeOrigine, estOrigineCommande } from '@/lib/analytics/origine-commande'
 import {
   DistrictSearchPicker,
   ProductSearchPicker,
@@ -37,6 +38,7 @@ export default function NewOrderPage() {
 
   const [formData, setFormData] = useState({
     sourceChannel: 'Manual',
+    origine: '',
     deliveryName: '',
     deliveryPhone: '',
     districtId: '',
@@ -254,6 +256,8 @@ export default function NewOrderPage() {
 
       const payload = {
         sourceChannel: formData.sourceChannel,
+        // Seulement si la question avait un sens pour ce canal ET qu'on y a répondu.
+        origine: demandeOrigine(formData.sourceChannel) && estOrigineCommande(formData.origine) ? formData.origine : undefined,
         handToHand: formData.handToHand,
         channelCommission: commission,
         deliveryName: formData.deliveryName,
@@ -404,6 +408,19 @@ export default function NewOrderPage() {
                     <option value="Phone">Téléphone</option>
                   </select>
                 </div>
+                {demandeOrigine(formData.sourceChannel) && (
+                  <div className="form-field">
+                    <label className="form-label" htmlFor="origine-cliente">Comment nous a-t-elle trouvés ?</label>
+                    <select id="origine-cliente" className="form-input" value={formData.origine}
+                      onChange={(event) => setFormData((f) => ({ ...f, origine: event.target.value }))}>
+                      <option value="">Non renseigné</option>
+                      {ORIGINES_COMMANDE.map((o) => <option key={o.cle} value={o.cle}>{o.label}</option>)}
+                    </select>
+                    <p className="form-hint" style={{ margin: '4px 0 0', fontSize: 11, opacity: 0.7 }}>
+                      Sert à relier la vente à la publicité qui l&apos;a déclenchée.
+                    </p>
+                  </div>
+                )}
                 <fieldset className="form-field mode-field">
                   <legend className="form-label">Prise en charge</legend>
                   {estMarketplace ? (
