@@ -23,12 +23,14 @@ import { BarreControle } from '../_components/Controls'
 import { useReport } from '../_components/useReport'
 import { Chronologie, LegendeFamilles, BRUIT, type Evenement } from '../_components/Chronologie'
 import { Emplacements } from '../_components/Emplacements'
+import { EnteteJour, SessionRow } from '../_components/SessionRow'
+import { regrouperParJour } from '@/lib/analytics/session-view'
 
 type Session = {
   sessionId: string; device: string; ville: string; source: string
   visiteur: string | null; debut: string; derniere: string
   actions: number; fiches: number; paniers: number; recherches: number; frictions: number
-  duree: number; enLigne: boolean
+  duree: number; enLigne: boolean; checkouts: number
   automatise: boolean; pays: string | null; medium: string | null; campagne: string | null; arrivee: string | null
   commande: { id: number; nom: string | null; telephone: string | null; statut: string; montant: number } | null
 }
@@ -45,6 +47,7 @@ type Reponse = {
   canaux: Dim[]
 }
 
+const aujourdhui = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Casablanca' }).format(new Date())
 const duree = (s: number) => (s < 60 ? `${s} s` : s < 3600 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(1).replace('.', ',')} h`)
 const heure = (iso: string) =>
   new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Africa/Casablanca' }).format(new Date(iso))
@@ -58,6 +61,8 @@ export default function Sessions() {
   const [canal, setCanal] = useState('')
   // Les sessions automatisees (robots, rendus Meta/Google, hebergeurs) sont ecartees par defaut.
   const [auto, setAuto] = useState(false)
+  // Deux vues, pas un seul long defilement : les sessions d'abord, les emplacements Meta a cote.
+  const [vue, setVue] = useState<'sessions' | 'emplacements'>('sessions')
   const [data, setData] = useState<Reponse | null>(null)
   const [ouverte, setOuverte] = useState<string | null>(null)
   const [timeline, setTimeline] = useState<Evenement[] | null>(null)
@@ -290,81 +295,64 @@ export default function Sessions() {
       )}
       figure={!data ? <Squelette lignes={8} hauteur={18} /> : (
         <div>
-        <Emplacements debut={etat.periode.debut} fin={etat.periode.fin} auto={auto} />
-        <div className="space-y-1">
-          {data.sessions.length === 0 && (
-            <p className={T.note} style={{ color: V.muted }}>Aucune session sur cette période avec ces filtres.</p>
-          )}
-          {data.sessions.map((s) => {
-            const ouvert = ouverte === s.sessionId
-            return (
-              <div key={s.sessionId} className="rounded-lg" style={{ border: `1px solid ${ouvert ? V.axis : V.grid}` }}>
-                <button onClick={() => setOuverte(ouvert ? null : s.sessionId)}
-                  className="w-full text-left px-3 py-2 flex flex-wrap items-center gap-x-3 gap-y-1">
-                  {s.enLigne && <span className="pulse w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: V.good }} title="Active à l'instant" />}
-                  <span className="text-[12px] font-semibold" style={{ color: V.ink }}>
-                    {s.commande?.nom || s.ville}
-                  </span>
-                  <span className={T.note} style={{ color: V.muted }}>
-                    {s.device} · {s.source}{s.medium ? `/${s.medium}` : ''} · {heure(s.derniere)} · {duree(s.duree)}
-                  </span>
-                  {s.automatise && (
-                    <span className="text-[10px] font-bold rounded px-1.5 py-0.5" style={{ background: `${V.grid}`, color: V.ink2 }}
-                      title="Robot ou rendu automatisé (hébergeur, relecture d'annonce) : écarté par défaut des statistiques.">automatisé</span>
-                  )}
-                  {s.campagne && <span className={T.note} style={{ color: V.muted }} title={`Campagne : ${s.campagne}`}>campagne {s.campagne.length > 22 ? `${s.campagne.slice(0, 22)}…` : s.campagne}</span>}
-                  {s.arrivee && s.arrivee !== '/' && <span className={T.note} style={{ color: V.muted }} title={`Page d'arrivée : ${s.arrivee}`}>↳ {s.arrivee.length > 30 ? `…${s.arrivee.slice(-30)}` : s.arrivee}</span>}
-                  <span className="flex-1" />
-                  <span className={T.note} style={{ color: V.ink2 }}>
-                    {s.actions} actions · {s.fiches} fiches · {s.paniers} panier{s.paniers > 1 ? 's' : ''}
-                  </span>
-                  {s.frictions > 0 && (
-                    <span className="text-[11px] font-bold" style={{ color: '#854D0E' }} title="Erreurs ou signaux à vérifier, pas un nombre de pannes confirmées">▲ {s.frictions}</span>
-                  )}
-                  {s.commande && (
-                    <span className="text-[11px] font-bold" style={{ color: s.commande.statut === 'CANCELLED' ? V.critical : V.good }}>
-                      {s.commande.statut === 'DELIVERED' ? '✓ livrée' : s.commande.statut === 'CANCELLED' ? '✕ annulée' : '● commandée'}
-                      {' '}{Math.round(s.commande.montant).toLocaleString('fr-FR')} MAD
-                    </span>
-                  )}
-                  <span className="text-[10px]" style={{ color: V.muted }} aria-hidden="true">{ouvert ? '▾' : '▸'}</span>
-                </button>
+          <div role="tablist" aria-label="Vue" className="inline-flex rounded-lg p-0.5 mb-3" style={{ background: V.grid }}>
+            {([['sessions', 'Sessions'], ['emplacements', 'Emplacements Meta']] as const).map(([k, label]) => (
+              <button key={k} role="tab" aria-selected={vue === k} onClick={() => setVue(k)}
+                className="rounded-md px-3 py-1 text-[12px] font-semibold"
+                style={vue === k ? { background: '#fff', color: V.ink, boxShadow: '0 1px 2px rgba(0,0,0,.08)' } : { color: V.ink2 }}>
+                {label}
+              </button>
+            ))}
+          </div>
 
-                {ouvert && (
-                  <div className="px-3 pb-3">
-                    {timeline && timeline.length > 0 && (
-                      <div className="flex items-center gap-2 pb-2">
-                        <button onClick={() => setTout((t) => !t)}
-                          className="text-[11px] font-semibold underline" style={{ color: V.muted }}>
-                          {tout ? 'ne montrer que les actions marquantes' : 'tout afficher, y compris le bruit'}
-                        </button>
-                        <span className={T.note} style={{ color: V.muted }}>
-                          {tout
-                            ? `${timeline.length} actions`
-                            : `${timeline.filter((e) => !BRUIT.has(e.name)).length} actions marquantes sur ${timeline.length}`}
-                        </span>
-                        {timelineTronquee && (
-                          <span className={T.note} style={{ color: V.warning }}>300 premières actions</span>
+          {vue === 'emplacements' && <Emplacements debut={etat.periode.debut} fin={etat.periode.fin} auto={auto} />}
+
+          {vue === 'sessions' && (
+            <div className="space-y-1">
+              {data.sessions.length === 0 && (
+                <p className={T.note} style={{ color: V.muted }}>Aucune session sur cette période avec ces filtres.</p>
+              )}
+              {regrouperParJour(data.sessions, aujourdhui()).map((g) => (
+                <div key={g.clef} className="space-y-1.5">
+                  <EnteteJour libelle={g.libelle} sessions={g.sessions} />
+                  {g.sessions.map((s) => {
+                    const ouvert = ouverte === s.sessionId
+                    return (
+                      <SessionRow key={s.sessionId} s={s} ouvert={ouvert} onToggle={() => setOuverte(ouvert ? null : s.sessionId)}>
+                        {timeline && timeline.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 pb-2.5">
+                            <span role="group" aria-label="Niveau de détail" className="inline-flex rounded-lg p-0.5" style={{ background: V.grid }}>
+                              {([[false, `Marquantes ${timeline.filter((e) => !BRUIT.has(e.name)).length}`], [true, `Tout ${timeline.length}`]] as const).map(([val, label]) => (
+                                <button key={String(val)} aria-pressed={tout === val} onClick={() => setTout(val)}
+                                  className="rounded-md px-2.5 py-0.5 text-[11px] font-semibold whitespace-nowrap"
+                                  style={tout === val ? { background: '#fff', color: V.ink, boxShadow: '0 1px 2px rgba(0,0,0,.08)' } : { color: V.ink2 }}>
+                                  {label}
+                                </button>
+                              ))}
+                            </span>
+                            {timelineTronquee && <span className={T.note} style={{ color: V.warning }}>300 premières actions</span>}
+                            <details className="text-[11px]" style={{ color: V.muted }}>
+                              <summary className="cursor-pointer font-semibold underline">Légende des couleurs</summary>
+                              <div className="pt-1.5"><LegendeFamilles /></div>
+                            </details>
+                          </div>
                         )}
-                        <span className="flex-1" />
-                        <LegendeFamilles />
-                      </div>
-                    )}
-                    {erreurTimeline ? (
-                      <p className={T.note} style={{ color: V.critical }}>
-                        Impossible de charger la chronologie : {erreurTimeline}
-                      </p>
-                    ) : !timeline ? <Squelette lignes={4} hauteur={12} /> : timeline.length === 0 ? (
-                      <p className={T.note} style={{ color: V.muted }}>Aucune action enregistrée.</p>
-                    ) : (
-                      <Chronologie evenements={timeline.filter((e) => tout || !BRUIT.has(e.name))} />
-                    )}
-                  </div>
-                )}
-              </div>
-            )
-          })}
-        </div>
+                        {erreurTimeline ? (
+                          <p className={T.note} style={{ color: V.critical }}>
+                            Impossible de charger la chronologie : {erreurTimeline}
+                          </p>
+                        ) : !timeline ? <Squelette lignes={4} hauteur={12} /> : timeline.length === 0 ? (
+                          <p className={T.note} style={{ color: V.muted }}>Aucune action enregistrée.</p>
+                        ) : (
+                          <Chronologie evenements={timeline.filter((e) => tout || !BRUIT.has(e.name))} />
+                        )}
+                      </SessionRow>
+                    )
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     />

@@ -158,6 +158,7 @@ export async function GET(request: NextRequest) {
                COUNT(*) FILTER (WHERE e.name = 'PRODUCT_VIEW_DETAIL')::int AS fiches,
                COUNT(*) FILTER (WHERE e.name = 'PRODUCT_ADD_TO_CART')::int AS paniers,
                COUNT(*) FILTER (WHERE e.name = 'SEARCH_SUBMIT')::int AS recherches,
+               COUNT(*) FILTER (WHERE e.name = 'BEGIN_CHECKOUT')::int AS checkouts,
                COUNT(*) FILTER (WHERE e.name IN (
                  'PURCHASE_FAILED','CHECKOUT_VALIDATION_FAILED','PROMO_CODE_FAILED',
                  'SEARCH_ZERO_RESULTS','OTP_INVALID','OTP_SEND_FAILED','OTP_DELIVERY_FAILED',
@@ -208,14 +209,18 @@ export async function GET(request: NextRequest) {
              COALESCE(stats.fiches, 0)::int AS fiches,
              COALESCE(stats.paniers, 0)::int AS paniers,
              COALESCE(stats.recherches, 0)::int AS recherches,
+             COALESCE(stats.checkouts, 0)::int AS checkouts,
              COALESCE(stats.frictions, 0)::int AS frictions,
              COALESCE(EXTRACT(epoch FROM (stats.derniere - stats.premiere)), 0)::int AS duree,
              o.id AS "orderId", o."deliveryName", o."deliveryPhone", o.status AS "orderStatus",
              COALESCE(o.revenue, o."productsTotal", o.total) AS montant,
              (COALESCE(stats.derniere, s."lastSeenAt", s."firstSeenAt") >= NOW() - INTERVAL '5 minutes') AS "enLigne",
-             s."landingUrl", s."utmMedium", s."utmCampaign", s.country,
+             s."landingUrl", s."utmMedium", s."utmCampaign", s.country, camp."campaignName" AS "campagneNom",
              (${AUTO}) AS automatise
       ${JOINTURES}
+      LEFT JOIN LATERAL (
+        SELECT "campaignName" FROM "AdSpendDaily" WHERE "externalId" = s."utmCampaign" ORDER BY date DESC LIMIT 1
+      ) camp ON true
       WHERE ${conditions.join(' AND ')}
       ORDER BY COALESCE(stats.derniere, s."lastSeenAt", s."firstSeenAt") DESC
       LIMIT 60`, params)
@@ -283,13 +288,14 @@ export async function GET(request: NextRequest) {
         visiteur: (x.visitorId as string) || null,
         debut: x.firstSeenAt, derniere: x.derniere,
         actions: Number(x.actions), fiches: Number(x.fiches), paniers: Number(x.paniers),
-        recherches: Number(x.recherches), frictions: Number(x.frictions),
+        recherches: Number(x.recherches), checkouts: Number(x.checkouts), frictions: Number(x.frictions),
         duree: Number(x.duree ?? 0),
         enLigne: x.enLigne === true,
         automatise: x.automatise === true,
         pays: (x.country as string) || null,
         medium: (x.utmMedium as string) || null,
         campagne: (x.utmCampaign as string) || null,
+        campagneNom: (x.campagneNom as string) || null,
         // Chemin d'arrivee, sans domaine ni parametres : c'est la page, pas l'URL.
         arrivee: x.landingUrl ? String(x.landingUrl).replace(/^https?:\/\/[^/]+/, '').split(/[?#]/)[0] || '/' : null,
         commande: x.orderId ? {

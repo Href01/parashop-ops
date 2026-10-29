@@ -241,7 +241,7 @@ const CONTEXTE: Record<string, string> = {
  * l'action — le prix pour un ajout, le motif pour un refus, le nombre de
  * résultats pour une recherche.
  */
-export function detail(e: Evenement): string | null {
+export function detail(e: Evenement, opts: { experience?: boolean } = {}): string | null {
   const p = e.props || {}
   const morceaux: Array<string | null> = []
   if (typeof p.attemptId === 'string' && p.attemptId.startsWith('co_')) {
@@ -250,7 +250,9 @@ export function detail(e: Evenement): string | null {
     if (typeof p.elapsedMs === 'number' && Number.isFinite(p.elapsedMs)) morceaux.push(`+${Math.round(p.elapsedMs / 1000)} s`)
   }
   const experience = p.pageExperience
-  if (experience && typeof experience === 'object') {
+  // Le modele de page est le meme sur TOUTES les lignes d'une session : la chronologie
+  // l'affiche une fois en tete (experienceDeSession) et passe `experience: false` ici.
+  if (opts.experience !== false && experience && typeof experience === 'object') {
     const x = experience as Record<string, unknown>
     if (typeof x.pageModelId === 'string' && /^[a-z0-9][a-z0-9_-]{0,79}$/.test(x.pageModelId)) {
       morceaux.push(`modèle ${x.pageModelId}`)
@@ -784,21 +786,63 @@ export function checkoutAttempts(events: Evenement[]) {
   return [...attempts.values()]
 }
 
+/** « modèle X · publication vN · gabarit vM » — identique sur toutes les lignes, donc dit une fois. */
+export function experienceDeSession(evenements: Evenement[]): string | null {
+  for (const e of evenements) {
+    const x = (e.props || {}).pageExperience as Record<string, unknown> | undefined
+    if (x && typeof x === 'object' && typeof x.pageModelId === 'string' && /^[a-z0-9][a-z0-9_-]{0,79}$/.test(x.pageModelId)) {
+      const rev = typeof x.revisionNo === 'number' && Number.isSafeInteger(x.revisionNo) && x.revisionNo > 0 ? ` · publication v${x.revisionNo}` : ''
+      const gab = typeof x.templateRevisionNo === 'number' && Number.isSafeInteger(x.templateRevisionNo) && x.templateRevisionNo > 0 ? ` · gabarit v${x.templateRevisionNo}` : ''
+      return `modèle ${x.pageModelId}${rev}${gab}`
+    }
+  }
+  return null
+}
+
+const Puce = ({ children }: { children: React.ReactNode }) => (
+  <span className="rounded px-1.5 py-0.5 whitespace-nowrap" style={{ background: '#fff', border: `1px solid ${V.grid}`, color: V.ink2 }}>{children}</span>
+)
+
 export function Chronologie({ evenements }: { evenements: Evenement[] }) {
-  const heure = (iso: string) =>
-    new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Africa/Casablanca' })
-      .format(new Date(iso))
+  const absolue = (iso: string) =>
+    new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Africa/Casablanca' }).format(new Date(iso))
+  // Le temps ECOULE se lit mieux que dix horloges presque identiques : « +0:12 » dit ce qui s'est passe entre deux actions.
+  const t0 = evenements.length ? new Date(evenements[0].at).getTime() : 0
+  const ecoule = (iso: string) => {
+    const sec = Math.max(0, Math.round((new Date(iso).getTime() - t0) / 1000))
+    return sec < 3600 ? `+${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` : `+${Math.floor(sec / 3600)}h${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}`
+  }
 
   const blocage = diagnosticBlockage(evenements)
   const signalStyle = blocage?.level === 'error' ? FAMILLES.friction : blocage?.level === 'suspected' ? FAMILLES.suspicion : FAMILLES.arrivee
   const nouvellesPages = changementsDePage(evenements)
+  const experience = experienceDeSession(evenements)
 
   return (
     <div>
-      {checkoutAttempts(evenements).map(attempt => <div key={attempt.id} className="mb-2 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs">
-        <strong>Checkout · entrée {attempt.surface}</strong><span> · {attempt.source} · {Math.round(attempt.elapsedMs / 1000)} s</span>
-        <p>{attempt.fields.size} champs complétés observés · {attempt.recovered} correction(s){attempt.resumed ? ' · brouillon repris' : ''} · {attempt.ordered ? 'Commande acceptée' : attempt.exited ? 'Sortie observée, abandon non confirmé' : 'Suite non observée'}</p>
-      </div>)}
+      {evenements.length > 0 && (
+        <p className="text-[11px] mb-2" style={{ color: V.muted }}>
+          Du <b style={{ color: V.ink2 }}>{absolue(evenements[0].at)}</b> au <b style={{ color: V.ink2 }}>{absolue(evenements[evenements.length - 1].at)}</b>
+          {experience ? <> · pages servies avec <span style={{ color: V.ink2 }}>{experience}</span></> : null}
+        </p>
+      )}
+      {checkoutAttempts(evenements).map(attempt => (
+        <div key={attempt.id} className="mb-2 rounded-lg px-3 py-2 text-[11px] flex flex-wrap items-center gap-x-2 gap-y-1.5"
+          style={{ background: '#f7f6f1', border: `1px solid ${V.grid}` }}>
+          <strong className="text-[12px]" style={{ color: V.ink }}>Checkout</strong>
+          <Puce>entrée {attempt.surface}</Puce>
+          <Puce>{attempt.source}</Puce>
+          <Puce>{Math.round(attempt.elapsedMs / 1000)} s</Puce>
+          <Puce>{attempt.fields.size} champ{attempt.fields.size > 1 ? 's' : ''} complété{attempt.fields.size > 1 ? 's' : ''}</Puce>
+          <Puce>{attempt.recovered} correction{attempt.recovered > 1 ? 's' : ''}</Puce>
+          {attempt.resumed && <Puce>brouillon repris</Puce>}
+          <span className="font-bold rounded-full px-2 py-0.5" style={attempt.ordered
+            ? { background: '#e7f5e7', color: '#0a7a0a' }
+            : attempt.exited ? { background: '#fdf3dc', color: '#a16207' } : { background: '#efeee9', color: V.ink2 }}>
+            {attempt.ordered ? 'Commande acceptée' : attempt.exited ? 'Sortie observée, abandon non confirmé' : 'Suite non observée'}
+          </span>
+        </div>
+      ))}
       {blocage && (
         <div className="mb-2 px-2.5 py-1.5 rounded-[5px] flex items-baseline gap-2 flex-wrap"
           style={{ background: signalStyle.fond, borderInlineStart: `3px solid ${signalStyle.couleur}` }}>
@@ -817,35 +861,29 @@ export function Chronologie({ evenements }: { evenements: Evenement[] }) {
           <span className="w-full text-[10px]" style={{ color: V.muted }}>Ces événements ne prouvent pas la cause d’un départ.</span>
         </div>
       )}
-      <ol className="space-y-[1px]">
+      <ol className="space-y-[2px] list-none p-0 m-0">
         {evenements.map((e, i) => {
           const s = SENS[e.name] ?? { label: e.name, famille: 'arrivee' as Famille }
           const f = FAMILLES[s.famille]
-          const d = detail(e)
+          const d = detail(e, { experience: false })
           const page = (e.path || '').split('?')[0]
           const nouvellePage = nouvellesPages[i]
 
           return (
-            <li key={i} className="text-[10px] rounded-[4px] px-1.5 py-1"
-              style={{ background: f.fond, borderInlineStart: `2px solid ${f.couleur}` }}>
-              <div className="flex items-start gap-2">
-                {/* Heure compacte à gauche */}
-                <span className="tabular-nums flex-shrink-0 w-[52px] pt-[1px] text-[9px]" style={{ color: V.muted }}>
-                  {heure(e.at)}
+            <li key={i} className="text-[11px] rounded-[4px] px-2 py-1"
+              style={{ background: f.fond, borderInlineStart: `3px solid ${f.couleur}` }}>
+              <div className="flex items-start gap-2.5">
+                {/* Temps ecoule depuis la premiere action ; l'heure exacte au survol */}
+                <span className="tabular-nums flex-shrink-0 w-[42px] pt-[1px] text-[10px] text-right" style={{ color: V.muted }} title={absolue(e.at)}>
+                  {i === 0 ? '0:00' : ecoule(e.at)}
                 </span>
-                {/* Action + détails wrappés, pas tronqués */}
                 <div className="flex-1 min-w-0">
                   <div className="flex flex-wrap items-baseline gap-x-1.5">
                     <span className="font-semibold" style={{ color: f.couleur }}>{s.label}</span>
-                    {d && (
-                      <span className="break-words" style={{ color: V.ink }}>
-                        {d}
-                      </span>
-                    )}
+                    {d && <span className="break-words" style={{ color: V.ink }}>{d}</span>}
                   </div>
-                  {/* Page en dessous si changement, monospace gris, pas tronquée */}
                   {nouvellePage && (
-                    <div className="mt-0.5 font-mono text-[9px] break-all" style={{ color: V.muted }}>
+                    <div className="mt-0.5 font-mono text-[10px] break-all" style={{ color: V.muted }}>
                       {e.path || page}
                     </div>
                   )}
