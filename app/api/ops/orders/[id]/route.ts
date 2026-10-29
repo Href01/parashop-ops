@@ -129,6 +129,7 @@ export async function PUT(
       deliveryCity,
       deliveryAddress,
       deliveryNotes,
+      senditDistrictId,
       deliveryFeeCharged,
       estimatedDeliveryCost,
       discountTotal,
@@ -168,6 +169,45 @@ export async function PUT(
       updates.push(`"deliveryAddress" = $${paramIndex}`)
       values.push(deliveryAddress)
       paramIndex++
+    }
+
+    /* LA ZONE SENDIT — la seule chose qui permet de creer le colis.
+       Cette route acceptait la ville en TEXTE mais jamais la zone : une commande du site dont le
+       quartier n'avait pas ete reconnu restait bloquee sur « Select the exact Sendit city/district
+       before creating a shipment », et la page n'offrait aucun moyen de la choisir.
+       - validee contre le cache des zones Sendit (un id inventé ne part jamais chez Sendit) ;
+       - refusee des qu'un colis existe : sa destination est celle de Sendit, la changer ici
+         creerait un ecart entre le BOS et le bordereau imprime ;
+       - la ville (texte) suit la zone, comme dans le formulaire de nouvelle commande. Les frais
+         factures a la cliente et le cout estime ne sont PAS modifies : ce sont des montants. */
+    if (senditDistrictId !== undefined) {
+      const zoneId = Number(senditDistrictId)
+      if (!Number.isInteger(zoneId) || zoneId <= 0) {
+        return NextResponse.json({ error: 'Zone Sendit invalide', details: 'Choisis une zone dans la liste.' }, { status: 400 })
+      }
+      const existante = await pool.query(
+        'SELECT "senditShipmentId", "senditTrackingId" FROM "Order" WHERE id = $1', [orderId])
+      if (existante.rowCount === 0) {
+        return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+      }
+      if (existante.rows[0].senditTrackingId || existante.rows[0].senditShipmentId) {
+        return NextResponse.json({
+          error: 'Colis Sendit déjà créé',
+          details: 'La destination du colis se change sur Sendit : ici elle ne correspondrait plus au bordereau.',
+        }, { status: 409 })
+      }
+      const zone = await pool.query('SELECT id, name FROM "SenditDistrictCache" WHERE id = $1', [zoneId])
+      if (zone.rowCount === 0) {
+        return NextResponse.json({ error: 'Zone Sendit inconnue', details: `Aucune zone Sendit n'a l'identifiant ${zoneId}.` }, { status: 400 })
+      }
+      updates.push(`"senditDistrictId" = $${paramIndex}`)
+      values.push(zoneId)
+      paramIndex++
+      if (deliveryCity === undefined) {
+        updates.push(`"deliveryCity" = $${paramIndex}`)
+        values.push(zone.rows[0].name)
+        paramIndex++
+      }
     }
 
     if (deliveryNotes !== undefined) {

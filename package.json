@@ -13,7 +13,7 @@
     "lint": "eslint .",
     "type-check": "tsc --noEmit",
     "test:analytics": "node --import tsx --test tests/analytics/*.test.ts",
-    "test:orders": "node --import tsx --test tests/orders/*.test.ts",
+    "test:orders": "node --import tsx --test tests/orders/*.test.ts tests/partner-ledger.test.ts",
     "test:seo": "node --import tsx --test tests/seo/*.test.ts",
     "test:ads": "node --import tsx --test tests/ads/*.test.ts",
     "verify:git-identity": "node scripts/check-git-identity.mjs",

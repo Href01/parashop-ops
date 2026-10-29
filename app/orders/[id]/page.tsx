@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import BosShell from '@/components/BosShell'
+import ZoneSendit from './ZoneSendit'
 
 interface Order {
   id: number
@@ -34,6 +35,8 @@ interface Order {
   marginPercent?: number | string
   deliveryFeeCharged?: number | string
   estimatedDeliveryCost?: number | string
+  senditDistrictId?: number | null
+  senditShipmentId?: string | null
   senditTrackingId?: string
   senditBarcode?: string
   senditStatus?: string
@@ -202,6 +205,15 @@ export default function OrderDetailPage() {
 
   async function handleCreateShipment() {
     if (!order) return
+
+    // Pas de zone Sendit : le serveur refuserait (« Select the exact Sendit city/district... »).
+    // On le dit ici, en francais, et on amene sur le controle qui permet de la choisir.
+    if (!order.senditDistrictId) {
+      setActionSuccess('')
+      setActionError('Choisis d’abord la zone Sendit exacte dans le panneau « Livraison Sendit » (juste en dessous), puis crée le colis.')
+      document.getElementById('destination-sendit')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      return
+    }
 
     setActionLoading(true)
     setActionError('')
@@ -1315,6 +1327,17 @@ export default function OrderDetailPage() {
                 <span className={`badge ${order.senditTrackingId ? 'green' : 'amber'}`}>
                   {order.senditStatus || 'Non expédiée'}
                 </span>
+              </div>
+              {/* La zone Sendit : sans elle le colis ne peut pas etre cree, et la page ne laissait
+                  modifier que la ville en texte. */}
+              <div className="panel-pad" style={{ paddingBottom: 0 }}>
+                <ZoneSendit
+                  orderId={orderId}
+                  deliveryCity={order.deliveryCity}
+                  districtId={order.senditDistrictId ?? null}
+                  colisCree={Boolean(order.senditTrackingId || order.senditShipmentId)}
+                  onSaved={async (message) => { await fetchOrder(); setActionError(''); setActionSuccess(message) }}
+                />
               </div>
               <div className="panel-pad info-grid">
                 <Info label="N° de suivi" value={order.senditTrackingId || 'Pas encore expédiée'} mono />
