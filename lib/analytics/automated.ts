@@ -65,22 +65,6 @@ export function traficAutomatiseSql(a: Alias): string {
   )`
 }
 
-/**
- * FENETRE DE DATES UTILISABLE PAR L'INDEX.
- *
- * `(col AT TIME ZONE tz)::date BETWEEN a AND b` appliquait une fonction a la
- * colonne : la base lisait toute la table (534 ms sur 30 jours, 11 s sur un an).
- * Cette version donne EXACTEMENT les memes lignes avec deux bornes sur la colonne.
- *
- * NOTE — les colonnes « timestamp sans fuseau » sont ecrites en UTC ; l'ancienne
- * expression les relit comme de l'heure du Maroc, d'ou des « jours » de 02 h a 02 h
- * (heure locale). On GARDE ce decoupage a l'identique pour que cette page
- * continue de concorder avec les autres modules ; le corriger est un chantier a
- * part, qui deplacerait des chiffres partout.
- *
- * `p1` et `p2` sont des marqueurs de parametres ($1, $2…), jamais des valeurs.
- */
-export function fenetreSql(col: string, p1: string, p2: string): string {
-  return `${col} >= (((${p1})::date)::timestamp AT TIME ZONE 'UTC') AT TIME ZONE '${TZ}'
-      AND ${col} < ((((${p2})::date + 1))::timestamp AT TIME ZONE 'UTC') AT TIME ZONE '${TZ}'`
-}
+/* La fenetre de dates vit dans la couche de mesure (metrics.ts) ; re-exportee ici
+   pour les requetes de session qui l'importent deja d'ici. */
+export { fenetreSql } from '@/lib/analytics/metrics'

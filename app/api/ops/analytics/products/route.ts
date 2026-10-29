@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 import pool from '@/lib/db'
 import { productFunnelCtes } from '@/lib/analytics/product-funnel'
+import { heureLocaleUtc, jourLocalUtc } from '@/lib/analytics/metrics'
 
 const TZ = 'Africa/Casablanca'
 const REVENUE_STATUSES = ['DELIVERED', 'CONFIRMED']
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest) {
     }
 
     const { start, end } = resolveRange(req.nextUrl.searchParams)
-    const dateFilter = `("createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date`
+    const dateFilter = `${jourLocalUtc('"createdAt"')} BETWEEN $1::date AND $2::date`
 
     const [topByRevenue, topByViews, viewToCart, contentEngagement, contentOpportunities, topBrands, searchQueries, lowStock] = await Promise.all([
       // Top products by revenue
@@ -55,7 +56,7 @@ export async function GET(req: NextRequest) {
          FROM "OrderItem" oi
          JOIN "Order" o ON o.id = oi."orderId"
          JOIN "Product" p ON p.id = oi."productId"
-         WHERE o.status = ANY($3) AND (o."createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
+         WHERE o.status = ANY($3) AND ${jourLocalUtc('o."createdAt"')} BETWEEN $1::date AND $2::date
          GROUP BY p.id, p.name, p.brand
          ORDER BY revenue DESC LIMIT 15`,
         [start, end, REVENUE_STATUSES]
@@ -121,7 +122,7 @@ export async function GET(req: NextRequest) {
            SELECT oi."productId" AS pid, COUNT(DISTINCT o.id)::int AS orders
            FROM "OrderItem" oi
            JOIN "Order" o ON o.id = oi."orderId"
-           WHERE o.status = ANY($3) AND (o."createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
+           WHERE o.status = ANY($3) AND ${jourLocalUtc('o."createdAt"')} BETWEEN $1::date AND $2::date
            GROUP BY 1
          )
          SELECT p.id, p.name, p.brand,
@@ -170,7 +171,7 @@ export async function GET(req: NextRequest) {
            SELECT oi."productId" AS pid, COUNT(DISTINCT o.id)::int AS orders
            FROM "OrderItem" oi
            JOIN "Order" o ON o.id = oi."orderId"
-           WHERE o.status = ANY($3) AND (o."createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
+           WHERE o.status = ANY($3) AND ${jourLocalUtc('o."createdAt"')} BETWEEN $1::date AND $2::date
            GROUP BY 1
          ),
          metrics AS (
@@ -217,7 +218,7 @@ export async function GET(req: NextRequest) {
          FROM "OrderItem" oi
          JOIN "Order" o ON o.id = oi."orderId"
          JOIN "Product" p ON p.id = oi."productId"
-         WHERE o.status = ANY($3) AND (o."createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
+         WHERE o.status = ANY($3) AND ${jourLocalUtc('o."createdAt"')} BETWEEN $1::date AND $2::date
          GROUP BY 1 ORDER BY revenue DESC LIMIT 10`,
         [start, end, REVENUE_STATUSES]
       )),

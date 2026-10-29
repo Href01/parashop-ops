@@ -7,6 +7,7 @@ import pool from '@/lib/db'
 import { cached } from '@/lib/ops-cache'
 import { getWeeklyGoal, getMonthlyGoal } from '@/app/api/ops/settings/goal/route'
 import { ajustementDepotVente } from '@/lib/partner-ledger'
+import { heureLocaleDepuisTz, heureLocaleUtc, instantDepuisLocal, jourLocalDepuisTz } from '@/lib/analytics/metrics'
 
 const DAILY_REVENUE_GOAL = 6000
 const BUSINESS_TIMEZONE = 'Africa/Casablanca'
@@ -193,7 +194,7 @@ function financialCte(from: string, to: string, cFrom: string, cTo: string) {
   return `
   WITH bounds AS (
     SELECT
-      ((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date)::timestamp AS today_start,
+      (${jourLocalDepuisTz('now()')})::timestamp AS today_start,
       '${from}'::timestamp AS range_start,
       ('${to}'::date + INTERVAL '1 day')::timestamp AS range_end,
       '${cFrom}'::timestamp AS compare_start,
@@ -219,8 +220,10 @@ function financialCte(from: string, to: string, cFrom: string, cTo: string) {
       -- Keep every business-day boundary in Casablanca. Comparing timestamptz
       -- columns to bare timestamps used the database session timezone (UTC on
       -- Neon), which could move orders created around midnight to the wrong day.
-      o."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}' AS "createdAt",
-      o."deliveredAt" AT TIME ZONE '${BUSINESS_TIMEZONE}' AS "deliveredAt",
+      -- createdAt est un timestamp SANS fuseau ecrit en UTC : on le lit comme tel (UTC → heure du Maroc).
+      -- Avant, il etait pris pour de l'heure du Maroc et chaque jour courait de 02 h a 02 h.
+      ${heureLocaleUtc('o."createdAt"')} AS "createdAt",
+      ${heureLocaleDepuisTz('o."deliveredAt"')} AS "deliveredAt",
       COALESCE(o."orderNumber", CONCAT('Order #', o.id)) AS "orderNumber",
       o."deliveryName",
       o."deliveryCity",
@@ -435,8 +438,8 @@ export async function GET(req: Request) {
         ${FINANCIAL_CTE}
         SELECT
           COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= (SELECT today_start FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenueToday",
-          COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= ((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date - INTERVAL '6 days')::timestamp AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenue7d",
-          COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= ((now() AT TIME ZONE '${BUSINESS_TIMEZONE}')::date - INTERVAL '29 days')::timestamp AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenue30d",
+          COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= (${jourLocalDepuisTz('now()')} - INTERVAL '6 days')::timestamp AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenue7d",
+          COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= (${jourLocalDepuisTz('now()')} - INTERVAL '29 days')::timestamp AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenue30d",
           COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenueWeek",
           COALESCE(SUM(order_total) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status IN ('CONFIRMED', 'DELIVERED')), 0)::double precision AS "revenueWeekTotal",
           COALESCE(SUM(revenue) FILTER (WHERE "createdAt" >= (SELECT range_start FROM bounds) AND "createdAt" < (SELECT range_end FROM bounds) AND status = 'DELIVERED'), 0)::double precision AS "revenueDelivered",
@@ -763,53 +766,53 @@ export async function GET(req: Request) {
         SELECT
           COALESCE(SUM(amount) FILTER (
             WHERE UPPER("senditStatus") = 'DELIVERED'
-              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
-              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
+              AND ${heureLocaleUtc('"senditCreatedAt"')} >= '${from}'::timestamp
+              AND ${heureLocaleUtc('"senditCreatedAt"')} < ('${to}'::date + INTERVAL '1 day')
           ), 0)::double precision AS "createdCod",
           COALESCE(SUM(fee) FILTER (
             WHERE UPPER("senditStatus") = 'DELIVERED'
-              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
-              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
+              AND ${heureLocaleUtc('"senditCreatedAt"')} >= '${from}'::timestamp
+              AND ${heureLocaleUtc('"senditCreatedAt"')} < ('${to}'::date + INTERVAL '1 day')
           ), 0)::double precision AS "createdFees",
           COUNT(*) FILTER (
             WHERE UPPER("senditStatus") = 'DELIVERED'
-              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
-              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
+              AND ${heureLocaleUtc('"senditCreatedAt"')} >= '${from}'::timestamp
+              AND ${heureLocaleUtc('"senditCreatedAt"')} < ('${to}'::date + INTERVAL '1 day')
           )::int AS "createdOrders",
           COUNT(*) FILTER (
             WHERE UPPER("senditStatus") = 'DELIVERED' AND ("matchedOrderId" IS NULL OR state = 'mismatch')
-              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
-              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
+              AND ${heureLocaleUtc('"senditCreatedAt"')} >= '${from}'::timestamp
+              AND ${heureLocaleUtc('"senditCreatedAt"')} < ('${to}'::date + INTERVAL '1 day')
           )::int AS "createdUnmatchedOrders",
           COALESCE(SUM(amount) FILTER (
             WHERE UPPER("senditStatus") = 'DELIVERED' AND ("matchedOrderId" IS NULL OR state = 'mismatch')
-              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
-              AND ("senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
+              AND ${heureLocaleUtc('"senditCreatedAt"')} >= '${from}'::timestamp
+              AND ${heureLocaleUtc('"senditCreatedAt"')} < ('${to}'::date + INTERVAL '1 day')
           ), 0)::double precision AS "createdUnmatchedCod",
           COALESCE(SUM(amount) FILTER (
             WHERE UPPER("senditStatus") = 'DELIVERED'
-              AND "lastActionAt" >= ('${from}'::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
-              AND "lastActionAt" < (('${to}'::date + INTERVAL '1 day')::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
+              AND "lastActionAt" >= ${instantDepuisLocal(`'${from}'`)}
+              AND "lastActionAt" < ${instantDepuisLocal(`('${to}'::date + INTERVAL '1 day')`)}
           ), 0)::double precision AS "deliveredCod",
           COALESCE(SUM(fee) FILTER (
             WHERE UPPER("senditStatus") = 'DELIVERED'
-              AND "lastActionAt" >= ('${from}'::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
-              AND "lastActionAt" < (('${to}'::date + INTERVAL '1 day')::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
+              AND "lastActionAt" >= ${instantDepuisLocal(`'${from}'`)}
+              AND "lastActionAt" < ${instantDepuisLocal(`('${to}'::date + INTERVAL '1 day')`)}
           ), 0)::double precision AS "deliveredFees",
           COUNT(*) FILTER (
             WHERE UPPER("senditStatus") = 'DELIVERED'
-              AND "lastActionAt" >= ('${from}'::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
-              AND "lastActionAt" < (('${to}'::date + INTERVAL '1 day')::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
+              AND "lastActionAt" >= ${instantDepuisLocal(`'${from}'`)}
+              AND "lastActionAt" < ${instantDepuisLocal(`('${to}'::date + INTERVAL '1 day')`)}
           )::int AS "deliveredOrders",
           COUNT(*) FILTER (
             WHERE UPPER("senditStatus") = 'DELIVERED' AND ("matchedOrderId" IS NULL OR state = 'mismatch')
-              AND "lastActionAt" >= ('${from}'::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
-              AND "lastActionAt" < (('${to}'::date + INTERVAL '1 day')::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
+              AND "lastActionAt" >= ${instantDepuisLocal(`'${from}'`)}
+              AND "lastActionAt" < ${instantDepuisLocal(`('${to}'::date + INTERVAL '1 day')`)}
           )::int AS "deliveredUnmatchedOrders",
           COALESCE(SUM(amount) FILTER (
             WHERE UPPER("senditStatus") = 'DELIVERED' AND ("matchedOrderId" IS NULL OR state = 'mismatch')
-              AND "lastActionAt" >= ('${from}'::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
-              AND "lastActionAt" < (('${to}'::date + INTERVAL '1 day')::timestamp AT TIME ZONE '${BUSINESS_TIMEZONE}')
+              AND "lastActionAt" >= ${instantDepuisLocal(`'${from}'`)}
+              AND "lastActionAt" < ${instantDepuisLocal(`('${to}'::date + INTERVAL '1 day')`)}
           ), 0)::double precision AS "deliveredUnmatchedCod",
           MAX("pulledAt") AS "lastPulledAt"
         FROM "SenditStaging"
@@ -823,15 +826,15 @@ export async function GET(req: Request) {
           FROM "SenditStaging" s
           WHERE s.state IS DISTINCT FROM 'ignored'
             AND UPPER(COALESCE(s."senditStatus", '')) = 'DELIVERED'
-            AND (s."senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
-            AND (s."senditCreatedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
+            AND ${heureLocaleUtc('s."senditCreatedAt"')} >= '${from}'::timestamp
+            AND ${heureLocaleUtc('s."senditCreatedAt"')} < ('${to}'::date + INTERVAL '1 day')
           UNION ALL
           SELECT 'delivered'::text AS basis, s.*
           FROM "SenditStaging" s
           WHERE s.state IS DISTINCT FROM 'ignored'
             AND UPPER(COALESCE(s."senditStatus", '')) = 'DELIVERED'
-            AND (s."lastActionAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
-            AND (s."lastActionAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
+            AND ${heureLocaleDepuisTz('s."lastActionAt"')} >= '${from}'::timestamp
+            AND ${heureLocaleDepuisTz('s."lastActionAt"')} < ('${to}'::date + INTERVAL '1 day')
         ),
         order_period AS (
           SELECT
@@ -841,8 +844,8 @@ export async function GET(req: Request) {
             COALESCE(o."revenue", o."productsTotal", o.total::numeric, 0)::numeric AS product_revenue
           FROM "Order" o
           WHERE o.status::text = 'DELIVERED'
-            AND (o."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
-            AND (o."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
+            AND ${heureLocaleUtc('o."createdAt"')} >= '${from}'::timestamp
+            AND ${heureLocaleUtc('o."createdAt"')} < ('${to}'::date + INTERVAL '1 day')
           UNION ALL
           SELECT
             'delivered'::text AS basis,
@@ -851,8 +854,8 @@ export async function GET(req: Request) {
             COALESCE(o."revenue", o."productsTotal", o.total::numeric, 0)::numeric AS product_revenue
           FROM "Order" o
           WHERE o.status::text = 'DELIVERED'
-            AND (o."deliveredAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
-            AND (o."deliveredAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
+            AND ${heureLocaleDepuisTz('o."deliveredAt"')} >= '${from}'::timestamp
+            AND ${heureLocaleDepuisTz('o."deliveredAt"')} < ('${to}'::date + INTERVAL '1 day')
         ),
         staging_totals AS (
           SELECT
@@ -911,11 +914,11 @@ export async function GET(req: Request) {
             END::numeric AS expected_cod,
             CASE
               WHEN sp.basis = 'created' THEN
-                (o."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
-                AND (o."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
+                ${heureLocaleUtc('o."createdAt"')} >= '${from}'::timestamp
+                AND ${heureLocaleUtc('o."createdAt"')} < ('${to}'::date + INTERVAL '1 day')
               ELSE
-                (o."deliveredAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::timestamp
-                AND (o."deliveredAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day')
+                ${heureLocaleDepuisTz('o."deliveredAt"')} >= '${from}'::timestamp
+                AND ${heureLocaleDepuisTz('o."deliveredAt"')} < ('${to}'::date + INTERVAL '1 day')
             END AS date_aligned
           FROM staging_period sp
           LEFT JOIN "Order" o ON o.id = sp."matchedOrderId"
@@ -989,11 +992,11 @@ export async function GET(req: Request) {
              -- Partner consignment stock is never Shine's spend (migration 042).
              LEFT JOIN "Product" p ON p.id = im."productId"
               WHERE im.type='Purchase' AND im."totalCost" IS NOT NULL AND (p."partnerId" IS NULL)
-               AND (im."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::date
-               AND (im."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day'))::double precision AS "purchaseSpend",
+               AND ${heureLocaleUtc('im."createdAt"')} >= '${from}'::date
+               AND ${heureLocaleUtc('im."createdAt"')} < ('${to}'::date + INTERVAL '1 day'))::double precision AS "purchaseSpend",
           (SELECT COALESCE(SUM("returnDeliveryFee"),0) FROM "Order"
-             WHERE ("returnedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${from}'::date
-               AND ("returnedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${to}'::date + INTERVAL '1 day'))::double precision AS "returnFees",
+             WHERE ${heureLocaleDepuisTz('"returnedAt"')} >= '${from}'::date
+               AND ${heureLocaleDepuisTz('"returnedAt"')} < ('${to}'::date + INTERVAL '1 day'))::double precision AS "returnFees",
           (SELECT COALESCE(SUM(spend),0) FROM "AdSpendDaily"
              WHERE date >= '${from}'::date AND date <= '${to}'::date)::double precision AS "adSpend",
           (SELECT COALESCE(SUM(amount),0) FROM "OperatingExpense"
@@ -1003,8 +1006,8 @@ export async function GET(req: Request) {
           (SELECT COALESCE(value::numeric,0) FROM "AppSetting" WHERE key='packaging_cost_per_parcel')::double precision AS "packagingRate",
           -- Meme entrees sur la periode precedente : servent au delta de marge nette.
           (SELECT COALESCE(SUM("returnDeliveryFee"),0) FROM "Order"
-             WHERE ("returnedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${compareFrom}'::date
-               AND ("returnedAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${compareTo}'::date + INTERVAL '1 day'))::double precision AS "previousReturnFees",
+             WHERE ${heureLocaleDepuisTz('"returnedAt"')} >= '${compareFrom}'::date
+               AND ${heureLocaleDepuisTz('"returnedAt"')} < ('${compareTo}'::date + INTERVAL '1 day'))::double precision AS "previousReturnFees",
           (SELECT COALESCE(SUM(spend),0) FROM "AdSpendDaily"
              WHERE date >= '${compareFrom}'::date AND date <= '${compareTo}'::date)::double precision AS "previousAdSpend",
           (SELECT COALESCE(SUM(amount),0) FROM "OperatingExpense"
@@ -1014,8 +1017,8 @@ export async function GET(req: Request) {
           (SELECT COALESCE(SUM(im."totalCost"),0) FROM "InventoryMovement" im
              LEFT JOIN "Product" p ON p.id = im."productId"
               WHERE im.type='Purchase' AND im."totalCost" IS NOT NULL AND (p."partnerId" IS NULL)
-               AND (im."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') >= '${compareFrom}'::date
-               AND (im."createdAt" AT TIME ZONE '${BUSINESS_TIMEZONE}') < ('${compareTo}'::date + INTERVAL '1 day'))::double precision AS "previousPurchaseSpend"
+               AND ${heureLocaleUtc('im."createdAt"')} >= '${compareFrom}'::date
+               AND ${heureLocaleUtc('im."createdAt"')} < ('${compareTo}'::date + INTERVAL '1 day'))::double precision AS "previousPurchaseSpend"
       `),
     ])
 

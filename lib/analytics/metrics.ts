@@ -13,6 +13,66 @@
 
 export const TZ = 'Africa/Casablanca'
 
+import { heureLocaleDepuisUtcSql, instantDepuisHeureLocaleSql, minuitLocalEnUtcSql } from '@/lib/analytics/maroc-time'
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   LE JOUR LOCAL — une seule facon de le calculer, qui ne passe PAS par les
+   regles de fuseau de PostgreSQL.
+
+   1. Les colonnes « timestamp sans fuseau » (AnalyticsEvent, AnalyticsSession,
+      PageView, Order.createdAt, InventoryMovement, OrderStatusHistory, MessageLog,
+      Review…) sont ecrites en UTC. Les lire avec `col AT TIME ZONE 'Africa/Casablanca'`
+      les prenait pour de l'heure du Maroc : des « jours » de 02 h a 02 h.
+   2. La base de Neon connait mal le Maroc : ses regles sont justes jusqu'au
+      20/09/2026 puis donnent UTC+0 hors ramadan au lieu de UTC+1. Meme une
+      conversion correcte dans son principe derive donc d'une heure.
+
+   Le decalage vient de Node (lib/analytics/maroc-time.ts) et est ecrit dans le SQL
+   sous forme de bornes fixes. Corrige le 30/10/2026.
+
+   Les colonnes AVEC fuseau (Order.deliveredAt / returnedAt / paidAt) passent par
+   `heureLocaleDepuisTz` : meme resultat, meme source du decalage.
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/** Heure locale (timestamp sans fuseau) d'une colonne naive ecrite en UTC. */
+export function heureLocaleUtc(col: string): string {
+  return heureLocaleDepuisUtcSql(col)
+}
+
+/** Date locale d'une colonne naive ecrite en UTC. */
+export function jourLocalUtc(col: string): string {
+  return `${heureLocaleDepuisUtcSql(col)}::date`
+}
+
+/** Heure locale (timestamp sans fuseau) d'une colonne AVEC fuseau (timestamptz) ou de now(). */
+export function heureLocaleDepuisTz(col: string): string {
+  return heureLocaleDepuisUtcSql(`(${col} AT TIME ZONE 'UTC')`)
+}
+
+/** Date locale d'une colonne AVEC fuseau (timestamptz) ou de now(). */
+export function jourLocalDepuisTz(col: string): string {
+  return `${heureLocaleDepuisTz(col)}::date`
+}
+
+/**
+ * Instant (timestamptz) d'une heure MURALE locale, par exemple celle que donne Sendit
+ * (« 2026-10-29 14:05:00 », heure du Maroc, sans fuseau).
+ */
+export function instantDepuisLocal(expr: string): string {
+  return `(${instantDepuisHeureLocaleSql(`(${expr})::timestamp`)} AT TIME ZONE 'UTC')`
+}
+
+/**
+ * Fenetre de dates [p1, p2] (jours locaux, bornes incluses) sur une colonne naive
+ * UTC, ecrite avec deux bornes sur la colonne : l'index est utilisable. Donne les
+ * memes lignes que `jourLocalUtc(col) BETWEEN p1 AND p2`.
+ * `p1` et `p2` sont des marqueurs de parametres ($1, $2…), jamais des valeurs.
+ */
+export function fenetreSql(col: string, p1: string, p2: string): string {
+  return `${col} >= ${minuitLocalEnUtcSql(p1)}
+      AND ${col} < ${minuitLocalEnUtcSql(`((${p2})::date + 1)`)}`
+}
+
 /**
  * FILTRE ANTI-BRUIT, partage par tout ce qui compte des visites.
  *
@@ -96,8 +156,10 @@ export type MoneyBasis = 'cohorte' | 'cash'
 /** Colonne de date a utiliser pour filtrer les commandes. */
 export function basisDateExpr(basis: MoneyBasis, alias = ''): string {
   const p = alias ? `${alias}.` : ''
-  const col = basis === 'cash' ? 'deliveredAt' : 'createdAt'
-  return `((${p}"${col}") AT TIME ZONE '${TZ}')::date`
+  // cash = deliveredAt (avec fuseau) ; cohorte = createdAt (naive, UTC).
+  return basis === 'cash'
+    ? jourLocalDepuisTz(`${p}"deliveredAt"`)
+    : jourLocalUtc(`${p}"createdAt"`)
 }
 
 /**

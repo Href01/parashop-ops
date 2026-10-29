@@ -5,6 +5,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { isFounder } from '@/lib/auth'
 import pool from '@/lib/db'
 import { cached } from '@/lib/ops-cache'
+import { heureLocaleUtc, jourLocalUtc } from '@/lib/analytics/metrics'
 
 /**
  * Intelligence / Focus — "where do we win, lose, and focus".
@@ -48,7 +49,7 @@ export async function GET(req: NextRequest) {
     const { start, end, days } = resolveRange(req.nextUrl.searchParams)
     const fresh = req.nextUrl.searchParams.get('fresh') === '1'
     const { data, cachedAt } = await cached(`intelligence:${start}:${end}`, 60 * 60 * 1000, async () => {
-    const oDate = `(o."createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date`
+    const oDate = `${jourLocalUtc('o."createdAt"')} BETWEEN $1::date AND $2::date`
 
     const [statusRows, velocityRows, deadStockRows, costRows, channelRows, marginRows, channelPnlRows] = await Promise.all([
       // COD / order economics — status breakdown

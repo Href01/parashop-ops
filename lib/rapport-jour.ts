@@ -1,5 +1,6 @@
 import pool from '@/lib/db'
 import { BOS, envoyer, h, mad } from '@/lib/telegram'
+import { jourLocalUtc, jourLocalDepuisTz } from '@/lib/analytics/metrics'
 
 /**
  * LE RAPPORT DE 21 H — ce qu'il faut savoir de la journee, sans ouvrir le BOS.
@@ -11,7 +12,11 @@ import { BOS, envoyer, h, mad } from '@/lib/telegram'
  */
 
 const TZ = 'Africa/Casablanca'
-const jourLocal = (col: string) => `(${col} AT TIME ZONE '${TZ}')::date`
+/* Colonne AVEC fuseau (deliveredAt) : lecture directe. Colonne naive ecrite en UTC
+   (createdAt des commandes, evenements, historique) : jourLocalUtc — sinon le « jour »
+   courait de 02 h a 02 h et le rapport de 21 h ratait les commandes de 0 h a 2 h. */
+const jourLocal = (col: string) => jourLocalDepuisTz(col)
+const jourLocalNaif = (col: string) => jourLocalUtc(col)
 
 export async function construireRapport() {
   const auj = new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(new Date())
@@ -20,15 +25,15 @@ export async function construireRapport() {
 
   const [jour, parCanal, mois, pubHier, sendit, paniers, visites, stock] = await Promise.all([
     pool.query(`SELECT
-        count(*) FILTER (WHERE ${jourLocal('"createdAt"')} = $1::date AND status::text <> 'CANCELLED')::int AS recues,
-        COALESCE(sum(total) FILTER (WHERE ${jourLocal('"createdAt"')} = $1::date AND status::text <> 'CANCELLED'), 0)::float AS montant_recu,
+        count(*) FILTER (WHERE ${jourLocalNaif('"createdAt"')} = $1::date AND status::text <> 'CANCELLED')::int AS recues,
+        COALESCE(sum(total) FILTER (WHERE ${jourLocalNaif('"createdAt"')} = $1::date AND status::text <> 'CANCELLED'), 0)::float AS montant_recu,
         count(*) FILTER (WHERE status::text = 'DELIVERED' AND ${jourLocal('"deliveredAt"')} = $1::date)::int AS livrees,
         COALESCE(sum(revenue) FILTER (WHERE status::text = 'DELIVERED' AND ${jourLocal('"deliveredAt"')} = $1::date), 0)::float AS ca_livre,
         (SELECT count(DISTINCT "orderId") FROM "OrderStatusHistory"
-          WHERE "newStatus"::text = 'CANCELLED' AND ${jourLocal('"createdAt"')} = $1::date)::int AS annulees
+          WHERE "newStatus"::text = 'CANCELLED' AND ${jourLocalNaif('"createdAt"')} = $1::date)::int AS annulees
       FROM "Order"`, [auj]),
     pool.query(`SELECT COALESCE("sourceChannel", '—') AS canal, count(*)::int AS n FROM "Order"
-      WHERE ${jourLocal('"createdAt"')} = $1::date AND status::text <> 'CANCELLED' GROUP BY 1 ORDER BY 2 DESC`, [auj]),
+      WHERE ${jourLocalNaif('"createdAt"')} = $1::date AND status::text <> 'CANCELLED' GROUP BY 1 ORDER BY 2 DESC`, [auj]),
     pool.query(`SELECT
         COALESCE(sum(revenue), 0)::float AS ca,
         COALESCE(sum(COALESCE("finalProfit", "estimatedProfit")), 0)::float AS marge,
@@ -43,7 +48,7 @@ export async function construireRapport() {
       WHERE "orderId" IS NULL AND contacted = false AND "updatedAt" > now() - interval '7 days'
         AND length(regexp_replace(COALESCE(phone, ''), '\\D', '', 'g')) >= 9`),
     pool.query(`SELECT count(DISTINCT "sessionId")::int AS n FROM "AnalyticsEvent"
-      WHERE id > (SELECT COALESCE(max(id), 0) - 60000 FROM "AnalyticsEvent") AND ${jourLocal('"createdAt"')} = $1::date`, [auj]),
+      WHERE id > (SELECT COALESCE(max(id), 0) - 60000 FROM "AnalyticsEvent") AND ${jourLocalNaif('"createdAt"')} = $1::date`, [auj]),
     pool.query(`SELECT p.name, (COALESCE(p.stock, 0) + COALESCE(p."virtualStock", 0))::int AS vendable
       FROM "Product" p
       WHERE p.active AND p."trackInventory" AND COALESCE(p.stock, 0) + COALESCE(p."virtualStock", 0) <= 2

@@ -21,12 +21,7 @@
  */
 
 import { PRODUCT_VIEW_CONVERTED_SQL } from './product-funnel'
-import {
-  acquisitionChannelSql, sessionChannelSql, modeleAppareilSql, gammeAppareilSql,
-  basisDateExpr, basisStatusFilter, BOT_FILTER_CLAUSE, SESSION_BOT_FILTER_CLAUSE,
-  MIN_OBS, TZ,
-  type MoneyBasis,
-} from './metrics'
+import { acquisitionChannelSql, sessionChannelSql, modeleAppareilSql, gammeAppareilSql, basisDateExpr, basisStatusFilter, BOT_FILTER_CLAUSE, SESSION_BOT_FILTER_CLAUSE, MIN_OBS, TZ, type MoneyBasis, heureLocaleUtc, jourLocalUtc, heureLocaleDepuisTz } from './metrics'
 
 /* ─────────────────────────────────────────────────────────────────────────────
    PORTEES
@@ -198,10 +193,10 @@ export const DIMENSIONS: Record<string, Dimension> = {
     label: 'Jour',
     definition: 'Le jour, en heure du Maroc.',
     sql: {
-      commandes: `to_char((o."createdAt" AT TIME ZONE '${TZ}')::date, 'YYYY-MM-DD')`,
-      evenements: `to_char((e."createdAt" AT TIME ZONE '${TZ}')::date, 'YYYY-MM-DD')`,
-      pages: `to_char(("PageView"."createdAt" AT TIME ZONE '${TZ}')::date, 'YYYY-MM-DD')`,
-      sessions: `to_char((s."firstSeenAt" AT TIME ZONE '${TZ}')::date, 'YYYY-MM-DD')`,
+      commandes: `to_char(${jourLocalUtc('o."createdAt"')}, 'YYYY-MM-DD')`,
+      evenements: `to_char(${jourLocalUtc('e."createdAt"')}, 'YYYY-MM-DD')`,
+      pages: `to_char(${jourLocalUtc('"PageView"."createdAt"')}, 'YYYY-MM-DD')`,
+      sessions: `to_char(${jourLocalUtc('s."firstSeenAt"')}, 'YYYY-MM-DD')`,
     },
     ordreSql: '1 ASC',
   },
@@ -210,10 +205,10 @@ export const DIMENSIONS: Record<string, Dimension> = {
     label: 'Heure',
     definition: "L'heure de la journée, en heure du Maroc.",
     sql: {
-      commandes: `lpad(EXTRACT(hour FROM (o."createdAt" AT TIME ZONE '${TZ}'))::text, 2, '0') || ' h'`,
-      evenements: `lpad(EXTRACT(hour FROM (e."createdAt" AT TIME ZONE '${TZ}'))::text, 2, '0') || ' h'`,
-      pages: `lpad(EXTRACT(hour FROM ("PageView"."createdAt" AT TIME ZONE '${TZ}'))::text, 2, '0') || ' h'`,
-      sessions: `lpad(EXTRACT(hour FROM (s."firstSeenAt" AT TIME ZONE '${TZ}'))::text, 2, '0') || ' h'`,
+      commandes: `lpad(EXTRACT(hour FROM ${heureLocaleUtc('o."createdAt"')})::text, 2, '0') || ' h'`,
+      evenements: `lpad(EXTRACT(hour FROM ${heureLocaleUtc('e."createdAt"')})::text, 2, '0') || ' h'`,
+      pages: `lpad(EXTRACT(hour FROM ${heureLocaleUtc('"PageView"."createdAt"')})::text, 2, '0') || ' h'`,
+      sessions: `lpad(EXTRACT(hour FROM ${heureLocaleUtc('s."firstSeenAt"')})::text, 2, '0') || ' h'`,
     },
     ordreSql: '1 ASC',
   },
@@ -590,7 +585,9 @@ export function construireSql(
   }
   if (source === 'commandes' && req.dimension === 'heure') {
     const col = basis === 'cash' ? 'deliveredAt' : 'createdAt'
-    dimSql = `lpad(EXTRACT(hour FROM (o."${col}" AT TIME ZONE '${TZ}'))::text, 2, '0') || ' h'`
+    dimSql = basis === 'cash'
+      ? `lpad(EXTRACT(hour FROM ${heureLocaleDepuisTz('o."deliveredAt"')})::text, 2, '0') || ' h'`
+      : `lpad(EXTRACT(hour FROM ${heureLocaleUtc('o."createdAt"')})::text, 2, '0') || ' h'`
   }
   if (req.dimension && !dimSql) {
     throw new Error(`Dimension ${req.dimension} incompatible avec la source ${source}`)
@@ -628,7 +625,7 @@ export function construireSql(
         WHEN ${idProduitEvenement} ~ '^[0-9]+$' THEN ${idProduitEvenement}::int
         ELSE NULL
       END
-      WHERE (e."createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
+      WHERE ${jourLocalUtc('e."createdAt"')} BETWEEN $1::date AND $2::date
         ${SESSION_BOT_FILTER_CLAUSE}${clauseFiltres}
       GROUP BY 1`
   } else if (source === 'pub') {
@@ -644,7 +641,7 @@ export function construireSql(
              ${select}
       FROM "PageView"
       LEFT JOIN "AnalyticsSession" s ON s."sessionId" = "PageView"."sessionId"
-      WHERE ("PageView"."createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
+      WHERE ${jourLocalUtc('"PageView"."createdAt"')} BETWEEN $1::date AND $2::date
         ${BOT_FILTER_CLAUSE}${clauseFiltres}
       GROUP BY 1`
   } else {
@@ -652,7 +649,7 @@ export function construireSql(
       SELECT ${groupe} AS cle,
              ${select}
       FROM "AnalyticsSession" s
-      WHERE (s."firstSeenAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
+      WHERE ${jourLocalUtc('s."firstSeenAt"')} BETWEEN $1::date AND $2::date
         ${SESSION_BOT_FILTER_CLAUSE}${clauseFiltres}
       GROUP BY 1`
   }

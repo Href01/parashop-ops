@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { isFounder } from '@/lib/auth'
 import pool from '@/lib/db'
+import { heureLocaleUtc, jourLocalUtc, heureLocaleDepuisTz } from '@/lib/analytics/metrics'
 
 /**
  * Smart goals — a rolling ledger of weekly & monthly targets vs realised CA.
@@ -65,8 +66,8 @@ async function weekActuals(n: number, anchor: string): Promise<PeriodRow[]> {
            COUNT(o.id) FILTER (WHERE o.status IN ('CONFIRMED','DELIVERED'))::int AS orders
     FROM periods p
     LEFT JOIN "Order" o
-      ON (o."createdAt" AT TIME ZONE '${TZ}')::date >= p.pstart
-     AND (o."createdAt" AT TIME ZONE '${TZ}')::date <  p.pend
+      ON ${jourLocalUtc('o."createdAt"')} >= p.pstart
+     AND ${jourLocalUtc('o."createdAt"')} <  p.pend
     GROUP BY p.key, p.pstart
     ORDER BY p.pstart
   `, [n, anchor])
@@ -92,8 +93,8 @@ async function monthActuals(n: number, anchor: string): Promise<PeriodRow[]> {
            COUNT(o.id) FILTER (WHERE o.status IN ('CONFIRMED','DELIVERED'))::int AS orders
     FROM periods p
     LEFT JOIN "Order" o
-      ON (o."createdAt" AT TIME ZONE '${TZ}')::date >= p.pstart
-     AND (o."createdAt" AT TIME ZONE '${TZ}')::date <  p.pend
+      ON ${jourLocalUtc('o."createdAt"')} >= p.pstart
+     AND ${jourLocalUtc('o."createdAt"')} <  p.pend
     GROUP BY p.key, p.pstart
     ORDER BY p.pstart
   `, [n, anchor])
@@ -185,8 +186,8 @@ export async function GET(req: NextRequest) {
       weekActuals(9, anchor), monthActuals(6, anchor), targetsFor('week'), targetsFor('month'),
       scalarGoal('weeklyGoal', DEFAULTS.week), scalarGoal('monthlyGoal', DEFAULTS.month),
       pool.query(`SELECT
-        to_char(now() AT TIME ZONE '${TZ}', 'IYYY"-W"IW') AS week,
-        to_char(now() AT TIME ZONE '${TZ}', 'YYYY-MM') AS month`),
+        to_char(${heureLocaleDepuisTz('now()')}, 'IYYY"-W"IW') AS week,
+        to_char(${heureLocaleDepuisTz('now()')}, 'YYYY-MM') AS month`),
     ])
     const live = liveKeys.rows[0]
     return NextResponse.json({
@@ -216,7 +217,7 @@ export async function PUT(req: NextRequest) {
     // Default to the current period key in business time.
     let periodKey = typeof b.periodKey === 'string' ? b.periodKey : ''
     if (!periodKey) {
-      const fmt = kind === 'week' ? `to_char(now() AT TIME ZONE '${TZ}', 'IYYY"-W"IW')` : `to_char(now() AT TIME ZONE '${TZ}', 'YYYY-MM')`
+      const fmt = kind === 'week' ? `to_char(${heureLocaleDepuisTz('now()')}, 'IYYY"-W"IW')` : `to_char(${heureLocaleDepuisTz('now()')}, 'YYYY-MM')`
       const r = await pool.query(`SELECT ${fmt} AS k`)
       periodKey = r.rows[0].k
     }
@@ -230,8 +231,8 @@ export async function PUT(req: NextRequest) {
     )
     // A historical edit must not silently replace today's global target.
     const currentKeySql = kind === 'week'
-      ? `to_char(now() AT TIME ZONE '${TZ}', 'IYYY"-W"IW')`
-      : `to_char(now() AT TIME ZONE '${TZ}', 'YYYY-MM')`
+      ? `to_char(${heureLocaleDepuisTz('now()')}, 'IYYY"-W"IW')`
+      : `to_char(${heureLocaleDepuisTz('now()')}, 'YYYY-MM')`
     const currentKey = (await pool.query(`SELECT ${currentKeySql} AS key`)).rows[0].key
     if (periodKey === currentKey) {
       await pool.query(

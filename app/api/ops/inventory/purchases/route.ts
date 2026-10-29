@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
+import { jourLocalUtc } from '@/lib/analytics/metrics'
 
 /**
  * GET /api/ops/inventory/purchases?days=30
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest) {
            COALESCE(SUM(im.quantity), 0)::int AS "unitsPurchased",
            -- "Commandes" = distinct supplier + day (one Salerm order of 5 products is
            -- ONE commande, not 5). Line items live in "Achats récents".
-           COUNT(DISTINCT (COALESCE(p.supplier, '—') || '#' || (im."createdAt")::date::text))::int AS "purchaseCount",
+           COUNT(DISTINCT (COALESCE(p.supplier, '—') || '#' || ${jourLocalUtc('im."createdAt"')}::text))::int AS "purchaseCount",
            COUNT(*)::int AS "lineCount",
            COUNT(DISTINCT im."productId")::int AS "productsRestocked"
          FROM "InventoryMovement" im

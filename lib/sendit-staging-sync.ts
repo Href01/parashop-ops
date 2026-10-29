@@ -5,6 +5,7 @@ import { fireDeliveredCapi } from '@/lib/meta-capi'
 import { isPrepaidPaymentMethod } from '@/lib/order-utils'
 import { listSenditDeliveriesSnapshot } from '@/lib/sendit'
 import { bustAnalyticsCache } from '@/lib/analytics-cache'
+import { instantDepuisLocal } from '@/lib/analytics/metrics'
 
 interface OrderMatch {
   id: number
@@ -122,9 +123,9 @@ export async function pullSenditStaging() {
         state, "pulledAt", "updatedAt")
      SELECT code, sendit_status, name, phone, phone_key, city, amount, fee, products_text, reference,
        CASE WHEN NULLIF(sendit_created_at, '') IS NOT NULL
-         THEN (sendit_created_at::timestamp AT TIME ZONE 'Africa/Casablanca') ELSE NULL END,
+         THEN ${instantDepuisLocal('sendit_created_at')} ELSE NULL END,
        CASE WHEN NULLIF(last_action_at, '') IS NOT NULL
-         THEN (last_action_at::timestamp AT TIME ZONE 'Africa/Casablanca') ELSE NULL END,
+         THEN ${instantDepuisLocal('last_action_at')} ELSE NULL END,
        matched_order_id, matched_user_id, matched_customer_name, state, NOW(), NOW()
      FROM incoming
      ON CONFLICT (code) DO UPDATE SET
@@ -260,7 +261,7 @@ export async function syncMatchedSenditStaging(): Promise<SyncMatchedStagingResu
                  "codAmount" = NULL,
                  "deliveredAt" = CASE
                    WHEN $3 = 'DELIVERED' AND NULLIF($5::text, '') IS NOT NULL
-                     THEN ($5::timestamp AT TIME ZONE 'Africa/Casablanca')
+                     THEN ${instantDepuisLocal('$5::text')}
                    ELSE "deliveredAt"
                  END
              WHERE id = $6`,
@@ -279,14 +280,14 @@ export async function syncMatchedSenditStaging(): Promise<SyncMatchedStagingResu
                  "paidAmount" = CASE WHEN $3 = 'DELIVERED' AND $5::numeric > 0 THEN $5::numeric ELSE "paidAmount" END,
                  "paidAt" = CASE
                    WHEN $3 = 'DELIVERED' AND NULLIF($6::text, '') IS NOT NULL
-                     THEN ($6::timestamp AT TIME ZONE 'Africa/Casablanca')
+                     THEN ${instantDepuisLocal('$6::text')}
                    ELSE "paidAt"
                  END,
                  "paymentReference" = CASE WHEN $3 = 'DELIVERED' THEN COALESCE("paymentReference", $1) ELSE "paymentReference" END,
                  "paymentStatus" = CASE WHEN $3 = 'DELIVERED' AND $5::numeric > 0 THEN 'PAID' ELSE "paymentStatus" END,
                  "deliveredAt" = CASE
                    WHEN $3 = 'DELIVERED' AND NULLIF($6::text, '') IS NOT NULL
-                     THEN ($6::timestamp AT TIME ZONE 'Africa/Casablanca')
+                     THEN ${instantDepuisLocal('$6::text')}
                    ELSE "deliveredAt"
                  END
              WHERE id = $7`,

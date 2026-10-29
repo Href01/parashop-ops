@@ -4,7 +4,7 @@ import { cachedAnalytics } from '@/lib/analytics-cache'
 import { analyticsError, analyticsQuery } from '@/lib/analytics/db'
 import { canonicalEventNameSql, canonicalFunnelSteps, sourceEventNames } from '@/lib/analytics/events'
 import { countFunnel } from '@/lib/analytics/funnel'
-import { SESSION_BOT_FILTER_CLAUSE, TZ } from '@/lib/analytics/metrics'
+import { SESSION_BOT_FILTER_CLAUSE, TZ, heureLocaleUtc, jourLocalUtc, heureLocaleDepuisTz } from '@/lib/analytics/metrics'
 
 /**
  * LES PRIMITIVES D'ANALYSE — entonnoir, cohortes, chemins.
@@ -34,7 +34,7 @@ export const ETAPES = {
   PURCHASE_SUCCESS: 'Commande acceptée',
 } as const
 
-const dateEv = `("createdAt" AT TIME ZONE '${TZ}')::date`
+const dateEv = jourLocalUtc('"createdAt"')
 
 /**
  * ENTONNOIR SEQUENCE, avec fenetre de conversion.
@@ -61,8 +61,8 @@ async function entonnoir(etapes: string[], debut: string, fin: string, fenetreMi
     FROM "AnalyticsEvent" e
     LEFT JOIN "AnalyticsSession" s ON s."sessionId" = e."sessionId"
     WHERE e.name = ANY($3) AND e."sessionId" IS NOT NULL
-      AND (e."createdAt" AT TIME ZONE '${TZ}') >= $1::date
-      AND (e."createdAt" AT TIME ZONE '${TZ}') < $2::date + interval '1 day' + ($4 * interval '1 minute')
+      AND ${heureLocaleUtc('e."createdAt"')} >= $1::date
+      AND ${heureLocaleUtc('e."createdAt"')} < $2::date + interval '1 day' + ($4 * interval '1 minute')
       ${SESSION_BOT_FILTER_CLAUSE}
     ORDER BY e."sessionId", e."createdAt", e.id`, [debut, fin, sourceEventNames(etapes), fenetreMin])
 
@@ -87,14 +87,14 @@ async function cohortes(mois: number) {
   const sql = `
     WITH c AS (
       SELECT ${tel} AS p,
-             date_trunc('month', MIN("deliveredAt" AT TIME ZONE '${TZ}')) AS cohorte
+             date_trunc('month', MIN(${heureLocaleDepuisTz('"deliveredAt"')})) AS cohorte
       FROM "Order"
       WHERE status = 'DELIVERED' AND "deliveredAt" IS NOT NULL AND ${tel} IS NOT NULL
       GROUP BY 1
     ),
     o AS (
       SELECT ${tel} AS p,
-             date_trunc('month', "deliveredAt" AT TIME ZONE '${TZ}') AS mois,
+             date_trunc('month', ${heureLocaleDepuisTz('"deliveredAt"')}) AS mois,
              COALESCE(revenue, "productsTotal", total) AS montant
       FROM "Order"
       WHERE status = 'DELIVERED' AND "deliveredAt" IS NOT NULL AND ${tel} IS NOT NULL
@@ -105,7 +105,7 @@ async function cohortes(mois: number) {
            COUNT(DISTINCT o.p)::int AS clientes,
            COALESCE(SUM(o.montant), 0)::float AS ca
     FROM c JOIN o ON o.p = c.p
-    WHERE c.cohorte >= date_trunc('month', now() AT TIME ZONE '${TZ}') - interval '${Math.max(0, mois - 1)} months'
+    WHERE c.cohorte >= date_trunc('month', ${heureLocaleDepuisTz('now()')}) - interval '${Math.max(0, mois - 1)} months'
     GROUP BY 1, 2 ORDER BY 1, 2`
   const r = await analyticsQuery(sql)
   return r.rows.map((x) => ({
@@ -249,7 +249,7 @@ async function recherches(debut: string, fin: string) {
     FROM "AnalyticsEvent" e
     LEFT JOIN "AnalyticsSession" s ON s."sessionId" = e."sessionId"
     WHERE e.name = ANY($3) AND e."sessionId" IS NOT NULL
-      AND (e."createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
+      AND ${jourLocalUtc('e."createdAt"')} BETWEEN $1::date AND $2::date
       ${SESSION_BOT_FILTER_CLAUSE}
     ORDER BY e."sessionId", e."createdAt", e.id`, [
       debut, fin, ['SEARCH_QUERY', 'SEARCH_SUBMIT', 'SEARCH_ZERO_RESULTS', 'SEARCH_RESULT_CLICK'],
@@ -367,7 +367,7 @@ async function chemins(depart: string | null, debut: string, fin: string) {
       FROM "AnalyticsEvent" e
       LEFT JOIN "AnalyticsSession" s ON s."sessionId" = e."sessionId"
       WHERE e.name = 'PAGE_VIEW'
-        AND (e."createdAt" AT TIME ZONE '${TZ}')::date BETWEEN $1::date AND $2::date
+        AND ${jourLocalUtc('e."createdAt"')} BETWEEN $1::date AND $2::date
         AND e.path IS NOT NULL ${SESSION_BOT_FILTER_CLAUSE}
     ),
     pv AS (

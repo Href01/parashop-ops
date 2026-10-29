@@ -1,4 +1,5 @@
 import pool from '@/lib/db'
+import { heureLocaleDepuisTz, jourLocalDepuisTz } from '@/lib/analytics/metrics'
 
 /**
  * LE RELEVE D'UN PARTENAIRE EN DEPOT-VENTE.
@@ -164,10 +165,10 @@ async function partVentesParMois(ids: number[], mois: string[]): Promise<Map<str
   if (ids.length === 0 || mois.length === 0) return res
   const r = await pool.query(
     `WITH o AS (
-       SELECT o.id, date_trunc('month', (o."deliveredAt" AT TIME ZONE '${BUSINESS_TIMEZONE}'))::date AS m, COALESCE(o.revenue, 0)::double precision AS rev
+       SELECT o.id, date_trunc('month', ${heureLocaleDepuisTz('o."deliveredAt"')})::date AS m, COALESCE(o.revenue, 0)::double precision AS rev
          FROM "Order" o
         WHERE o.status::text = 'DELIVERED' AND o."deliveredAt" IS NOT NULL
-          AND date_trunc('month', (o."deliveredAt" AT TIME ZONE '${BUSINESS_TIMEZONE}'))::date = ANY($2::date[])
+          AND date_trunc('month', ${heureLocaleDepuisTz('o."deliveredAt"')})::date = ANY($2::date[])
      ), w AS (
        SELECT oi."orderId",
               SUM(oi.price * oi.quantity) FILTER (WHERE oi."productId" = ANY($1::int[]))::double precision AS mine,
@@ -206,7 +207,7 @@ async function ordersWithPartnerLines(
        FROM "Order" o
       WHERE o.${dateCol} IS NOT NULL
         ${statusFilter}
-        AND (o.${dateCol} AT TIME ZONE '${BUSINESS_TIMEZONE}')::date BETWEEN $2::date AND $3::date
+        AND ${jourLocalDepuisTz(`o.${dateCol}`)} BETWEEN $2::date AND $3::date
         AND EXISTS (SELECT 1 FROM "OrderItem" oi WHERE oi."orderId" = o.id AND oi."productId" = ANY($1::int[]))
       ORDER BY o.${dateCol}`,
     [ids, period.from, period.to],
@@ -437,7 +438,7 @@ export async function partnerStock(partnerId: number, startDate: string) {
                        WHERE m."productId" = p.id AND m.quantity > 0 AND m.type <> 'Sale'), 0)::int AS entrees,
             COALESCE((SELECT SUM(oi.quantity) FROM "OrderItem" oi JOIN "Order" o ON o.id = oi."orderId"
                        WHERE oi."productId" = p.id AND o.status::text = 'DELIVERED'
-                         AND (o."deliveredAt" AT TIME ZONE '${BUSINESS_TIMEZONE}')::date >= $2::date), 0)::int AS vendus,
+                         AND ${jourLocalDepuisTz('o."deliveredAt"')} >= $2::date), 0)::int AS vendus,
             COALESCE((SELECT SUM(oi.quantity) FROM "OrderItem" oi JOIN "Order" o ON o.id = oi."orderId"
                        WHERE oi."productId" = p.id AND o.status::text NOT IN ('DELIVERED', 'CANCELLED')
                          AND o."returnedAt" IS NULL), 0)::int AS "enCours"

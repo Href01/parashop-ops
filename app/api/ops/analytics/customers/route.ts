@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getToken } from 'next-auth/jwt'
 import pool from '@/lib/db'
+import { heureLocaleUtc, jourLocalUtc } from '@/lib/analytics/metrics'
 
 const TZ = 'Africa/Casablanca'
 const REVENUE_STATUSES = ['DELIVERED', 'CONFIRMED']
@@ -59,7 +60,7 @@ export async function GET(req: NextRequest) {
     }
 
     const { start, end, days } = resolveRange(req.nextUrl.searchParams)
-    const orderDate = `(o."createdAt" AT TIME ZONE '${TZ}')::date`
+    const orderDate = jourLocalUtc('o."createdAt"')
 
     const rollupCte = `
       WITH revenue_orders AS (

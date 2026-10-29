@@ -22,11 +22,12 @@ test('known review crawlers are covered', () => {
   assert.match(sql, /google-adwords/)
 })
 
-test('the date window uses placeholders only and bounds the column (index-friendly)', () => {
+test('the date window bounds the column on both sides, with placeholders only, and asks the database for no time zone', () => {
   const f = fenetreSql('e."createdAt"', '$1', '$2')
   assert.match(f, /e\."createdAt" >= /)
   assert.match(f, /e\."createdAt" < /)
   assert.match(f, /\(\$1\)::date/)
-  assert.match(f, /\$2\)::date \+ 1/)
-  assert.ok(!/AT TIME ZONE 'Africa\/Casablanca'\)::date/.test(f), 'no function applied to the column')
+  assert.match(f, /\(\$2\)::date \+ 1/)
+  assert.ok(!/Casablanca|time zone/i.test(f), 'no database time-zone rule: PostgreSQL gets Morocco wrong since 21/09/2026')
+  assert.ok(!/\(e\."createdAt" AT TIME ZONE/.test(f), 'no function applied to the column')
 })

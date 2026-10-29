@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import pool from '@/lib/db'
 import { cached } from '@/lib/ops-cache'
+import { jourLocalUtc, jourLocalDepuisTz } from '@/lib/analytics/metrics'
 
 /**
  * GET /api/ops/stats?period=7d|30d
@@ -69,8 +70,8 @@ export async function GET(req: NextRequest) {
     const timelineRes = await pool.query(
       `WITH days AS (
          SELECT generate_series(
-           (NOW() - INTERVAL '${days - 1} days')::date,
-           NOW()::date,
+           (${jourLocalDepuisTz('NOW()')} - ${days - 1}),
+           ${jourLocalDepuisTz('NOW()')},
            INTERVAL '1 day'
          )::date AS day
        )
@@ -81,15 +82,15 @@ export async function GET(req: NextRequest) {
          COALESCE(r.n, 0)::int AS reviews
        FROM days d
        LEFT JOIN (
-         SELECT "createdAt"::date AS day, COUNT(*) n FROM "ReviewToken"
+         SELECT ${jourLocalUtc('"createdAt"')} AS day, COUNT(*) n FROM "ReviewToken"
          WHERE "createdAt" >= NOW() - INTERVAL '${days} days' GROUP BY 1
        ) s ON s.day = d.day
        LEFT JOIN (
-         SELECT "clickedAt"::date AS day, COUNT(*) n FROM "ReviewToken"
+         SELECT ${jourLocalUtc('"clickedAt"')} AS day, COUNT(*) n FROM "ReviewToken"
          WHERE "clickedAt" >= NOW() - INTERVAL '${days} days' GROUP BY 1
        ) c ON c.day = d.day
        LEFT JOIN (
-         SELECT "createdAt"::date AS day, COUNT(*) n FROM "Review"
+         SELECT ${jourLocalUtc('"createdAt"')} AS day, COUNT(*) n FROM "Review"
          WHERE "createdAt" >= NOW() - INTERVAL '${days} days' GROUP BY 1
        ) r ON r.day = d.day
        ORDER BY d.day`

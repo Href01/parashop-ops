@@ -6,6 +6,7 @@ import { getOpsSession } from '@/lib/auth'
 import { buildSenditProductsDescription, calculateCodAmount, isPrepaidPaymentMethod } from '@/lib/order-utils'
 import { creditOrderPoints } from '@/lib/loyalty'
 import { fireDeliveredCapi } from '@/lib/meta-capi'
+import { instantDepuisLocal } from '@/lib/analytics/metrics'
 
 // Create Sendit shipment for an order
 export async function POST(
@@ -460,7 +461,7 @@ export async function GET(
              "actualDeliveryCost" = $3, "codAmount" = NULL,
              "deliveredAt" = CASE
                WHEN $2 = 'DELIVERED' AND NULLIF($4::text, '') IS NOT NULL
-                 THEN ($4::timestamp AT TIME ZONE 'Africa/Casablanca')
+                 THEN ${instantDepuisLocal('$4::text')}
                ELSE "deliveredAt" END
          WHERE id = $5 AND "senditTrackingId" = $6`,
         [tracking.status, newStatus || null, fee, tracking.last_action_at || null, orderId, tracking.tracking_id]
@@ -475,11 +476,11 @@ export async function GET(
              "codAmount" = CASE WHEN $4 > 0 THEN $4 ELSE "codAmount" END,
              "paidAmount" = CASE WHEN $2 = 'DELIVERED' AND $4 > 0 THEN $4 ELSE "paidAmount" END,
              "paidAt" = CASE WHEN $2 = 'DELIVERED' AND NULLIF($5::text, '') IS NOT NULL
-               THEN ($5::timestamp AT TIME ZONE 'Africa/Casablanca') ELSE "paidAt" END,
+               THEN ${instantDepuisLocal('$5::text')} ELSE "paidAt" END,
              "paymentReference" = CASE WHEN $2 = 'DELIVERED' THEN COALESCE("paymentReference", $7) ELSE "paymentReference" END,
              "paymentStatus" = CASE WHEN $2 = 'DELIVERED' AND $4 > 0 THEN 'PAID' ELSE "paymentStatus" END,
              "deliveredAt" = CASE WHEN $2 = 'DELIVERED' AND NULLIF($5::text, '') IS NOT NULL
-               THEN ($5::timestamp AT TIME ZONE 'Africa/Casablanca') ELSE "deliveredAt" END
+               THEN ${instantDepuisLocal('$5::text')} ELSE "deliveredAt" END
          WHERE id = $6 AND "senditTrackingId" = $7`,
         [tracking.status, newStatus || null, fee, amount, tracking.last_action_at || null, orderId, tracking.tracking_id]
       )

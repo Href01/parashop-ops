@@ -9,6 +9,7 @@ import { creditOrderPoints } from '@/lib/loyalty'
 import { fireDeliveredCapi } from '@/lib/meta-capi'
 import { isPrepaidPaymentMethod, normalizePaymentMethod } from '@/lib/order-utils'
 import { getShipmentTracking } from '@/lib/sendit'
+import { instantDepuisLocal } from '@/lib/analytics/metrics'
 
 function mapStatus(status: string): string {
   const value = String(status || '').toUpperCase()
@@ -161,10 +162,10 @@ export async function POST(req: NextRequest) {
             $5, $6, $7, $8, $9, $10, $11,
             $12, $13, $14, COALESCE($15, NOW()),
             CASE WHEN NULLIF($17::text, '') IS NOT NULL
-              THEN ($17::timestamp AT TIME ZONE 'Africa/Casablanca') ELSE NULL END,
+              THEN ${instantDepuisLocal('$17::text')} ELSE NULL END,
             $18,
             CASE WHEN NULLIF($19::text, '') IS NOT NULL
-              THEN ($19::timestamp AT TIME ZONE 'Africa/Casablanca') ELSE NULL END,
+              THEN ${instantDepuisLocal('$19::text')} ELSE NULL END,
             $20, $21)
          RETURNING id`,
         [
