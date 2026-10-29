@@ -24,4 +24,5 @@ jobs:
       - run: npm run test:analytics
       - run: npm run test:orders
       - run: npm run test:seo
+      - run: npm run test:ads
       - run: npm run build

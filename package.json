@@ -15,6 +15,7 @@
     "test:analytics": "node --import tsx --test tests/analytics/*.test.ts",
     "test:orders": "node --import tsx --test tests/orders/*.test.ts",
     "test:seo": "node --import tsx --test tests/seo/*.test.ts",
+    "test:ads": "node --import tsx --test tests/ads/*.test.ts",
     "verify:git-identity": "node scripts/check-git-identity.mjs",
     "test:git-identity": "node --test tests/git-identity.test.mjs",
     "compute-metrics": "node scripts/compute-product-metrics.js"
