@@ -88,8 +88,13 @@ export default function Acquisition() {
     if (l.length === 0) return null
     const s = (c: string) => l.reduce((a, x) => a + (x.mesures[c]?.valeur ?? 0), 0)
     const livrees = s('livrees'), marge = s('marge')
+    // Les commandes nées d'un DM sponsorisé : elles n'ouvrent AUCUNE session sur le site.
+    // Les noyer dans le total cacherait la moitié du résultat de la stratégie.
+    const dm = l.filter((x) => x.cle.includes('(DM'))
+    const sd = (c: string) => dm.reduce((a, x) => a + (x.mesures[c]?.valeur ?? 0), 0)
     return {
       livrees, marge, caLivre: s('caLivre'), commandes: s('commandes'),
+      dmCommandes: sd('commandes'), dmLivrees: sd('livrees'), dmMarge: sd('marge'),
       net: marge - depense,
       cac: livrees > 0 ? depense / livrees : null,
       roas: depense > 0 ? s('caLivre') / depense : null,
@@ -185,6 +190,13 @@ export default function Acquisition() {
             soit <b style={{ color: payant.net >= 0 ? V.good : V.critical }}>{fmt(payant.net, 'mad')}</b> nets.
             {payant.cac != null && <> Chaque commande livrée a coûté {fmt(payant.cac, 'mad')} d&apos;acquisition.</>}
           </p>
+          {payant.dmCommandes > 0 && (
+            <p className={`${T.body} mt-2 max-w-[72ch]`} style={{ color: V.ink2 }}>
+              Dont <b>{payant.dmCommandes} par DM sponsorisé</b> ({payant.dmLivrees} livrées, <b>{fmt(payant.dmMarge, 'mad')}</b> de marge)
+              et {payant.commandes - payant.dmCommandes} par le site. Les DM n&apos;ouvrent aucune session : leur seul coût est
+              la dépense des publications promues, lisible par campagne ci-dessous.
+            </p>
+          )}
           <p className={`${T.note} mt-2`} style={{ color: V.muted }}>
             La dépense n&apos;apparaît pas dans le tableau ci-dessous : elle n&apos;est pas ventilable par canal.
             Les lignes se comparent entre elles à la marge, pas au chiffre d&apos;affaires — deux canaux au

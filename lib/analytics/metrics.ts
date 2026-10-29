@@ -336,10 +336,13 @@ export function acquisitionChannelSql(o = 'o', s = 's'): string {
     ${reglesUtm(src, med, site)}
     WHEN ${site} THEN 'Direct'
     -- Commandes saisies a la main : l'origine est ce que l'equipe a renseigne.
-    -- Quand la cliente a dit venir d'une publicite, la commande est classee avec la
-    -- pub (« via pub ») : sans cela, une annonce qui envoie vers les messages ne
-    -- rapportait jamais rien dans le tableau, puisqu'elle n'ouvre aucune session.
-    WHEN ${ch} LIKE '%insta%' AND ${o}."sourcePayload"->>'origine' = 'pub' THEN 'Instagram (DM · via pub)'
+    -- Une annonce qui envoie vers les messages n'ouvre aucune session : sans cette
+    -- regle elle ne rapportait jamais rien dans le tableau.
+    -- INSTAGRAM = DM SPONSORISES (etabli par Achraf le 29/10/2026) : toutes ces
+    -- commandes comptent comme issues de la pub, sauf origine explicite contraire.
+    -- Le COALESCE classe aussi l'historique deja saisi, sans origine, sans le reecrire.
+    -- WhatsApp n'a pas cette garantie : seule une reponse « pub » l'y range.
+    WHEN ${ch} LIKE '%insta%' AND COALESCE(${o}."sourcePayload"->>'origine', 'pub') = 'pub' THEN 'Instagram (DM · via pub)'
     WHEN ${ch} LIKE '%whats%' AND ${o}."sourcePayload"->>'origine' = 'pub' THEN 'WhatsApp (DM · via pub)'
     WHEN ${ch} LIKE '%insta%' THEN 'Instagram (DM)'
     WHEN ${ch} LIKE '%whats%' THEN 'WhatsApp (DM)'

@@ -32,6 +32,25 @@ export const CLES_ORIGINE = ORIGINES_COMMANDE.map((o) => o.cle) as [OrigineComma
 /** Les canaux de vente pour lesquels la question a un sens (une commande saisie après une conversation). */
 export const CANAUX_AVEC_ORIGINE = ['Instagram', 'WhatsApp', 'TikTok', 'Phone', 'Manual'] as const
 
+/**
+ * L'ORIGINE PAR DÉFAUT D'UN CANAL — ce qu'Achraf a établi le 29/10/2026 :
+ * toutes les commandes saisies à la main et rattachées à « Instagram » sont le
+ * résultat de la stratégie de DM sponsorisés (publications promues qui envoient
+ * vers les messages). Elles comptent donc comme venues d'une publicité, SAUF si la
+ * personne qui saisit dit explicitement autre chose (recommandation, déjà cliente…).
+ *
+ * Les autres canaux (WhatsApp, téléphone…) n'ont pas cette garantie : sans réponse,
+ * l'origine reste inconnue, on ne la déduit pas.
+ *
+ * Le SQL (`acquisitionChannelSql`) applique la MÊME règle avec un COALESCE : les
+ * commandes déjà saisies, sans origine, sont donc classées sans réécrire l'historique.
+ */
+export const CANAL_AVEC_ORIGINE_PAR_DEFAUT_PUB = 'Instagram'
+
+export function origineParDefaut(canal: string): OrigineCommande | '' {
+  return canal === CANAL_AVEC_ORIGINE_PAR_DEFAUT_PUB ? 'pub' : ''
+}
+
 export function demandeOrigine(canal: string): boolean {
   return (CANAUX_AVEC_ORIGINE as readonly string[]).includes(canal)
 }

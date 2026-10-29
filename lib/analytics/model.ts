@@ -122,7 +122,14 @@ export const DIMENSIONS: Record<string, Dimension> = {
       "(ou le nom) posé dans l'URL de l'annonce ; une publication boostée depuis Instagram n'en pose pas : " +
       "sa dépense apparaît alors sans visite ni commande.",
     sql: {
-      commandes: nomCampagneSql(`COALESCE(NULLIF(TRIM(o."utmCampaign"), ''), NULLIF(TRIM(s."utmCampaign"), ''))`),
+      // Les DM Instagram sponsorisés n'ont aucune campagne dans l'URL : ils ont leur PROPRE
+      // ligne, au lieu de disparaître dans « (sans campagne) ». On ne sait pas laquelle des
+      // publications promues les a déclenchés : la ligne est à lire face au TOTAL de leur dépense.
+      commandes: `CASE
+        WHEN o."sessionId" IS NULL AND LOWER(COALESCE(o."sourceChannel", '')) LIKE '%insta%'
+             AND COALESCE(o."sourcePayload"->>'origine', 'pub') = 'pub' THEN '(DM Instagram · via pub)'
+        ELSE ${nomCampagneSql(`COALESCE(NULLIF(TRIM(o."utmCampaign"), ''), NULLIF(TRIM(s."utmCampaign"), ''))`)}
+      END`,
       pages: nomCampagneSql(`NULLIF(TRIM(s."utmCampaign"), '')`),
       sessions: nomCampagneSql(`NULLIF(TRIM(s."utmCampaign"), '')`),
       evenements: nomCampagneSql(`NULLIF(TRIM(s."utmCampaign"), '')`),

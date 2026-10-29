@@ -133,16 +133,29 @@ test("« ▲ 4 863 % » devient « × 50 » : la période précédente n'avait p
 })
 
 // ── 6. LES COMMANDES SAISIES À LA MAIN : D'OÙ VIENT LA CLIENTE ──────────────
-import { ORIGINES_COMMANDE, CLES_ORIGINE, demandeOrigine, estOrigineCommande } from '@/lib/analytics/origine-commande'
+import { ORIGINES_COMMANDE, CLES_ORIGINE, demandeOrigine, estOrigineCommande, origineParDefaut } from '@/lib/analytics/origine-commande'
 import { CreateOrderSchema } from '@/lib/validation/order'
 
-test("une commande Instagram « via pub » rejoint les canaux payants ; sans réponse elle reste « DM »", () => {
+test("Instagram = DM sponsorisés : sans réponse contraire, la commande est « via pub » ; WhatsApp n'a pas cette garantie", () => {
   const sql = acquisitionChannelSql('o', 's')
   assert.ok(sql.includes("'Instagram (DM · via pub)'") && sql.includes("'WhatsApp (DM · via pub)'"))
   assert.ok(sql.indexOf("'Instagram (DM · via pub)'") < sql.indexOf("'Instagram (DM)'"), "la règle précise passe avant la règle générale")
-  assert.ok(sql.includes(`o."sourcePayload"->>'origine' = 'pub'`))
+  // Instagram : le COALESCE range aussi l'historique sans origine, sans le réécrire
+  assert.ok(sql.includes(`COALESCE(o."sourcePayload"->>'origine', 'pub') = 'pub' THEN 'Instagram (DM · via pub)'`))
+  // WhatsApp : seule une réponse explicite « pub » le range avec la pub
+  assert.ok(sql.includes(`o."sourcePayload"->>'origine' = 'pub' THEN 'WhatsApp (DM · via pub)'`))
+  assert.ok(!sql.includes(`COALESCE(o."sourcePayload"->>'origine', 'pub') = 'pub' THEN 'WhatsApp`), "on ne déduit pas une pub pour WhatsApp")
+  // une réponse explicite autre (recommandation…) laisse la commande en « Instagram (DM) » organique
+  assert.ok(sql.indexOf("'Instagram (DM)'") > sql.indexOf("'Instagram (DM · via pub)'"))
   assert.ok(isPaidChannel('Instagram (DM · via pub)') && isPaidChannel('WhatsApp (DM · via pub)'))
-  assert.ok(!isPaidChannel('Instagram (DM)'), "sans réponse, on n'invente pas que c'est de la pub")
+  assert.ok(!isPaidChannel('Instagram (DM)') && !isPaidChannel('WhatsApp (DM)'))
+})
+
+test("la vue Campagne donne aux DM Instagram sponsorisés leur propre ligne, pas « (sans campagne) »", () => {
+  const sql = DIMENSIONS.campagne.sql.commandes!
+  assert.ok(sql.includes("'(DM Instagram · via pub)'"))
+  assert.ok(sql.includes(`o."sessionId" IS NULL`), 'seulement les commandes saisies à la main')
+  assert.ok(sql.includes(`COALESCE(o."sourcePayload"->>'origine', 'pub') = 'pub'`), 'même règle que le canal')
 })
 
 test("la question d'origine n'est posée que pour les ventes nées d'une conversation, et seules les réponses connues passent", () => {
@@ -161,4 +174,9 @@ test("le schéma de commande accepte une origine connue, l'absence d'origine, et
   assert.equal(erreurOrigine(undefined), undefined, "pas de réponse = non renseignée, ce n'est pas une erreur")
   assert.ok(erreurOrigine('inventee'), "une valeur hors liste est refusée")
   assert.ok(erreurOrigine('<script>'), "rien d'autre que les clés connues n'atteint la base")
+})
+
+test("le formulaire propose « publicité » d'office pour Instagram, et rien pour les autres canaux", () => {
+  assert.equal(origineParDefaut('Instagram'), 'pub')
+  for (const c of ['WhatsApp', 'TikTok', 'Phone', 'Manual', 'Famille', 'Jumia']) assert.equal(origineParDefaut(c), '', c)
 })

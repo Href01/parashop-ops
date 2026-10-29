@@ -6,7 +6,7 @@ import BosShell from '@/components/BosShell'
 import PageHead from '@/components/PageHead'
 import { AlertTriangle, CheckCircle2, CreditCard, FileText, Hand, MapPin, Minus, Package, Phone, Plus, Store, Truck, User, X, Zap } from 'lucide-react'
 import Link from 'next/link'
-import { ORIGINES_COMMANDE, demandeOrigine, estOrigineCommande } from '@/lib/analytics/origine-commande'
+import { ORIGINES_COMMANDE, demandeOrigine, estOrigineCommande, origineParDefaut } from '@/lib/analytics/origine-commande'
 import {
   DistrictSearchPicker,
   ProductSearchPicker,
@@ -321,6 +321,8 @@ export default function NewOrderPage() {
     setFormData((current) => ({
       ...current,
       sourceChannel,
+      // Instagram = DM sponsorisés : la réponse est déjà « une publicité ». Elle reste modifiable.
+      origine: origineParDefaut(sourceChannel),
       handToHand: rate ? false : current.handToHand,
       commissionTaux: rate ? String(rate.taux) : '',
       commissionFixe: rate ? String(rate.fixe) : '',
