@@ -32,7 +32,7 @@ type Reponse = Awaited<ReturnType<typeof interroger>>
    Le trafic vient de la source `pages`, les commandes de la source `commandes` ;
    le modele les recolle sur la valeur de dimension, et les deux partagent leurs
    regles de classement (voir `reglesUtm`) sans quoi le rapport serait faux. */
-const MESURES = ['sessions', 'commandes', 'livrees', 'tauxLivraison', 'caLivre', 'marge'] as const
+const MESURES = ['sessions', 'commandes', 'tauxConversion', 'livrees', 'tauxLivraison', 'caLivre', 'marge'] as const
 
 export default function Acquisition() {
   const { etat, maj, setJours, setPeriode, setFiltre, periodePersonnalisee } = useReport()
@@ -56,7 +56,7 @@ export default function Acquisition() {
     // rendre le croisement invalide.
     const parCampagne = dimension === 'campagne' && !(etat.filtres && etat.filtres.length > 0)
     const mesuresTable = parCampagne
-      ? ['depensePub', 'sessions', 'commandes', 'caLivre', 'marge', 'margeApresPub'] // 6 colonnes : elles tiennent sans défiler
+      ? ['depensePub', 'sessions', 'commandes', 'tauxConversion', 'caLivre', 'marge', 'margeApresPub'] // 7 colonnes
       : [...MESURES]
     const tablePromise = interroger({ ...base, dimension, mesures: mesuresTable, limite: 100 })
     const canauxPromise = dimension === 'canal'

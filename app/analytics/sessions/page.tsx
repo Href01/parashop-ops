@@ -23,6 +23,7 @@ import { BarreControle } from '../_components/Controls'
 import { useReport } from '../_components/useReport'
 import { Chronologie, LegendeFamilles, BRUIT, type Evenement } from '../_components/Chronologie'
 import { Emplacements } from '../_components/Emplacements'
+import { GoogleAds } from '../_components/GoogleAds'
 import { EnteteJour, SessionRow } from '../_components/SessionRow'
 import { regrouperParJour } from '@/lib/analytics/session-view'
 
@@ -61,8 +62,8 @@ export default function Sessions() {
   const [canal, setCanal] = useState('')
   // Les sessions automatisees (robots, rendus Meta/Google, hebergeurs) sont ecartees par defaut.
   const [auto, setAuto] = useState(false)
-  // Deux vues, pas un seul long defilement : les sessions d'abord, les emplacements Meta a cote.
-  const [vue, setVue] = useState<'sessions' | 'emplacements'>('sessions')
+  // Deux vues, pas un seul long defilement : les sessions d'abord, puis la rentabilite de chaque plateforme (Meta, Google) a cote.
+  const [vue, setVue] = useState<'sessions' | 'emplacements' | 'google'>('sessions')
   const [data, setData] = useState<Reponse | null>(null)
   const [ouverte, setOuverte] = useState<string | null>(null)
   const [timeline, setTimeline] = useState<Evenement[] | null>(null)
@@ -296,7 +297,7 @@ export default function Sessions() {
       figure={!data ? <Squelette lignes={8} hauteur={18} /> : (
         <div>
           <div role="tablist" aria-label="Vue" className="inline-flex rounded-lg p-0.5 mb-3" style={{ background: V.grid }}>
-            {([['sessions', 'Sessions'], ['emplacements', 'Emplacements Meta']] as const).map(([k, label]) => (
+            {([['sessions', 'Sessions'], ['emplacements', 'Emplacements Meta'], ['google', 'Google Ads']] as const).map(([k, label]) => (
               <button key={k} role="tab" aria-selected={vue === k} onClick={() => setVue(k)}
                 className="rounded-md px-3 py-1 text-[12px] font-semibold"
                 style={vue === k ? { background: '#fff', color: V.ink, boxShadow: '0 1px 2px rgba(0,0,0,.08)' } : { color: V.ink2 }}>
@@ -306,6 +307,7 @@ export default function Sessions() {
           </div>
 
           {vue === 'emplacements' && <Emplacements debut={etat.periode.debut} fin={etat.periode.fin} auto={auto} />}
+          {vue === 'google' && <GoogleAds debut={etat.periode.debut} fin={etat.periode.fin} auto={auto} />}
 
           {vue === 'sessions' && (
             <div className="space-y-1">

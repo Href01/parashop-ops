@@ -460,6 +460,14 @@ export const MESURES: Record<string, Mesure> = {
     definition: 'Part des commandes passées qui arrivent réellement.',
     format: 'pourcent', hausseEstBonne: true, sql: null, seuil: MIN_OBS,
   },
+  tauxConversion: {
+    cle: 'tauxConversion', label: 'Conversion', source: 'commandes', portee: 'evenement',
+    definition:
+      "Commandes ÷ visites. « Une visite sur 40 finit en commande » se lit 2,5 %. Les commandes saisies à la main " +
+      "(DM, famille) n'ont pas de visite : leur ligne n'a pas de taux, et c'est voulu. Sous 30 visites, l'effectif est " +
+      "affiché à la place du pourcentage.",
+    format: 'pourcent', hausseEstBonne: true, sql: null, seuil: MIN_OBS,
+  },
   panierMoyen: {
     cle: 'panierMoyen', label: 'Panier moyen', source: 'commandes', portee: 'evenement',
     definition: 'CA livré divisé par le nombre de commandes livrées.',
@@ -525,6 +533,11 @@ export const DERIVEES: Record<string, { depend: string[]; calc: (r: Record<strin
     depend: ['marge', 'depensePub'],
     calc: (r) => Number(r.marge ?? 0) - Number(r.depensePub ?? 0),
   },
+  // Commandes ÷ visites. Sans visite il n'y a pas de taux (jamais 0 %, qui dirait « personne n'a commandé »).
+  tauxConversion: {
+    depend: ['commandes', 'sessions'],
+    calc: (r) => (r.sessions > 0 ? (r.commandes / r.sessions) * 100 : null),
+  },
   tauxLecture: {
     depend: ['lectureFin', 'lectureDebut'],
     calc: (r) => (r.lectureDebut > 0 ? (r.lectureFin / r.lectureDebut) * 100 : null),
@@ -542,6 +555,7 @@ export const DERIVEES: Record<string, { depend: string[]; calc: (r: Record<strin
 /** Le denominateur qui porte la fiabilite d'un taux — pas son numerateur. */
 export const DENOMINATEUR: Record<string, string> = {
   tauxLivraison: 'commandes',
+  tauxConversion: 'sessions',
   tauxLecture: 'lectureDebut',
   ctrRayon: 'impressions',
   tauxAjout: 'sessionsAvecVue',
