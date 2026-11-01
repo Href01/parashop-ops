@@ -244,7 +244,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     await client.query(
       `UPDATE "OrderItem"
-       SET quantity = $3, price = $4, "totalCost" = COALESCE("unitCost", 0) * $3
+       SET quantity = $3::int, price = $4, "totalCost" = COALESCE("unitCost", 0) * $3::int
        WHERE id = $1 AND "orderId" = $2`,
       [itemId, orderId, quantity, price],
     )
