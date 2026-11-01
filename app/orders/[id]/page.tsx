@@ -25,6 +25,8 @@ interface Order {
   paymentStatus?: string | null
   revenue?: number | string
   total?: number | string
+  promoCode?: string | null
+  discountTotal?: number | string | null
   codAmount?: number | string | null
   estimatedProfit?: number | string
   finalProfit?: number | string | null
@@ -133,6 +135,42 @@ export default function OrderDetailPage() {
     try {
       const data = await patchItem(itemId, draft)
       setActionSuccess(data.warning ? `Ligne mise à jour. ${data.warning}` : 'Ligne mise à jour.')
+      await fetchOrder()
+    } catch (e: any) { setActionError(e.message) } finally { setActionLoading(false) }
+  }
+
+  const [promoInput, setPromoInput] = useState('')
+
+  /* Applique (ou remplace) un code depuis la commande : remise, total et marge
+     sont recalculés côté serveur avec les règles de la boutique. */
+  async function handleApplyPromo() {
+    const code = promoInput.trim()
+    if (!code) return
+    setActionLoading(true); setActionError(''); setActionSuccess('')
+    try {
+      const res = await fetch(`/api/ops/orders/${orderId}/promo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.details || data.error || 'Échec de l’application du code')
+      const base = `Code ${data.code} appliqué : remise ${formatMoney(data.discount)} MAD.`
+      setActionSuccess(data.warning ? `${base} ${data.warning}` : base)
+      setPromoInput('')
+      await fetchOrder()
+    } catch (e: any) { setActionError(e.message) } finally { setActionLoading(false) }
+  }
+
+  async function handleRemovePromo() {
+    if (!order?.promoCode) return
+    if (!window.confirm(`Retirer le code ${order.promoCode} de la commande ? Le total repasse au prix plein.`)) return
+    setActionLoading(true); setActionError(''); setActionSuccess('')
+    try {
+      const res = await fetch(`/api/ops/orders/${orderId}/promo`, { method: 'DELETE' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.details || data.error || 'Échec du retrait du code')
+      setActionSuccess(data.warning ? `Code retiré. ${data.warning}` : 'Code retiré.')
       await fetchOrder()
     } catch (e: any) { setActionError(e.message) } finally { setActionLoading(false) }
   }
@@ -298,6 +336,38 @@ export default function OrderDetailPage() {
       const data = await res.json()
       if (!res.ok) throw new Error(data.details || data.error || 'Échec de la recréation')
       setActionSuccess(`Colis recréé ! ${data.previousTrackingId} → ${data.trackingId}`)
+      await fetchOrder()
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  /* Renvoie à Sendit le montant à encaisser et les produits actuels. Modifier les
+     articles recalcule la commande, jamais le colis : sans ce geste, le livreur
+     encaisse l'ancien montant. Le serveur refuse si le colis est déjà ramassé. */
+  async function handleUpdateShipment() {
+    if (!order) return
+    const ok = window.confirm(
+      `Mettre à jour le colis Sendit ${order.senditTrackingId} ?\n\n` +
+      `Le montant à encaisser et la liste des produits seront remplacés par ceux de cette commande.`
+    )
+    if (!ok) return
+
+    setActionLoading(true)
+    setActionError('')
+    setActionSuccess('')
+
+    try {
+      const res = await fetch(`/api/ops/orders/${orderId}/sendit/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.details || data.error || 'Échec de la mise à jour du colis')
+      setActionSuccess(`Colis Sendit mis à jour : montant à encaisser ${data.amountBefore} → ${data.amountAfter} MAD.`)
       await fetchOrder()
     } catch (err: unknown) {
       setActionError(err instanceof Error ? err.message : String(err))
@@ -988,6 +1058,21 @@ export default function OrderDetailPage() {
               </button>
             )}
 
+            {order.senditTrackingId
+              && !['DELIVERED', 'CANCELLED'].includes(order.status) && (
+              <button
+                type="button"
+                className="btn"
+                onClick={handleUpdateShipment}
+                disabled={actionLoading}
+                title="Après avoir modifié les articles ou le code promo : renvoie à Sendit le montant à encaisser et les produits."
+                style={{ background: 'var(--blue-bg)', color: 'var(--blue)', border: '1px solid var(--blue)' }}
+              >
+                <RefreshCw />
+                {actionLoading ? '...' : 'Mettre à jour le colis Sendit'}
+              </button>
+            )}
+
             {/* Réparation, pas action courante : ambre, et seulement tant que la
                 commande n'est pas arrivée à son terme — recréer un bordereau pour
                 une commande déjà livrée n'aurait aucun sens.
@@ -1195,6 +1280,33 @@ export default function OrderDetailPage() {
                   {actionLoading ? '…' : 'Ajouter'}
                 </button>
               </div>}
+              {!['DELIVERED', 'CANCELLED'].includes(order.status) && (
+                <div style={{ padding: '10px 12px', borderTop: '1px solid #eee', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>Code promo</span>
+                  {order.promoCode && (
+                    <span className="badge" style={{ fontSize: 12 }}>
+                      {order.promoCode}{toNumber(order.discountTotal) > 0 ? ` · −${formatMoney(order.discountTotal)} MAD` : ''}
+                    </span>
+                  )}
+                  <input
+                    value={promoInput}
+                    onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => { if (e.key === 'Enter') void handleApplyPromo() }}
+                    placeholder={order.promoCode ? 'Remplacer par un autre code' : 'Ex. BIENVENUE10'}
+                    aria-label="Code promo"
+                    dir="ltr"
+                    style={{ flex: '1 1 160px', minWidth: 140, padding: '6px 8px', borderRadius: 8, border: '1px solid #ddd', fontSize: 13 }}
+                  />
+                  <button onClick={handleApplyPromo} disabled={!promoInput.trim() || actionLoading} className="btn" style={{ opacity: (!promoInput.trim() || actionLoading) ? 0.5 : 1 }}>
+                    {actionLoading ? '…' : 'Appliquer'}
+                  </button>
+                  {order.promoCode && (
+                    <button onClick={handleRemovePromo} disabled={actionLoading} className="btn" style={{ color: 'var(--red)' }}>
+                      Retirer le code
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="panel">

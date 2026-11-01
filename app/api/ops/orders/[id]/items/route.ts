@@ -1,84 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import type { PoolClient } from 'pg'
 import pool from '@/lib/db'
 import { bustCache } from '@/lib/ops-cache'
 import { getOpsSession } from '@/lib/auth'
 import { bustAnalyticsCache } from '@/lib/analytics-cache'
-import { calculateEditedOrderEconomics } from '@/lib/order-economics'
-
-type LockedOrder = {
-  id: number
-  status: string
-  paymentMethod: string | null
-  discountTotal: number | string | null
-  deliveryFeeCharged: number | string | null
-  paidAmount: number | string | null
-  codAmount: number | string | null
-  paymentStatus: string | null
-  senditTrackingId: string | null
-}
-
-async function lockOrder(client: PoolClient, orderId: number) {
-  const result = await client.query<LockedOrder>(
-    `SELECT id, status, "paymentMethod", "discountTotal", "deliveryFeeCharged",
-            "paidAmount", "codAmount", "paymentStatus", "senditTrackingId"
-     FROM "Order" WHERE id = $1 FOR UPDATE`,
-    [orderId],
-  )
-  return result.rows[0] || null
-}
-
-async function recomputeOrderEconomics(client: PoolClient, order: LockedOrder) {
-  const lineResult = await client.query<{ productsTotal: string }>(
-    `SELECT COALESCE(SUM(price * quantity), 0)::numeric AS "productsTotal"
-     FROM "OrderItem" WHERE "orderId" = $1`,
-    [order.id],
-  )
-  const economics = calculateEditedOrderEconomics({
-    productsTotal: Number(lineResult.rows[0]?.productsTotal) || 0,
-    discountTotal: Number(order.discountTotal) || 0,
-    deliveryFeeCharged: Number(order.deliveryFeeCharged) || 0,
-    paymentMethod: order.paymentMethod,
-    paidAmount: order.paidAmount == null ? null : Number(order.paidAmount),
-    currentCodAmount: order.codAmount == null ? null : Number(order.codAmount),
-    hasSenditShipment: Boolean(order.senditTrackingId),
-    currentPaymentStatus: order.paymentStatus,
-  })
-
-  const result = await client.query(
-    `UPDATE "Order"
-     SET "productsTotal" = $2,
-         "discountTotal" = $3,
-         revenue = $4,
-         total = $5,
-         "codAmount" = $6,
-         "paymentStatus" = $7,
-         "deliveryStatus" = "deliveryStatus"
-     WHERE id = $1
-     RETURNING "productsTotal", "discountTotal", revenue, total, "codAmount",
-               "estimatedProfit", "finalProfit", "marginPercent", "paymentStatus"`,
-    [
-      order.id,
-      economics.productsTotal,
-      economics.discountTotal,
-      economics.revenue,
-      economics.total,
-      economics.codAmount,
-      economics.paymentStatus,
-    ],
-  )
-
-  return { ...result.rows[0], overpaidAmount: economics.overpaidAmount }
-}
-
-async function addAuditNote(client: PoolClient, order: LockedOrder, note: string) {
-  await client.query(
-    `INSERT INTO "OrderStatusHistory"
-      ("orderId", "oldStatus", "newStatus", source, note, "createdAt")
-     VALUES ($1, $2, $2, 'manual', $3, NOW())`,
-    [order.id, order.status, note],
-  )
-}
+import { addAuditNote, lockOrder, recomputeOrderEconomics, shipmentWarning } from '@/lib/order-edit'
 
 async function finishMutation() {
   bustCache('orders:')
@@ -99,11 +24,6 @@ function mutationError(error: unknown) {
     { error: 'Impossible de modifier les articles', details: dbError.message },
     { status: 500 },
   )
-}
-
-function shipmentWarning(order: LockedOrder) {
-  if (!order.senditTrackingId || ['DELIVERED', 'CANCELLED'].includes(order.status)) return null
-  return 'Le bordereau Sendit existe déjà. Vérifie son montant COD et sa description avant le ramassage.'
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

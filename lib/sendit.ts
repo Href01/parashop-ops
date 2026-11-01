@@ -252,13 +252,11 @@ async function senditRequest(path: string, init: RequestInit = {}, metrics?: Sen
 }
 
 /**
- * Create a new Sendit shipment
+ * Validate a shipment and map it to the payload Sendit expects.
+ * Shared by creation (POST /deliveries) and update (PUT /deliveries/{code}):
+ * the two take the same body, so they must never drift apart.
  */
-export async function createSenditShipment(shipment: SenditShipment): Promise<SenditShipmentResponse> {
-  console.log('🚀 Creating Sendit delivery...')
-  console.log('📦 Shipment:', shipment)
-
-  try {
+function buildDeliveryData(shipment: SenditShipment): SenditDelivery {
     const districtId = Number(shipment.district_id)
     if (!Number.isInteger(districtId) || districtId <= 0) {
       throw new Error('Sendit district is required. Select the exact Sendit city/district before creating a shipment.')
@@ -328,6 +326,60 @@ export async function createSenditShipment(shipment: SenditShipment): Promise<Se
       products_from_stock: 0,
     }
 
+    return deliveryData
+}
+
+/**
+ * Statuses at which Sendit's parcel can still be edited: label created, nothing
+ * picked up yet. From TOPICKUP onwards the courier already holds the parcel and the
+ * amount he collects must not move under him.
+ */
+const SENDIT_EDITABLE_STATUSES = ['PENDING', 'TO_PREPARE', 'NEW_DESTINATION']
+
+export function senditParcelIsEditable(status: string): boolean {
+  return SENDIT_EDITABLE_STATUSES.includes(String(status || '').toUpperCase())
+}
+
+/**
+ * Update an existing Sendit shipment (amount to collect, products, address...).
+ * Same body as creation. Never retried: a timeout leaves the outcome unknown and the
+ * caller re-reads the parcel instead of replaying blindly.
+ */
+export async function updateSenditShipment(trackingId: string, shipment: SenditShipment): Promise<{ amount: number; products: string; status: string; fee: number }> {
+  try {
+    const deliveryData = buildDeliveryData(shipment)
+    const response = await senditRequest(`/deliveries/${encodeURIComponent(trackingId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(deliveryData),
+    })
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`API error ${response.status}: ${errorText}`)
+    }
+    const data: SenditDeliveryResponse = await response.json()
+    if (!data.success) throw new Error(data.message || 'Failed to update delivery')
+    return {
+      amount: Number(data.data.amount) || 0,
+      products: String((data.data as { products?: string }).products ?? ''),
+      status: data.data.status,
+      fee: Number(data.data.fee) || 0,
+    }
+  } catch (error: unknown) {
+    console.error('❌ Update shipment error:', errorMessage(error))
+    throw new Error(`Sendit shipment update failed: ${errorMessage(error)}`)
+  }
+}
+
+/**
+ * Create a new Sendit shipment
+ */
+export async function createSenditShipment(shipment: SenditShipment): Promise<SenditShipmentResponse> {
+  console.log('🚀 Creating Sendit delivery...')
+  console.log('📦 Shipment:', shipment)
+
+  try {
+    const deliveryData = buildDeliveryData(shipment)
     console.log('📝 Delivery payload:', JSON.stringify(deliveryData, null, 2))
 
     const response = await senditRequest('/deliveries', {
