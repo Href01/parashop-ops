@@ -26,6 +26,7 @@ interface Order {
   revenue?: number | string
   total?: number | string
   promoCode?: string | null
+  productsTotal?: number | string | null
   discountTotal?: number | string | null
   codAmount?: number | string | null
   estimatedProfit?: number | string
@@ -143,8 +144,8 @@ export default function OrderDetailPage() {
 
   /* Applique (ou remplace) un code depuis la commande : remise, total et marge
      sont recalculés côté serveur avec les règles de la boutique. */
-  async function handleApplyPromo() {
-    const code = promoInput.trim()
+  async function handleApplyPromo(codeForce?: string) {
+    const code = (codeForce ?? promoInput).trim()
     if (!code) return
     setActionLoading(true); setActionError(''); setActionSuccess('')
     try {
@@ -1280,6 +1281,15 @@ export default function OrderDetailPage() {
                   {actionLoading ? '…' : 'Ajouter'}
                 </button>
               </div>}
+              {/* Ce que la cliente paie : sans ce récapitulatif, une remise absente du total ne se voyait pas. */}
+              <div style={{ padding: '10px 12px', borderTop: '1px solid #eee', display: 'grid', gap: 4, justifyContent: 'end', fontSize: 13 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}><span className="tx-mid">Produits</span><span className="num">{formatMoney(order.productsTotal ?? totals.catalogProducts)} MAD</span></div>
+                {toNumber(order.discountTotal) > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}><span className="tx-mid">Remise{order.promoCode ? ` ${order.promoCode}` : ''}</span><span className="num pos">−{formatMoney(order.discountTotal)} MAD</span></div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}><span className="tx-mid">Livraison</span><span className="num">+{formatMoney(order.deliveryFeeCharged)} MAD</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24, fontWeight: 700, borderTop: '1px solid #eee', paddingTop: 4 }}><span>Total à encaisser</span><span className="num">{formatMoney(order.total)} MAD</span></div>
+              </div>
               {!['DELIVERED', 'CANCELLED'].includes(order.status) && (
                 <div style={{ padding: '10px 12px', borderTop: '1px solid #eee', display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <span style={{ fontSize: 13, fontWeight: 600 }}>Code promo</span>
@@ -1287,6 +1297,23 @@ export default function OrderDetailPage() {
                     <span className="badge" style={{ fontSize: 12 }}>
                       {order.promoCode}{toNumber(order.discountTotal) > 0 ? ` · −${formatMoney(order.discountTotal)} MAD` : ''}
                     </span>
+                  )}
+                  {/* Un code enregistré sans remise dans le total : la remise s'est perdue (modification d'un article
+                      avant le correctif, ou commande passée par le site, qui ne l'écrit pas dans `discountTotal`). */}
+                  {order.promoCode && toNumber(order.discountTotal) <= 0 && (
+                    <>
+                      <span role="alert" style={{ fontSize: 12, color: 'var(--amber)', fontWeight: 600 }}>
+                        Remise non comptée dans le total
+                      </span>
+                      <button
+                        onClick={() => { setPromoInput(''); void handleApplyPromo(order.promoCode ?? undefined) }}
+                        disabled={actionLoading}
+                        className="btn"
+                        style={{ background: 'var(--amber-bg)', color: 'var(--amber)', border: '1px solid var(--amber)' }}
+                      >
+                        Recalculer la remise
+                      </button>
+                    </>
                   )}
                   <input
                     value={promoInput}
@@ -1297,7 +1324,7 @@ export default function OrderDetailPage() {
                     dir="ltr"
                     style={{ flex: '1 1 160px', minWidth: 140, padding: '6px 8px', borderRadius: 8, border: '1px solid #ddd', fontSize: 13 }}
                   />
-                  <button onClick={handleApplyPromo} disabled={!promoInput.trim() || actionLoading} className="btn" style={{ opacity: (!promoInput.trim() || actionLoading) ? 0.5 : 1 }}>
+                  <button onClick={() => void handleApplyPromo()} disabled={!promoInput.trim() || actionLoading} className="btn" style={{ opacity: (!promoInput.trim() || actionLoading) ? 0.5 : 1 }}>
                     {actionLoading ? '…' : 'Appliquer'}
                   </button>
                   {order.promoCode && (
