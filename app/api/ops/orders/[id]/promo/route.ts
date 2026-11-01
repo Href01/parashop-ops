@@ -105,7 +105,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     await client.query(`UPDATE "Order" SET "promoCode" = $2 WHERE id = $1`, [orderId, promo.code])
     const appliquee = { ...order, promoCode: promo.code as string }
-    const economics = await recomputeOrderEconomics(client, appliquee)
+    // Application explicite : la remise est accordée même si la commande ne la recevait pas encore.
+    const economics = await recomputeOrderEconomics(client, appliquee, { forcerCode: true })
     await addAuditNote(
       client,
       order,

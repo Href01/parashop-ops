@@ -142,6 +142,36 @@ export default function OrderDetailPage() {
 
   const [promoInput, setPromoInput] = useState('')
 
+  /* Livraison offerte : la grille de la boutique la donne dès le seuil (sous-total avant code). Le BOS ne
+     change jamais les frais tout seul — il le propose, et c'est ce bouton qui l'applique. */
+  const [livraisonInfo, setLivraisonInfo] = useState<{ subtotal: number; threshold: number; standardFee: number; currentFee: number; eligibleFree: boolean } | null>(null)
+  useEffect(() => {
+    if (!order || ['DELIVERED', 'CANCELLED'].includes(order.status)) { setLivraisonInfo(null); return }
+    let vivant = true
+    fetch(`/api/ops/orders/${orderId}/livraison`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => { if (vivant) setLivraisonInfo(j) })
+      .catch(() => { if (vivant) setLivraisonInfo(null) })
+    return () => { vivant = false }
+  }, [orderId, order?.status, order?.productsTotal, order?.deliveryFeeCharged])
+
+  async function handleOfferDelivery() {
+    if (!livraisonInfo) return
+    if (!window.confirm(`Offrir la livraison sur cette commande ?\n\nLes frais de ${livraisonInfo.currentFee} MAD sont retirés du total à encaisser.`)) return
+    setActionLoading(true); setActionError(''); setActionSuccess('')
+    try {
+      const res = await fetch(`/api/ops/orders/${orderId}/livraison`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fee: 0 }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data.details || data.error || 'Échec de la modification de la livraison')
+      setActionSuccess(data.warning ? `Livraison offerte. ${data.warning}` : 'Livraison offerte.')
+      await fetchOrder()
+    } catch (e: any) { setActionError(e.message) } finally { setActionLoading(false) }
+  }
+
   /* Applique (ou remplace) un code depuis la commande : remise, total et marge
      sont recalculés côté serveur avec les règles de la boutique. */
   async function handleApplyPromo(codeForce?: string) {
@@ -1288,6 +1318,14 @@ export default function OrderDetailPage() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}><span className="tx-mid">Remise{order.promoCode ? ` ${order.promoCode}` : ''}</span><span className="num pos">−{formatMoney(order.discountTotal)} MAD</span></div>
                 )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24 }}><span className="tx-mid">Livraison</span><span className="num">+{formatMoney(order.deliveryFeeCharged)} MAD</span></div>
+                {livraisonInfo?.eligibleFree && (
+                  <div role="alert" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end', gap: 8, fontSize: 12, color: 'var(--amber)' }}>
+                    <span style={{ fontWeight: 600 }}>Produits {formatMoney(livraisonInfo.subtotal)} MAD ≥ {formatMoney(livraisonInfo.threshold)} MAD : livraison gratuite selon la grille</span>
+                    <button onClick={handleOfferDelivery} disabled={actionLoading} className="btn" style={{ background: 'var(--amber-bg)', color: 'var(--amber)', border: '1px solid var(--amber)' }}>
+                      Offrir la livraison
+                    </button>
+                  </div>
+                )}
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 24, fontWeight: 700, borderTop: '1px solid #eee', paddingTop: 4 }}><span>Total à encaisser</span><span className="num">{formatMoney(order.total)} MAD</span></div>
               </div>
               {!['DELIVERED', 'CANCELLED'].includes(order.status) && (
