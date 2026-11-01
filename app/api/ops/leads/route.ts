@@ -65,23 +65,33 @@ export async function GET() {
         -- frais se rattrapant mieux qu'un abandon de trois semaines.
         ORDER BY (COALESCE(h.apres, 0) > 0), a."updatedAt" DESC
         LIMIT 100`),
+      // Une erreur de commande ne porte que le montant : on la rattache a la
+      // personne par la session, via le lead saisi pendant la commande. Sans ca
+      // la ligne dit « 468 » et personne ne sait qui rappeler (l'appel est
+      // pourtant utile tout de suite : c'est une vente refusee, pas un abandon).
       pool.query(`
-        SELECT * FROM (
-          SELECT 'otp_delivery_failed' AS kind, phone AS label, "errorCode" AS detail, "createdAt" AS at
+        SELECT e.kind, e.label, e.detail, e.at,
+               ac.name AS "contactName", ac.phone AS "contactPhone"
+        FROM (
+          SELECT 'otp_delivery_failed' AS kind, phone AS label, "errorCode" AS detail, "createdAt" AS at,
+                 NULL::text AS sess
           FROM "MessageLog"
           WHERE type = 'otp' AND status = 'failed' AND "createdAt" > NOW() - INTERVAL '7 days'
           UNION ALL
           SELECT 'purchase_failed' AS kind,
-                 COALESCE(props->>'finalTotal','') AS label, props->>'error' AS detail, "createdAt" AS at
+                 COALESCE(props->>'finalTotal','') AS label, props->>'error' AS detail, "createdAt" AS at,
+                 "sessionId" AS sess
           FROM "AnalyticsEvent"
           WHERE name = 'PURCHASE_FAILED' AND "createdAt" > NOW() - INTERVAL '7 days'
           UNION ALL
           SELECT 'otp_send_failed' AS kind, COALESCE(props->>'phase','') AS label,
-                 COALESCE(props->>'trigger','') AS detail, "createdAt" AS at
+                 COALESCE(props->>'trigger','') AS detail, "createdAt" AS at,
+                 "sessionId" AS sess
           FROM "AnalyticsEvent"
           WHERE name = 'OTP_SEND_FAILED' AND "createdAt" > NOW() - INTERVAL '7 days'
         ) e
-        ORDER BY at DESC
+        LEFT JOIN "AbandonedCheckout" ac ON ac."sessionId" = e.sess
+        ORDER BY e.at DESC
         LIMIT 60`),
       pool.query(`
         SELECT

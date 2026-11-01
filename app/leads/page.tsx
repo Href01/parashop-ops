@@ -14,7 +14,7 @@ type Lead = {
   ordersTotal: number; ordersBefore: number; ordersAfter: number
   ordersDelivered: number; lastOrderAt: string | null; totalSpent: number
 }
-type ErrRow = { kind: string; label: string | null; detail: string | null; at: string }
+type ErrRow = { kind: string; label: string | null; detail: string | null; at: string; contactName: string | null; contactPhone: string | null }
 type Data = {
   leads: Lead[]
   errors: ErrRow[]
@@ -190,13 +190,20 @@ export default function LeadsPage() {
                       <span className="badge red" style={{ fontSize: 10, whiteSpace: 'nowrap' }}>{meta.txt}</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div className="tx-hi" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {e.label || meta.hint}{e.detail ? ` · ${e.detail}` : ''}
+                          {e.contactName || e.contactPhone
+                            ? <><b>{e.contactName || 'Sans nom'}</b>{e.contactPhone ? ` · ${e.contactPhone}` : ''} · </>
+                            : null}
+                          {e.kind === 'purchase_failed' && e.label ? `${e.label} MAD` : e.label || meta.hint}{e.detail ? ` · ${e.detail}` : ''}
                         </div>
                         <div className="fs11 tx-faint">{timeAgo(e.at)}</div>
                       </div>
-                      {e.kind.startsWith('otp') && e.label && /\d/.test(e.label) && (
-                        <a href={waLink(e.label)} target="_blank" rel="noreferrer" className="btn-modern btn-sm btn-subtle" style={{ textDecoration: 'none' }} title="Contacter"><MessageCircle style={{ width: 13, height: 13 }} /></a>
-                      )}
+                      {(() => {
+                        // Le numero de l'erreur elle-meme (OTP) ou, a defaut, celui du lead de la session.
+                        const tel = e.kind.startsWith('otp') && e.label && /\d/.test(e.label) ? e.label : e.contactPhone
+                        return tel && /\d/.test(tel) ? (
+                          <a href={waLink(tel, e.contactName)} target="_blank" rel="noreferrer" className="btn-modern btn-sm btn-subtle" style={{ textDecoration: 'none' }} title="Contacter"><MessageCircle style={{ width: 13, height: 13 }} /></a>
+                        ) : null
+                      })()}
                     </div>
                   )
                 })}
