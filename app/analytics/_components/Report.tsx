@@ -487,16 +487,23 @@ export function DimensionTable({
 }
 
 /* ── La navigation par modules ────────────────────────────────────────────── */
+/**
+ * Quatre groupes, dans l'ordre où l'on pose les questions :
+ *  · maintenant — qui est sur le site, ce qui se passe aujourd'hui (l'entrée du tableau de bord) ;
+ *  · performance — le cycle de vie GA4 : acquisition → engagement → conversion → rétention ;
+ *  · catalogue — ce qui se vend, ce qui se cherche, ce que Google en voit ;
+ *  · outils — la qualité des données, et l'exploration libre.
+ */
 export const MODULES = [
-  { href: '/analytics', label: "Vue d'ensemble" },
-  { href: '/analytics/acquisition', label: 'Acquisition' },
-  { href: '/analytics/seo', label: 'SEO Insights' },
-  { href: '/analytics/engagement', label: 'Engagement' },
-  { href: '/analytics/conversion', label: 'Conversion' },
-  { href: '/analytics/retention', label: 'Rétention' },
-  { href: '/analytics/produits', label: 'Produits' },
-  { href: '/analytics/recherche', label: 'Recherche' },
-  { href: '/analytics/qualite', label: 'Qualité' },
-  { href: '/analytics/sessions', label: 'Sessions' },
-  { href: '/analytics/explorer', label: 'Explorer' },
+  { href: '/analytics/sessions', label: 'Sessions', groupe: 'maintenant' },
+  { href: '/analytics/ensemble', label: "Vue d'ensemble", groupe: 'performance' },
+  { href: '/analytics/acquisition', label: 'Acquisition', groupe: 'performance' },
+  { href: '/analytics/engagement', label: 'Engagement', groupe: 'performance' },
+  { href: '/analytics/conversion', label: 'Conversion', groupe: 'performance' },
+  { href: '/analytics/retention', label: 'Rétention', groupe: 'performance' },
+  { href: '/analytics/produits', label: 'Produits', groupe: 'catalogue' },
+  { href: '/analytics/recherche', label: 'Recherche', groupe: 'catalogue' },
+  { href: '/analytics/seo', label: 'SEO Insights', groupe: 'catalogue' },
+  { href: '/analytics/qualite', label: 'Qualité', groupe: 'outils' },
+  { href: '/analytics/explorer', label: 'Explorer', groupe: 'outils' },
 ] as const

@@ -36,18 +36,22 @@ export default function AnalyticsNav() {
     <nav ref={navRef}
       className="flex min-h-10 w-max min-w-full gap-1"
       aria-label="Modules d'analyse">
-      {MODULES.map((m) => {
-        const actif = m.href === '/analytics' ? pathname === m.href : pathname.startsWith(m.href)
+      {MODULES.map((m, i) => {
+        const actif = pathname.startsWith(m.href)
+        // Un filet entre deux groupes : on lit « maintenant | performance | catalogue | outils » d'un coup d'oeil.
+        const nouveauGroupe = i > 0 && MODULES[i - 1].groupe !== m.groupe
         return (
-          <Link
-            key={m.href}
-            href={analyticsModuleHref(pathname, m.href, sp.toString())}
-            aria-current={actif ? 'page' : undefined}
-            className="min-h-10 px-3 py-2 text-[13px] font-medium whitespace-nowrap border-b-2 -mb-px transition-colors"
-            style={{ borderColor: actif ? V.ink : 'transparent', color: actif ? V.ink : V.muted }}
-          >
-            {m.label}
-          </Link>
+          <span key={m.href} className="contents">
+            {nouveauGroupe && <span aria-hidden className="self-center mx-1 h-4 w-px shrink-0" style={{ background: V.grid }} />}
+            <Link
+              href={analyticsModuleHref(pathname, m.href, sp.toString())}
+              aria-current={actif ? 'page' : undefined}
+              className="min-h-10 px-3 py-2 text-[13px] font-medium whitespace-nowrap border-b-2 -mb-px transition-colors"
+              style={{ borderColor: actif ? V.ink : 'transparent', color: actif ? V.ink : V.muted }}
+            >
+              {m.label}
+            </Link>
+          </span>
         )
       })}
       {/* L'onglet « ancien tableau » a ete retire avec la page qu'il ouvrait.

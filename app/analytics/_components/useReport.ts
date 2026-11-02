@@ -125,14 +125,19 @@ export function dateDuJour(): string {
   return aujourdHui()
 }
 
-export function useReport() {
+/**
+ * `joursParDefaut` : la fenêtre quand l'URL n'en porte pas. 30 jours pour les modules de
+ * tendance ; 1 (aujourd'hui) pour Sessions, qui répond à « que se passe-t-il maintenant ».
+ */
+export function useReport(options: { joursParDefaut?: number } = {}) {
+  const joursParDefaut = options.joursParDefaut ?? 30
   const router = useRouter()
   const pathname = usePathname()
   const sp = useSearchParams()
 
   const etat: EtatRapport = useMemo(() => {
     const fin = sp.get('fin') || aujourdHui()
-    const jours = Math.min(Math.max(parseInt(sp.get('jours') || '30', 10) || 30, 1), 730)
+    const jours = Math.min(Math.max(parseInt(sp.get('jours') || String(joursParDefaut), 10) || joursParDefaut, 1), 730)
     const debut = sp.get('debut') || decale(fin, -(jours - 1))
     const j = joursEntre(debut, fin)
 
@@ -162,7 +167,7 @@ export function useReport() {
       jours: j,
       filtres,
     }
-  }, [sp])
+  }, [sp, joursParDefaut])
 
   /** Modifie l'URL sans recharger : l'etat EST l'URL. */
   const maj = useCallback((patch: Record<string, string | null>) => {

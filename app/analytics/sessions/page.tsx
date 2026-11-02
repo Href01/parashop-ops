@@ -20,7 +20,7 @@ import { V } from '../_components/Viz'
 import { T } from '../_components/Decision'
 import { ReportShell, Scorecard, Squelette, ErreurChargement, Ecart, fmt } from '../_components/Report'
 import { BarreControle } from '../_components/Controls'
-import { useReport } from '../_components/useReport'
+import { useReport, estAujourdHui } from '../_components/useReport'
 import { Chronologie, LegendeFamilles, BRUIT, type Evenement } from '../_components/Chronologie'
 import { Emplacements } from '../_components/Emplacements'
 import { GoogleAds } from '../_components/GoogleAds'
@@ -54,7 +54,7 @@ const heure = (iso: string) =>
   new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Africa/Casablanca' }).format(new Date(iso))
 
 export default function Sessions() {
-  const { etat, maj, setJours, setPeriode, setFiltre: setFiltreDim, periodePersonnalisee } = useReport()
+  const { etat, maj, setJours, setPeriode, setFiltre: setFiltreDim, periodePersonnalisee } = useReport({ joursParDefaut: 1 })
   const [filtre, setFiltre] = useState('toutes')
   const [q, setQ] = useState('')
   const [qDifferee, setQDifferee] = useState('')
@@ -144,6 +144,11 @@ export default function Sessions() {
   // En dessous de 20 commandes (l'une ou l'autre période) on montre les valeurs, pas la flèche.
   const peuDeCommandes = Math.max(data?.repartition?.achat ?? 0, data?.repartitionPrecedente?.achat ?? 0) < 20
   const nAuto = data?.repartition?.automatise ?? 0
+  /* UNE JOURNÉE EN COURS NE SE COMPARE PAS À UNE JOURNÉE COMPLÈTE EN FLÈCHE.
+     À 16 h, « 74 sessions ▼ 61 % » face à hier 189 se lit comme un effondrement alors que la
+     journée n'est pas finie. Aujourd'hui, on montre donc les chiffres d'hier, sans flèche. */
+  const jourEnCours = estAujourdHui(etat.periode.fin, etat.jours)
+  const hier = (n?: number) => (jourEnCours && n != null ? `hier (journée complète) : ${fmt(n, 'entier')}` : '')
 
   return (
     <ReportShell
@@ -161,69 +166,13 @@ export default function Sessions() {
               setFiltre={setFiltreDim} periodePersonnalisee={periodePersonnalisee} afficherBase={false} />
           </div>
 
-          {/* Les segments PORTENT LEUR EFFECTIF. Une puce muette oblige à
-              cliquer pour savoir si elle contient trois sessions ou trois
-              cents ; avec le compte, on compare les segments entre eux d'un
-              seul regard, sans changer de vue. */}
-          <div className="flex flex-nowrap sm:flex-wrap items-center gap-1 overflow-x-auto sm:overflow-visible w-full pb-1">
-            {(data?.segments ?? []).map((f) => {
-              const n = data?.repartition?.[f.cle] ?? 0
-              const prec = data?.repartitionPrecedente?.[f.cle]
-              const on = filtre === f.cle
-              const vide = n === 0 && f.cle !== 'toutes'
-              // « Ont buté » qui monte est une mauvaise nouvelle, « Ont
-              // commandé » qui monte une bonne : le sens de la flèche dépend du
-              // segment, il ne peut pas être uniforme.
-              const hausseBonne = !['friction', 'panier_sans_achat', 'sans_action'].includes(f.cle)
-              return (
-                <button key={f.cle} onClick={() => setFiltre(f.cle)} disabled={vide}
-                  className="ctrl rounded-lg px-2.5 py-1 text-[12px] font-semibold inline-flex items-center gap-1.5 disabled:opacity-35 shrink-0 whitespace-nowrap"
-                  style={{ border: `1px solid ${on ? V.ink : V.grid}` }}
-                  data-on={on ? '1' : undefined}
-                  title={vide ? 'Aucune session dans ce segment sur cette période'
-                    : prec != null ? `${n} sur la période · ${prec} sur la précédente` : undefined}>
-                  {f.label}
-                  <span className="tabular-nums text-[11px]" style={{ opacity: on ? 0.75 : 0.55 }}>{n}</span>
-                  {prec != null && !on && Math.max(n, prec) >= 20 && <Ecart courant={n} precedent={prec} hausseEstBonne={hausseBonne} />}
-                </button>
-              )
-            })}
-          </div>
-
-          <select value={appareil} onChange={(e) => setAppareil(e.target.value)}
-            className="text-[12px] font-semibold rounded-lg px-2 py-1 outline-none"
-            style={{ border: `1px solid ${V.grid}`, color: V.ink, background: '#fff' }}>
-            <option value="">Tous les appareils</option>
-            {(data?.appareils ?? []).map((a) => (
-              <option key={a.cle} value={a.cle}>{a.cle} ({a.n})</option>
-            ))}
-          </select>
-
-          <select value={canal} onChange={(e) => setCanal(e.target.value)}
-            className="text-[12px] font-semibold rounded-lg px-2 py-1 outline-none"
-            style={{ border: `1px solid ${V.grid}`, color: V.ink, background: '#fff' }}>
-            <option value="">Tous les canaux</option>
-            {(data?.canaux ?? []).map((c) => (
-              <option key={c.cle} value={c.cle}>{c.cle} ({c.n})</option>
-            ))}
-          </select>
-
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ville, source, nom, téléphone…"
-            className="text-[12px] rounded-lg px-2 py-1 outline-none min-w-[190px]"
-            style={{ border: `1px solid ${V.grid}`, color: V.ink }} />
-
+          {/* Vaut pour les trois vues (sessions, emplacements Meta, Google Ads) : elle reste donc dans l'en-tête. */}
           <label className="inline-flex items-center gap-1.5 text-[12px] font-semibold cursor-pointer" style={{ color: V.ink2 }}
             title="Robots de relecture des annonces (Google, Meta), rendus de pages et visites depuis des hébergeurs : écartés par défaut. Une session avec panier ou commande n'est jamais écartée.">
             <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
             Inclure le trafic automatisé <span className="tabular-nums text-[11px]" style={{ opacity: 0.6 }}>{nAuto}</span>
           </label>
 
-          {(filtre !== 'toutes' || appareil || canal || q) && (
-            <button onClick={() => { setFiltre('toutes'); setAppareil(''); setCanal(''); setQ('') }}
-              className="text-[11px] font-semibold underline" style={{ color: V.muted }}>
-              tout effacer
-            </button>
-          )}
           <style>{`
             .ctrl { background: transparent; color: ${V.ink2}; transition: background-color .14s ease, color .14s ease }
             .ctrl:hover { background: ${V.grid}66; color: ${V.ink} }
@@ -257,10 +206,11 @@ export default function Sessions() {
           <Scorecard label="Sessions" portee="sessions"
             definition="Sessions du site ouvertes sur la période, avant filtrage par segment. Le trafic automatisé (robots de relecture des annonces, rendus Meta et Google, hébergeurs) est écarté tant que la case n'est pas cochée ; une session avec panier ou commande n'est jamais écartée."
             valeur={data.repartition?.toutes ?? data.sessions.length}
-            precedent={data.repartitionPrecedente?.toutes} format="entier" hausseEstBonne
+            precedent={jourEnCours ? undefined : data.repartitionPrecedente?.toutes} format="entier" hausseEstBonne
             note={[
               data.sessions.length < (data.repartition?.[filtre] ?? 0) ? `${data.sessions.length} affichées sur ${data.repartition?.[filtre]}` : '',
               !auto && nAuto > 0 ? `${nAuto} automatisées écartées` : '',
+              hier(data.repartitionPrecedente?.toutes),
             ].filter(Boolean).join(' · ') || undefined} />
           {/* LE TAUX DE CONVERSION — la mesure qui manquait.
               Sessions ayant abouti à une commande ÷ sessions totales. Le
@@ -274,7 +224,7 @@ export default function Sessions() {
               censé mesurer la vitrine. */}
           <Scorecard label="Taux de conversion" portee="sessions"
             definition="Part des sessions qui se terminent par une commande passée sur le site. Les commandes prises à la main (Instagram, WhatsApp) n'ont pas de session et n'entrent pas dans ce calcul."
-            valeur={tauxConversion} precedent={peuDeCommandes ? undefined : tauxConversionPrecedent}
+            valeur={tauxConversion} precedent={peuDeCommandes || jourEnCours ? undefined : tauxConversionPrecedent}
             format="pourcent" hausseEstBonne
             note={data.repartition
               ? [
@@ -287,11 +237,13 @@ export default function Sessions() {
           <Scorecard label="Panier sans commande" portee="sessions"
             definition="Elles ont mis un produit au panier et n'ont pas commandé. C'est la population la plus chère du site : l'intention est prouvée, seule la fin manque."
             valeur={data.repartition?.panier_sans_achat ?? 0}
-            precedent={data.repartitionPrecedente?.panier_sans_achat} format="entier" hausseEstBonne={false} />
+            precedent={jourEnCours ? undefined : data.repartitionPrecedente?.panier_sans_achat} format="entier" hausseEstBonne={false}
+            note={hier(data.repartitionPrecedente?.panier_sans_achat) || undefined} />
           <Scorecard label="Signaux de friction" portee="sessions"
             definition="Sessions avec une erreur observée ou un signal à vérifier, comme des clics répétés ou une réponse non détectée. Ne prouve pas la cause du départ."
             valeur={data.repartition?.friction ?? 0}
-            precedent={data.repartitionPrecedente?.friction} format="entier" hausseEstBonne={false} />
+            precedent={jourEnCours ? undefined : data.repartitionPrecedente?.friction} format="entier" hausseEstBonne={false}
+            note={hier(data.repartitionPrecedente?.friction) || undefined} />
         </>
       )}
       figure={!data ? <Squelette lignes={8} hauteur={18} /> : (
@@ -311,6 +263,68 @@ export default function Sessions() {
 
           {vue === 'sessions' && (
             <div className="space-y-1">
+              {/* Filtres de LA LISTE (segments, appareil, canal, recherche) : ils vivent au-dessus de la liste qu'ils filtrent,
+                  pas dans l'en-tête, qui ne garde que ce qui vaut pour toute la page — la période. */}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pb-3 mb-2 border-b" style={{ borderColor: V.grid }}>
+            {/* Les segments PORTENT LEUR EFFECTIF. Une puce muette oblige à
+                cliquer pour savoir si elle contient trois sessions ou trois
+                cents ; avec le compte, on compare les segments entre eux d'un
+                seul regard, sans changer de vue. */}
+            <div className="flex flex-nowrap sm:flex-wrap items-center gap-1 overflow-x-auto sm:overflow-visible w-full pb-1">
+              {(data?.segments ?? []).map((f) => {
+                const n = data?.repartition?.[f.cle] ?? 0
+                const prec = data?.repartitionPrecedente?.[f.cle]
+                const on = filtre === f.cle
+                const vide = n === 0 && f.cle !== 'toutes'
+                // « Ont buté » qui monte est une mauvaise nouvelle, « Ont
+                // commandé » qui monte une bonne : le sens de la flèche dépend du
+                // segment, il ne peut pas être uniforme.
+                const hausseBonne = !['friction', 'panier_sans_achat', 'sans_action'].includes(f.cle)
+                return (
+                  <button key={f.cle} onClick={() => setFiltre(f.cle)} disabled={vide}
+                    className="ctrl rounded-lg px-2.5 py-1 text-[12px] font-semibold inline-flex items-center gap-1.5 disabled:opacity-35 shrink-0 whitespace-nowrap"
+                    style={{ border: `1px solid ${on ? V.ink : V.grid}` }}
+                    data-on={on ? '1' : undefined}
+                    title={vide ? 'Aucune session dans ce segment sur cette période'
+                      : prec != null ? `${n} sur la période · ${prec} sur la précédente` : undefined}>
+                    {f.label}
+                    <span className="tabular-nums text-[11px]" style={{ opacity: on ? 0.75 : 0.55 }}>{n}</span>
+                    {prec != null && !on && !jourEnCours && Math.max(n, prec) >= 20 && <Ecart courant={n} precedent={prec} hausseEstBonne={hausseBonne} />}
+                  </button>
+                )
+              })}
+            </div>
+  
+            <select value={appareil} onChange={(e) => setAppareil(e.target.value)}
+              className="text-[12px] font-semibold rounded-lg px-2 py-1 outline-none"
+              style={{ border: `1px solid ${V.grid}`, color: V.ink, background: '#fff' }}>
+              <option value="">Tous les appareils</option>
+              {(data?.appareils ?? []).map((a) => (
+                <option key={a.cle} value={a.cle}>{a.cle} ({a.n})</option>
+              ))}
+            </select>
+  
+            <select value={canal} onChange={(e) => setCanal(e.target.value)}
+              className="text-[12px] font-semibold rounded-lg px-2 py-1 outline-none"
+              style={{ border: `1px solid ${V.grid}`, color: V.ink, background: '#fff' }}>
+              <option value="">Tous les canaux</option>
+              {(data?.canaux ?? []).map((c) => (
+                <option key={c.cle} value={c.cle}>{c.cle} ({c.n})</option>
+              ))}
+            </select>
+  
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ville, source, nom, téléphone…"
+              className="text-[12px] rounded-lg px-2 py-1 outline-none min-w-[190px]"
+              style={{ border: `1px solid ${V.grid}`, color: V.ink }} />
+  
+  
+            {(filtre !== 'toutes' || appareil || canal || q) && (
+              <button onClick={() => { setFiltre('toutes'); setAppareil(''); setCanal(''); setQ('') }}
+                className="text-[11px] font-semibold underline" style={{ color: V.muted }}>
+                tout effacer
+              </button>
+            )}
+              </div>
               {data.sessions.length === 0 && (
                 <p className={T.note} style={{ color: V.muted }}>Aucune session sur cette période avec ces filtres.</p>
               )}
