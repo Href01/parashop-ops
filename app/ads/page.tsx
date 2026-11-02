@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { RefreshCw, X, AlertCircle, KeyRound, ChevronRight } from 'lucide-react'
 import BosShell from '@/components/BosShell'
+import { estPostBooste, NOTE_POST_BOOSTE } from '@/lib/analytics/post-booste'
 
 interface Ad {
   id: number
@@ -275,7 +276,7 @@ function AdDetailDrawer({ ad, events, products, suggestion, onClose, onPatch, pN
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--tx-lo)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8 }}>Insights</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
               <Row label="Impressions" value={mad(impr)} />
-              <Row label="Clics" value={mad(clicks)} />
+              <Row label={estPostBooste(ad.name) ? 'Clics (interactions)' : 'Clics'} value={mad(clicks)} />
               <Row label="CTR" value={`${ctr.toFixed(2)}%`} />
               <Row label="CPC" value={`${cpc.toFixed(2)} MAD`} />
               <Row label="CPM" value={`${cpm.toFixed(0)} MAD`} />
@@ -294,6 +295,12 @@ function AdDetailDrawer({ ad, events, products, suggestion, onClose, onPatch, pN
                 <Row label="🔖 Enregistrements" value={mad(ad.saves ?? 0)} />
               </div>
             </div>
+          )}
+
+          {estPostBooste(ad.name) && (
+            <p style={{ fontSize: 12, color: 'var(--tx-lo)', background: 'var(--bg-2)', border: '1px solid var(--line-soft)', borderRadius: 8, padding: 10, lineHeight: 1.5 }}>
+              {NOTE_POST_BOOSTE}
+            </p>
           )}
 
           {rev === 0 && (

@@ -23,6 +23,7 @@ import { ReportShell, Scorecard, DimensionTable, Squelette, ErreurChargement, fm
 import { BarreControle } from '../_components/Controls'
 import { useReport, interroger } from '../_components/useReport'
 import { isPaidChannel } from '@/lib/analytics/metrics'
+import { estPostBooste, libelleCampagne, NOTE_POST_BOOSTE } from '@/lib/analytics/post-booste'
 
 type Reponse = Awaited<ReturnType<typeof interroger>>
 
@@ -205,11 +206,14 @@ export default function Acquisition() {
         </div>
       )}
       tableau={!table ? <Squelette lignes={6} hauteur={16} /> : (
+        <>
         <DimensionTable
           // La clé remet le tri à zéro quand la dimension change : sinon la table garde
           // le tri « Sessions » et la campagne qui coûte le plus (0 visite) finit en page 3.
           key={table.modele.dimension?.label ?? dimension}
-          lignes={(tableEnrichie ?? table).lignes as LigneTable[]}
+          // Le nom d'un post boosté dit sa nature : sans cela, ses « clics » sans visite se lisent comme du gaspillage.
+          lignes={((tableEnrichie ?? table).lignes as LigneTable[]).map((l) =>
+            dimension === 'campagne' && estPostBooste(l.cle) ? { ...l, cle: libelleCampagne(l.cle) } : l)}
           colonnes={colonnes}
           labelDimension={table.modele.dimension?.label ?? 'Dimension'}
           dimensions={[
@@ -225,6 +229,10 @@ export default function Acquisition() {
           comparaison={!!etat.comparaison}
           lignesParPage={10}
         />
+        {dimension === 'campagne' && table.lignes.some((l) => estPostBooste(l.cle)) && (
+          <p className={`${T.note} mt-2`} style={{ color: V.muted }}>{NOTE_POST_BOOSTE}</p>
+        )}
+        </>
       )}
     />
   )
