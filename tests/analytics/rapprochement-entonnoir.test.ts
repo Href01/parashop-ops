@@ -18,6 +18,13 @@ test('l API de l entonnoir compte les commandes du site quand la derniere etape 
 test('la vue Conversion dit combien de commandes l entonnoir ne compte pas, et comment les inclure', () => {
   const vue = lire('app/analytics/_vues/Conversion.tsx')
   assert.ok(vue.includes('rapprochement.commandesSite > donnees[donnees.length - 1].sessions'), 'affichee seulement quand il y a un ecart')
-  assert.ok(vue.includes('partez de « Panier ouvert »'))
+  assert.ok(vue.includes('choisissez « Du panier à la commande »'), 'le correctif est un parcours préréglé, pas une consigne obscure')
   assert.ok(vue.includes('role="note"'))
+})
+
+test('le parcours par defaut part du panier (toutes les commandes) ; « depuis la fiche produit » reste un prereglage', () => {
+  const vue = lire('app/analytics/_vues/Conversion.tsx')
+  assert.ok(vue.includes('const DEFAUT: string[] = DU_PANIER'))
+  assert.ok(vue.includes("['VIEW_CART', ...FUNNEL_PAR_DEFAUT.slice(2)]"), 'panier ouvert -> checkout -> ... -> commande')
+  assert.ok(vue.includes('const DEPUIS_FICHE: string[] = [...FUNNEL_PAR_DEFAUT]'))
 })

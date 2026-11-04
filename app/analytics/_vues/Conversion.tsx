@@ -20,7 +20,15 @@ import { Entonnoir, type EtapeEntonnoir } from '../_components/Charts'
 import { FUNNEL_PAR_DEFAUT } from '@/lib/analytics/funnel'
 import { lectureConversion } from '@/lib/analytics/lecture'
 
-const DEFAUT: string[] = [...FUNNEL_PAR_DEFAUT]
+/* DEUX PARCOURS PRÉRÉGLÉS, parce qu'un seul ne dit pas toute la vérité (mesuré sur les commandes du site, 5 oct. - 3 nov.) :
+     · « Du panier à la commande » compte TOUTES les commandes (18 sur 18) : c'est le bon outil pour voir où le paiement
+       décroche. C'est le défaut ;
+     · « Depuis la fiche produit » montre le haut du parcours (qui ouvre une fiche, qui ajoute au panier) mais ne compte que
+       12 commandes sur 18 : 4 ont ajouté au panier depuis le rayon sans ouvrir de fiche, 3 avaient un panier rempli lors
+       d'une visite précédente. */
+const DEPUIS_FICHE: string[] = [...FUNNEL_PAR_DEFAUT]
+const DU_PANIER: string[] = ['VIEW_CART', ...FUNNEL_PAR_DEFAUT.slice(2)]
+const DEFAUT: string[] = DU_PANIER
 
 const FENETRES = [
   { min: 15, label: '15 min' },
@@ -136,6 +144,18 @@ export default function Conversion() {
           <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
             <div className="min-w-0">
               <p className={T.label} style={{ color: V.muted }}>Étapes du parcours</p>
+              <div role="group" aria-label="Parcours préréglés" className="flex flex-wrap gap-1.5 mt-1.5">
+                {([['Du panier à la commande', DU_PANIER], ['Depuis la fiche produit', DEPUIS_FICHE]] as const).map(([libelle, liste]) => {
+                  const on = etapes.length === liste.length && liste.every((c, i) => etapes[i] === c)
+                  return (
+                    <button key={libelle} onClick={() => setEtapes([...liste])} aria-pressed={on}
+                      className="rounded-md px-2.5 py-1 text-[12px] font-semibold"
+                      style={on ? { background: V.ink, color: '#fff' } : { border: `1px solid ${V.grid}`, color: V.ink2 }}>
+                      {libelle}
+                    </button>
+                  )
+                })}
+              </div>
               <div className="flex flex-wrap gap-1.5 mt-1.5">
                 {catalogue.map((c) => {
                   const on = etapes.includes(c.cle)
@@ -173,7 +193,7 @@ export default function Conversion() {
               <b>{rapprochement.commandesSite} commandes du site</b> sur la période, dont <b>{donnees[donnees.length - 1].sessions}</b> dans
               cet entonnoir : {rapprochement.commandesSite - donnees[donnees.length - 1].sessions} ont sauté une étape (ajout au panier depuis le rayon
               sans passer par la fiche produit, ou panier rempli lors d&apos;une visite précédente). Le taux du parcours est donc un minimum ;
-              pour les compter toutes, partez de « Panier ouvert ».
+              pour les compter toutes, choisissez « Du panier à la commande ».
             </p>
           )}
         </div>

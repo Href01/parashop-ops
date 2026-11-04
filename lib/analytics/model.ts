@@ -655,6 +655,19 @@ export function problemeCompatibilite(req: Pick<Requete, 'dimension' | 'mesures'
  * melanger, dans un meme tableau, des mesures de trafic et des mesures de
  * commande sans jointure abusive.
  */
+/**
+ * UN ENCADREMENT LARGE, SANS FONCTION SUR LA COLONNE — pour que l'index de date serve.
+ *
+ * Le filtre exact (le jour LOCAL, voir jourLocalUtc) applique une fonction à la colonne : Postgres ne peut
+ * pas s'appuyer sur l'index, lit les 324 000 événements, sous-estime le résultat (611 lignes attendues,
+ * 143 000 réelles) et choisit un tri qui déborde sur disque (68 Mo). Cet encadrement (un jour de marge de
+ * chaque côté, largement au-delà du décalage de 0 ou 1 h du Maroc) laisse l'index borner la lecture ; le
+ * filtre exact reste appliqué ensuite : les résultats sont strictement les mêmes.
+ */
+function fenetreIndexable(colonne: string): string {
+  return `${colonne} >= $1::date - interval '1 day' AND ${colonne} < $2::date + interval '2 days'`
+}
+
 export function construireSql(
   source: Source,
   req: Requete,
@@ -711,7 +724,8 @@ export function construireSql(
         WHEN ${idProduitEvenement} ~ '^[0-9]+$' THEN ${idProduitEvenement}::int
         ELSE NULL
       END
-      WHERE ${jourLocalUtc('e."createdAt"')} BETWEEN $1::date AND $2::date
+      WHERE ${fenetreIndexable('e."createdAt"')}
+        AND ${jourLocalUtc('e."createdAt"')} BETWEEN $1::date AND $2::date
         ${SESSION_HUMAN_FILTER_CLAUSE}${clauseFiltres}
       GROUP BY 1`
   } else if (source === 'pub') {
@@ -727,7 +741,8 @@ export function construireSql(
              ${select}
       FROM "PageView"
       LEFT JOIN "AnalyticsSession" s ON s."sessionId" = "PageView"."sessionId"
-      WHERE ${jourLocalUtc('"PageView"."createdAt"')} BETWEEN $1::date AND $2::date
+      WHERE ${fenetreIndexable('"PageView"."createdAt"')}
+        AND ${jourLocalUtc('"PageView"."createdAt"')} BETWEEN $1::date AND $2::date
         ${PAGEVIEW_HUMAN_FILTER_CLAUSE}${clauseFiltres}
       GROUP BY 1`
   } else {
@@ -735,7 +750,8 @@ export function construireSql(
       SELECT ${groupe} AS cle,
              ${select}
       FROM "AnalyticsSession" s
-      WHERE ${jourLocalUtc('s."firstSeenAt"')} BETWEEN $1::date AND $2::date
+      WHERE ${fenetreIndexable('s."firstSeenAt"')}
+        AND ${jourLocalUtc('s."firstSeenAt"')} BETWEEN $1::date AND $2::date
         ${SESSION_HUMAN_FILTER_CLAUSE}${clauseFiltres}
       GROUP BY 1`
   }
