@@ -37,7 +37,7 @@ export const V = {
   axis: '#c3c2b7',
   ink: '#0b0b0b',
   ink2: '#52514e',
-  muted: '#898781',
+  muted: '#6b6a65', // 5,4:1 sur blanc, 5,1:1 sur le canevas (l'ancien #898781 ne faisait que 3,6:1)
   /* Teintes de TEXTE pour les verdicts : `good` / `critical` (#0ca30c, #d03b3b) sont des couleurs de MARQUE (barres,
      points) ; en petit texte elles tombent sous 4,5:1. Les encres ci-dessous tiennent plus de 6:1 sur blanc, et sur
      leur propre fond teinté. Le sens ne repose jamais sur la couleur seule : flèche et signe l'accompagnent. */
@@ -97,7 +97,7 @@ export function StatTile({
         )}
       </div>
       {series && series.length > 1 && <Sparkline points={series} color={toneColor} />}
-      {hint && <p className="text-[10px] leading-snug" style={{ color: V.muted }}>{hint}</p>}
+      {hint && <p className="text-[11px] leading-snug" style={{ color: V.muted }}>{hint}</p>}
     </div>
   )
 }
@@ -200,7 +200,7 @@ export function LineChart({
       {hover != null && (
         <div className="absolute top-0 pointer-events-none bg-white border border-gray-200 rounded-lg px-2.5 py-1.5 shadow-sm"
           style={{ left: `${(hover / (data.length - 1)) * 100}%`, transform: 'translateX(-50%)' }}>
-          <p className="text-[10px] whitespace-nowrap" style={{ color: V.muted }}>{jour(data[hover].date)}</p>
+          <p className="text-[11px] whitespace-nowrap" style={{ color: V.muted }}>{jour(data[hover].date)}</p>
           <p className="text-xs font-bold tabular-nums whitespace-nowrap" style={{ color: V.ink }}>{format(data[hover].value)}</p>
         </div>
       )}
@@ -242,7 +242,7 @@ export function FunnelChart({ stages }: { stages: { stage: string; sessions: num
               <div className="h-full rounded-full transition-[width] duration-500"
                 style={{ width: `${Math.max(2, passage)}%`, background: tone }} />
             </div>
-            <p className="text-[10px] mt-0.5 tabular-nums" style={{ color: passage < 40 ? V.critical : V.muted }}>
+            <p className="text-[11px] mt-0.5 tabular-nums" style={{ color: passage < 40 ? V.critical : V.muted }}>
               {prev == null
                 ? 'point de départ'
                 : `${passage.toFixed(1)} % passent${perdu > 0 ? ` · ${nf(perdu)} perdues ici` : ''}`}
@@ -279,7 +279,7 @@ export function BarList({
             <div className="h-full rounded-full"
               style={{ width: `${Math.max(1, (r.value / max) * 100)}%`, background: colorFor ? colorFor(r) : V.s1 }} />
           </div>
-          {r.hint && <p className="text-[10px] mt-0.5" style={{ color: V.muted }}>{r.hint}</p>}
+          {r.hint && <p className="text-[11px] mt-0.5" style={{ color: V.muted }}>{r.hint}</p>}
         </div>
       ))}
     </div>

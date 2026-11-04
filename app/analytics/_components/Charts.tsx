@@ -47,6 +47,15 @@ export function Entonnoir({ etapes, valoriser }: {
 }) {
   if (etapes.length === 0) return <p className={T.note} style={{ color: V.muted }}>Aucune donnée.</p>
   const depart = etapes[0].sessions || 1
+  // La plus grosse fuite = la marche qui laisse passer la plus petite part. Elle seule est rouge : une barre rouge ou jaune
+  // pour chaque seuil franchi, sans légende, faisait lire un feu tricolore là où il n'y a qu'un classement.
+  let fuite = -1
+  let pireTaux = 101
+  for (let i = 1; i < etapes.length; i++) {
+    const p = etapes[i - 1].sessions
+    const t = p > 0 ? (etapes[i].sessions / p) * 100 : 100
+    if (t < pireTaux) { pireTaux = t; fuite = i }
+  }
 
   return (
     <div className="space-y-3">
@@ -55,7 +64,7 @@ export function Entonnoir({ etapes, valoriser }: {
         const passage = prec > 0 ? (e.sessions / prec) * 100 : 0
         const perdues = i === 0 ? 0 : Math.max(0, prec - e.sessions)
         const manque = valoriser && perdues > 0 ? valoriser(perdues) : null
-        const couleur = i === 0 ? V.s1 : passage >= 65 ? V.s1 : passage >= 35 ? V.warning : V.critical
+        const couleur = i === fuite ? V.critical : V.s1
         return (
           <div key={e.evenement}>
             <div className="flex items-baseline justify-between gap-3">
@@ -71,14 +80,14 @@ export function Entonnoir({ etapes, valoriser }: {
                 <span>point de départ</span>
               ) : (
                 <>
-                  <span style={{ color: passage < 35 ? V.critical : V.muted }}>
+                  <span style={{ color: i === fuite ? V.criticalInk : V.muted }}>
                     <b>{pct(passage)}</b> passent
                   </span>
                   <span>{nf(perdues)} perdues ici</span>
                   <span>{pct((e.sessions / depart) * 100)} du départ</span>
                   {e.delaiMedian != null && e.delaiMedian > 0 && <span>délai médian {duree(e.delaiMedian)}</span>}
                   {manque != null && manque > 0 && (
-                    <span style={{ color: V.critical }}>≈ {nf(manque)} MAD non réalisés</span>
+                    <span style={{ color: V.criticalInk }}>≈ {nf(manque)} MAD non réalisés</span>
                   )}
                 </>
               )}
@@ -86,6 +95,12 @@ export function Entonnoir({ etapes, valoriser }: {
           </div>
         )
       })}
+      {fuite > 0 && (
+        <p className={`${T.note} pt-1 flex items-center gap-1.5`} style={{ color: V.ink2 }}>
+          <span aria-hidden="true" className="inline-block h-2 w-4 rounded-sm" style={{ background: V.critical }} />
+          La barre rouge marque la plus grosse fuite du parcours ; les autres marches sont en bleu.
+        </p>
+      )}
     </div>
   )
 }
@@ -145,7 +160,7 @@ export function TableCohortes({ cellules, maxRangs = 6 }: { cellules: CelluleCoh
                   const fiable = n >= 10
                   if (!fiable) {
                     return (
-                      <td key={r} className="text-center text-[10px] tabular-nums"
+                      <td key={r} className="text-center text-[11px] tabular-nums"
                         style={{ color: V.muted }}
                         title={`${c.clientes} sur ${n} — cohorte trop petite pour un pourcentage`}>
                         {r === 0 ? `${nf(n)}` : `${c.clientes}/${n}`}

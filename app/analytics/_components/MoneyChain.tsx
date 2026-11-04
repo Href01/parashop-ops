@@ -83,14 +83,14 @@ export function MoneyChain({ maillons }: { maillons: Maillon[] }) {
                     <div className="hidden lg:flex items-center gap-1.5 w-full">
                       <div className="h-px flex-1" style={{ background: V.grid }} />
                       {m.rendement != null && (
-                        <span className="text-[10px] font-bold tabular-nums whitespace-nowrap"
+                        <span className="text-[11px] font-bold tabular-nums whitespace-nowrap"
                           style={{ color: faible ? V.critical : V.muted }}>
                           {pct(m.rendement)}
                         </span>
                       )}
                       <div className="h-px flex-1" style={{ background: V.grid }} />
                     </div>
-                    <span className="lg:hidden text-[10px] font-bold tabular-nums w-full text-right pr-2"
+                    <span className="lg:hidden text-[11px] font-bold tabular-nums w-full text-right pr-2"
                       style={{ color: faible ? V.critical : V.muted }}>
                       {m.rendement != null ? `↓ ${pct(m.rendement)}` : ''}
                     </span>
@@ -100,7 +100,7 @@ export function MoneyChain({ maillons }: { maillons: Maillon[] }) {
                 )}
               </div>
               <div className="flex-1 min-w-0 lg:px-1 py-1.5 lg:py-0">
-                <p className="text-[10px] font-semibold uppercase tracking-wider truncate" style={{ color: V.muted }}>
+                <p className="text-[11px] font-semibold uppercase tracking-wider truncate" style={{ color: V.muted }}>
                   {m.label}
                 </p>
                 <p className="text-[19px] font-black leading-tight tabular-nums" style={{ color: teinte }}>
@@ -109,11 +109,11 @@ export function MoneyChain({ maillons }: { maillons: Maillon[] }) {
                 {m.perteMad != null && m.perteMad > 0 && (
                   // La perte chiffree : « 861 visiteuses perdues » ne declenche
                   // aucune decision ; « ~2 400 MAD manques ici » si.
-                  <p className="text-[10px] font-semibold tabular-nums" style={{ color: V.critical }}>
+                  <p className="text-[11px] font-semibold tabular-nums" style={{ color: V.critical }}>
                     −{mad(m.perteMad)} perdus ici
                   </p>
                 )}
-                {m.note && <p className="text-[10px] leading-snug mt-0.5" style={{ color: V.muted }}>{m.note}</p>}
+                {m.note && <p className="text-[11px] leading-snug mt-0.5" style={{ color: V.muted }}>{m.note}</p>}
               </div>
             </div>
           )

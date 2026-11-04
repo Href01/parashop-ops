@@ -183,7 +183,7 @@ export default function Acquisition() {
         </>
       )}
       figure={payant && (
-        <div className="rounded-xl p-4" style={{ border: `1px solid ${V.grid}` }}>
+        <div className="pl-4" style={{ borderLeft: `3px solid ${V.axis}` }}>
           <p className={T.label} style={{ color: V.muted }}>Ce que la publicité laisse réellement</p>
           <p className={`${T.body} mt-2 max-w-[72ch]`} style={{ color: V.ink2 }}>
             {payant.commandes} commandes issues des publicités, dont <b>{payant.livrees} livrées</b>.

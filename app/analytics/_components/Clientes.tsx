@@ -56,6 +56,10 @@ export const SEGMENTS: Array<{ cle: SegmentCle; label: string; sens: string; ton
 const COULEUR: Record<string, string> = {
   bon: V.good, neutre: V.muted, attention: V.warning, mauvais: V.critical,
 }
+/* Le TEXTE prend l'encre foncée du verdict : l'ambre (#fab219) ne fait que 1,8:1 sur blanc et le vert de marque 3,4:1. Les barres gardent la couleur de marque. */
+const ENCRE: Record<string, string> = {
+  bon: V.goodInk, neutre: V.muted, attention: V.warningInk, mauvais: V.criticalInk,
+}
 
 /** Le score en cinq crans, écrit ET dessiné — la couleur ne porte jamais seule. */
 function Score({ n, titre }: { n: number; titre: string }) {
@@ -131,8 +135,8 @@ export function Clientes({ segments, clientes, deuxieme }: {
                   background: actif ? '#FAFAFA' : '#fff',
                 }}
               >
-                <p className="text-[10.5px] font-semibold uppercase tracking-[0.06em]"
-                  style={{ color: COULEUR[s.ton] }}>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.06em]"
+                  style={{ color: ENCRE[s.ton] }}>
                   {s.label}
                 </p>
                 <p className="text-[19px] font-black leading-none mt-1 tabular-nums" style={{ color: V.ink }}>
@@ -234,7 +238,7 @@ export function Clientes({ segments, clientes, deuxieme }: {
                           </span>
                         </td>
                         <td className="text-[11.5px] font-semibold whitespace-nowrap pr-3"
-                          style={{ color: COULEUR[s?.ton ?? 'neutre'], borderBottom: `1px solid ${V.grid}` }}>
+                          style={{ color: ENCRE[s?.ton ?? 'neutre'], borderBottom: `1px solid ${V.grid}` }}>
                           {s?.label ?? c.segment}
                         </td>
                         <td className="text-[13px] text-right tabular-nums" style={{ color: V.ink, borderBottom: `1px solid ${V.grid}` }}>{c.cmd}</td>

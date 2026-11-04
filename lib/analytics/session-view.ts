@@ -25,8 +25,8 @@ export const ISSUES: Record<Issue, { label: string; couleur: string; fond: strin
   annulee: { label: 'Annulée', couleur: '#d03b3b', fond: '#fbeaea' },
   panier: { label: 'Panier abandonné', couleur: '#a16207', fond: '#fdf3dc' },
   parcours: { label: 'A parcouru', couleur: '#52514e', fond: '#efeee9' },
-  rebond: { label: 'Rebond', couleur: '#898781', fond: '#f3f2ee' },
-  automatise: { label: 'Automatisé', couleur: '#898781', fond: '#f3f2ee' },
+  rebond: { label: 'Rebond', couleur: '#6b6a65', fond: '#f3f2ee' },
+  automatise: { label: 'Automatisé', couleur: '#6b6a65', fond: '#f3f2ee' },
 }
 
 /** L'issue de la session, de la plus decisive a la moins : commande, panier, parcours, rebond. */

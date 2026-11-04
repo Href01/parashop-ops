@@ -169,7 +169,7 @@ export function Ecart({ courant, precedent, hausseEstBonne = true, discret = fal
   const encre = verdict === 'bon' ? V.goodInk : verdict === 'mauvais' ? V.criticalInk : V.muted
   const teinte = verdict === 'bon' ? 'rgba(12,163,12,.10)' : verdict === 'mauvais' ? 'rgba(208,59,59,.10)' : 'rgba(0,0,0,.05)'
   return (
-    <span className={`${discret ? 'text-[10px] font-medium' : 'text-[11px] font-bold rounded-md px-1.5 py-0.5'} tabular-nums whitespace-nowrap`} title={e.explication}
+    <span className={`${discret ? 'text-[11px] font-medium' : 'text-[11px] font-bold rounded-md px-1.5 py-0.5'} tabular-nums whitespace-nowrap`} title={e.explication}
       style={{ color: encre, background: discret ? undefined : teinte, cursor: e.extreme ? 'help' : undefined }}>
       {e.texte}
     </span>
@@ -364,7 +364,7 @@ export function DimensionTable({
       ) : (
         <>
           <ZoneDefilante className="hidden sm:block -mx-1 px-1">
-            <table className="w-full" style={{ borderCollapse: 'collapse', minWidth: 120 + colonnes.length * (comparaison ? 132 : 104) }}>
+            <table className="w-full" style={{ borderCollapse: 'collapse', minWidth: 120 + colonnes.length * (comparaison ? 92 : 84) }}>
               <thead>
                 <tr>
                   <th className={`${T.note} font-semibold text-left pb-1.5 sticky left-0`}
@@ -374,11 +374,11 @@ export function DimensionTable({
                   {colonnes.map((c) => (
                     <th key={c.cle}
                       aria-sort={tri.cle === c.cle ? (tri.desc ? 'descending' : 'ascending') : 'none'}
-                      className={`${T.note} rp-th font-semibold text-right pb-1 select-none whitespace-nowrap`}
+                      className={`${T.note} rp-th font-semibold text-right pb-1 select-none align-bottom`}
                       style={{ color: tri.cle === c.cle ? V.ink : V.muted, borderBottom: `1px solid ${V.axis}` }}>
                       <button type="button"
                         onClick={() => setTri((t) => ({ cle: c.cle, desc: t.cle === c.cle ? !t.desc : true }))}
-                        className="min-h-9 cursor-pointer whitespace-nowrap px-1 text-right focus-visible:outline focus-visible:outline-2">
+                        className="min-h-9 cursor-pointer px-1 text-right leading-tight focus-visible:outline focus-visible:outline-2">
                         <ChampInfo label={c.label} definition={c.definition} portee={c.portee} />
                         <span className="ml-1" aria-hidden="true">{tri.cle === c.cle ? (tri.desc ? '↓' : '↑') : ''}</span>
                       </button>
@@ -390,7 +390,7 @@ export function DimensionTable({
                 {visibles.map((l) => (
                   <tr key={l.cle} className="rp-row" style={{ height: JET.ligne, background: '#fff' }}>
                     <td className="text-[13px] sticky left-0" style={{ color: V.ink, borderBottom: `1px solid ${V.grid}`, background: 'inherit' }}>
-                      <div className="flex items-center gap-2 pr-3 max-w-[280px]">
+                      <div className="flex items-center gap-2 pr-3 max-w-[220px]">
                         {/* Micro-barre : la part se lit sans calculer. Elle croît
                             depuis zéro au premier rendu — le seul endroit où le
                             mouvement ajoute du sens, puisqu'il montre la grandeur
@@ -454,13 +454,13 @@ export function DimensionTable({
                   <div className="mt-1.5 h-1 rounded-sm" style={{ background: V.grid }} aria-hidden="true">
                     <div className="h-full rounded-sm" style={{ width: `${Math.max(2, part)}%`, background: V.s1, opacity: .55 }} />
                   </div>
-                  <div className="mt-2.5 grid grid-cols-3 gap-x-3 gap-y-2.5">
+                  <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-3">
                     {colonnes.map((c) => {
                       const m = l.mesures[c.cle]
                       return (
                         <div key={c.cle} className="min-w-0">
-                          <p className="text-[10px] leading-tight" style={{ color: V.muted }}>{c.label}</p>
-                          <p className="text-[13px] font-bold tabular-nums leading-snug" style={{ color: V.ink }}>
+                          <p className="text-[12px] leading-tight" style={{ color: V.muted }}>{c.label}</p>
+                          <p className="text-[14px] font-bold tabular-nums leading-snug" style={{ color: V.ink }}>
                             {m?.valeur == null && m?.n != null
                               ? <span className="font-normal" style={{ color: V.muted }} title={`${m.n} observations — sous le seuil`}>n={nf(m.n)}</span>
                               : fmt(m?.valeur, c.format)}
@@ -477,11 +477,11 @@ export function DimensionTable({
             })}
             <div className="rounded-lg px-3 py-2.5" style={{ background: V.grid + '55' }}>
               <p className="text-[13px] font-bold" style={{ color: V.ink }}>Total</p>
-              <div className="mt-2 grid grid-cols-3 gap-x-3 gap-y-2">
+              <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2.5">
                 {colonnes.map((c) => (
                   <div key={c.cle} className="min-w-0">
-                    <p className="text-[10px] leading-tight" style={{ color: V.muted }}>{c.label}</p>
-                    <p className="text-[13px] font-bold tabular-nums" style={{ color: totaux[c.cle] == null ? V.muted : V.ink }}>
+                    <p className="text-[12px] leading-tight" style={{ color: V.muted }}>{c.label}</p>
+                    <p className="text-[14px] font-bold tabular-nums" style={{ color: totaux[c.cle] == null ? V.muted : V.ink }}>
                       {totaux[c.cle] == null ? '—' : fmt(totaux[c.cle], c.format)}
                     </p>
                   </div>

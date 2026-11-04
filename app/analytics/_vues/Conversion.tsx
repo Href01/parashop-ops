@@ -162,7 +162,7 @@ export default function Conversion() {
                   const rang = etapes.indexOf(c.cle)
                   return (
                     <button key={c.cle} onClick={() => basculer(c.cle)} className="ctrl rounded-lg px-2 py-1 text-[12px] font-semibold"
-                      data-on={on ? '1' : undefined}
+                      data-on={on ? '1' : undefined} data-sobre="1"
                       style={{ border: `1px solid ${on ? V.ink : V.grid}` }}>
                       {on && <span className="opacity-60">{rang + 1}. </span>}{c.label}
                     </button>
@@ -175,7 +175,7 @@ export default function Conversion() {
               <div className="inline-flex rounded-lg overflow-hidden mt-1.5" style={{ border: `1px solid ${V.grid}` }}>
                 {FENETRES.map((f) => (
                   <button key={f.min} onClick={() => setFenetre(f.min)} className="ctrl px-2.5 py-1 text-[12px] font-semibold"
-                    data-on={fenetre === f.min ? '1' : undefined}>{f.label}</button>
+                    data-on={fenetre === f.min ? '1' : undefined} data-sobre="1">{f.label}</button>
                 ))}
               </div>
               <p className={`${T.note} mt-1 max-w-[280px]`} style={{ color: V.muted }}>

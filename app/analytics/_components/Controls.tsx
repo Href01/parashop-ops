@@ -31,8 +31,10 @@ function Groupe({ children }: { children: React.ReactNode }) {
   )
 }
 
-function Bouton({ actif, onClick, children, titre }: {
+function Bouton({ actif, onClick, children, titre, sobre }: {
   actif: boolean; onClick: () => void; children: React.ReactNode; titre?: string
+  /** Réglage secondaire (comparaison, base, segment) : l'état actif se lit à un trait rose sous le libellé, pas à un aplat. */
+  sobre?: boolean
 }) {
   return (
     <button
@@ -41,6 +43,7 @@ function Bouton({ actif, onClick, children, titre }: {
       aria-pressed={actif}
       className="px-2.5 py-1 text-[12px] font-semibold whitespace-nowrap ctrl"
       data-on={actif ? '1' : undefined}
+      data-sobre={sobre ? '1' : undefined}
     >
       {children}
     </button>
@@ -90,6 +93,8 @@ export function BarreControle({
         .ctrl:hover { background: ${MARQUE.roseFond}; color: ${V.ink}; }
         .ctrl[data-on] { background: ${MARQUE.rose}; color: #fff; }
         .ctrl[data-on]:hover { background: ${MARQUE.rose}; }
+        /* Seule la PÉRIODE porte l'aplat rose : à côté d'elle, un second aplat disait « tout est sélectionné ». */
+        .ctrl[data-sobre][data-on], .ctrl[data-sobre][data-on]:hover { background: ${MARQUE.roseFond}; color: ${V.ink}; box-shadow: inset 0 -2px 0 ${MARQUE.rose}; }
         .ctrl:focus-visible { outline: 2px solid ${MARQUE.rose}; outline-offset: -2px; }
         .pop { animation: pop .16s cubic-bezier(.2,.8,.3,1); transform-origin: top left; }
         @keyframes pop { from { opacity: 0; transform: translateY(-4px) } to { opacity: 1; transform: none } }
@@ -178,11 +183,11 @@ export function BarreControle({
       <div className={filtresOuverts ? 'contents' : 'hidden sm:contents'}>
       {afficherComparaison && (
         <Groupe>
-          <Bouton actif={etat.modeComparaison === 'precedente'} onClick={() => maj({ cmp: null })}
+          <Bouton sobre actif={etat.modeComparaison === 'precedente'} onClick={() => maj({ cmp: null })}
             titre="Compare à la période immédiatement précédente, de même durée.">
             vs précédente
           </Bouton>
-          <Bouton actif={etat.modeComparaison === 'aucune'} onClick={() => maj({ cmp: '0' })} titre="Aucune comparaison.">
+          <Bouton sobre actif={etat.modeComparaison === 'aucune'} onClick={() => maj({ cmp: '0' })} titre="Aucune comparaison.">
             sans
           </Bouton>
         </Groupe>
@@ -190,11 +195,11 @@ export function BarreControle({
 
       {afficherBase && (
         <Groupe>
-          <Bouton actif={etat.basis === 'cohorte'} onClick={() => maj({ basis: null })}
+          <Bouton sobre actif={etat.basis === 'cohorte'} onClick={() => maj({ basis: null })}
             titre="Daté au jour de la COMMANDE — pour juger ce que la publicité a produit.">
             à la commande
           </Bouton>
-          <Bouton actif={etat.basis === 'cash'} onClick={() => maj({ basis: 'cash' })}
+          <Bouton sobre actif={etat.basis === 'cash'} onClick={() => maj({ basis: 'cash' })}
             titre="Daté au jour de la LIVRAISON — ventes réalisées, distinctes de l'encaissement.">
             à la livraison
           </Bouton>
@@ -205,9 +210,9 @@ export function BarreControle({
         <div className="flex items-center gap-1.5">
           <span className={T.note} style={{ color: V.muted }}>Appareil</span>
           <Groupe>
-            <Bouton actif={valeurFiltre('appareil').length === 0} onClick={() => setFiltre('appareil', [])}>tout</Bouton>
+            <Bouton sobre actif={valeurFiltre('appareil').length === 0} onClick={() => setFiltre('appareil', [])}>tout</Bouton>
             {segments.appareil.map((a) => (
-              <Bouton key={a} actif={valeurFiltre('appareil').includes(a)} onClick={() => setFiltre('appareil', [a])}>
+              <Bouton sobre key={a} actif={valeurFiltre('appareil').includes(a)} onClick={() => setFiltre('appareil', [a])}>
                 {a === 'mobile' ? 'Mobile' : a === 'desktop' ? 'Ordinateur' : a}
               </Bouton>
             ))}
@@ -219,9 +224,9 @@ export function BarreControle({
         <div className="flex items-center gap-1.5">
           <span className={T.note} style={{ color: V.muted }}>Langue</span>
           <Groupe>
-            <Bouton actif={valeurFiltre('langue').length === 0} onClick={() => setFiltre('langue', [])}>tout</Bouton>
+            <Bouton sobre actif={valeurFiltre('langue').length === 0} onClick={() => setFiltre('langue', [])}>tout</Bouton>
             {segments.langue.map((l) => (
-              <Bouton key={l} actif={valeurFiltre('langue').includes(l)} onClick={() => setFiltre('langue', [l])}>
+              <Bouton sobre key={l} actif={valeurFiltre('langue').includes(l)} onClick={() => setFiltre('langue', [l])}>
                 {l === 'fr' ? 'Français' : l === 'ar' ? 'العربية' : l}
               </Bouton>
             ))}
