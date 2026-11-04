@@ -1,3 +1,5 @@
+import pool from '@/lib/db'
+
 /**
  * LES LIGNES DE COMMANDE, PACKS DÉVELOPPÉS EN COMPOSANTS.
  *
@@ -31,3 +33,48 @@ export const LIGNES_COMPOSANTS = `(
         FROM "BundleItem" bi2 JOIN "Product" c2 ON c2.id = bi2."productId" GROUP BY 1
     ) bt ON bt."bundleId" = b.id
 )`
+
+/**
+ * UN MOUVEMENT DE STOCK SUR UN PACK SE FAIT SUR SES COMPOSANTS.
+ *
+ * Le stock d'un pack est DÉRIVÉ (minimum de ses composants, voir refresh_bundle_stock) : y écrire n'a aucun effet durable,
+ * et les composants, eux, ne bougent pas. Un retour « remettre en stock » d'un Duo Éclaircissant laissait donc le Savon et
+ * la Lotion décrémentés à jamais. Même règle que la base à la vente : le pack est remplacé par ses composants.
+ */
+export type MouvementStock = { productId: number; qty: number }
+
+export function developperMouvementsAvec(
+  mouvements: MouvementStock[],
+  composants: Map<number, Array<{ productId: number; quantity: number }>>,
+): MouvementStock[] {
+  const cumul = new Map<number, number>()
+  const ordre: number[] = []
+  const ajoute = (productId: number, qty: number) => {
+    if (!cumul.has(productId)) { cumul.set(productId, 0); ordre.push(productId) }
+    cumul.set(productId, (cumul.get(productId) ?? 0) + qty)
+  }
+  for (const m of mouvements) {
+    const comps = composants.get(m.productId)
+    if (!comps || comps.length === 0) { ajoute(m.productId, m.qty); continue }
+    for (const c of comps) ajoute(c.productId, m.qty * (c.quantity || 1))
+  }
+  return ordre.map((productId) => ({ productId, qty: cumul.get(productId) ?? 0 })).filter((m) => m.qty !== 0)
+}
+
+export async function developperMouvements(mouvements: MouvementStock[]): Promise<MouvementStock[]> {
+  if (mouvements.length === 0) return mouvements
+  const ids = [...new Set(mouvements.map((m) => m.productId))]
+  const r = await pool.query(
+    `SELECT b."productId" AS pack, bi."productId" AS pid, bi.quantity AS q
+       FROM "Bundle" b JOIN "BundleItem" bi ON bi."bundleId" = b.id
+      WHERE b."productId" = ANY($1::int[])`,
+    [ids],
+  )
+  const composants = new Map<number, Array<{ productId: number; quantity: number }>>()
+  for (const x of r.rows) {
+    const liste = composants.get(Number(x.pack)) ?? []
+    liste.push({ productId: Number(x.pid), quantity: Number(x.q) || 1 })
+    composants.set(Number(x.pack), liste)
+  }
+  return developperMouvementsAvec(mouvements, composants)
+}

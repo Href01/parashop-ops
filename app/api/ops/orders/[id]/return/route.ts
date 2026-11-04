@@ -3,6 +3,7 @@ import pool from '@/lib/db'
 import { getOpsSession } from '@/lib/auth'
 import { revalidateWebsite } from '@/lib/revalidate-website'
 import { bustAnalyticsCache } from '@/lib/analytics-cache'
+import { developperMouvements } from '@/lib/order-lignes'
 
 /**
  * Return / exchange tagging for an order.
@@ -76,7 +77,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       )
       returned = items.rows.filter((it) => it.productId).map((it) => ({ productId: it.productId, qty: Number(it.qty) }))
     }
-    const moves = [...returned, ...sent]
+    // Un pack n'a pas de stock propre (dérivé de ses composants) : les mouvements portent sur les composants.
+    const moves = await developperMouvements([...returned, ...sent])
     if (moves.length) await applyMoves(moves, orderId, session.user.email, `Retour/échange commande #${orderId}`)
 
     await pool.query(

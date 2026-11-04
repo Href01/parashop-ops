@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { allocateOrderLines, developperPacks, type CompositionPacks, type ItemRow, type OrderRow } from '../lib/partner-ledger'
-import { LIGNES_COMPOSANTS } from '../lib/order-lignes'
+import { LIGNES_COMPOSANTS, developperMouvementsAvec } from '../lib/order-lignes'
 
 /**
  * LES PACKS DANS LE RELEVÉ DU PARTENAIRE.
@@ -86,4 +86,25 @@ test('le fragment SQL partagé reflète la règle de la base : le pack est rempl
   assert.ok(LIGNES_COMPOSANTS.includes('LEFT JOIN "Bundle" b ON b."productId" = oi."productId"'))
   assert.ok(LIGNES_COMPOSANTS.includes('oi.quantity * COALESCE(bi.quantity, 1)'), 'quantité × quantité du composant')
   assert.ok(LIGNES_COMPOSANTS.includes('COALESCE(bi."productId", oi."productId")'), 'un produit simple reste lui-même')
+})
+
+const COMPOSANTS = new Map([[DUO, [{ productId: SAVON, quantity: 1 }, { productId: LOTION, quantity: 1 }]], [ROUTINE, [{ productId: NOFRIZZ, quantity: 1 }, { productId: SPRAY, quantity: 2 }]]])
+
+test('retour d’un pack : chaque composant revient en stock, pas le pack (dont le stock est dérivé)', () => {
+  assert.deepEqual(developperMouvementsAvec([{ productId: DUO, qty: 1 }], COMPOSANTS), [{ productId: SAVON, qty: 1 }, { productId: LOTION, qty: 1 }])
+})
+
+test('la quantité du pack et celle du composant se multiplient ; un produit simple reste tel quel', () => {
+  assert.deepEqual(
+    developperMouvementsAvec([{ productId: ROUTINE, qty: 3 }, { productId: INTEGRITY, qty: 2 }], COMPOSANTS),
+    [{ productId: NOFRIZZ, qty: 3 }, { productId: SPRAY, qty: 6 }, { productId: INTEGRITY, qty: 2 }],
+  )
+})
+
+test('un échange (retour d’un pack, envoi du même pack) ne déplace rien : le stock net est inchangé', () => {
+  assert.deepEqual(developperMouvementsAvec([{ productId: DUO, qty: 1 }, { productId: DUO, qty: -1 }], COMPOSANTS), [])
+})
+
+test('une unité retournée d’un pack et le même composant vendu seul se cumulent sur une seule ligne', () => {
+  assert.deepEqual(developperMouvementsAvec([{ productId: DUO, qty: 1 }, { productId: SAVON, qty: 2 }], COMPOSANTS), [{ productId: SAVON, qty: 3 }, { productId: LOTION, qty: 1 }])
 })
