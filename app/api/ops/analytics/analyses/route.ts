@@ -443,7 +443,20 @@ export async function POST(request: NextRequest) {
         `fun:${debut}:${fin}:${etapes.join(',')}:${fenetre}`, 5 * 60 * 1000,
         () => entonnoir(etapes, debut, fin, fenetre)
       )
-      return NextResponse.json({ etapes: data, fenetreMin: fenetre })
+      /* RAPPROCHEMENT AVEC LES COMMANDES. L'entonnoir se calcule PAR VISITE, étapes dans l'ordre : une commande dont la
+         visite a sauté une étape n'y figure pas. Sur 30 jours, 6 commandes du site sur 18 manquaient ainsi (4 : ajout au
+         panier depuis le rayon, sans fiche produit ; 3 : panier rempli lors d'une visite précédente), sans que l'écran le
+         dise — le taux du parcours était sous-estimé d'un tiers. On compte donc les commandes du site, pour que l'écart se voie. */
+      let rapprochement: { commandesSite: number } | null = null
+      if (etapes[etapes.length - 1] === 'PURCHASE_SUCCESS') {
+        const o = await analyticsQuery<{ n: number }>(
+          `SELECT COUNT(*)::int AS n FROM "Order" o
+           WHERE o."sessionId" IS NOT NULL AND ${jourLocalUtc('o."createdAt"')} BETWEEN $1::date AND $2::date`,
+          [debut, fin],
+        )
+        rapprochement = { commandesSite: Number(o.rows[0]?.n) || 0 }
+      }
+      return NextResponse.json({ etapes: data, fenetreMin: fenetre, rapprochement })
     }
 
     if (b?.type === 'recherches') {

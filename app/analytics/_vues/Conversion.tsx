@@ -36,6 +36,7 @@ export default function Conversion() {
   const [etapes, setEtapes] = useState<string[]>(DEFAUT)
   const [fenetre, setFenetre] = useState(1440)
   const [donnees, setDonnees] = useState<EtapeEntonnoir[] | null>(null)
+  const [rapprochement, setRapprochement] = useState<{ commandesSite: number } | null>(null)
   const [argent, setArgent] = useState<{ livrees: number; marge: number } | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
 
@@ -51,7 +52,7 @@ export default function Conversion() {
       body: JSON.stringify({ type: 'entonnoir', etapes, periode: etat.periode, fenetreMin: fenetre }),
     })
       .then((r) => r.json())
-      .then((j) => { if (vivant) { if (j.error) setErreur(j.error); else { setDonnees(j.etapes); setErreur(null) } } })
+      .then((j) => { if (vivant) { if (j.error) setErreur(j.error); else { setDonnees(j.etapes); setRapprochement(j.rapprochement ?? null); setErreur(null) } } })
       .catch((e) => vivant && setErreur(String(e)))
     return () => { vivant = false }
   }, [etapes, fenetre, etat.periode])
@@ -165,6 +166,16 @@ export default function Conversion() {
           </div>
 
           {!donnees ? <Squelette lignes={5} hauteur={22} /> : <Entonnoir etapes={donnees} valoriser={valoriser} />}
+          {/* Les commandes du site que cet entonnoir ne compte pas : leur visite a sauté une étape. Sans cette ligne,
+              « Arrivée » et le taux du parcours se lisaient comme le total des commandes, alors que c'en est un minimum. */}
+          {donnees && rapprochement && donnees.length > 0 && rapprochement.commandesSite > donnees[donnees.length - 1].sessions && (
+            <p className={`${T.note} mt-3`} style={{ color: V.ink2 }} role="note">
+              <b>{rapprochement.commandesSite} commandes du site</b> sur la période, dont <b>{donnees[donnees.length - 1].sessions}</b> dans
+              cet entonnoir : {rapprochement.commandesSite - donnees[donnees.length - 1].sessions} ont sauté une étape (ajout au panier depuis le rayon
+              sans passer par la fiche produit, ou panier rempli lors d&apos;une visite précédente). Le taux du parcours est donc un minimum ;
+              pour les compter toutes, partez de « Panier ouvert ».
+            </p>
+          )}
         </div>
       }
     />
