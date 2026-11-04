@@ -306,10 +306,23 @@ export default function SeoDashboard() {
           {message}
         </p>
       )}
+      {/* Connexion et stockage en place, seul l'import AUTOMATIQUE manque : un avis d'une ligne,
+          pas le grand bandeau de configuration — qui prenait un tiers de l'écran à chaque visite. */}
       {data &&
-        (!data.connection.configured ||
-          !data.schemaReady ||
-          !data.connection.cronConfigured) && (
+        data.connection.configured &&
+        data.schemaReady &&
+        !data.connection.cronConfigured && (
+          <p className={styles.notice} role="status">
+            <Info size={16} />
+            <span>
+              <strong>Import quotidien non activé :</strong> les positions ne se mettent à jour que
+              par le bouton Synchroniser. Pour l&apos;automatiser, déployer le cron à 07:35 UTC et définir
+              CRON_SECRET.
+            </span>
+          </p>
+        )}
+      {data &&
+        (!data.connection.configured || !data.schemaReady) && (
           <section className={styles.setup}>
             <div>
               <ShieldCheck size={22} />

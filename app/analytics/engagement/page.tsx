@@ -104,7 +104,7 @@ export default function Engagement() {
         <div>
           <div className="flex flex-wrap items-baseline justify-between gap-2">
             <p className={T.label} style={{ color: V.muted }}>
-              {depart ? `Après ${depart}, où vont-elles ?` : 'Les enchaînements les plus fréquents'}
+              {depart ? `Après ${depart}, où vont-elles ?` : 'Les enchaînements de pages les plus fréquents'}
             </p>
             {depart && (
               <button onClick={() => setDepart(null)} className="text-[11px] font-semibold underline" style={{ color: V.muted }}>
@@ -113,7 +113,7 @@ export default function Engagement() {
             )}
           </div>
           <p className={`${T.note} mb-3`} style={{ color: V.muted }}>
-            Cliquez une destination pour la prendre comme nouveau point de départ.
+            Cliquez une page pour la prendre comme point de départ : on y voit aussi combien de visites s&apos;y terminent.
           </p>
           {!pas ? <Squelette lignes={5} hauteur={14} /> : <Chemins pas={pas} onDepart={setDepart} />}
         </div>

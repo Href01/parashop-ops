@@ -1,8 +1,10 @@
 'use client'
 
 import { Suspense, type ReactNode } from 'react'
+import { usePathname } from 'next/navigation'
 import BosShell from '@/components/BosShell'
 import AnalyticsNav from './_components/AnalyticsNav'
+import { MODULES } from './_components/Report'
 
 /**
  * La coque commune aux onze modules, posee dans le BOS.
@@ -24,8 +26,11 @@ import AnalyticsNav from './_components/AnalyticsNav'
  * sans limite de suspension.
  */
 export default function AnalyticsLayout({ children }: { children: ReactNode }) {
+  // Le fil d'Ariane dit où l'on est : « Analytics › Sessions », pas « Aperçu » partout.
+  const pathname = usePathname()
+  const crumb = MODULES.find((m) => pathname.startsWith(m.href))?.label ?? 'Analytics'
   return (
-    <BosShell active="analytics" title="Analytics" crumb="Aperçu">
+    <BosShell active="analytics" title="Analytics" crumb={crumb}>
       <div className="analytique" style={{ background: '#fff', minHeight: '100%' }}>
         <div
           className="bg-white border-b sticky top-0 z-20"

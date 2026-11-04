@@ -44,12 +44,13 @@
   color: #63776b !important;
   margin: 0 0 6px !important;
 }
+/* Même gabarit de titre que les dix autres modules (19 px, 900) : celui-ci était à 30 px. */
 .header h1 {
-  font-size: 30px;
-  letter-spacing: -0.035em;
-  font-weight: 750;
-  line-height: 1.1;
-  margin: 0 0 9px;
+  font-size: 19px;
+  letter-spacing: -0.01em;
+  font-weight: 900;
+  line-height: 1.2;
+  margin: 0 0 2px;
 }
 .header p {
   color: #66716a;
@@ -652,7 +653,7 @@
     gap: 12px;
   }
   .header h1 {
-    font-size: 25px;
+    font-size: 19px;
   }
   .header p {
     font-size: 12px;

@@ -365,6 +365,11 @@ async function recherches(debut: string, fin: string) {
  * L'exploration de chemin de GA4, en version lisible : depuis un point de
  * depart, les suites classees par frequence. Un seul pas a la fois, parce
  * qu'un diagramme a cinq niveaux se regarde bien et ne se lit pas.
+ *
+ * Sans point de depart, on ne garde que les VRAIS enchainements page -> page : la
+ * sortie du site est la suite la plus frequente de presque chaque page, et les huit
+ * premieres lignes ne disaient alors plus que « (fin de visite) ». Les sorties se
+ * lisent depuis une page choisie, la ou la question « combien partent ici ? » a un sens.
  */
 async function chemins(depart: string | null, debut: string, fin: string) {
   const sql = `
@@ -385,7 +390,7 @@ async function chemins(depart: string | null, debut: string, fin: string) {
     )
     SELECT a.p AS de, COALESCE(b.p, '(fin de visite)') AS vers, COUNT(*)::int AS n
     FROM pv a LEFT JOIN pv b ON b."sessionId" = a."sessionId" AND b.rang = a.rang + 1
-    ${depart ? 'WHERE a.p = $3' : ''}
+    ${depart ? 'WHERE a.p = $3' : 'WHERE b.p IS NOT NULL'}
     GROUP BY 1, 2 ORDER BY n DESC LIMIT 25`
   const r = await analyticsQuery(sql, depart ? [debut, fin, depart] : [debut, fin])
   return r.rows.map((x) => ({ de: String(x.de), vers: String(x.vers), n: Number(x.n) }))

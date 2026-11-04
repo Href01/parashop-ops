@@ -20,6 +20,7 @@ import { useState } from 'react'
 import { ZoneDefilante } from './Defilement'
 import { V } from './Viz'
 import { T } from './Decision'
+import { plageFr } from '@/lib/analytics/dates-fr'
 import { PERIODES, PERIODES_DECALEES, periodeDecaleeActive, dateDuJour, type EtatRapport } from './useReport'
 
 function Groupe({ children }: { children: React.ReactNode }) {
@@ -241,8 +242,8 @@ export function BarreControle({
       {/* Toujours sur sa propre ligne : le sélecteur de dates s'ouvre
           juste au-dessus et la recouvrait. */}
       <span className={`${T.note} w-full`} style={{ color: V.muted }}>
-        {etat.periode.debut === etat.periode.fin ? etat.periode.debut : `${etat.periode.debut} → ${etat.periode.fin}`}
-        {afficherComparaison && etat.comparaison && ` · comparé à ${etat.comparaison.debut === etat.comparaison.fin ? etat.comparaison.fin : `${etat.comparaison.debut} → ${etat.comparaison.fin}`}`}
+        {plageFr(etat.periode.debut, etat.periode.fin)}
+        {afficherComparaison && etat.comparaison && ` · comparé à ${plageFr(etat.comparaison.debut, etat.comparaison.fin)}`}
         {/* Une journee en cours face a une journee complete : sans cette mention,
             chaque matin ressemble a un effondrement. */}
         {afficherComparaison && enCours && etat.comparaison && (
