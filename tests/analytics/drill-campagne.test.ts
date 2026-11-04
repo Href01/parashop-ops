@@ -26,7 +26,7 @@ test('l API Sessions filtre la campagne avec LE MEME calcul de nom que la dimens
 })
 
 test('Acquisition ne lie que les campagnes qui ont des visites (ni DM, ni ligne sans campagne)', () => {
-  const page = lire('app/analytics/acquisition/page.tsx')
+  const page = lire('app/analytics/_vues/AcquisitionResultat.tsx')
   assert.ok(page.includes("!l.cle.startsWith('(')"))
   assert.ok(page.includes('(l.mesures.sessions?.valeur ?? 0) > 0'))
 })

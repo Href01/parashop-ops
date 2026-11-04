@@ -6,7 +6,7 @@ import { redirect } from 'next/navigation'
  * On ouvre ce tableau de bord d'abord pour savoir ce qui se passe maintenant :
  * qui est sur le site, ce qui a été commandé aujourd'hui. L'ancienne entrée, la Vue
  * d'ensemble sur 30 jours, est devenue un module comme les autres
- * (/analytics/ensemble).
+ * (/analytics/acquisition, vue « marge »).
  *
  * Un ancien lien qui porte des réglages (période, segments) garde sa vue : il est
  * renvoyé vers la Vue d'ensemble avec les mêmes paramètres, plutôt que d'atterrir
@@ -23,5 +23,8 @@ export default async function EntreeAnalytics({
     for (const v of Array.isArray(valeur) ? valeur : valeur != null ? [valeur] : []) reglages.append(cle, v)
   }
   const query = reglages.toString()
-  redirect(query ? `/analytics/ensemble?${query}` : '/analytics/sessions?jours=1')
+  // Sans `?jours=1` : Sessions ouvre sur aujourd'hui PAR DÉFAUT (useReport joursParDefaut), et ce défaut ne s'écrit pas
+  // dans l'adresse. Écrit, il voyageait vers tous les onglets : Acquisition, Parcours ou Meta s'ouvraient sur UNE journée,
+  // trop petite pour dire quoi que ce soit (« 0 session sur 29 vont jusqu'à la commande »).
+  redirect(query ? `/analytics/acquisition?${query}&vue=marge` : '/analytics/sessions')
 }

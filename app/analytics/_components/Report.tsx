@@ -499,22 +499,18 @@ export function DimensionTable({
 
 /* ── La navigation par modules ────────────────────────────────────────────── */
 /**
- * Quatre groupes, dans l'ordre où l'on pose les questions :
+ * Sept onglets, un par QUESTION (onze en posaient une par type de donnée) :
  *  · maintenant — qui est sur le site, ce qui se passe aujourd'hui (l'entrée du tableau de bord) ;
- *  · performance — le cycle de vie GA4 : acquisition → engagement → conversion → rétention ;
- *  · catalogue — ce qui se vend, ce qui se cherche, ce que Google en voit ;
- *  · outils — la qualité des données, et l'exploration libre.
+ *  · analyse — Acquisition (ce que rapporte la pub), Parcours (où ça décroche), Catalogue (ce qu'elles
+ *    voient et cherchent), Clientes (reviennent-elles). Chacun regroupe ses vues en sous-onglets ;
+ *  · outils — Google Search Console (autre source de données) et l'exploration libre.
  */
 export const MODULES = [
   { href: '/analytics/sessions', label: 'Sessions', groupe: 'maintenant' },
-  { href: '/analytics/ensemble', label: "Vue d'ensemble", groupe: 'performance' },
-  { href: '/analytics/acquisition', label: 'Acquisition', groupe: 'performance' },
-  { href: '/analytics/engagement', label: 'Engagement', groupe: 'performance' },
-  { href: '/analytics/conversion', label: 'Conversion', groupe: 'performance' },
-  { href: '/analytics/retention', label: 'Rétention', groupe: 'performance' },
-  { href: '/analytics/produits', label: 'Produits', groupe: 'catalogue' },
-  { href: '/analytics/recherche', label: 'Recherche', groupe: 'catalogue' },
-  { href: '/analytics/seo', label: 'SEO Insights', groupe: 'catalogue' },
-  { href: '/analytics/qualite', label: 'Qualité', groupe: 'outils' },
+  { href: '/analytics/acquisition', label: 'Acquisition', groupe: 'analyse' },
+  { href: '/analytics/parcours', label: 'Parcours', groupe: 'analyse' },
+  { href: '/analytics/catalogue', label: 'Catalogue', groupe: 'analyse' },
+  { href: '/analytics/clientes', label: 'Clientes', groupe: 'analyse' },
+  { href: '/analytics/seo', label: 'SEO', groupe: 'outils' },
   { href: '/analytics/explorer', label: 'Explorer', groupe: 'outils' },
 ] as const

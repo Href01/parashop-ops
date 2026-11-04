@@ -6,7 +6,7 @@ const isSeo = (path: string) =>
  * pas d'un onglet à l'autre : changer de module doit revenir à la vue d'ensemble de ce module, pas la filtrer
  * par une campagne que ses chiffres ne savent pas appliquer.
  */
-const PARAMS_LOCAUX = ['campagne'] as const
+const PARAMS_LOCAUX = ['campagne', 'vue'] as const
 
 export function analyticsModuleHref(from: string, to: string, search: string) {
   // Google and first-party analytics use different device/country values and
