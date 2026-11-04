@@ -23,6 +23,7 @@
  */
 
 import { useMemo, useState, type ReactNode } from 'react'
+import Link from 'next/link'
 import { CircleAlert, RotateCw } from 'lucide-react'
 import { V } from './Viz'
 import { T } from './Decision'
@@ -250,11 +251,13 @@ export type ColonneMesure = {
 
 export type LigneTable = {
   cle: string
+  /** Ce qui s'affiche à la place de `cle` (qui reste l'identifiant, pour le tri et les liens). */
+  libelle?: string
   mesures: Record<string, { valeur: number | null; precedent?: number | null; n?: number; fiable?: boolean }>
 }
 
 export function DimensionTable({
-  lignes, colonnes, labelDimension, dimensions, onDimension, comparaison, lignesParPage = 10, vide, totauxExacts,
+  lignes, colonnes, labelDimension, dimensions, onDimension, comparaison, lignesParPage = 10, vide, totauxExacts, lienLigne,
 }: {
   lignes: LigneTable[]
   colonnes: ColonneMesure[]
@@ -270,6 +273,8 @@ export function DimensionTable({
   comparaison?: boolean
   lignesParPage?: number
   vide?: string
+  /** Un lien pour aller VOIR le détail d'une ligne dans un autre module (ex. la campagne → ses sessions). null : pas de lien. */
+  lienLigne?: (l: LigneTable) => string | null
 }) {
   const [tri, setTri] = useState<{ cle: string; desc: boolean }>({ cle: colonnes[0]?.cle ?? '', desc: true })
   const [q, setQ] = useState('')
@@ -277,7 +282,7 @@ export function DimensionTable({
 
   const filtrees = useMemo(() => {
     const t = q.trim().toLowerCase()
-    const base = t ? lignes.filter((l) => l.cle.toLowerCase().includes(t)) : lignes
+    const base = t ? lignes.filter((l) => (l.libelle ?? l.cle).toLowerCase().includes(t)) : lignes
     return [...base].sort((a, b) => {
       const va = a.mesures[tri.cle]?.valeur ?? -Infinity
       const vb = b.mesures[tri.cle]?.valeur ?? -Infinity
@@ -384,7 +389,9 @@ export function DimensionTable({
                           width: Math.max(2, ((l.mesures[colonnes[0]?.cle]?.valeur ?? 0) / maxPremiere) * 34),
                           background: V.s1, opacity: .4,
                         }} />
-                        <span className="rp-key truncate" title={l.cle} style={{ color: V.ink2, transition: 'color .12s ease' }}>{l.cle}</span>
+                        {lienLigne?.(l)
+                          ? <Link href={lienLigne(l)!} className="rp-key truncate underline decoration-dotted underline-offset-2" title={`${l.libelle ?? l.cle} — voir le détail`} style={{ color: V.ink2 }}>{l.libelle ?? l.cle}</Link>
+                          : <span className="rp-key truncate" title={l.libelle ?? l.cle} style={{ color: V.ink2, transition: 'color .12s ease' }}>{l.libelle ?? l.cle}</span>}
                       </div>
                     </td>
                     {colonnes.map((c) => {
@@ -429,7 +436,11 @@ export function DimensionTable({
               const part = ((l.mesures[colonnes[0]?.cle]?.valeur ?? 0) / maxPremiere) * 100
               return (
                 <div key={l.cle} role="listitem" className="rounded-lg px-3 py-2.5" style={{ border: `1px solid ${V.grid}`, background: '#fff' }}>
-                  <p className="text-[13px] font-semibold break-words" style={{ color: V.ink }}>{l.cle}</p>
+                  <p className="text-[13px] font-semibold break-words" style={{ color: V.ink }}>
+                    {lienLigne?.(l)
+                      ? <Link href={lienLigne(l)!} className="underline decoration-dotted underline-offset-2">{l.libelle ?? l.cle}</Link>
+                      : (l.libelle ?? l.cle)}
+                  </p>
                   <div className="mt-1.5 h-1 rounded-sm" style={{ background: V.grid }} aria-hidden="true">
                     <div className="h-full rounded-sm" style={{ width: `${Math.max(2, part)}%`, background: V.s1, opacity: .55 }} />
                   </div>

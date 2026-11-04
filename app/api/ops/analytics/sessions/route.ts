@@ -3,6 +3,7 @@ import { getToken } from 'next-auth/jwt'
 import { analyticsError, analyticsQuery } from '@/lib/analytics/db'
 import { SESSION_BOT_FILTER_CLAUSE, TZ } from '@/lib/analytics/metrics'
 import { fenetreSql, traficAutomatiseSql } from '@/lib/analytics/automated'
+import { nomCampagneSql } from '@/lib/analytics/model'
 
 /**
  * LA LISTE DES SESSIONS, et qui est là maintenant.
@@ -89,6 +90,9 @@ export async function GET(request: NextRequest) {
     const q = (sp.get('q') || '').trim().slice(0, 60)
     const appareil = (sp.get('appareil') || '').trim().slice(0, 20)
     const canal = (sp.get('canal') || '').trim().slice(0, 40)
+    // Une campagne, désignée par son NOM tel que le tableau d'Acquisition l'affiche : le même calcul
+    // de nom (identifiant → nom le plus récent), pour que les sessions listées soient exactement celles comptées là-bas.
+    const campagne = (sp.get('campagne') || '').trim().slice(0, 160)
     const inclureAuto = sp.get('auto') === '1'
 
     // Le direct : 30 minutes, comme GA4. Les 5 minutes precedentes etaient trop
@@ -188,6 +192,10 @@ export async function GET(request: NextRequest) {
       perimetre.push(canal === 'direct'
         ? `COALESCE(s."utmSource",'') = ''`
         : `LOWER(COALESCE(s."utmSource",'')) = LOWER($${params.length})`)
+    }
+    if (campagne) {
+      params.push(campagne)
+      perimetre.push(`${nomCampagneSql(`NULLIF(TRIM(s."utmCampaign"), '')`)} = $${params.length}`)
     }
     if (q) {
       params.push(`%${q}%`)

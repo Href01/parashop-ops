@@ -16,6 +16,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { V } from '../_components/Viz'
 import { T } from '../_components/Decision'
 import { ReportShell, Scorecard, Squelette, ErreurChargement, Ecart, fmt } from '../_components/Report'
@@ -54,7 +55,10 @@ const heure = (iso: string) =>
   new Intl.DateTimeFormat('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'Africa/Casablanca' }).format(new Date(iso))
 
 export default function Sessions() {
-  const { etat, maj, setJours, setPeriode, setFiltre: setFiltreDim, periodePersonnalisee } = useReport({ joursParDefaut: 1 })
+  const { etat, maj, setJours, setPeriode, setFiltre: setFiltreDim, periodePersonnalisee, sp } = useReport({ joursParDefaut: 1 })
+  /* La campagne vient d'un LIEN (Acquisition → « voir ses sessions ») : elle vit dans l'URL, donc elle se partage,
+     se met en favori, et « retour » revient au tableau d'où l'on vient. */
+  const campagne = sp.get('campagne') ?? ''
   const [filtre, setFiltre] = useState('toutes')
   const [q, setQ] = useState('')
   const [qDifferee, setQDifferee] = useState('')
@@ -80,12 +84,12 @@ export default function Sessions() {
       debut: etat.periode.debut, fin: etat.periode.fin,
       cmp: etat.comparaison ? '1' : '0',
       cmpDebut: etat.comparaison?.debut ?? '', cmpFin: etat.comparaison?.fin ?? '',
-      filtre, q: qDifferee, appareil, canal, auto: auto ? '1' : '0',
+      filtre, q: qDifferee, appareil, canal, campagne, auto: auto ? '1' : '0',
     })
     fetch(`/api/ops/analytics/sessions?${p}`).then((r) => r.json())
       .then((j) => { if (j.error) setErreur(j.error); else { setData(j); setErreur(null) } })
       .catch((e) => setErreur(String(e)))
-  }, [etat.periode.debut, etat.periode.fin, etat.comparaison, filtre, qDifferee, appareil, canal, auto])
+  }, [etat.periode.debut, etat.periode.fin, etat.comparaison, filtre, qDifferee, appareil, canal, campagne, auto])
 
   useEffect(() => {
     const t = setTimeout(() => setQDifferee(q), 300)
@@ -183,7 +187,26 @@ export default function Sessions() {
           `}</style>
         </div>
       }
-      enTete={erreur ? <ErreurChargement message={erreur} /> : null}
+      enTete={(
+        <>
+          {/* Un filtre venu d'un lien doit se VOIR et s'enlever : les chiffres ci-dessous ne portent que sur cette campagne. */}
+          {campagne && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-3 py-2 mb-4" role="status"
+              style={{ background: `${V.grid}66`, border: `1px solid ${V.grid}` }}>
+              <span className={T.label} style={{ color: V.muted }}>Campagne</span>
+              <b className="text-[13px] break-all" style={{ color: V.ink }}>{campagne}</b>
+              <button onClick={() => maj({ campagne: null })} className="text-[12px] font-semibold underline" style={{ color: V.ink2 }}>
+                voir toutes les sessions ✕
+              </button>
+              <Link href={`/analytics/acquisition?${new URLSearchParams({ debut: etat.periode.debut, fin: etat.periode.fin, jours: String(etat.jours) })}`}
+                className="text-[12px] font-semibold underline ms-auto" style={{ color: V.muted }}>
+                ← retour à Acquisition
+              </Link>
+            </div>
+          )}
+          {erreur ? <ErreurChargement message={erreur} /> : null}
+        </>
+      )}
       scorecards={!data ? ([0, 1, 2, 3].map((i) => <div key={i}><Squelette lignes={2} hauteur={12} /></div>)) : (
         <>
           <div className="min-w-0">

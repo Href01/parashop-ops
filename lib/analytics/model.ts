@@ -349,6 +349,14 @@ export const MESURES: Record<string, Mesure> = {
     format: 'entier', hausseEstBonne: true,
     sql: `COUNT(*)`,
   },
+  commandesSite: {
+    cle: 'commandesSite', label: 'Commandes du site', source: 'commandes', portee: 'evenement',
+    definition:
+      "Commandes passées par une visite du site (elles portent une session). Exclut les commandes saisies à la main " +
+      "(DM Instagram, famille), qui n'ont pas de visite : c'est la seule base comparable aux sessions.",
+    format: 'entier', hausseEstBonne: true,
+    sql: `COUNT(*) FILTER (WHERE o."sessionId" IS NOT NULL)`,
+  },
   livrees: {
     cle: 'livrees', label: 'Commandes livrées', source: 'commandes', portee: 'evenement',
     definition: "Commandes effectivement remises à la cliente. En paiement à la livraison, c'est la seule vente réelle.",
@@ -463,9 +471,9 @@ export const MESURES: Record<string, Mesure> = {
   tauxConversion: {
     cle: 'tauxConversion', label: 'Conversion', source: 'commandes', portee: 'evenement',
     definition:
-      "Commandes ÷ visites. « Une visite sur 40 finit en commande » se lit 2,5 %. Les commandes saisies à la main " +
-      "(DM, famille) n'ont pas de visite : leur ligne n'a pas de taux, et c'est voulu. Sous 30 visites, l'effectif est " +
-      "affiché à la place du pourcentage.",
+      "Commandes du site ÷ visites. « Une visite sur 40 finit en commande » se lit 2,5 %. Les commandes saisies à la main " +
+      "(DM, famille) n'ont pas de visite : elles ne comptent ni au numérateur ni dans le total, et leur ligne n'a pas de " +
+      "taux. Sous 30 visites, l'effectif est affiché à la place du pourcentage.",
     format: 'pourcent', hausseEstBonne: true, sql: null, seuil: MIN_OBS,
   },
   panierMoyen: {
@@ -533,10 +541,11 @@ export const DERIVEES: Record<string, { depend: string[]; calc: (r: Record<strin
     depend: ['marge', 'depensePub'],
     calc: (r) => Number(r.marge ?? 0) - Number(r.depensePub ?? 0),
   },
-  // Commandes ÷ visites. Sans visite il n'y a pas de taux (jamais 0 %, qui dirait « personne n'a commandé »).
+  // Commandes DU SITE ÷ visites : les commandes à la main n'ont pas de visite, et les compter gonflait le total
+  // (0,53 % affiché pour 0,36 % réel sur 30 jours). Sans visite il n'y a pas de taux (jamais 0 %, qui dirait « personne n'a commandé »).
   tauxConversion: {
-    depend: ['commandes', 'sessions'],
-    calc: (r) => (r.sessions > 0 ? (r.commandes / r.sessions) * 100 : null),
+    depend: ['commandesSite', 'sessions'],
+    calc: (r) => (r.sessions > 0 ? (r.commandesSite / r.sessions) * 100 : null),
   },
   tauxLecture: {
     depend: ['lectureFin', 'lectureDebut'],

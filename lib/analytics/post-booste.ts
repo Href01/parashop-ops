@@ -25,5 +25,5 @@ export function libelleCampagne(nom: string): string {
 }
 
 export const NOTE_POST_BOOSTE =
-  'Post boosté : ses « clics » sont des interactions avec le post, pas des visites du site. ' +
-  'Les ventes passent par les messages (DM, commandes saisies au canal Instagram) : 0 visite est normal.'
+  'Post boosté : ses « clics » sont d\'abord des interactions avec le post, pas des visites du site. ' +
+  'Les ventes passent surtout par les messages (DM, commandes saisies au canal Instagram) : peu de visites, voire aucune, est normal.'

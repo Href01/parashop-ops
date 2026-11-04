@@ -213,7 +213,12 @@ export default function Acquisition() {
           key={table.modele.dimension?.label ?? dimension}
           // Le nom d'un post boosté dit sa nature : sans cela, ses « clics » sans visite se lisent comme du gaspillage.
           lignes={((tableEnrichie ?? table).lignes as LigneTable[]).map((l) =>
-            dimension === 'campagne' && estPostBooste(l.cle) ? { ...l, cle: libelleCampagne(l.cle) } : l)}
+            dimension === 'campagne' && estPostBooste(l.cle) ? { ...l, libelle: libelleCampagne(l.cle) } : l)}
+          // Une campagne qui a des visites mène à ces sessions, sur la même période : de « elle coûte 109 MAD »
+          // à « voilà ce que ses visiteuses ont fait ». Sans visite (publication boostée, DM) : pas de lien.
+          lienLigne={(l) => dimension === 'campagne' && !l.cle.startsWith('(') && (l.mesures.sessions?.valeur ?? 0) > 0
+            ? `/analytics/sessions?${new URLSearchParams({ debut: etat.periode.debut, fin: etat.periode.fin, jours: String(etat.jours), campagne: l.cle })}`
+            : null}
           colonnes={colonnes}
           labelDimension={table.modele.dimension?.label ?? 'Dimension'}
           dimensions={[
