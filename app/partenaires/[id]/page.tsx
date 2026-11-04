@@ -18,7 +18,8 @@ import { ArrowLeft, Download, Trash2 } from 'lucide-react'
  *    parce qu'on regarde septembre.
  */
 
-type Line = { orderId: number; orderNumber: string | null; deliveredAt: string; productId: number; productName: string; quantity: number; revenue: number; cogs: number; orderCosts: number; packaging: number; margin: number }
+type Line = { orderId: number; orderNumber: string | null; deliveredAt: string; productId: number; productName: string; pack?: string; quantity: number; valeur: number; revenue: number; cogs: number; orderCosts: number; packaging: number; margin: number }
+type OrderCalc = { orderId: number; orderNumber: string | null; deliveredAt: string; promoCode: string | null; valeurCommande: number; valeurPartenaire: number; poids: number; remisePromo: number; pointsDh: number; pointsShine: number; caPaye: number; caPartage: number; livraisonFacturee: number; coutLivraison: number; coutProduits: number; emballage: number; beneficeAvantPoints: number; horsProduits: number; partenaire: { revenue: number; cogs: number; orderCosts: number; packaging: number; margin: number }; packs: string[] }
 type Expense = { id: number; date: string; category: string; label: string | null; amount: number; paidBy: 'shine' | 'partner' }
 type Payment = { id: number; date: string; amount: number; method: string | null; note: string | null }
 type StockRow = { id: number; name: string; brand: string; image: string | null; price: number; costPrice: number; stock: number; entrees: number; vendus: number; enCours: number; unitMargin: number; valeurCout: number; valeurVente: number }
@@ -30,7 +31,7 @@ type Data = {
   ledger: {
     partner: { id: number; name: string; shinePct: number; startDate: string; notes: string | null; active: boolean }
     period: { from: string; to: string }; packagingRate: number
-    lines: Line[]; returnsDetail: { orderId: number; orderNumber: string | null; returnedAt: string; fee: number }[]
+    lines: Line[]; ordersDetail?: OrderCalc[]; returnsDetail: { orderId: number; orderNumber: string | null; returnedAt: string; fee: number }[]
     adsDetail: { externalId: string; name: string; spend: number }[]; adsMixedDetail?: { externalId: string; name: string; spend: number; part: number; allocated: number }[]; expenses: Expense[]; advancesDetail: Expense[]; totals: Totals
   }
   stock: StockRow[]
@@ -166,7 +167,7 @@ export default function PartenairePage() {
         <Section titre="Du chiffre d'affaires à la marge nette" note="Chaque ligne reprend le calcul du tableau de bord, au prorata de ses produits dans chaque commande. D'abord ce que coûte la vente, puis la pub à part.">
           <table className="table-modern" style={{ width: '100%' }}>
             <tbody>
-              <Ligne label="CA encaissé sur ses produits" note="ce que les clientes ont réellement payé, remises déduites" valeur={T.revenue} />
+              <Ligne label="CA encaissé sur ses produits" note="ce que les clientes ont réellement payé, remises déduites — les points de fidélité sont ajoutés : Shine les assume" valeur={T.revenue} />
               <Ligne label="Coût d'achat des produits vendus" note="son argent, qui lui est rendu" valeur={-T.cogs} />
               <Ligne label="Livraison nette et frais de commande" note="coût Sendit moins livraison facturée, commission, frais d'échec" valeur={-T.orderCosts} />
               <Ligne label={`Emballage (${L.packagingRate} DH par colis)`} note="payé par Shine — au prorata si le colis contient aussi des produits Shine" valeur={-T.packaging} />
@@ -207,7 +208,7 @@ export default function PartenairePage() {
                     <tr key={`${l.orderId}-${l.productId}-${i}`}>
                       <td className="fs12">{jour(l.deliveredAt)}</td>
                       <td className="fs12"><Link href={`/orders/${l.orderId}`}>{l.orderNumber || `#${l.orderId}`}</Link></td>
-                      <td className="fs12" style={{ minWidth: 200 }}>{l.productName}</td>
+                      <td className="fs12" style={{ minWidth: 200 }}>{l.productName}{l.pack && <div className="fs11 tx-faint">via le pack « {l.pack} »</div>}</td>
                       <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{l.quantity}</td>
                       <Num v={l.revenue} /><Num v={l.cogs} /><Num v={l.orderCosts} /><Num v={l.packaging} /><Num v={l.margin} gras />
                     </tr>
@@ -217,6 +218,9 @@ export default function PartenairePage() {
             </Defilant>
           )}
         </Section>
+
+        {/* ── Detail du calcul, commande par commande ─────────────────────── */}
+        <DetailCalcul commandes={L.ordersDetail ?? []} />
 
         {/* ── Depenses ────────────────────────────────────────────────────── */}
         <Depenses partnerId={P.id} depenses={[...L.expenses, ...(L.advancesDetail ?? [])].sort((a, b) => b.date.localeCompare(a.date))} today={data.today} onChange={load} />
@@ -400,6 +404,65 @@ function Partage({ shinePct, shine, partner, net, base }: { shinePct: number; sh
     </div>
   )
 }
+/** Une étape du calcul : libellé, formule, montant ; le signe se lit comme une opération posée. */
+function Etape({ label, formule, valeur, signe, fort }: { label: string; formule?: string; valeur: number; signe?: '+' | '−' | '='; fort?: boolean }) {
+  return (
+    <tr style={fort ? { borderTop: '2px solid var(--line-soft)' } : undefined}>
+      <td style={{ width: 22, color: 'var(--tx-faint)', fontFamily: 'var(--mono)' }}>{signe ?? ''}</td>
+      <td><div className="fs13" style={{ color: 'var(--tx-hi)', fontWeight: fort ? 800 : 400 }}>{label}</div>{formule && <div className="fs11 tx-faint">{formule}</div>}</td>
+      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', whiteSpace: 'nowrap', fontWeight: fort ? 800 : 400, color: fort ? (valeur < 0 ? 'var(--red, #c0392b)' : 'var(--green)') : 'var(--tx-hi)' }}>{dh(valeur)}</td>
+    </tr>
+  )
+}
+
+/** Pour chaque commande livrée : le chemin complet du panier de la cliente à la marge du partenaire. */
+function DetailCalcul({ commandes }: { commandes: OrderCalc[] }) {
+  const pct = (x: number) => `${(Math.round(x * 1000) / 10).toLocaleString('fr-FR')} %`
+  return (
+    <Section titre="Détail du calcul, commande par commande" note={commandes.length === 0 ? 'Aucune vente livrée sur cette période.' : 'Chaque commande, du panier de la cliente à la marge du partenaire. Ouvrez une commande pour voir tous les champs : valeur catalogue, poids, promo, points, livraison, coût produits, emballage.'}>
+      {commandes.length > 0 && (
+        <>
+          <div className="fs12 tx-mid" style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--line-soft)', lineHeight: 1.7, marginBottom: 10 }}>
+            <b>La règle.</b> Poids <b>w</b> = valeur catalogue de ses produits ÷ valeur catalogue de la commande. CA du partenaire = (payé + points) × w. Le coût d'achat n'est jamais proratisé : chaque produit porte le sien.
+            Livraison & frais = CA du partenaire − coût de ses produits − marge avant emballage, où marge avant emballage = (bénéfice avant points + coût de la commande) × w − coût de ses produits. L'emballage se déduit ensuite, × w. <b>Les points de fidélité sont à la charge de Shine</b> : le partage se calcule avant cette remise.
+          </div>
+          {[...commandes].reverse().map((c, i) => (
+            <details key={c.orderId} open={i === 0} style={{ borderTop: i === 0 ? undefined : '1px solid var(--line-soft)', padding: '8px 0' }}>
+              <summary style={{ cursor: 'pointer', display: 'flex', flexWrap: 'wrap', gap: '4px 14px', alignItems: 'baseline' }}>
+                <span className="fs12 tx-faint" style={{ minWidth: 70 }}>{jour(c.deliveredAt)}</span>
+                <b className="fs13">{c.orderNumber || `#${c.orderId}`}</b>
+                {c.packs.length > 0 && <span className="fs11 tx-faint">pack : {c.packs.join(', ')}</span>}
+                <span className="fs11 tx-faint">w {pct(c.poids)}</span>
+                <span style={{ marginLeft: 'auto', fontFamily: 'var(--mono)' }} className="fs12">CA {dh(c.partenaire.revenue)} · <b style={{ color: c.partenaire.margin < 0 ? 'var(--red, #c0392b)' : 'var(--green)' }}>marge {dh(c.partenaire.margin)}</b></span>
+              </summary>
+              <div style={{ marginTop: 8 }}>
+                <Defilant>
+                  <table className="table-modern" style={{ width: '100%' }}>
+                    <tbody>
+                      <Etape label="Valeur catalogue de la commande" formule="somme prix × quantité de tous les articles (packs développés)" valeur={c.valeurCommande} />
+                      <Etape label="dont ses produits" formule={`poids w = ${dh(c.valeurPartenaire)} ÷ ${dh(c.valeurCommande)} = ${pct(c.poids)}`} valeur={c.valeurPartenaire} />
+                      <Etape signe="−" label={`Code promo${c.promoCode ? ` (${c.promoCode})` : ''} et autres remises`} formule="sur toute la commande" valeur={c.remisePromo} />
+                      <Etape signe="−" label="Points de fidélité utilisés" formule={`${c.pointsDh * 10} points = ${c.pointsDh} DH (10 points = 1 DH)`} valeur={c.pointsDh} />
+                      <Etape signe="=" label="Payé par la cliente pour les produits" formule="hors livraison" valeur={c.caPaye} />
+                      <Etape signe="+" label="Points remis dans la base du partage" formule={`Shine les assume : le partenaire aurait supporté ${dh(c.pointsShine)}`} valeur={c.pointsDh} />
+                      <Etape signe="=" label="Base du partage (CA)" valeur={c.caPartage} fort />
+                      <Etape label="CA du partenaire" formule={`${dh(c.caPartage)} × ${pct(c.poids)}`} valeur={c.partenaire.revenue} />
+                      <Etape signe="−" label="Coût d'achat de ses produits" formule={`figé à la commande ; coût de toute la commande : ${dh(c.coutProduits)}`} valeur={c.partenaire.cogs} />
+                      <Etape signe="−" label="Livraison & frais (sa part)" formule={`livraison facturée ${dh(c.livraisonFacturee)} · coût Sendit ${dh(c.coutLivraison)} · bénéfice avant points ${dh(c.beneficeAvantPoints)} · hors produits ${dh(c.horsProduits)}`} valeur={c.partenaire.orderCosts} />
+                      <Etape signe="−" label="Emballage (sa part)" formule={`${dh(c.emballage)} × ${pct(c.poids)}`} valeur={c.partenaire.packaging} />
+                      <Etape signe="=" label="Marge du partenaire sur cette commande" valeur={c.partenaire.margin} fort />
+                    </tbody>
+                  </table>
+                </Defilant>
+              </div>
+            </details>
+          ))}
+        </>
+      )}
+    </Section>
+  )
+}
+
 function Ligne({ label, note, valeur }: { label: string; note?: string; valeur: number }) {
   return (
     <tr>
@@ -824,8 +887,12 @@ function exporterCsv(d: Data) {
     ['SOLDE DEPUIS LE DÉBUT'],
     ['Coût des produits vendus', n(S.cogsSold)], ["Dépenses payées par le partenaire", n(S.expensesPaidByPartner)], ['Avances remises à Shine', n(S.advances ?? 0)], [`Sa part de la ${MODES[S.modePub].base}`, n(S.partnerShare)], ['Pub à sa charge', n(-S.pubPartenaire)], ['Déjà versé', n(-S.paid)], ['À reverser', n(S.balance)],
     [],
-    ['VENTES'], ['Livrée le', 'Commande', 'Produit', 'Qté', 'CA', 'Achat', 'Livraison & frais', 'Emballage', 'Marge'],
-    ...L.lines.map((l) => [l.deliveredAt.slice(0, 10), l.orderNumber || `#${l.orderId}`, l.productName, l.quantity, n(l.revenue), n(l.cogs), n(l.orderCosts), n(l.packaging), n(l.margin)]),
+    ['VENTES'], ['Livrée le', 'Commande', 'Produit', 'Pack', 'Qté', 'Valeur catalogue', 'CA', 'Achat', 'Livraison & frais', 'Emballage', 'Marge'],
+    ...L.lines.map((l) => [l.deliveredAt.slice(0, 10), l.orderNumber || `#${l.orderId}`, l.productName, l.pack || '', l.quantity, n(l.valeur), n(l.revenue), n(l.cogs), n(l.orderCosts), n(l.packaging), n(l.margin)]),
+    [],
+    ['DÉTAIL DU CALCUL PAR COMMANDE'],
+    ['Livrée le', 'Commande', 'Code promo', 'Valeur commande', 'Valeur partenaire', 'Poids', 'Remise promo', 'Points (DH)', 'Points à charge de Shine (sa part)', 'Payé produits', 'Base du partage (payé + points)', 'Livraison facturée', 'Coût livraison', 'Coût produits (commande)', 'Bénéfice avant points', 'Hors produits', 'CA partenaire', 'Achat partenaire', 'Livraison & frais partenaire', 'Emballage partenaire', 'Marge partenaire'],
+    ...(L.ordersDetail ?? []).map((c) => [c.deliveredAt.slice(0, 10), c.orderNumber || `#${c.orderId}`, c.promoCode || '', n(c.valeurCommande), n(c.valeurPartenaire), n(c.poids * 100) + ' %', n(c.remisePromo), n(c.pointsDh), n(c.pointsShine), n(c.caPaye), n(c.caPartage), n(c.livraisonFacturee), n(c.coutLivraison), n(c.coutProduits), n(c.beneficeAvantPoints), n(c.horsProduits), n(c.partenaire.revenue), n(c.partenaire.cogs), n(c.partenaire.orderCosts), n(c.partenaire.packaging), n(c.partenaire.margin)]),
     [],
     ['DÉPENSES'], ['Date', 'Catégorie', 'Libellé', 'Payé par', 'Montant'],
     ...[...L.expenses, ...(L.advancesDetail ?? [])].map((x) => [x.date, x.category, x.label || '', x.category === AVANCE ? 'Partenaire → Shine' : x.paidBy === 'partner' ? 'Partenaire' : 'Shine', n(x.amount)]),

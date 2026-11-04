@@ -93,7 +93,11 @@ export type LedgerLine = {
   deliveredAt: string
   productId: number
   productName: string
+  /** Le pack dont cette ligne est un composant (« Duo Éclaircissant »), sinon absent. */
+  pack?: string
   quantity: number
+  /** Valeur catalogue de la ligne (prix × quantité), avant toute remise. */
+  valeur: number
   /** Ce que la cliente a reellement paye pour cette ligne (remise deduite). */
   revenue: number
   cogs: number
@@ -166,7 +170,8 @@ async function partVentesParMois(ids: number[], mois: string[]): Promise<Map<str
   if (ids.length === 0 || mois.length === 0) return res
   const r = await pool.query(
     `WITH o AS (
-       SELECT o.id, date_trunc('month', ${heureLocaleDepuisTz('o."deliveredAt"')})::date AS m, COALESCE(o.revenue, 0)::double precision AS rev
+       SELECT o.id, date_trunc('month', ${heureLocaleDepuisTz('o."deliveredAt"')})::date AS m,
+              (COALESCE(o.revenue, 0) + FLOOR(COALESCE(o."pointsUsed", 0) / 10.0))::double precision AS rev
          FROM "Order" o
         WHERE o.status::text = 'DELIVERED' AND o."deliveredAt" IS NOT NULL
           AND date_trunc('month', ${heureLocaleDepuisTz('o."deliveredAt"')})::date = ANY($2::date[])
@@ -210,9 +215,9 @@ async function ordersWithPartnerLines(
   const dateCol = kind === 'delivered' ? `"deliveredAt"` : `"returnedAt"`
   const statusFilter = kind === 'delivered' ? `AND o.status::text = 'DELIVERED'` : ''
   const orders = await pool.query(
-    `SELECT o.id, o."orderNumber", o.${dateCol} AS at, o.revenue, o."productsTotal",
+    `SELECT o.id, o."orderNumber", o.${dateCol} AS at, o.revenue, o."productsTotal", o."pointsUsed",
             o."finalProfit", o."estimatedProfit", o."actualDeliveryCost", o."estimatedDeliveryCost",
-            o."returnDeliveryFee"
+            o."returnDeliveryFee", o."promoCode", o."deliveryFeeCharged"
        FROM "Order" o
       WHERE o.${dateCol} IS NOT NULL
         ${statusFilter}
@@ -256,8 +261,14 @@ export type OrderRow = {
   estimatedProfit: unknown
   actualDeliveryCost: unknown
   estimatedDeliveryCost: unknown
+  /** Points de fidélité dépensés par la cliente (10 points = 1 DH de remise, règle de la boutique). */
+  pointsUsed?: unknown
+  /** Pour le détail du calcul seulement : code promo, valeur catalogue encaissable, livraison facturée à la cliente. */
+  promoCode?: unknown
+  productsTotal?: unknown
+  deliveryFeeCharged?: unknown
 }
-export type ItemRow = { orderId: number; productId: number; quantity: unknown; price: unknown; unitCost: unknown; name: string }
+export type ItemRow = { orderId: number; productId: number; quantity: unknown; price: unknown; unitCost: unknown; name: string; /** Nom du pack d'origine quand la ligne est un composant développé. */ pack?: string }
 
 /**
  * LES PACKS : UNE LIGNE DE COMMANDE QUI EN CACHE PLUSIEURS.
@@ -297,6 +308,7 @@ export function developperPacks(items: ItemRow[], packs: CompositionPacks): Item
         orderId: it.orderId,
         productId: c.productId,
         name: c.name,
+        pack: it.name,
         quantity: quantite,
         price: quantite > 0 ? (valeurLigne * parPrix) / quantite : 0,
         unitCost: quantite > 0 ? (coutTotal * parCout) / quantite : 0,
@@ -334,15 +346,23 @@ export async function chargerPacks(): Promise<CompositionPacks> {
  * produits, lui, n'est jamais proratise : chaque ligne porte son propre prix
  * d'achat. Voir tests/partner-ledger.test.ts.
  */
+/** La remise en DH d'un paiement en points : 10 points = 1 DH (règle de la boutique). */
+export const remisePoints = (pointsUsed: unknown) => Math.floor(num(pointsUsed) / 10)
+
 export function allocateOrderLines(o: OrderRow, its: ItemRow[], idSet: Set<number>, packagingRate: number): LedgerLine[] {
   const w = partnerWeight(its, idSet)
   if (w <= 0) return []
   const cogsAll = its.reduce((s, i) => s + num(i.unitCost) * num(i.quantity), 0)
-  const revenue = num(o.revenue)
-  // Meme repli que le tableau de bord quand le benefice n'est pas calcule.
-  const profit = o.finalProfit != null ? num(o.finalProfit)
+  /* LES POINTS DE FIDÉLITÉ SONT À LA CHARGE DE SHINE, PAS DU PARTENAIRE (décision du 4/11 : « c'est moi qui assume »).
+     La commande encaisse moins quand la cliente paie en points ; le partage se calcule donc sur le CA et le bénéfice
+     AVANT cette remise, et Shine garde seul la perte. Sans cela le partenaire supportait sa part de chaque remise en points. */
+  const points = remisePoints(o.pointsUsed)
+  const revenue = num(o.revenue) + points
+  // Meme repli que le tableau de bord quand le benefice n'est pas calcule (avant points : le CA de base, pas celui qu'on vient de relever).
+  const profitApresPoints = o.finalProfit != null ? num(o.finalProfit)
     : o.estimatedProfit != null ? num(o.estimatedProfit)
-    : revenue - cogsAll - num(o.actualDeliveryCost ?? o.estimatedDeliveryCost)
+    : num(o.revenue) - cogsAll - num(o.actualDeliveryCost ?? o.estimatedDeliveryCost)
+  const profit = profitApresPoints + points
   // Tout ce qui n'est pas le cout des produits : encaisse, moins livraison,
   // commission et frais d'echec. C'est cette part qui se partage selon w.
   const horsProduits = profit + cogsAll
@@ -360,7 +380,9 @@ export function allocateOrderLines(o: OrderRow, its: ItemRow[], idSet: Set<numbe
       deliveredAt: new Date(o.at).toISOString(),
       productId: Number(it.productId),
       productName: it.name,
+      ...(it.pack ? { pack: it.pack } : {}),
       quantity: num(it.quantity),
+      valeur: r2(num(it.price) * num(it.quantity)),
       revenue: r2(lineRevenue),
       cogs: r2(lineCogs),
       orderCosts: r2(lineRevenue - lineCogs - avantEmballage),
@@ -368,6 +390,78 @@ export function allocateOrderLines(o: OrderRow, its: ItemRow[], idSet: Set<numbe
       margin: r2(avantEmballage - linePackaging),
     }
   })
+}
+
+/**
+ * LE DÉTAIL DU CALCUL D'UNE COMMANDE — tout ce qui mène du panier de la cliente à la marge du partenaire, champ par champ,
+ * pour que le relevé se vérifie à la main. Pure : mêmes entrées que `allocateOrderLines`, dont elle relit les lignes.
+ */
+export type LedgerOrder = {
+  orderId: number
+  orderNumber: string | null
+  deliveredAt: string
+  promoCode: string | null
+  /** Valeur catalogue de TOUTE la commande / de la part du partenaire, et le poids w = partenaire ÷ commande. */
+  valeurCommande: number
+  valeurPartenaire: number
+  poids: number
+  /** Remise du code promo (et autres remises), sur toute la commande. */
+  remisePromo: number
+  /** Remise en points de fidélité (10 pts = 1 DH), sur toute la commande, et la part qui aurait pesé sur le partenaire : Shine l'absorbe. */
+  pointsDh: number
+  pointsShine: number
+  /** Encaissé pour les produits (après promo ET points) ; CA de référence du partage = ce montant + points. */
+  caPaye: number
+  caPartage: number
+  livraisonFacturee: number
+  coutLivraison: number
+  coutProduits: number
+  emballage: number
+  /** Bénéfice de la commande avant points, et « hors produits » = ce qui se partage selon w (bénéfice + coût des produits). */
+  beneficeAvantPoints: number
+  horsProduits: number
+  /** Ce qui revient au partenaire, somme de ses lignes. */
+  partenaire: { revenue: number; cogs: number; orderCosts: number; packaging: number; margin: number }
+  packs: string[]
+}
+
+export function detailCommande(o: OrderRow, its: ItemRow[], idSet: Set<number>, packagingRate: number, lines: LedgerLine[]): LedgerOrder {
+  const w = partnerWeight(its, idSet)
+  const valeurCommande = its.reduce((s, i) => s + num(i.price) * num(i.quantity), 0)
+  const valeurPartenaire = its.filter((i) => idSet.has(Number(i.productId))).reduce((s, i) => s + num(i.price) * num(i.quantity), 0)
+  const cogsAll = its.reduce((s, i) => s + num(i.unitCost) * num(i.quantity), 0)
+  const pointsDh = remisePoints(o.pointsUsed)
+  const caPaye = num(o.revenue)
+  const profitApresPoints = o.finalProfit != null ? num(o.finalProfit)
+    : o.estimatedProfit != null ? num(o.estimatedProfit)
+    : caPaye - cogsAll - num(o.actualDeliveryCost ?? o.estimatedDeliveryCost)
+  const beneficeAvantPoints = profitApresPoints + pointsDh
+  const sum = (f: (l: LedgerLine) => number) => r2(lines.reduce((s, l) => s + f(l), 0))
+  return {
+    orderId: o.id,
+    orderNumber: o.orderNumber,
+    deliveredAt: new Date(o.at).toISOString(),
+    promoCode: o.promoCode ? String(o.promoCode) : null,
+    valeurCommande: r2(valeurCommande),
+    valeurPartenaire: r2(valeurPartenaire),
+    poids: Math.round(w * 10000) / 10000,
+    remisePromo: r2(Math.max(0, (num(o.productsTotal) || valeurCommande) - caPaye - pointsDh)),
+    pointsDh,
+    pointsShine: r2(pointsDh * w),
+    caPaye: r2(caPaye),
+    caPartage: r2(caPaye + pointsDh),
+    livraisonFacturee: r2(num(o.deliveryFeeCharged)),
+    coutLivraison: r2(num(o.actualDeliveryCost ?? o.estimatedDeliveryCost)),
+    coutProduits: r2(cogsAll),
+    emballage: r2(packagingRate),
+    beneficeAvantPoints: r2(beneficeAvantPoints),
+    horsProduits: r2(beneficeAvantPoints + cogsAll),
+    partenaire: {
+      revenue: sum((l) => l.revenue), cogs: sum((l) => l.cogs), orderCosts: sum((l) => l.orderCosts),
+      packaging: sum((l) => l.packaging), margin: sum((l) => l.margin),
+    },
+    packs: [...new Set(lines.map((l) => l.pack).filter((x): x is string => !!x))],
+  }
 }
 
 /** Le partage selon l'accord : sur la marge nette, ou sur la marge avant pub avec toute la pub pour lui. */
@@ -413,8 +507,12 @@ export async function computeLedger(partnerId: number, period: Period) {
   // ── Ventes livrees ────────────────────────────────────────────────────────
   const delivered = await ordersWithPartnerLines(ids, period, 'delivered')
   const lines: LedgerLine[] = []
+  const ordersDetail: LedgerOrder[] = []
   for (const o of delivered.orders) {
-    lines.push(...allocateOrderLines(o, delivered.items.filter((i) => i.orderId === o.id), idSet, packagingRate))
+    const its = delivered.items.filter((i) => i.orderId === o.id)
+    const mine = allocateOrderLines(o, its, idSet, packagingRate)
+    lines.push(...mine)
+    if (mine.length > 0) ordersDetail.push(detailCommande(o, its, idSet, packagingRate, mine))
   }
 
   // ── Retours et colis refuses ──────────────────────────────────────────────
@@ -510,7 +608,7 @@ export async function computeLedger(partnerId: number, period: Period) {
       id: p.id, name: p.name, shinePct, notes: p.notes, active: p.active,
       startDate: String(p.startDate instanceof Date ? p.startDate.toISOString() : p.startDate).slice(0, 10),
     },
-    period, packagingRate, lines, returnsDetail, adsDetail, adsMixedDetail, expenses, advancesDetail, totals,
+    period, packagingRate, lines, ordersDetail, returnsDetail, adsDetail, adsMixedDetail, expenses, advancesDetail, totals,
   }
 }
 
