@@ -5,8 +5,20 @@ import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useRef } from 'react'
 import { MODULES } from './Report'
 import { ZoneDefilante } from './Defilement'
-import { V } from './Viz'
+import { Activity, Compass, Megaphone, Route, Search, ShoppingBag, Users, type LucideIcon } from 'lucide-react'
+import { V, MARQUE } from './Viz'
 import { analyticsModuleHref } from '@/lib/analytics/navigation'
+
+/** Une icône par onglet : on reconnaît l'onglet avant de le lire, et la barre a enfin un rythme visuel. */
+const ICONES: Record<string, LucideIcon> = {
+  '/analytics/sessions': Activity,
+  '/analytics/acquisition': Megaphone,
+  '/analytics/parcours': Route,
+  '/analytics/catalogue': ShoppingBag,
+  '/analytics/clientes': Users,
+  '/analytics/seo': Search,
+  '/analytics/explorer': Compass,
+}
 
 /**
  * Navigation par CYCLE DE VIE, façon GA4 : acquisition → engagement →
@@ -34,7 +46,7 @@ export default function AnalyticsNav() {
     // Onze onglets : sur un telephone trois sont visibles. Le bord estompe dit qu'il y en a d'autres.
     <ZoneDefilante>
     <nav ref={navRef}
-      className="flex min-h-10 w-max min-w-full gap-1"
+      className="flex min-h-12 w-max min-w-full items-center gap-1"
       aria-label="Modules d'analyse">
       {MODULES.map((m, i) => {
         const actif = pathname.startsWith(m.href)
@@ -46,10 +58,17 @@ export default function AnalyticsNav() {
             <Link
               href={analyticsModuleHref(pathname, m.href, sp.toString())}
               aria-current={actif ? 'page' : undefined}
-              className="min-h-10 px-3 py-2 text-[13px] font-medium whitespace-nowrap border-b-2 -mb-px transition-colors"
-              style={{ borderColor: actif ? V.ink : 'transparent', color: actif ? V.ink : V.muted }}
+              className="my-1.5 inline-flex min-h-9 items-center gap-2 rounded-full px-3.5 text-[13px] font-semibold whitespace-nowrap transition-colors hover:bg-black/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+              style={actif
+                ? { background: MARQUE.roseFond, color: MARQUE.roseDim, boxShadow: `inset 0 0 0 1px ${MARQUE.roseLigne}` }
+                : { color: V.ink2 }}
             >
+              {(() => { const Icone = ICONES[m.href]; return Icone ? <Icone aria-hidden="true" size={15} strokeWidth={actif ? 2.4 : 2} /> : null })()}
               {m.label}
+              {/* Sessions se met à jour toute seule : le point le dit, sans compteur à entretenir. */}
+              {m.href === '/analytics/sessions' && (
+                <span aria-hidden="true" title="Mis à jour en direct" className="size-1.5 rounded-full animate-pulse" style={{ background: V.good }} />
+              )}
             </Link>
           </span>
         )

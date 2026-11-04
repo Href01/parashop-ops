@@ -18,14 +18,14 @@
 
 import { useState } from 'react'
 import { ZoneDefilante } from './Defilement'
-import { V } from './Viz'
+import { V, MARQUE } from './Viz'
 import { T } from './Decision'
 import { plageFr } from '@/lib/analytics/dates-fr'
 import { PERIODES, PERIODES_DECALEES, periodeDecaleeActive, dateDuJour, type EtatRapport } from './useReport'
 
 function Groupe({ children }: { children: React.ReactNode }) {
   return (
-    <div className="inline-flex rounded-lg overflow-hidden" style={{ border: `1px solid ${V.grid}` }}>
+    <div className="inline-flex rounded-xl overflow-hidden" style={{ border: `1px solid ${MARQUE.carteLigne}`, background: '#fff' }}>
       {children}
     </div>
   )
@@ -87,10 +87,10 @@ export function BarreControle({
       <style>{`
         .ctrl { min-height: 36px; background: transparent; color: ${V.ink2};
                 transition: background-color .14s ease, color .14s ease; }
-        .ctrl:hover { background: ${V.grid}66; color: ${V.ink}; }
-        .ctrl[data-on] { background: ${V.ink}; color: #fff; }
-        .ctrl[data-on]:hover { background: ${V.ink}; }
-        .ctrl:focus-visible { outline: 2px solid ${V.s1}; outline-offset: -2px; }
+        .ctrl:hover { background: ${MARQUE.roseFond}; color: ${V.ink}; }
+        .ctrl[data-on] { background: ${MARQUE.rose}; color: #fff; }
+        .ctrl[data-on]:hover { background: ${MARQUE.rose}; }
+        .ctrl:focus-visible { outline: 2px solid ${MARQUE.rose}; outline-offset: -2px; }
         .pop { animation: pop .16s cubic-bezier(.2,.8,.3,1); transform-origin: top left; }
         @keyframes pop { from { opacity: 0; transform: translateY(-4px) } to { opacity: 1; transform: none } }
         @media (prefers-reduced-motion: reduce) {

@@ -38,6 +38,28 @@ export const V = {
   ink: '#0b0b0b',
   ink2: '#52514e',
   muted: '#898781',
+  /* Teintes de TEXTE pour les verdicts : `good` / `critical` (#0ca30c, #d03b3b) sont des couleurs de MARQUE (barres,
+     points) ; en petit texte elles tombent sous 4,5:1. Les encres ci-dessous tiennent plus de 6:1 sur blanc, et sur
+     leur propre fond teinté. Le sens ne repose jamais sur la couleur seule : flèche et signe l'accompagnent. */
+  goodInk: '#08700a',
+  warningInk: '#8a5a00',
+  criticalInk: '#b32d2d',
+} as const
+
+/* L'IDENTITÉ DU BOS, relevée sur les valeurs RÉELLES de l'application (pas sur les premières lignes de globals.css, qu'un
+   thème plus récent écrase) : fond gris clair #f6f7f9, cartes blanches, accent rose #e11d74.
+   Analytics l'ignorait — toile blanche, encre noire, aucune carte — et lisait comme un outil étranger.
+   Ce sont des variables CSS (pas des hex) : à utiliser dans style={{}}, jamais concaténées avec un alpha. */
+export const MARQUE = {
+  canevas: 'var(--bg-0)',
+  carte: '#ffffff',
+  carteLigne: 'var(--line)',
+  surface: 'var(--bg-2)',
+  rose: 'var(--rose)',
+  roseDim: 'var(--rose-dim)',
+  roseFond: 'var(--rose-bg)',
+  roseLigne: 'var(--rose-line)',
+  ombre: '0 1px 2px rgba(60,20,40,.05), 0 6px 18px -10px rgba(60,20,40,.14)',
 } as const
 
 const nf = (n: number) => Math.round(n).toLocaleString('fr-FR')

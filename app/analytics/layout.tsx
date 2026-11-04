@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 import BosShell from '@/components/BosShell'
 import AnalyticsNav from './_components/AnalyticsNav'
 import { MODULES } from './_components/Report'
+import { MARQUE } from './_components/Viz'
 
 /**
  * La coque commune aux onze modules, posee dans le BOS.
@@ -31,10 +32,12 @@ export default function AnalyticsLayout({ children }: { children: ReactNode }) {
   const crumb = MODULES.find((m) => pathname.startsWith(m.href))?.label ?? 'Analytics'
   return (
     <BosShell active="analytics" title="Analytics" crumb={crumb}>
-      <div className="analytique" style={{ background: '#fff', minHeight: '100%' }}>
+      {/* Toile grise du BOS, sur laquelle se posent des cartes blanches (voir ReportShell) : Analytics suit enfin
+          le même langage que le reste de l'outil, au lieu d'une page blanche sans relief. */}
+      <div className="analytique" style={{ background: MARQUE.canevas, minHeight: '100%' }}>
         <div
           className="bg-white border-b sticky top-0 z-20"
-          style={{ borderColor: '#e1e0d9' }}
+          style={{ borderColor: MARQUE.carteLigne, boxShadow: '0 6px 14px -12px rgba(60,20,40,.35)' }}
         >
           <div className="max-w-[1140px] mx-auto px-5">
             <Suspense fallback={<div className="h-[38px]" />}>

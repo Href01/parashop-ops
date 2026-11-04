@@ -46,9 +46,9 @@ export const signed = (n: number) => `${n >= 0 ? '+' : '−'}${mad(Math.abs(n))}
    (lib/analytics/lecture.ts), pas de gabarits écrits dans les pages. */
 export function Retenir({ titre, detail }: { titre: string; detail?: string }) {
   return (
-    <div className="rounded-xl px-4 py-3" role="note"
-      style={{ background: '#f7f6f1', borderLeft: `3px solid ${V.ink}` }}>
-      <p className={T.label} style={{ color: V.muted }}>À retenir</p>
+    <div className="rounded-2xl px-5 py-4" role="note"
+      style={{ background: '#fff', border: '1px solid var(--rose-line)', borderLeft: '4px solid var(--rose)', boxShadow: '0 1px 2px rgba(60,20,40,.05), 0 6px 18px -10px rgba(60,20,40,.14)' }}>
+      <p className={T.label} style={{ color: 'var(--rose-dim)' }}>À retenir</p>
       <p className="text-[15px] font-bold leading-snug mt-1 max-w-[72ch]" style={{ color: V.ink }}>{titre}</p>
       {detail && <p className={`${T.body} mt-1 max-w-[72ch]`} style={{ color: V.ink2 }}>{detail}</p>}
     </div>

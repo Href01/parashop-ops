@@ -17,10 +17,11 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { V } from '../_components/Viz'
+import { V, MARQUE } from '../_components/Viz'
 import { T } from '../_components/Decision'
 import { ReportShell, Scorecard, Squelette, ErreurChargement, Ecart, fmt } from '../_components/Report'
 import { BarreControle } from '../_components/Controls'
+import { Activite } from '../_components/Activite'
 import { useReport, estAujourdHui } from '../_components/useReport'
 import { Chronologie, LegendeFamilles, BRUIT, type Evenement } from '../_components/Chronologie'
 import { EnteteJour, SessionRow } from '../_components/SessionRow'
@@ -175,9 +176,10 @@ export default function Sessions() {
           </label>
 
           <style>{`
-            .ctrl { background: transparent; color: ${V.ink2}; transition: background-color .14s ease, color .14s ease }
-            .ctrl:hover { background: ${V.grid}66; color: ${V.ink} }
-            .ctrl[data-on] { background: ${V.ink}; color: #fff }
+            .chip { background: #fff; color: ${V.ink2}; transition: background-color .14s ease, color .14s ease, border-color .14s ease }
+            .chip:hover:not(:disabled) { background: ${MARQUE.roseFond}; color: ${V.ink}; border-color: ${MARQUE.roseLigne} }
+            .chip[data-on] { background: ${MARQUE.rose}; color: #fff; border-color: ${MARQUE.rose} }
+            .chip:focus-visible { outline: 2px solid ${MARQUE.rose}; outline-offset: 2px }
             .pulse { animation: pl 2s ease-in-out infinite }
             @keyframes pl { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
             @media (prefers-reduced-motion: reduce) { .pulse { animation: none } }
@@ -268,6 +270,9 @@ export default function Sessions() {
       )}
       figure={!data ? <Squelette lignes={8} hauteur={18} /> : (
         <div>
+          {/* Le pouls du site : sessions heure par heure (ou jour par jour), avant la liste de ce que chacune a fait.
+              Elle suit la période choisie mais pas les filtres de la liste (campagne, appareil…) : c'est le tableau de bord, pas la liste. */}
+          <Activite debut={etat.periode.debut} fin={etat.periode.fin} />
 
 
             <div className="space-y-1">
@@ -290,8 +295,8 @@ export default function Sessions() {
                 const hausseBonne = !['friction', 'panier_sans_achat', 'sans_action'].includes(f.cle)
                 return (
                   <button key={f.cle} onClick={() => setFiltre(f.cle)} disabled={vide}
-                    className="ctrl rounded-lg px-2.5 py-1 text-[12px] font-semibold inline-flex items-center gap-1.5 disabled:opacity-35 shrink-0 whitespace-nowrap"
-                    style={{ border: `1px solid ${on ? V.ink : V.grid}` }}
+                    className="chip rounded-full px-3 py-1 text-[12px] font-semibold inline-flex items-center gap-1.5 disabled:opacity-35 shrink-0 whitespace-nowrap"
+                    style={{ border: `1px solid ${on ? MARQUE.rose : V.grid}` }}
                     data-on={on ? '1' : undefined}
                     title={vide ? 'Aucune session dans ce segment sur cette période'
                       : prec != null ? `${n} sur la période · ${prec} sur la précédente` : undefined}>

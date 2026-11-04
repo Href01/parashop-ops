@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname, useSearchParams } from 'next/navigation'
 import type { ComponentType } from 'react'
-import { V } from './Viz'
+import { V, MARQUE } from './Viz'
 
 /**
  * UN ONGLET D'ANALYSE = UNE QUESTION, ET SES VUES.
@@ -34,13 +34,13 @@ export function GroupeVues({ vues }: { vues: VueGroupe[] }) {
     <>
       {vues.length > 1 && (
         <div className="max-w-[1140px] mx-auto px-4 pt-4 sm:px-5">
-          <div role="tablist" aria-label="Vues" className="inline-flex max-w-full overflow-x-auto rounded-lg p-0.5" style={{ background: V.grid }}>
+          <div role="tablist" aria-label="Vues" className="inline-flex max-w-full gap-1 overflow-x-auto rounded-xl p-1" style={{ background: MARQUE.carte, border: `1px solid ${MARQUE.carteLigne}`, boxShadow: MARQUE.ombre }}>
             {vues.map((v) => {
               const on = v.cle === active.cle
               return (
                 <Link key={v.cle} href={lien(v.cle)} role="tab" aria-selected={on} scroll={false}
-                  className="rounded-md px-3 py-1 text-[12px] font-semibold whitespace-nowrap"
-                  style={on ? { background: '#fff', color: V.ink, boxShadow: '0 1px 2px rgba(0,0,0,.08)' } : { color: V.ink2 }}>
+                  className="rounded-lg px-3.5 py-1.5 text-[12.5px] font-semibold whitespace-nowrap transition-colors hover:bg-black/[0.04]"
+                  style={on ? { background: MARQUE.roseFond, color: MARQUE.roseDim, boxShadow: `inset 0 0 0 1px ${MARQUE.roseLigne}` } : { color: V.ink2 }}>
                   {v.label}
                 </Link>
               )

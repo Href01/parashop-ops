@@ -25,7 +25,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { CircleAlert, RotateCw } from 'lucide-react'
-import { V } from './Viz'
+import { V, MARQUE } from './Viz'
 import { T } from './Decision'
 import { calculerEcart } from '@/lib/analytics/ecart'
 import { ZoneDefilante } from './Defilement'
@@ -162,9 +162,15 @@ export function Ecart({ courant, precedent, hausseEstBonne = true, discret = fal
   const couleur = e.extreme || Math.abs(e.pct) < 0.5 || (discret && !marquant) ? V.muted : bon ? V.good : V.critical
   // Fleche ET signe : la couleur n'est jamais le seul porteur du sens. Un ecart
   // extreme (« × 49 ») n'a PAS de couleur de verdict : ce n'est pas un bilan.
+  //
+  // Hors tableau, l'écart est une PASTILLE teintée (le verdict se repère sans lire) ; son texte prend l'encre
+  // foncée du verdict, pas la couleur de marque : `good` sur blanc ne fait que 3,4:1.
+  const verdict = couleur === V.good ? 'bon' : couleur === V.critical ? 'mauvais' : 'neutre'
+  const encre = verdict === 'bon' ? V.goodInk : verdict === 'mauvais' ? V.criticalInk : V.muted
+  const teinte = verdict === 'bon' ? 'rgba(12,163,12,.10)' : verdict === 'mauvais' ? 'rgba(208,59,59,.10)' : 'rgba(0,0,0,.05)'
   return (
-    <span className={`${discret ? 'text-[10px] font-medium' : 'text-[11px] font-bold'} tabular-nums whitespace-nowrap`} title={e.explication}
-      style={{ color: couleur, cursor: e.extreme ? 'help' : undefined }}>
+    <span className={`${discret ? 'text-[10px] font-medium' : 'text-[11px] font-bold rounded-md px-1.5 py-0.5'} tabular-nums whitespace-nowrap`} title={e.explication}
+      style={{ color: encre, background: discret ? undefined : teinte, cursor: e.extreme ? 'help' : undefined }}>
       {e.texte}
     </span>
   )
@@ -183,8 +189,8 @@ export function Scorecard({
       <p className={T.label} style={{ color: V.muted }}>
         <ChampInfo label={label} definition={definition} portee={portee} />
       </p>
-      <div className="flex items-baseline gap-2 mt-1">
-        <span className="text-[22px] font-black leading-none tabular-nums" style={{ color: V.ink }}>
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 mt-1.5">
+        <span className="text-[28px] font-black leading-none tracking-tight tabular-nums" style={{ color: V.ink }}>
           {fmt(valeur, format)}
         </span>
         <Ecart courant={valeur} precedent={precedent} hausseEstBonne={hausseEstBonne} />
@@ -214,24 +220,28 @@ export function ReportShell({
    *  nom de classe construit à l'exécution. */
   colonnes?: 4 | 5
 }) {
+  /* DES CARTES BLANCHES SUR LA TOILE GRISE DU BOS. Chaque bloc (réglages, chiffres, figure, tableau) est une carte :
+     l'œil sait où commence et où finit une idée, et la page a du relief au lieu d'un long défilement plat. Même
+     langage que Commandes, Produits ou Clientes. */
+  const carte = { background: MARQUE.carte, border: `1px solid ${MARQUE.carteLigne}`, boxShadow: MARQUE.ombre } as const
   return (
-    <div className="max-w-[1140px] mx-auto px-4 py-5 sm:px-5">
+    <div className="max-w-[1140px] mx-auto px-4 pt-6 pb-12 sm:px-5 space-y-5">
       <style>{STYLES_RAPPORT}</style>
-      <header className="pb-4">
-        <h1 className="text-[19px] font-black leading-tight" style={{ color: V.ink }}>{titre}</h1>
-        {sous && <p className={`${T.note} mt-0.5`} style={{ color: V.muted }}>{sous}</p>}
-        {controles && <div className="mt-3">{controles}</div>}
+      <header>
+        <h1 className="text-[24px] font-black leading-tight tracking-tight" style={{ color: V.ink }}>{titre}</h1>
+        {sous && <p className="text-[13px] leading-snug mt-1 max-w-[80ch]" style={{ color: V.ink2 }}>{sous}</p>}
+        {controles && <div className="mt-4 rounded-2xl px-3.5 py-3" style={carte}>{controles}</div>}
       </header>
       {enTete}
       {scorecards && (
-        <section className={`rp-in grid grid-cols-2 gap-x-6 gap-y-5 py-5 border-t border-b ${
+        <section className={`rp-in grid grid-cols-2 gap-x-6 gap-y-5 rounded-2xl p-4 sm:p-5 ${
           colonnes === 5 ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}
-          style={{ borderColor: V.grid }}>
+          style={carte}>
           {scorecards}
         </section>
       )}
-      {figure && <section className="rp-in rp-in-1 py-6">{figure}</section>}
-      {tableau && <section className="rp-in rp-in-2 pb-10">{tableau}</section>}
+      {figure && <section className="rp-in rp-in-1 rounded-2xl p-4 sm:p-5" style={carte}>{figure}</section>}
+      {tableau && <section className="rp-in rp-in-2 rounded-2xl p-4 sm:p-5" style={carte}>{tableau}</section>}
     </div>
   )
 }
