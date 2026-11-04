@@ -1,4 +1,5 @@
 import pool from '@/lib/db'
+import { LIGNES_COMPOSANTS } from '@/lib/order-lignes'
 import { heureLocaleDepuisTz, jourLocalDepuisTz } from '@/lib/analytics/metrics'
 
 /**
@@ -169,11 +170,19 @@ async function partVentesParMois(ids: number[], mois: string[]): Promise<Map<str
          FROM "Order" o
         WHERE o.status::text = 'DELIVERED' AND o."deliveredAt" IS NOT NULL
           AND date_trunc('month', ${heureLocaleDepuisTz('o."deliveredAt"')})::date = ANY($2::date[])
+     ), pk AS (
+       -- la part du partenaire dans un PACK : ses composants (au prix catalogue) sur l'ensemble des composants
+       SELECT b."productId" AS pack,
+              (SUM(c.price * bi.quantity) FILTER (WHERE c.id = ANY($1::int[])) / NULLIF(SUM(c.price * bi.quantity), 0))::double precision AS part
+         FROM "Bundle" b JOIN "BundleItem" bi ON bi."bundleId" = b.id JOIN "Product" c ON c.id = bi."productId"
+        WHERE b."productId" IS NOT NULL GROUP BY 1
      ), w AS (
        SELECT oi."orderId",
-              SUM(oi.price * oi.quantity) FILTER (WHERE oi."productId" = ANY($1::int[]))::double precision AS mine,
+              SUM(CASE WHEN oi."productId" = ANY($1::int[]) THEN oi.price * oi.quantity
+                       ELSE oi.price * oi.quantity * COALESCE(pk.part, 0) END)::double precision AS mine,
               SUM(oi.price * oi.quantity)::double precision AS allv
-         FROM "OrderItem" oi WHERE oi."orderId" IN (SELECT id FROM o) GROUP BY 1
+         FROM "OrderItem" oi LEFT JOIN pk ON pk.pack = oi."productId"
+        WHERE oi."orderId" IN (SELECT id FROM o) GROUP BY 1
      )
      SELECT o.m::text AS m, SUM(o.rev) AS total, SUM(o.rev * COALESCE(w.mine, 0) / NULLIF(w.allv, 0)) AS partenaire
        FROM o LEFT JOIN w ON w."orderId" = o.id GROUP BY o.m`,
@@ -208,7 +217,14 @@ async function ordersWithPartnerLines(
       WHERE o.${dateCol} IS NOT NULL
         ${statusFilter}
         AND ${jourLocalDepuisTz(`o.${dateCol}`)} BETWEEN $2::date AND $3::date
-        AND EXISTS (SELECT 1 FROM "OrderItem" oi WHERE oi."orderId" = o.id AND oi."productId" = ANY($1::int[]))
+        AND EXISTS (
+          SELECT 1 FROM "OrderItem" oi
+           WHERE oi."orderId" = o.id
+             AND (oi."productId" = ANY($1::int[])
+                  -- un PACK dont au moins un composant est au partenaire (voir developperPacks)
+                  OR oi."productId" IN (SELECT b."productId" FROM "Bundle" b JOIN "BundleItem" bi ON bi."bundleId" = b.id
+                                         WHERE bi."productId" = ANY($1::int[])))
+        )
       ORDER BY o.${dateCol}`,
     [ids, period.from, period.to],
   )
@@ -220,7 +236,8 @@ async function ordersWithPartnerLines(
       WHERE oi."orderId" = ANY($1::int[])`,
     [orders.rows.map((o) => o.id)],
   )
-  return { orders: orders.rows, items: items.rows }
+  // Les packs sont développés en lignes de composants : le partage ne voit plus que des produits.
+  return { orders: orders.rows, items: developperPacks(items.rows as ItemRow[], await chargerPacks()) }
 }
 
 /** La part des lignes du partenaire dans la valeur catalogue de la commande. */
@@ -241,6 +258,73 @@ export type OrderRow = {
   estimatedDeliveryCost: unknown
 }
 export type ItemRow = { orderId: number; productId: number; quantity: unknown; price: unknown; unitCost: unknown; name: string }
+
+/**
+ * LES PACKS : UNE LIGNE DE COMMANDE QUI EN CACHE PLUSIEURS.
+ *
+ * Un pack (« Duo Éclaircissant », « Routine Glass Skin »…) est un produit à lui, sans `partnerId` : seuls ses COMPOSANTS
+ * appartiennent au partenaire. Le relevé ne reconnaissait que les lignes dont le produit est au partenaire : toute vente
+ * d'un pack lui échappait — CA, coût, part, solde. (Constaté le 4/11 : la commande 369, un Duo Éclaircissant de 345 DH
+ * livré, laissait le CA du partenaire inchangé après synchronisation.)
+ *
+ * On DÉVELOPPE donc chaque ligne de pack en lignes de composants avant tout calcul. Le moteur de partage reste le même :
+ *  · le prix de la ligne se répartit entre les composants au prorata de leur prix catalogue ;
+ *  · le coût (instantané figé à la commande) au prorata de leur prix d'achat, sinon de leur prix ;
+ *  · un pack 100 % partenaire lui revient en entier, un pack mixte se partage selon ses composants.
+ * Les totaux se conservent : la somme des lignes développées vaut la ligne d'origine, au centime.
+ */
+export type ComposantPack = { productId: number; name: string; quantity: number; price: number; costPrice: number }
+export type CompositionPacks = Map<number, ComposantPack[]>
+
+export function developperPacks(items: ItemRow[], packs: CompositionPacks): ItemRow[] {
+  const out: ItemRow[] = []
+  for (const it of items) {
+    const comps = packs.get(Number(it.productId))
+    if (!comps || comps.length === 0) { out.push(it); continue }
+    const qte = num(it.quantity)
+    const valeurLigne = num(it.price) * qte
+    const poidsPrix = comps.map((c) => c.price * c.quantity)
+    const sommePrix = poidsPrix.reduce((s, x) => s + x, 0)
+    // Coût : l'instantané figé sur la ligne (celui qui a servi au bénéfice). À défaut, le prix d'achat actuel des composants.
+    const coutTotal = num(it.unitCost) > 0 ? num(it.unitCost) * qte : comps.reduce((s, c) => s + c.costPrice * c.quantity, 0) * qte
+    const poidsCout = comps.map((c) => c.costPrice * c.quantity)
+    const sommeCout = poidsCout.reduce((s, x) => s + x, 0)
+    comps.forEach((c, i) => {
+      const parPrix = sommePrix > 0 ? poidsPrix[i] / sommePrix : 1 / comps.length
+      const parCout = sommeCout > 0 ? poidsCout[i] / sommeCout : parPrix
+      const quantite = c.quantity * qte
+      out.push({
+        orderId: it.orderId,
+        productId: c.productId,
+        name: c.name,
+        quantity: quantite,
+        price: quantite > 0 ? (valeurLigne * parPrix) / quantite : 0,
+        unitCost: quantite > 0 ? (coutTotal * parCout) / quantite : 0,
+      })
+    })
+  }
+  return out
+}
+
+/** Les packs et leurs composants, tels que la base les décrit (Bundle → BundleItem). */
+export async function chargerPacks(): Promise<CompositionPacks> {
+  const r = await pool.query(
+    `SELECT b."productId" AS pack, bi."productId" AS pid, bi.quantity, c.name,
+            COALESCE(c.price, 0)::double precision AS price, COALESCE(c."costPrice", 0)::double precision AS cost
+       FROM "Bundle" b
+       JOIN "BundleItem" bi ON bi."bundleId" = b.id
+       JOIN "Product" c ON c.id = bi."productId"
+      WHERE b."productId" IS NOT NULL
+      ORDER BY b.id, bi.position, bi.id`,
+  )
+  const packs: CompositionPacks = new Map()
+  for (const x of r.rows) {
+    const liste = packs.get(Number(x.pack)) ?? []
+    liste.push({ productId: Number(x.pid), name: String(x.name), quantity: num(x.quantity) || 1, price: num(x.price), costPrice: num(x.cost) })
+    packs.set(Number(x.pack), liste)
+  }
+  return packs
+}
 
 /**
  * LA REGLE DE PARTAGE D'UNE COMMANDE — pure, sans base, donc testable.
@@ -436,10 +520,11 @@ export async function partnerStock(partnerId: number, startDate: string) {
     `SELECT p.id, p.name, p.brand, p.image, p.price, p."costPrice", p.stock, p."virtualStock", p.active,
             COALESCE((SELECT SUM(m.quantity) FROM "InventoryMovement" m
                        WHERE m."productId" = p.id AND m.quantity > 0 AND m.type <> 'Sale'), 0)::int AS entrees,
-            COALESCE((SELECT SUM(oi.quantity) FROM "OrderItem" oi JOIN "Order" o ON o.id = oi."orderId"
+            -- packs développés en composants : un Duo vendu sort une unité de chaque composant (lib/order-lignes.ts)
+            COALESCE((SELECT SUM(oi.quantity) FROM ${LIGNES_COMPOSANTS} oi JOIN "Order" o ON o.id = oi."orderId"
                        WHERE oi."productId" = p.id AND o.status::text = 'DELIVERED'
                          AND ${jourLocalDepuisTz('o."deliveredAt"')} >= $2::date), 0)::int AS vendus,
-            COALESCE((SELECT SUM(oi.quantity) FROM "OrderItem" oi JOIN "Order" o ON o.id = oi."orderId"
+            COALESCE((SELECT SUM(oi.quantity) FROM ${LIGNES_COMPOSANTS} oi JOIN "Order" o ON o.id = oi."orderId"
                        WHERE oi."productId" = p.id AND o.status::text NOT IN ('DELIVERED', 'CANCELLED')
                          AND o."returnedAt" IS NULL), 0)::int AS "enCours"
        FROM "Product" p

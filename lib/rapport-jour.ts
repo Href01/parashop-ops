@@ -1,4 +1,5 @@
 import pool from '@/lib/db'
+import { LIGNES_COMPOSANTS } from '@/lib/order-lignes'
 import { BOS, envoyer, h, mad } from '@/lib/telegram'
 import { jourLocalUtc, jourLocalDepuisTz } from '@/lib/analytics/metrics'
 
@@ -52,8 +53,11 @@ export async function construireRapport() {
     pool.query(`SELECT p.name, (COALESCE(p.stock, 0) + COALESCE(p."virtualStock", 0))::int AS vendable
       FROM "Product" p
       WHERE p.active AND p."trackInventory" AND COALESCE(p.stock, 0) + COALESCE(p."virtualStock", 0) <= 2
-        AND EXISTS (SELECT 1 FROM "OrderItem" oi JOIN "Order" o ON o.id = oi."orderId"
+        AND (EXISTS (SELECT 1 FROM "OrderItem" oi JOIN "Order" o ON o.id = oi."orderId"
                      WHERE oi."productId" = p.id AND o.status::text <> 'CANCELLED' AND o."createdAt" > now() - interval '30 days')
+             -- ou vendu comme composant d'un pack (lib/order-lignes.ts)
+             OR EXISTS (SELECT 1 FROM ${LIGNES_COMPOSANTS} oc JOIN "Order" o ON o.id = oc."orderId"
+                         WHERE oc."productId" = p.id AND o.status::text <> 'CANCELLED' AND o."createdAt" > now() - interval '30 days'))
       ORDER BY vendable, p.name LIMIT 6`),
   ])
 

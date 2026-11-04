@@ -5,6 +5,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { isFounder } from '@/lib/auth'
 import pool from '@/lib/db'
 import { cached } from '@/lib/ops-cache'
+import { LIGNES_COMPOSANTS } from '@/lib/order-lignes'
 import { heureLocaleUtc, jourLocalUtc } from '@/lib/analytics/metrics'
 
 /**
@@ -81,6 +82,11 @@ export async function GET(req: NextRequest) {
            AND NOT EXISTS (
              SELECT 1 FROM "OrderItem" oi JOIN "Order" o ON o.id = oi."orderId"
              WHERE oi."productId" = p.id AND o.status::text <> ALL($3) AND ${oDate}
+           )
+           -- un composant vendu DANS UN PACK n'est pas du stock mort (voir lib/order-lignes.ts)
+           AND NOT EXISTS (
+             SELECT 1 FROM ${LIGNES_COMPOSANTS} oc JOIN "Order" o ON o.id = oc."orderId"
+             WHERE oc."productId" = p.id AND o.status::text <> ALL($3) AND ${oDate}
            )
          ORDER BY p.stock DESC LIMIT 15`,
         [start, end, LOST]

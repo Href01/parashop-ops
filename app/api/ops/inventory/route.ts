@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import pool from '@/lib/db'
+import { LIGNES_COMPOSANTS } from '@/lib/order-lignes'
 
 /**
  * GET /api/ops/inventory
@@ -87,7 +88,8 @@ export async function GET(request: NextRequest) {
                  COALESCE(SUM(oi.quantity) FILTER (WHERE o."senditTrackingId" IS NOT NULL), 0)::int AS in_transit,
                  COUNT(DISTINCT o.id) FILTER (WHERE o."senditTrackingId" IS NULL)::int AS to_ship_orders,
                  COUNT(DISTINCT o.id)::int AS open_orders_count
-          FROM "OrderItem" oi
+          -- Packs développés en composants (lib/order-lignes.ts) : c'est ce que la base décrémente et réserve.
+          FROM ${LIGNES_COMPOSANTS} oi
           JOIN "Order" o ON o.id = oi."orderId"
           WHERE o.status IN ('PENDING', 'CONFIRMED')
           GROUP BY oi."productId"
@@ -98,7 +100,7 @@ export async function GET(request: NextRequest) {
           SELECT oi."productId" AS pid,
                  COALESCE(SUM(oi.quantity), 0)::int AS sold30,
                  COALESCE(SUM(oi.quantity) FILTER (WHERE o."createdAt" >= NOW() - INTERVAL '7 days'), 0)::int AS sold7
-          FROM "OrderItem" oi
+          FROM ${LIGNES_COMPOSANTS} oi
           JOIN "Order" o ON o.id = oi."orderId"
           WHERE o.status IN ('CONFIRMED', 'DELIVERED')
             AND o."createdAt" >= NOW() - INTERVAL '30 days'
